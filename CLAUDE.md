@@ -14,7 +14,7 @@ Planned services, from the project roadmap:
 
 ## Current status
 
-There is no code yet, and no OPEN rating is live. The work is planned as GitHub issues grouped into milestones (M0 Foundation through M4 Partner integration). Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
+The Django project scaffold exists (`config`, an empty `apps/` package, no migrations), and no OPEN rating is live. The work is planned as GitHub issues grouped into milestones (M0 Foundation through M4 Partner integration). Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
 
 ## Stack (decided, see issue #1)
 
@@ -35,10 +35,11 @@ There is no code yet, and no OPEN rating is live. The work is planned as GitHub 
 
 ## Commands
 
-Fill these in as the M0 issues land. Expected shape:
+Fill these in as the M0 issues land. A command for a tool or service that has not landed yet fails until its issue does. Do not run `migrate` until the custom user model (#3) lands. `runserver` needs a reachable Postgres because it checks migrations at startup. Expected shape:
 
 ```bash
 uv sync                                   # install from uv.lock
+uv run python manage.py check             # Django system checks, no database needed
 docker compose up -d                      # local Postgres and Valkey
 uv run python manage.py migrate
 uv run python manage.py runserver

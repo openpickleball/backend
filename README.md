@@ -2,15 +2,22 @@
 
 Backend services and APIs for [OPEN](https://github.com/openpickleball), the Open Pickleball Evaluation Network.
 
-> **Project status:** OPEN is in early development. This repository has no code yet, and no OPEN rating is live.
+> **Project status:** OPEN is in early development. This repository holds only the project scaffold so far, and no OPEN rating is live.
 
 ## Technology
 
-Python is the likely language for this repository, but that decision is not final.
+Python 3.13 and Django 5.2 LTS, managed with [uv](https://docs.astral.sh/uv/). The stack decisions are in [issue #1](https://github.com/openpickleball/backend/issues/1).
 
 ## Setup and tests
 
-Instructions for setup and running tests will be added with the first code.
+Install the dependencies from `uv.lock` and run Django's system checks:
+
+```bash
+uv sync
+uv run python manage.py check
+```
+
+Do not run `migrate` yet: the custom user model must come first. Full setup and test instructions will be added as the foundation work lands.
 
 ## Test data
 
