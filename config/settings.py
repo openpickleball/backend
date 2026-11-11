@@ -12,22 +12,56 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 
+import environ
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Settings come from the environment. A .env file at the repo root is read
+# only if it exists, and values already in the process environment win
+# over it. Copy .env.example to .env for local development.
+env = environ.Env()
+if (BASE_DIR / '.env').is_file():
+    environ.Env.read_env(BASE_DIR / '.env')
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-# Local development only. Issue #4 reads it from DJANGO_SECRET_KEY.
-SECRET_KEY = 'django-insecure-local-development-only-replace-via-issue-4'
+def _required(name: str) -> str:
+    """Return a required environment variable, failing fast when empty."""
+    value = env.str(name, default='')
+    if not value:
+        raise ImproperlyConfigured(
+            f'Set the {name} environment variable (see .env.example).'
+        )
+    return value
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
-# Issue #4 reads DEBUG and ALLOWED_HOSTS from the environment.
-DEBUG = True
+# Off unless DJANGO_DEBUG is a true value.
+DEBUG = env.bool('DJANGO_DEBUG', default=False)
 
-ALLOWED_HOSTS = []
+# SECURITY WARNING: keep the secret key used in production secret!
+# With DEBUG on and no key, a fixed development-only key is used. With
+# DEBUG off, a missing key stops startup.
+DEVELOPMENT_SECRET_KEY = 'django-insecure-local-development-only-not-for-production'
+SECRET_KEY = env.str('DJANGO_SECRET_KEY', default='')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured(
+            'Set the DJANGO_SECRET_KEY environment variable when DJANGO_DEBUG '
+            'is off. Generate one with: python -c "from '
+            'django.core.management.utils import get_random_secret_key; '
+            'print(get_random_secret_key())"'
+        )
+    SECRET_KEY = DEVELOPMENT_SECRET_KEY
+
+ALLOWED_HOSTS = env.list('DJANGO_ALLOWED_HOSTS', default=[])
+
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
+
+# Valkey URL (redis:// or rediss://). The cache (issue #8) and Celery
+# (issue #9) read it from here.
+REDIS_URL = _required('REDIS_URL')
 
 
 # Application definition
@@ -82,17 +116,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# Local development defaults. Issue #4 reads DATABASE_URL, and issue #7
-# provides the local Postgres.
+# For example postgres://open@localhost:5432/open (see .env.example).
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'open',
-        'USER': 'open',
-        'PASSWORD': '',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    'default': env.db_url_config(_required('DATABASE_URL')),
 }
 
 
@@ -136,3 +162,19 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# HTTPS security, on whenever DEBUG is off. Local http development runs
+# with DEBUG on and none of these set.
+if not DEBUG:
+    # Trust X-Forwarded-Proto only because the app runs behind a proxy that
+    # sets it (DigitalOcean App Platform). Never serve the app directly.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # One year, fixed. Every host served with DEBUG off must stay https-only
+    # for that long. Browsers cache this and it is hard to undo.
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
