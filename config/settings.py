@@ -33,8 +33,9 @@ ALLOWED_HOSTS = []
 # Application definition
 
 # First-party apps live under apps/ and are added as apps.<name>.
-# The custom user model (issue #3) must land before migrate is ever run
-# or any other migration is created.
+# AUTH_USER_MODEL is fixed below and must not change once migrations exist.
+# The custom OAuth Application model (issue #22) must land before
+# django-oauth-toolkit's migrations are run.
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -42,7 +43,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'apps.accounts',
 ]
+
+# The OPEN Account login model, keyed on email (apps/accounts).
+AUTH_USER_MODEL = 'accounts.User'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

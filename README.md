@@ -2,7 +2,7 @@
 
 Backend services and APIs for [OPEN](https://github.com/openpickleball), the Open Pickleball Evaluation Network.
 
-> **Project status:** OPEN is in early development. This repository holds only the project scaffold so far, and no OPEN rating is live.
+> **Project status:** OPEN is in early development. This repository holds the project scaffold and the account model so far, and no OPEN rating is live.
 
 ## Technology
 
@@ -17,7 +17,14 @@ uv sync
 uv run python manage.py check
 ```
 
-Do not run `migrate` yet: the custom user model must come first. Full setup and test instructions will be added as the foundation work lands.
+Migrations and tests need a reachable Postgres on `localhost:5432` with role and database `open`. The role has no password, so the server must allow trust authentication, and the role needs permission to create databases for the test run. Local Postgres setup arrives with docker compose. Until then, with your own Postgres running:
+
+```bash
+uv run python manage.py migrate
+uv run python manage.py test apps
+```
+
+Full setup and test instructions will be added as the foundation work lands.
 
 ## Test data
 
