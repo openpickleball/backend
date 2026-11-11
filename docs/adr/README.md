@@ -40,16 +40,15 @@ What becomes easier, what becomes harder, and what we will need to revisit.
 Each option we rejected, and why.
 ```
 
-## Open decisions
+## Planned records
 
-These need records before or alongside the first code:
+Many decisions are already made in GitHub issue #1 (the backend plan). Records turn them into permanent documents:
 
-- Language and web framework (Python is likely, not final)
-- Database and how the append-only Ledger is enforced
-- How the backend depends on the engine (package version pinning, replay scheduling)
-- Authentication for Accounts, Organizers, and Partners
-- API versioning, and how this repository relates to the separately published Apache-2.0 API specifications
+- 0001: why Django (issue #16; decision Q1)
+- 0002: unclaimed players, claiming, and opt-out (issue #18; decision Q9)
+
+Other choices from issue #1 that may deserve a record later: how the append-only Ledger is enforced, incremental updates versus replay (Q6), engine pinning (Q4), and partner API authentication (Q2, Q3).
 
 ## Index
 
-No records yet.
+No records yet. Add each record here when it merges.

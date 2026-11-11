@@ -14,19 +14,47 @@ Planned services, from the project roadmap:
 
 ## Current status
 
-There is no code yet. No OPEN rating is live, and the language and framework are not final (Python is likely). Do not assume a stack. If a task needs one, raise it as a decision and record it in `docs/adr/` once made.
+There is no code yet, and no OPEN rating is live. The work is planned as GitHub issues grouped into milestones (M0 Foundation through M4 Partner integration). Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
 
-When code arrives, add the setup, test, lint, and run commands to the "Commands" section below and to `README.md`.
+## Stack (decided, see issue #1)
+
+- Python 3.13, managed with uv (`uv.lock` committed)
+- Django 5.2 LTS (`Django>=5.2,<5.3`, decision Q1), project package `config`, first-party apps under `apps/`
+- django-ninja for the API, mounted at `/api/v1/` with OpenAPI docs; every operation has an explicit `operation_id`
+- Postgres (psycopg 3), Valkey as cache and Celery broker (decision Q11)
+- Celery with django-celery-beat; queues `default`, `ratings`, `email`, `webhooks`
+- Settings from environment variables via django-environ; `.env.example` holds placeholders only
+- pytest, pytest-django, factory_boy; ruff, mypy with django-stubs, pre-commit
+- Deployed on DigitalOcean App Platform (M3)
+
+## Ordering rules
+
+- The custom user model (`apps/accounts`, issue #3) lands before any other migration.
+- The custom OAuth Application model (issue #22) lands before django-oauth-toolkit's migrations are run (decision Q3).
+- The engine is pinned as a git dependency on a tag (decision Q4). It is a demonstration package, so its output stays labeled as demonstration ratings.
 
 ## Commands
 
-None yet.
+Fill these in as the M0 issues land. Expected shape:
+
+```bash
+uv sync                                   # install from uv.lock
+docker compose up -d                      # local Postgres and Valkey
+uv run python manage.py migrate
+uv run python manage.py runserver
+uv run pytest                             # tests (Postgres, not SQLite)
+uv run ruff check . && uv run ruff format --check .
+uv run mypy .
+uv run python manage.py makemigrations --check --dry-run   # CI fails on missing migrations
+pre-commit run --all-files
+```
 
 ## Documentation
 
 - `README.md`: public overview, setup, and contribution pointers.
 - `CONTEXT.md`: the domain language (Match, Ledger, Replay, Rating Format, Reliability, and so on). Read it before naming models, endpoints, or fields.
 - `docs/adr/`: architecture decision records. Check here before changing a decision, and add a record when you make one.
+- GitHub issue #1: the backend plan's decisions (Q1 to Q16, F1 to F11) and checked package versions.
 - Organization-wide policy lives in the `openpickleball/.github` repository: charter, governance, roadmap, contributing guide, security policy, licensing. A local checkout may exist at `../OPEN-pickleball`.
 - The reference engine may be checked out at `../OPEN-engine`. Its module docstring in `src/open_engine/engine.py` lists production requirements the backend must meet.
 
@@ -43,8 +71,8 @@ None yet.
 
 ## Contribution conventions
 
-- Every commit needs a DCO sign-off (`git commit -s`). CI (`.github/workflows/dco.yml`) rejects pull requests with unsigned commits.
-- One change per pull request, linked to an issue. Add or update tests and docs when behavior changes.
+- Every commit needs a DCO sign-off (`git commit -s`). CI (`.github/workflows/dco.yml`) rejects pull requests with unsigned commits. That check runs only on pull requests, so commits pushed straight to `main` must be signed off by hand.
+- Founding phase: repository admins may push directly to `main` while the project is getting established. Everyone else, and admins once this phase ends, uses one change per pull request, linked to an issue. Add or update tests and docs when behavior changes.
 - License: AGPL-3.0-or-later for this repository. API specifications are Apache-2.0 and published separately, so do not place OpenAPI specs here as the canonical copy.
 - Before proposing a feature, ask whether it makes the standard more accurate, more trusted, or easier to adopt. If not, it probably belongs in a partner's product.
 
