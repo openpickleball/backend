@@ -9,7 +9,7 @@ A person who plays matches and has ratings. A Player record can exist and collec
 _Avoid_: user, member, athlete.
 
 **Account**:
-A registered OPEN login. An Account can claim an existing Player record ("linking"). Players and Accounts are separate so that results can be recorded for people who have not signed up. Engine: `Player.account_user_id`, `RatingEngine.link_account`.
+A registered OPEN login. An Account can claim an existing Player record ("linking"). Players and Accounts are separate so that results can be recorded for people who have not signed up. Engine: `Player.account_user_id`, `RatingEngine.link_account`. Backend: `accounts.User`, keyed on email.
 _Avoid_: profile (a profile is the public view of a Player).
 
 **Organizer**:

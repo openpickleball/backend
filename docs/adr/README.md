@@ -51,4 +51,6 @@ Other choices from issue #1 that may deserve a record later: how the append-only
 
 ## Index
 
-No records yet. Add each record here when it merges.
+Add each record here when it merges.
+
+- [0003. Email identity for Accounts](0003-email-identity-for-accounts.md) (issue #3)

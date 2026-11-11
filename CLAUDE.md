@@ -14,7 +14,7 @@ Planned services, from the project roadmap:
 
 ## Current status
 
-The Django project scaffold exists (`config`, an empty `apps/` package, no migrations), and no OPEN rating is live. The work is planned as GitHub issues grouped into milestones (M0 Foundation through M4 Partner integration). Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
+The Django project scaffold exists (`config`, plus `apps/accounts` with the custom email-login user model and the first migration), and no OPEN rating is live. The work is planned as GitHub issues grouped into milestones (M0 Foundation through M4 Partner integration). Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
 
 ## Stack (decided, see issue #1)
 
@@ -29,13 +29,20 @@ The Django project scaffold exists (`config`, an empty `apps/` package, no migra
 
 ## Ordering rules
 
-- The custom user model (`apps/accounts`, issue #3) lands before any other migration.
+- `AUTH_USER_MODEL` is `accounts.User` (issue #3) and is fixed: never swap it. Other apps reference it through `settings.AUTH_USER_MODEL` for foreign keys and `get_user_model()` in code, never by importing `apps.accounts.models.User`.
 - The custom OAuth Application model (issue #22) lands before django-oauth-toolkit's migrations are run (decision Q3).
 - The engine is pinned as a git dependency on a tag (decision Q4). It is a demonstration package, so its output stays labeled as demonstration ratings.
 
+## Account emails
+
+- An Account's email is its login. Forms (through `clean()`) and the manager normalize it: NFKC, strip, then lowercase one character at a time.
+- The normalized email must be ASCII, at most 254 characters, and a valid address. The field validator and the manager enforce these rules. Keep every new check on the normalized value, not the raw input.
+- The database enforces the column length, case-insensitive uniqueness (`Lower("email")`), and ASCII. It does not normalize. Raw writes (`save()` without `full_clean()`, `bulk_create`, `update`) skip normalization, so create Accounts through the manager or a form.
+- Find an Account by email (an identity lookup, such as login or linking) only through `get_user_model().objects.get_by_natural_key()` (or `aget_by_natural_key()`), which compares with the unique constraint's own `Lower("email")` expression. Do not use `email__iexact` or an exact match on raw input: on Postgres `iexact` compares `UPPER()`, which can match accounts the constraint treats as distinct.
+
 ## Commands
 
-Fill these in as the M0 issues land. A command for a tool or service that has not landed yet fails until its issue does. Do not run `migrate` until the custom user model (#3) lands. `runserver` needs a reachable Postgres because it checks migrations at startup. Expected shape:
+Fill these in as the M0 issues land. A command for a tool or service that has not landed yet fails until its issue does. `migrate`, the tests, and `runserver` (which checks migrations at startup) need a reachable Postgres; until docker compose (#7) lands, start one yourself on `localhost:5432` with role and database `open`, no password (trust authentication, since settings use an empty password), and the CREATEDB privilege (the test runner creates `test_open`). Until pytest (#12) lands, run the tests with `uv run python manage.py test apps`. Expected shape:
 
 ```bash
 uv sync                                   # install from uv.lock
@@ -76,6 +83,15 @@ pre-commit run --all-files
 - Founding phase: repository admins may push directly to `main` while the project is getting established. Everyone else, and admins once this phase ends, uses one change per pull request, linked to an issue. Add or update tests and docs when behavior changes.
 - License: AGPL-3.0-or-later for this repository. API specifications are Apache-2.0 and published separately, so do not place OpenAPI specs here as the canonical copy.
 - Before proposing a feature, ask whether it makes the standard more accurate, more trusted, or easier to adopt. If not, it probably belongs in a partner's product.
+
+## Git exception
+
+This section overrides a contributor's global no-commit rule for the `/work-issue` workflow only.
+
+- The workflow may commit (`git commit -s`, with explicit paths) and push, but only on the `issue-<N>-*` branch it creates or resumes.
+- After a rebase it may push that branch with `--force-with-lease`. It never force-pushes any other branch.
+- It may open a pull request against `main`, edit its description, label it (creating the ready label if it does not exist), and reply to review comments on it.
+- It never commits or pushes to `main`, never merges, and never enables auto-merge. A human reviews and merges every pull request.
 
 ## Writing style
 
