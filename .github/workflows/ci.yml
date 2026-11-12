@@ -1,0 +1,92 @@
+name: CI
+
+# No paths filter: a required check that is skipped blocks the pull request.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its older run. Each push to main
+# gets its own group (its commit SHA), so no main run is cancelled or
+# dropped while pending, and every merge gets a full result.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# The job names are meant to be required status checks on main, so a
+# change that renames a job must also update the main ruleset.
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      # The hygiene hooks only. The ruff and mypy hooks repeat the steps
+      # above and the types job.
+      - run: uv run pre-commit run --all-files
+        env:
+          SKIP: ruff-check,ruff-format,mypy
+
+  types:
+    name: types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      # The django-stubs plugin imports the settings, which need the
+      # variables in .env.example.
+      - run: cp .env.example .env
+      - run: uv run mypy .
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      # Same image as compose.yaml. The open role is a superuser, so the
+      # test runner can create test_open. No Valkey: tests use LocMemCache.
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: open
+          POSTGRES_DB: open
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U open -d open"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      # DATABASE_URL in .env.example points at localhost:5432, the service.
+      - run: cp .env.example .env
+      - run: uv run python manage.py check
+      - run: uv run python manage.py makemigrations --check --dry-run
+      # Default addopts include --cov, so the coverage floor is enforced.
+      - run: uv run pytest
