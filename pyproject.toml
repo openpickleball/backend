@@ -8,6 +8,7 @@ dependencies = [
     "django-environ>=0.14.0",
     "django-stubs-ext>=6.1.2",
     "psycopg[binary]>=3.3.8",
+    "redis>=8.1.0",
 ]
 
 [dependency-groups]

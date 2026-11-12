@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 import warnings
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import django_stubs_ext
 import environ
@@ -82,6 +83,29 @@ def _database(url: str) -> dict[str, object]:
     return config
 
 
+def _redis_url(url: str) -> str:
+    """Check REDIS_URL, failing fast without echoing the value.
+
+    Only redis:// and rediss:// (TLS) URLs with a host and a valid port
+    are accepted.
+    """
+    try:
+        parts = urlsplit(url)
+        # Reading the port raises ValueError when it is not a valid number.
+        parts.port  # noqa: B018
+        valid = parts.scheme in ("redis", "rediss") and bool(parts.hostname)
+    except ValueError:
+        valid = False
+    if not valid:
+        # from None keeps the original error, which may hold the URL, out
+        # of the traceback.
+        raise ImproperlyConfigured(
+            "REDIS_URL is not a Redis URL. Use the form redis://HOST:PORT/DB, "
+            "or rediss:// for TLS (see .env.example)."
+        ) from None
+    return url
+
+
 # SECURITY WARNING: don't run with debug turned on in production!
 # Off unless DJANGO_DEBUG is a true value.
 DEBUG = environ.Env.parse_value(_raw("DJANGO_DEBUG"), bool)
@@ -106,9 +130,9 @@ ALLOWED_HOSTS = _list("DJANGO_ALLOWED_HOSTS")
 
 CSRF_TRUSTED_ORIGINS = _list("CSRF_TRUSTED_ORIGINS")
 
-# Valkey URL (redis:// or rediss://). The cache (issue #8) and Celery
-# (issue #9) read it from here.
-REDIS_URL = _required("REDIS_URL")
+# Valkey URL (redis:// or rediss://). The cache and Celery (issue #9)
+# read it from here.
+REDIS_URL = _redis_url(_required("REDIS_URL"))
 
 
 # Application definition
@@ -169,6 +193,29 @@ TEST_RUNNER = "config.test_runner.HttpTestRunner"
 # For example postgres://open@localhost:5432/open (see .env.example).
 DATABASES = {
     "default": _database(_required("DATABASE_URL")),
+}
+
+
+# Cache
+# https://docs.djangoproject.com/en/5.2/topics/cache/#redis
+
+# Valkey at REDIS_URL. A rediss:// URL connects over TLS, which
+# DigitalOcean Managed Caching requires, and the server certificate is
+# verified. Keep verification on.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        # A list, so Django does not split the URL on "," or ";" (which a
+        # password may contain) into several servers.
+        "LOCATION": [REDIS_URL],
+        "KEY_PREFIX": "open",
+        "TIMEOUT": 300,
+        "OPTIONS": {
+            # Fail fast instead of hanging a request when Valkey is unreachable.
+            "socket_connect_timeout": 5,
+            "socket_timeout": 5,
+        },
+    },
 }
 
 
