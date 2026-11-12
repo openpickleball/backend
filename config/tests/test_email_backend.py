@@ -1,6 +1,8 @@
 """Tests for the email backend (issue #7).
 
-Every message prints to the console and nothing is sent. Django's test
+Nothing is ever sent. With DEBUG on, every message prints to the
+console. With DEBUG off, every message is discarded, so no email body
+(a reset token, for example) or recipient reaches the logs. Django's test
 runner swaps in the locmem backend, which would hide the real setting, so
 each case starts a fresh Python process with every settings variable set.
 """
@@ -10,6 +12,7 @@ from django.test import SimpleTestCase
 from config.tests.test_settings import LOCAL_DEBUG, PRODUCTION_LIKE, _run
 
 CONSOLE_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DUMMY_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
 
 PRINT_EMAIL_BACKEND = """
 import django
@@ -21,6 +24,10 @@ print(settings.EMAIL_BACKEND)
 SEND_MAIL = """
 import django
 django.setup()
+from django.conf import settings
+# A closed local port, so a regression to SMTP can never reach a mail server.
+settings.EMAIL_HOST = '127.0.0.1'
+settings.EMAIL_PORT = 9
 from django.core.mail import send_mail
 send_mail(
     'Made-up subject',
@@ -42,8 +49,8 @@ class EmailBackendTests(SimpleTestCase):
     def test_local_debug_prints_email_to_the_console(self) -> None:
         self.assertEqual(_email_backend(LOCAL_DEBUG), CONSOLE_BACKEND)
 
-    def test_production_like_never_falls_back_to_smtp(self) -> None:
-        self.assertEqual(_email_backend(PRODUCTION_LIKE), CONSOLE_BACKEND)
+    def test_production_like_discards_email(self) -> None:
+        self.assertEqual(_email_backend(PRODUCTION_LIKE), DUMMY_BACKEND)
 
     def test_send_mail_prints_the_message_and_sends_nothing(self) -> None:
         result = _run(['-c', SEND_MAIL], LOCAL_DEBUG)
