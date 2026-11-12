@@ -83,26 +83,44 @@ def _database(url: str) -> dict[str, object]:
     return config
 
 
+def _is_redis_url(url: str) -> bool:
+    """Return whether url is a REDIS_URL that redis-py reads as written."""
+    # redis-py matches the scheme case-sensitively.
+    if not url.startswith(("redis://", "rediss://")):
+        return False
+    # redis-py lets query arguments override settings, TLS verification
+    # included, so no query string or fragment is allowed.
+    if "?" in url or "#" in url:
+        return False
+    try:
+        parts = urlsplit(url)
+        # Raises ValueError when the port is not a number up to 65535.
+        port = parts.port
+    except ValueError:
+        return False
+    if not parts.hostname:
+        return False
+    # redis-py reads port 0 as unset and uses 6379.
+    if port is not None and not 1 <= port <= 65535:
+        return False
+    # redis-py reads a database that is not a number as 0.
+    db = parts.path.removeprefix("/")
+    return db == "" or (db.isascii() and db.isdigit())
+
+
 def _redis_url(url: str) -> str:
     """Check REDIS_URL, failing fast without echoing the value.
 
-    Only redis:// and rediss:// (TLS) URLs with a host and a valid port
-    are accepted.
+    Accepted: redis://[USER:PASSWORD@]HOST[:PORT][/DB], or rediss:// for
+    TLS. The scheme is lowercase, a given port is 1 to 65535, and DB is a
+    number. A query string or fragment is refused.
     """
-    try:
-        parts = urlsplit(url)
-        # Reading the port raises ValueError when it is not a valid number.
-        parts.port  # noqa: B018
-        valid = parts.scheme in ("redis", "rediss") and bool(parts.hostname)
-    except ValueError:
-        valid = False
-    if not valid:
-        # from None keeps the original error, which may hold the URL, out
-        # of the traceback.
+    # The check catches its own errors, so none is chained to this one.
+    if not _is_redis_url(url):
         raise ImproperlyConfigured(
-            "REDIS_URL is not a Redis URL. Use the form redis://HOST:PORT/DB, "
-            "or rediss:// for TLS (see .env.example)."
-        ) from None
+            "REDIS_URL is not a Redis URL. Use the form "
+            "redis://HOST:PORT/DB, or rediss:// for TLS (see .env.example)."
+        )
     return url
 
 
