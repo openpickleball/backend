@@ -26,7 +26,9 @@ services:
       # the volume mounts at /var/lib/postgresql, not the older .../data.
       - postgres-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U open -d open"]
+      # Over TCP, so the temporary server the image runs during first-start
+      # setup (socket only) does not count as ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U open -d open"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -57,31 +59,29 @@ services:
       - .:/app
       # The container's virtualenv lives here, away from the host's .venv.
       - web-venv:/venv
-    env_file:
-      # Raw: read every value literally. Otherwise compose treats a $ in a
-      # value (a generated secret key can have one) as a variable reference.
-      - path: .env
-        required: false
-        format: raw
     environment:
       UV_PROJECT_ENVIRONMENT: /venv
       UV_LINK_MODE: copy
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
-      # These win over .env and point at the services inside the network.
+      # The settings read the mounted .env with the same parser as on the
+      # host. These two win over it because they are in the process
+      # environment, and they point at the services inside the network.
       DATABASE_URL: postgres://open@db:5432/open
       REDIS_URL: redis://cache:6379/0
     command: ["sh", "-c", "uv sync --locked && uv run python manage.py runserver 0.0.0.0:8000"]
     ports:
       - "127.0.0.1:8000:8000"
-    # Lets --wait return only once the server answers. The first start
-    # installs the dependencies, so it gets a long start period.
+    # Lets --wait return only once the server accepts connections. It opens
+    # a socket rather than requesting a page, so a DEBUG-off https redirect
+    # or an ALLOWED_HOSTS value without 127.0.0.1 cannot fail it. The first
+    # start installs the dependencies, so it gets a long start period.
     healthcheck:
       test:
         - "CMD"
         - "python"
         - "-c"
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/admin/login/', timeout=4)"
+        - "import socket; socket.create_connection(('127.0.0.1', 8000), timeout=4).close()"
       interval: 5s
       timeout: 5s
       retries: 10
