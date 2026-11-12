@@ -3,7 +3,6 @@
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
 from factory.declarations import Sequence
 from factory.django import DjangoModelFactory
 from faker import Faker
@@ -38,7 +37,20 @@ class UserFactory(DjangoModelFactory["_User"]):
     password = DEFAULT_PASSWORD
 
     @classmethod
+    def _build(cls, model_class: type[Any], *args: Any, **kwargs: Any) -> "_User":
+        """An unsaved Account, normalized and hashed as the manager would."""
+        email = model_class._default_manager.normalize_email(kwargs.pop("email"))
+        password = kwargs.pop("password")
+        account: _User = model_class(email=email, **kwargs)
+        account.set_password(password)
+        return account
+
+    @classmethod
     def _create(cls, model_class: type[Any], *args: Any, **kwargs: Any) -> "_User":
+        """A saved Account, created through the model's manager."""
         email = kwargs.pop("email")
         password = kwargs.pop("password")
-        return get_user_model().objects.create_user(email, password, **kwargs)
+        account: _User = model_class._default_manager.create_user(
+            email, password, **kwargs
+        )
+        return account
