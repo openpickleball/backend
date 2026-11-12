@@ -9,6 +9,7 @@ cannot leak into these tests.
 
 import json
 import os
+import ssl
 import subprocess
 import sys
 from pathlib import Path
@@ -85,9 +86,13 @@ import django
 from django.core.cache import caches
 django.setup()
 pool = caches['default']._cache._get_connection_pool(write=True)
+# Constructing a connection object does not connect.
+connection = pool.connection_class(**pool.connection_kwargs)
 print(json.dumps({
     'CONNECTION_CLASS': pool.connection_class.__name__,
-    'SSL_CERT_REQS': pool.connection_kwargs.get('ssl_cert_reqs', 'required'),
+    'CERT_REQS': int(getattr(connection, 'cert_reqs', -1)),
+    'CHECK_HOSTNAME': getattr(connection, 'check_hostname', None),
+    'SERVERS': len(caches['default']._servers),
 }))
 """
 
@@ -103,6 +108,29 @@ REJECTED_REDIS_URLS = (
     f"redis://u:{REDIS_MARKER}@",
     f"redis://u:{REDIS_MARKER}@cache.example.org:notaport/0",
     f"redis://u:{REDIS_MARKER}@cache.example.org:99999/0",
+    # redis-py matches the scheme case-sensitively and fails on first use.
+    f"REDIS://u:{REDIS_MARKER}@cache.example.org:6379/0",
+    f"Rediss://u:{REDIS_MARKER}@cache.example.org:6379/0",
+    # Query arguments override settings, TLS verification included.
+    f"rediss://u:{REDIS_MARKER}@cache.example.org:6379/0?ssl_cert_reqs=none",
+    f"rediss://u:{REDIS_MARKER}@cache.example.org:6379/0?ssl_check_hostname=false",
+    f"redis://u:{REDIS_MARKER}@cache.example.org:6379/0?socket_timeout=0",
+    f"redis://u:{REDIS_MARKER}@cache.example.org:6379/0?foo=bar",
+    f"redis://u:{REDIS_MARKER}@cache.example.org:6379/0?",
+    f"redis://u:{REDIS_MARKER}@cache.example.org:6379/0#frag",
+    f"redis://u:{REDIS_MARKER}@cache.example.org:6379/0#",
+    # redis-py reads port 0 as unset and a non-numeric db as 0.
+    f"redis://u:{REDIS_MARKER}@cache.example.org:0/0",
+    f"redis://u:{REDIS_MARKER}@cache.example.org:6379/abc",
+    f"redis://u:{REDIS_MARKER}@cache.example.org:6379/0/1",
+)
+
+ACCEPTED_REDIS_URLS = (
+    "redis://localhost:6379/0",
+    "redis://localhost:6379",
+    "redis://localhost:6379/",
+    "redis://localhost",
+    "rediss://u:p@cache.example.org:25061/0",
 )
 
 
@@ -247,7 +275,16 @@ class CacheTests(SimpleTestCase):
             {**PRODUCTION_LIKE, "REDIS_URL": "rediss://cache.example.org:25061/0"}
         )
         self.assertEqual(values["CONNECTION_CLASS"], "SSLConnection")
-        self.assertEqual(values["SSL_CERT_REQS"], "required")
+        self.assertEqual(values["CERT_REQS"], int(ssl.CERT_REQUIRED))
+        self.assertIs(values["CHECK_HOSTNAME"], True)
+
+    def test_valid_redis_urls_load(self) -> None:
+        for url in ACCEPTED_REDIS_URLS:
+            with self.subTest(url=url):
+                values = _cache_pool({**PRODUCTION_LIKE, "REDIS_URL": url})
+                self.assertIn(
+                    values["CONNECTION_CLASS"], ("Connection", "SSLConnection")
+                )
 
     def test_invalid_redis_urls_fail_without_echoing_the_value(self) -> None:
         for url in REJECTED_REDIS_URLS:
@@ -264,6 +301,8 @@ class CacheTests(SimpleTestCase):
         url = "redis://u:pa,ss;wd@localhost:6379/0"
         values = _settings({**LOCAL_DEBUG, "REDIS_URL": url})
         self.assertEqual(values["CACHE_LOCATION"], [url])
+        pool = _cache_pool({**LOCAL_DEBUG, "REDIS_URL": url})
+        self.assertEqual(pool["SERVERS"], 1)
 
 
 class ListTests(SimpleTestCase):
