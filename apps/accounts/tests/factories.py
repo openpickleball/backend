@@ -1,13 +1,17 @@
 """Factories for Accounts. Made-up data only, never real player data."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AbstractUser
 from factory.declarations import Sequence
 from factory.django import DjangoModelFactory
 from faker import Faker
+
+if TYPE_CHECKING:
+    # The django-stubs plugin resolves this alias to AUTH_USER_MODEL, so the
+    # concrete User model is never imported (CLAUDE.md ordering rules).
+    from django.contrib.auth.models import _User
 
 # A made-up password, used when a test does not pass one.
 DEFAULT_PASSWORD = "made-up-test-password"
@@ -21,9 +25,7 @@ def _email(n: int) -> str:
     return f"player{n}.{_faker.safe_email()}"
 
 
-# Typed as AbstractUser: other code never imports the concrete User model
-# (CLAUDE.md ordering rules); Meta.model resolves it from settings.
-class UserFactory(DjangoModelFactory[AbstractUser]):
+class UserFactory(DjangoModelFactory["_User"]):
     """An Account created through the manager, so its email is normalized
     and checked like any other (see CLAUDE.md, "Account emails").
     """
@@ -36,7 +38,7 @@ class UserFactory(DjangoModelFactory[AbstractUser]):
     password = DEFAULT_PASSWORD
 
     @classmethod
-    def _create(cls, model_class: type[Any], *args: Any, **kwargs: Any) -> AbstractUser:
+    def _create(cls, model_class: type[Any], *args: Any, **kwargs: Any) -> "_User":
         email = kwargs.pop("email")
         password = kwargs.pop("password")
         return get_user_model().objects.create_user(email, password, **kwargs)

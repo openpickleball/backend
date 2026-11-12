@@ -14,7 +14,9 @@ from pathlib import Path
 
 import pytest
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
 from django.db import connection
+from django.test import Client
 
 from config.test_runner import _TEST_OVERRIDES
 
@@ -83,6 +85,13 @@ def test_settings_module_overrides_only_the_test_runner_overrides() -> None:
 def test_active_settings_carry_the_overrides() -> None:
     assert settings.SECURE_SSL_REDIRECT is False
     assert _TEST_OVERRIDES["CACHES"] == settings.CACHES
+
+
+@pytest.mark.django_db
+def test_user_client_is_logged_in_as_user(
+    user_client: Client, user: AbstractUser
+) -> None:
+    assert user_client.session["_auth_user_id"] == str(user.pk)
 
 
 def test_debug_off_run_keeps_test_overrides() -> None:
