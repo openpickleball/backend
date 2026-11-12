@@ -39,8 +39,16 @@ class DollarValuesStayLiteralTests(SimpleTestCase):
         self.assertEqual(values["SECRET_KEY"], "$HOME")
 
     def test_dollar_redis_url_is_not_expanded(self) -> None:
-        values = _settings({**PRODUCTION_LIKE, "REDIS_URL": "$HOME"})
-        self.assertEqual(values["REDIS_URL"], "$HOME")
+        # Read literally, '$HOME' is not a Redis URL, so startup fails.
+        result = _check({**PRODUCTION_LIKE, "REDIS_URL": "$HOME"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ImproperlyConfigured", result.stderr)
+        self.assertIn("REDIS_URL", result.stderr)
+
+    def test_dollar_in_redis_password_stays_literal(self) -> None:
+        url = "redis://u:$HOME@cache.example.org:6379/0"
+        values = _settings({**PRODUCTION_LIKE, "REDIS_URL": url})
+        self.assertEqual(values["REDIS_URL"], url)
 
     def test_dollar_database_url_is_not_expanded(self) -> None:
         # Read literally, '$HOME' is not a database URL, so startup fails.
