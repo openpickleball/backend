@@ -24,7 +24,7 @@ The Django project scaffold exists (`config`, with settings read from the enviro
 - Postgres (psycopg 3), Valkey as cache and Celery broker (decision Q11)
 - Celery with django-celery-beat; queues `default`, `ratings`, `email`, `webhooks`
 - Settings from environment variables via django-environ; `.env.example` holds placeholders only
-- pytest, pytest-django, factory_boy; ruff, mypy with django-stubs, pre-commit
+- pytest, pytest-django, pytest-cov, factory_boy; ruff, mypy with django-stubs, pre-commit
 - Deployed on DigitalOcean App Platform (M3)
 
 ## Ordering rules
@@ -44,13 +44,13 @@ The Django project scaffold exists (`config`, with settings read from the enviro
 
 - `config/settings.py` reads its deployment values from the environment (and an optional `.env`). Read a new variable with the helpers there (`_raw`, `_required`, `_list`), not django-environ's `Env` getters: those treat a value starting with `$` as a reference to another variable, which silently swaps secrets and URLs.
 - The errors that `config/settings.py` raises for a bad or missing variable name the variable and never echo its value. django-environ's own `.env` reader is the exception: it logs a malformed `.env` line in full.
-- With DEBUG off, settings turn on the https redirect, secure cookies, and HSTS (see ADR 0004). The test run turns off the redirect and swaps the cache to LocMemCache (so tests need no cache server), through `config/test_runner.py`; a new test runner (pytest, #12) must do the same, parallel workers included.
+- With DEBUG off, settings turn on the https redirect, secure cookies, and HSTS (see ADR 0004). The test run turns off the redirect and swaps the cache to LocMemCache (so tests need no cache server). pytest gets these overrides from `config/settings_test.py`, and `manage.py test` gets them from `config/test_runner.py`. Keep the two sets identical (a test fails if they drift). pytest's set lives in the settings module, so every process that loads it, parallel workers included, gets it; the runner applies its set in spawned parallel workers through `process_setup` (forked workers inherit it).
 - `REDIS_URL` takes only the form `redis://[USER:PASSWORD@]HOST[:PORT][/DB]`, or `rediss://` for TLS: a lowercase scheme, a numeric database, and no query string or fragment. Settings refuse at startup a URL that breaks these rules. redis-py lets a query string override settings, certificate verification included, so set connection and TLS options in settings, never in the URL. Percent-encode any URL-reserved character in the password.
 - Email prints to the console when DEBUG is on and is discarded when DEBUG is off, until #35 adds a real provider. Never let a DEBUG-off environment print or log email: messages carry recipient addresses and, once auth lands, reset tokens.
 
 ## Commands
 
-Fill these in as the M0 issues land. A command for a tool or service that has not landed yet fails until its issue does. Every command that loads settings needs the settings variables. That includes `check`, `mypy`, and the pre-commit mypy hook (the django-stubs plugin imports `config.settings`). Copy `.env.example` to `.env` first; process environment values win over it. `migrate`, the tests, and `runserver` (which checks migrations at startup) need the Postgres that `DATABASE_URL` names. `docker compose up -d --wait` starts it and Valkey from `compose.yaml` and waits until both are healthy; the `.env.example` URLs point at them. Docker Compose also reads `.env` and treats a `$` in a value as a variable reference, so wrap a secret key that contains `$` in single quotes. Until pytest (#12) lands, run the tests with `uv run python manage.py test apps config`. Expected shape:
+Fill these in as the M0 issues land. A command for a tool or service that has not landed yet fails until its issue does. Every command that loads settings needs the settings variables. That includes `check`, `mypy`, and the pre-commit mypy hook (the django-stubs plugin imports `config.settings`). Copy `.env.example` to `.env` first; process environment values win over it. `migrate`, the tests, and `runserver` (which checks migrations at startup) need the Postgres that `DATABASE_URL` names. `docker compose up -d --wait` starts it and Valkey from `compose.yaml` and waits until both are healthy; the `.env.example` URLs point at them. Docker Compose also reads `.env` and treats a `$` in a value as a variable reference, so wrap a secret key that contains `$` in single quotes. `uv run pytest` runs the suite with coverage and fails when total coverage is below `fail_under` in `pyproject.toml`. The floor counts all of `apps` and `config`, so a narrow run (one file or a `-k` selection) usually fails it even when every test passes: add `--no-cov` to those runs. To build test records, prefer the factory_boy factories (such as `UserFactory` in `apps/accounts/tests/factories.py`), which fill in made-up Faker data. Expected shape:
 
 ```bash
 cp .env.example .env                      # local settings; never commit .env
@@ -62,7 +62,8 @@ uv run python manage.py migrate
 uv run python manage.py runserver
 docker compose --profile web up -d --wait # optional: the app in a container on 127.0.0.1:8000, instead of runserver on the host
 docker compose down -v                    # stop and delete local data
-uv run pytest                             # tests (Postgres, not SQLite)
+uv run pytest                             # tests with coverage (Postgres, not SQLite)
+uv run pytest --no-cov apps/accounts      # part of the suite, without the coverage floor
 uv run ruff check . && uv run ruff format --check .
 uv run mypy .                             # strict; needs the settings variables
 uv run python manage.py makemigrations --check --dry-run   # CI fails on missing migrations
