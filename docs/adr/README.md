@@ -54,3 +54,4 @@ Other choices from issue #1 that may deserve a record later: how the append-only
 Add each record here when it merges.
 
 - [0003. Email identity for Accounts](0003-email-identity-for-accounts.md) (issue #3)
+- [0004. Settings from the environment, secure by default](0004-settings-from-the-environment.md) (issue #4)
