@@ -49,11 +49,12 @@ The Django project scaffold exists (`config`, with settings read from the enviro
 
 ## Commands
 
-Fill these in as the M0 issues land. A command for a tool or service that has not landed yet fails until its issue does. Every command that loads settings, `check` included, needs the settings variables. Copy `.env.example` to `.env` first; process environment values win over it. `migrate`, the tests, and `runserver` (which checks migrations at startup) need the Postgres that `DATABASE_URL` names. `docker compose up -d --wait` starts it and Valkey from `compose.yaml` and waits until both are healthy; the `.env.example` URLs point at them. Docker Compose also reads `.env` and treats a `$` in a value as a variable reference, so wrap a secret key that contains `$` in single quotes. Until pytest (#12) lands, run the tests with `uv run python manage.py test apps config`. Expected shape:
+Fill these in as the M0 issues land. A command for a tool or service that has not landed yet fails until its issue does. Every command that loads settings needs the settings variables. That includes `check`, `mypy`, and the pre-commit mypy hook (the django-stubs plugin imports `config.settings`). Copy `.env.example` to `.env` first; process environment values win over it. `migrate`, the tests, and `runserver` (which checks migrations at startup) need the Postgres that `DATABASE_URL` names. `docker compose up -d --wait` starts it and Valkey from `compose.yaml` and waits until both are healthy; the `.env.example` URLs point at them. Docker Compose also reads `.env` and treats a `$` in a value as a variable reference, so wrap a secret key that contains `$` in single quotes. Until pytest (#12) lands, run the tests with `uv run python manage.py test apps config`. Expected shape:
 
 ```bash
 cp .env.example .env                      # local settings; never commit .env
 uv sync                                   # install from uv.lock
+uv run pre-commit install                 # git hooks: ruff, mypy, hygiene checks
 uv run python manage.py check             # Django system checks, no database needed
 docker compose up -d --wait               # local Postgres and Valkey, healthy
 uv run python manage.py migrate
@@ -62,9 +63,9 @@ docker compose --profile web up -d --wait # optional: the app in a container on 
 docker compose down -v                    # stop and delete local data
 uv run pytest                             # tests (Postgres, not SQLite)
 uv run ruff check . && uv run ruff format --check .
-uv run mypy .
+uv run mypy .                             # strict; needs the settings variables
 uv run python manage.py makemigrations --check --dry-run   # CI fails on missing migrations
-pre-commit run --all-files
+uv run pre-commit run --all-files
 ```
 
 ## Documentation
