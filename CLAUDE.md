@@ -70,7 +70,7 @@ uv run python manage.py makemigrations --check --dry-run   # CI fails on missing
 uv run pre-commit run --all-files
 ```
 
-`.github/workflows/ci.yml` runs these checks on every pull request and every push to `main`, in three jobs: `lint` (ruff and the pre-commit hygiene hooks), `types` (mypy), and `test` (`check`, the missing-migration check, and `pytest` with the coverage floor, against a Postgres service). The `main` ruleset requires those three and `sign-off`, so renaming a job blocks every pull request until the ruleset is updated to match.
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`, in three jobs: `lint` (`ruff check`, `ruff format --check`, and the pre-commit hygiene hooks), `types` (`mypy .`), and `test` (`manage.py check`, `makemigrations --check --dry-run`, and `pytest` with the coverage floor, against a Postgres service). The job names are meant to be required status checks on `main` alongside `sign-off`, so a change that renames a job must also update the `main` ruleset.
 
 ## Documentation
 

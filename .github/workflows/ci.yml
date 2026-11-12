@@ -16,8 +16,8 @@ concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# The job names are required status checks on main. Renaming one blocks
-# every pull request until the ruleset is updated to match.
+# The job names are meant to be required status checks on main, so a
+# change that renames a job must also update the main ruleset.
 jobs:
   lint:
     name: lint
