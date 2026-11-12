@@ -8,7 +8,7 @@ from django.test.utils import override_settings
 
 # With DEBUG off, settings turn on SECURE_SSL_REDIRECT, so every test
 # client request would get a 301 to https. Tests run over plain http.
-_HTTP_ONLY = {'SECURE_SSL_REDIRECT': False}
+_HTTP_ONLY = {"SECURE_SSL_REDIRECT": False}
 
 
 class HttpParallelTestSuite(ParallelTestSuite):

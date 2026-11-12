@@ -55,9 +55,7 @@ class NonStringIdentifierTests(TestCase):
         )
 
     async def test_aauthenticate_with_int_returns_none(self):
-        self.assertIsNone(
-            await aauthenticate(None, username=123, password=PASSWORD)
-        )
+        self.assertIsNone(await aauthenticate(None, username=123, password=PASSWORD))
 
     async def test_aauthenticate_with_list_returns_none(self):
         self.assertIsNone(

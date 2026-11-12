@@ -11,8 +11,8 @@ from django.test import SimpleTestCase
 
 from config.tests.test_settings import LOCAL_DEBUG, PRODUCTION_LIKE, _run
 
-CONSOLE_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-DUMMY_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
+CONSOLE_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DUMMY_BACKEND = "django.core.mail.backends.dummy.EmailBackend"
 
 PRINT_EMAIL_BACKEND = """
 import django
@@ -39,9 +39,9 @@ send_mail(
 
 
 def _email_backend(values: dict[str, str]) -> str:
-    result = _run(['-c', PRINT_EMAIL_BACKEND], values)
+    result = _run(["-c", PRINT_EMAIL_BACKEND], values)
     if result.returncode != 0:
-        raise AssertionError(f'settings failed to load:\n{result.stderr}')
+        raise AssertionError(f"settings failed to load:\n{result.stderr}")
     return result.stdout.strip()
 
 
@@ -53,7 +53,7 @@ class EmailBackendTests(SimpleTestCase):
         self.assertEqual(_email_backend(PRODUCTION_LIKE), DUMMY_BACKEND)
 
     def test_send_mail_prints_the_message_and_sends_nothing(self) -> None:
-        result = _run(['-c', SEND_MAIL], LOCAL_DEBUG)
+        result = _run(["-c", SEND_MAIL], LOCAL_DEBUG)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('Made-up subject', result.stdout)
-        self.assertIn('Made-up body', result.stdout)
+        self.assertIn("Made-up subject", result.stdout)
+        self.assertIn("Made-up body", result.stdout)

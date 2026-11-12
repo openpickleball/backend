@@ -22,9 +22,7 @@ FF = "ﬀ"
 # 213 raw characters, 413 after NFKC.
 EXPANDING = "a@" + ".".join([FF * 25] * 8) + ".com"
 # 253 raw characters, exactly 254 after NFKC.
-EXPANDS_TO_254 = (
-    "a@" + FF + "b" * 61 + "." + "c" * 63 + "." + "d" * 63 + "." + "e" * 60
-)
+EXPANDS_TO_254 = "a@" + FF + "b" * 61 + "." + "c" * 63 + "." + "d" * 63 + "." + "e" * 60
 # Exactly 254 plain ASCII characters.
 ASCII_254 = "a@" + "b" * 63 + "." + "c" * 63 + "." + "d" * 63 + "." + "e" * 60
 
