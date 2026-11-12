@@ -70,6 +70,8 @@ uv run python manage.py makemigrations --check --dry-run   # CI fails on missing
 uv run pre-commit run --all-files
 ```
 
+`.github/workflows/ci.yml` runs these checks on every pull request and every push to `main`, in three jobs: `lint` (ruff and the pre-commit hygiene hooks), `types` (mypy), and `test` (`check`, the missing-migration check, and `pytest` with the coverage floor, against a Postgres service). The `main` ruleset requires those three and `sign-off`, so renaming a job blocks every pull request until the ruleset is updated to match.
+
 ## Documentation
 
 - `README.md`: public overview, setup, and contribution pointers.
