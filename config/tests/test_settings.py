@@ -71,8 +71,39 @@ print(json.dumps({
     'SECURE_HSTS_SECONDS': settings.SECURE_HSTS_SECONDS,
     'SECURE_HSTS_INCLUDE_SUBDOMAINS': settings.SECURE_HSTS_INCLUDE_SUBDOMAINS,
     'SECURE_HSTS_PRELOAD': settings.SECURE_HSTS_PRELOAD,
+    'CACHE_BACKEND': settings.CACHES['default']['BACKEND'],
+    'CACHE_LOCATION': settings.CACHES['default'].get('LOCATION'),
+    'CACHE_KEY_PREFIX': settings.CACHES['default'].get('KEY_PREFIX'),
+    'CACHE_TIMEOUT': settings.CACHES['default'].get('TIMEOUT'),
 }))
 """
+
+# Builds the cache's connection pool without connecting to a server.
+PRINT_CACHE_POOL = """
+import json
+import django
+from django.core.cache import caches
+django.setup()
+pool = caches['default']._cache._get_connection_pool(write=True)
+print(json.dumps({
+    'CONNECTION_CLASS': pool.connection_class.__name__,
+    'SSL_CERT_REQS': pool.connection_kwargs.get('ssl_cert_reqs', 'required'),
+}))
+"""
+
+# A made-up password that must never appear in any output.
+REDIS_MARKER = "not-a-real-pw-MARKER"
+
+REJECTED_REDIS_URLS = (
+    f"http://u:{REDIS_MARKER}@cache.example.org:6379/0",
+    f"unix://u:{REDIS_MARKER}@/tmp/valkey.sock",
+    f"postgres://u:{REDIS_MARKER}@cache.example.org/db",
+    f"u:{REDIS_MARKER}@cache.example.org:6379",
+    "redis://",
+    f"redis://u:{REDIS_MARKER}@",
+    f"redis://u:{REDIS_MARKER}@cache.example.org:notaport/0",
+    f"redis://u:{REDIS_MARKER}@cache.example.org:99999/0",
+)
 
 
 def _env(values: dict[str, str]) -> dict[str, str]:
@@ -109,6 +140,14 @@ def _settings(values: dict[str, str]) -> dict[str, object]:
         raise AssertionError(f"settings failed to load:\n{result.stderr}")
     settings: dict[str, object] = json.loads(result.stdout)
     return settings
+
+
+def _cache_pool(values: dict[str, str]) -> dict[str, object]:
+    result = _run(["-c", PRINT_CACHE_POOL], values)
+    if result.returncode != 0:
+        raise AssertionError(f"cache pool failed to build:\n{result.stderr}")
+    pool: dict[str, object] = json.loads(result.stdout)
+    return pool
 
 
 def _env_example() -> dict[str, str]:
@@ -184,6 +223,47 @@ class ServiceUrlTests(SimpleTestCase):
     def test_redis_url_is_stored(self) -> None:
         values = _settings(PRODUCTION_LIKE)
         self.assertEqual(values["REDIS_URL"], "rediss://cache.example.org:6379/0")
+
+
+class CacheTests(SimpleTestCase):
+    def test_cache_uses_redis_with_prefix_and_timeout(self) -> None:
+        for env in (PRODUCTION_LIKE, LOCAL_DEBUG):
+            with self.subTest(redis_url=env["REDIS_URL"]):
+                values = _settings(env)
+                self.assertEqual(
+                    values["CACHE_BACKEND"],
+                    "django.core.cache.backends.redis.RedisCache",
+                )
+                self.assertEqual(values["CACHE_LOCATION"], [env["REDIS_URL"]])
+                self.assertEqual(values["CACHE_KEY_PREFIX"], "open")
+                self.assertEqual(values["CACHE_TIMEOUT"], 300)
+
+    def test_redis_scheme_uses_plain_connection(self) -> None:
+        values = _cache_pool({**LOCAL_DEBUG, "REDIS_URL": "redis://localhost:6379/0"})
+        self.assertEqual(values["CONNECTION_CLASS"], "Connection")
+
+    def test_rediss_scheme_uses_tls_with_verification(self) -> None:
+        values = _cache_pool(
+            {**PRODUCTION_LIKE, "REDIS_URL": "rediss://cache.example.org:25061/0"}
+        )
+        self.assertEqual(values["CONNECTION_CLASS"], "SSLConnection")
+        self.assertEqual(values["SSL_CERT_REQS"], "required")
+
+    def test_invalid_redis_urls_fail_without_echoing_the_value(self) -> None:
+        for url in REJECTED_REDIS_URLS:
+            with self.subTest(url=url):
+                result = _check({**PRODUCTION_LIKE, "REDIS_URL": url})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("ImproperlyConfigured", result.stderr)
+                self.assertIn("REDIS_URL is not a Redis URL", result.stderr)
+                self.assertNotIn(REDIS_MARKER, result.stderr)
+                self.assertNotIn(REDIS_MARKER, result.stdout)
+                self.assertNotIn("cache.example.org", result.stderr)
+
+    def test_separator_in_password_stays_one_server(self) -> None:
+        url = "redis://u:pa,ss;wd@localhost:6379/0"
+        values = _settings({**LOCAL_DEBUG, "REDIS_URL": url})
+        self.assertEqual(values["CACHE_LOCATION"], [url])
 
 
 class ListTests(SimpleTestCase):
