@@ -74,6 +74,18 @@ services:
     command: ["sh", "-c", "uv sync --locked && uv run python manage.py runserver 0.0.0.0:8000"]
     ports:
       - "127.0.0.1:8000:8000"
+    # Lets --wait return only once the server answers. The first start
+    # installs the dependencies, so it gets a long start period.
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/admin/login/', timeout=4)"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 180s
     depends_on:
       db:
         condition: service_healthy
