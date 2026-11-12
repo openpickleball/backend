@@ -68,3 +68,44 @@ def test_stored_account_is_found_by_natural_key() -> None:
     found = get_user_model().objects.get_by_natural_key(account.email.upper())
 
     assert found.pk == account.pk
+
+
+def test_build_normalizes_email_without_saving() -> None:
+    account = UserFactory.build(email="  Made.Up@Example.COM ")
+
+    assert account.email == "made.up@example.com"
+    assert account.pk is None
+    assert not get_user_model().objects.filter(email=account.email).exists()
+
+
+def test_build_sets_a_usable_password() -> None:
+    account = UserFactory.build()
+
+    assert account.check_password(DEFAULT_PASSWORD)
+    assert account.password != DEFAULT_PASSWORD
+
+
+class _RecordingManager:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, ...]] = []
+        self.created = object()
+
+    def create_user(
+        self, email: str, password: str | None = None, **extra: object
+    ) -> object:
+        self.calls.append((email, password, extra))
+        return self.created
+
+
+def test_create_uses_the_factory_model_manager() -> None:
+    # A subclass factory with another Meta.model must create that model,
+    # not the default user model.
+    manager = _RecordingManager()
+    model = type("OtherAccount", (), {"objects": manager, "_default_manager": manager})
+
+    created = UserFactory._create(
+        model, email="made.up@example.com", password="pw", is_staff=True
+    )
+
+    assert created is manager.created
+    assert manager.calls == [("made.up@example.com", "pw", {"is_staff": True})]
