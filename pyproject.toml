@@ -8,3 +8,11 @@ dependencies = [
     "django-environ>=0.14.0",
     "psycopg[binary]>=3.3.8",
 ]
+
+[dependency-groups]
+dev = [
+    "django-stubs[compatible-mypy]>=6.1.2",
+    "mypy>=2.4.1",
+    "pre-commit>=4.7.0",
+    "ruff>=0.17.4",
+]
