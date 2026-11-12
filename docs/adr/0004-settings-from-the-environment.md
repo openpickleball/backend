@@ -12,7 +12,7 @@ Some of these choices are hard to undo. A browser that has seen an HSTS header k
 ## Decision
 
 - `DJANGO_DEBUG` is off unless set to a true value. With it off, a missing or blank `DJANGO_SECRET_KEY` stops startup. With it on and no key set, a fixed development-only key (prefixed `django-insecure-`) is used.
-- `DATABASE_URL` and `REDIS_URL` are required. A malformed `DATABASE_URL` stops startup with an error that names the variable and does not echo the value.
+- `DATABASE_URL` and `REDIS_URL` are required. A malformed `DATABASE_URL` or `REDIS_URL` stops startup with an error that names the variable and does not echo the value.
 - Values are read literally. django-environ's getters are not used, because they treat a value starting with `$` as a reference to another variable, and a generated secret key can start with `$`.
 - A `.env` file at the repository root is read only if it exists, and the process environment wins over it. `.env.example` holds placeholders only.
 - With DEBUG off: `SECURE_PROXY_SSL_HEADER` trusts `X-Forwarded-Proto`, `SECURE_SSL_REDIRECT` is on, session and CSRF cookies are secure, and HSTS is sent for one year with `includeSubDomains` and `preload`. `manage.py check --deploy` reports no issues with production-like values.
@@ -23,7 +23,7 @@ Some of these choices are hard to undo. A browser that has seen an HSTS header k
 - Any host served with DEBUG off must stay https-only, subdomains included, for a year after a browser last saw the header. The `preload` directive submits nothing by itself; joining a browser preload list is a separate, manual step.
 - Trusting `X-Forwarded-Proto` is safe only behind a proxy that sets it. Running the app with DEBUG off without such a proxy lets a client claim https.
 - A plain-http health probe gets a redirect. The health check issue (#66) needs to exempt its path or probe over https.
-- Tests run over plain http, so the test runner turns the redirect off for the test run only (`config/test_runner.py`). Any replacement runner must do the same.
+- Tests run over plain http, so the test runner turns the redirect off for the test run only (`config/test_runner.py`). It also swaps the cache to an in-memory one, so tests need no cache server. Any replacement runner must do the same.
 
 ## Alternatives considered
 

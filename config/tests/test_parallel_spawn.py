@@ -1,8 +1,12 @@
-"""The test runner keeps http in parallel workers started with spawn.
+"""The test runner's overrides hold in parallel workers started with spawn.
 
-With DEBUG off, settings turn on SECURE_SSL_REDIRECT. The test runner turns
-it off for the test run, and that must also hold in parallel workers that
-re-import settings (spawn start method, the default on macOS and Windows).
+With DEBUG off, settings turn on SECURE_SSL_REDIRECT, and the default cache
+points at REDIS_URL. The test runner turns the redirect off and swaps the
+cache for LocMemCache for the test run. That must also hold in parallel
+workers that re-import settings (spawn start method, the default on macOS
+and Windows). REDIS_URL points at a closed port, so a pass proves no cache
+server is used.
+
 This runs a small probe suite with --parallel 2 under spawn in a fresh
 process. Nothing is written outside a temporary directory.
 """
@@ -22,6 +26,8 @@ PROBE_TESTS = """
 import multiprocessing
 
 from django.conf import settings
+from django.core.cache import caches
+from django.core.cache.backends.locmem import LocMemCache
 from django.test import SimpleTestCase
 
 
@@ -33,6 +39,13 @@ class _Probe:
         self.assertIs(settings.SECURE_SSL_REDIRECT, False)
         response = self.client.get('/no-such-page/')
         self.assertEqual(response.status_code, 404)
+
+    def test_worker_uses_in_memory_cache(self):
+        self.assertIsNotNone(multiprocessing.parent_process())
+        cache = caches['default']
+        self.assertIsInstance(cache, LocMemCache)
+        cache.set('probe-key', 'ok')
+        self.assertEqual(cache.get('probe-key'), 'ok')
 
 
 class FirstProbeTests(_Probe, SimpleTestCase):
@@ -59,7 +72,7 @@ if __name__ == '__main__':
 
 
 class ParallelSpawnTests(SimpleTestCase):
-    def test_spawned_workers_keep_ssl_redirect_off(self) -> None:
+    def test_spawned_workers_keep_test_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "spawn_probe_tests.py").write_text(PROBE_TESTS)
@@ -73,7 +86,8 @@ class ParallelSpawnTests(SimpleTestCase):
                 "DJANGO_SECRET_KEY": secrets.token_urlsafe(50),
                 "DJANGO_ALLOWED_HOSTS": "",
                 "DATABASE_URL": "postgres://open@localhost:5432/open",
-                "REDIS_URL": "redis://localhost:6379/0",
+                # Nothing listens here. The cache must not be used.
+                "REDIS_URL": "redis://127.0.0.1:1/0",
                 "CSRF_TRUSTED_ORIGINS": "",
             }
             if "HOME" in os.environ:
@@ -88,5 +102,5 @@ class ParallelSpawnTests(SimpleTestCase):
             )
         output = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, output)
-        self.assertIn("Ran 2 tests", output)
+        self.assertIn("Ran 4 tests", output)
         self.assertIn("OK", output)

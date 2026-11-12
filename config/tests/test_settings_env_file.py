@@ -141,12 +141,17 @@ class EnvFileTests(SimpleTestCase):
 
     def test_dollar_values_in_env_file_stay_literal(self) -> None:
         key = "$" + TEST_SECRET_KEY
+        # A valid Redis URL, so settings load, with a $ in the password.
+        redis_url = "redis://u:$HOME@dotenv-cache.example:6379/0"
         self._write_env(
             DOT_ENV.replace("DJANGO_SECRET_KEY=\n", f"DJANGO_SECRET_KEY={key}\n")
             .replace("DJANGO_DEBUG=True", "DJANGO_DEBUG=False")
-            .replace("REDIS_URL=redis://dotenv-cache.example:6379/0", "REDIS_URL=$HOME")
+            .replace(
+                "REDIS_URL=redis://dotenv-cache.example:6379/0",
+                f"REDIS_URL={redis_url}",
+            )
         )
         values = self._settings({})
         self.assertIs(values["DEBUG"], False)
         self.assertEqual(values["SECRET_KEY"], key)
-        self.assertEqual(values["REDIS_URL"], "$HOME")
+        self.assertEqual(values["REDIS_URL"], redis_url)

@@ -44,7 +44,8 @@ The Django project scaffold exists (`config`, with settings read from the enviro
 
 - `config/settings.py` reads its deployment values from the environment (and an optional `.env`). Read a new variable with the helpers there (`_raw`, `_required`, `_list`), not django-environ's `Env` getters: those treat a value starting with `$` as a reference to another variable, which silently swaps secrets and URLs.
 - The errors that `config/settings.py` raises for a bad or missing variable name the variable and never echo its value. django-environ's own `.env` reader is the exception: it logs a malformed `.env` line in full.
-- With DEBUG off, settings turn on the https redirect, secure cookies, and HSTS (see ADR 0004). The test run turns off only the redirect, through `config/test_runner.py`; a new test runner (pytest, #12) must do the same, parallel workers included.
+- With DEBUG off, settings turn on the https redirect, secure cookies, and HSTS (see ADR 0004). The test run turns off the redirect and swaps the cache to LocMemCache (so tests need no cache server), through `config/test_runner.py`; a new test runner (pytest, #12) must do the same, parallel workers included.
+- `REDIS_URL` takes only the form `redis://[USER:PASSWORD@]HOST[:PORT][/DB]`, or `rediss://` for TLS: a lowercase scheme, a numeric database, and no query string or fragment. Settings refuse at startup a URL that breaks these rules. redis-py lets a query string override settings, certificate verification included, so set connection and TLS options in settings, never in the URL. Percent-encode any URL-reserved character in the password.
 - Email prints to the console when DEBUG is on and is discarded when DEBUG is off, until #35 adds a real provider. Never let a DEBUG-off environment print or log email: messages carry recipient addresses and, once auth lands, reset tokens.
 
 ## Commands
