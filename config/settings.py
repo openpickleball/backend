@@ -10,6 +10,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
+import warnings
 from pathlib import Path
 
 import environ
@@ -21,14 +23,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Settings come from the environment. A .env file at the repo root is read
 # only if it exists, and values already in the process environment win
 # over it. Copy .env.example to .env for local development.
-env = environ.Env()
 if (BASE_DIR / '.env').is_file():
     environ.Env.read_env(BASE_DIR / '.env')
 
+# Values are read literally from os.environ. django-environ's Env getters
+# treat a value starting with $ as a reference to another variable, and a
+# generated secret key can start with $, so they are not used here.
+
+
+def _raw(name: str) -> str:
+    """Return a variable's literal value, or '' when it is unset."""
+    return os.environ.get(name, '')
+
 
 def _required(name: str) -> str:
-    """Return a required environment variable, failing fast when empty."""
-    value = env.str(name, default='')
+    """Return a required variable, stripped, failing fast when blank."""
+    value = _raw(name).strip()
     if not value:
         raise ImproperlyConfigured(
             f'Set the {name} environment variable (see .env.example).'
@@ -36,16 +46,40 @@ def _required(name: str) -> str:
     return value
 
 
+def _list(name: str) -> list[str]:
+    """Split a comma-separated variable, stripping entries, dropping blanks."""
+    return [item.strip() for item in _raw(name).split(',') if item.strip()]
+
+
+def _database(url: str) -> dict[str, object]:
+    """Parse DATABASE_URL, failing fast without echoing the value."""
+    # django-environ warns with the parsed config, password included, when
+    # it cannot find an engine. Silence that and raise our own error.
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        try:
+            config = environ.Env.db_url_config(url)
+        except ValueError:
+            config = {}
+    if not config.get('ENGINE'):
+        raise ImproperlyConfigured(
+            'DATABASE_URL is not a database URL. Use the form '
+            'postgres://USER:PASSWORD@HOST:PORT/NAME (see .env.example).'
+        )
+    return config
+
+
 # SECURITY WARNING: don't run with debug turned on in production!
 # Off unless DJANGO_DEBUG is a true value.
-DEBUG = env.bool('DJANGO_DEBUG', default=False)
+DEBUG = environ.Env.parse_value(_raw('DJANGO_DEBUG'), bool)
 
 # SECURITY WARNING: keep the secret key used in production secret!
 # With DEBUG on and no key, a fixed development-only key is used. With
-# DEBUG off, a missing key stops startup.
+# DEBUG off, a missing or blank key stops startup. A non-blank key is used
+# exactly as given.
 DEVELOPMENT_SECRET_KEY = 'django-insecure-local-development-only-not-for-production'
-SECRET_KEY = env.str('DJANGO_SECRET_KEY', default='')
-if not SECRET_KEY:
+SECRET_KEY = _raw('DJANGO_SECRET_KEY')
+if not SECRET_KEY.strip():
     if not DEBUG:
         raise ImproperlyConfigured(
             'Set the DJANGO_SECRET_KEY environment variable when DJANGO_DEBUG '
@@ -55,9 +89,9 @@ if not SECRET_KEY:
         )
     SECRET_KEY = DEVELOPMENT_SECRET_KEY
 
-ALLOWED_HOSTS = env.list('DJANGO_ALLOWED_HOSTS', default=[])
+ALLOWED_HOSTS = _list('DJANGO_ALLOWED_HOSTS')
 
-CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
+CSRF_TRUSTED_ORIGINS = _list('CSRF_TRUSTED_ORIGINS')
 
 # Valkey URL (redis:// or rediss://). The cache (issue #8) and Celery
 # (issue #9) read it from here.
@@ -112,13 +146,16 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
+# Tests run over plain http whatever DJANGO_DEBUG says (config/test_runner.py).
+TEST_RUNNER = 'config.test_runner.HttpTestRunner'
+
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 # For example postgres://open@localhost:5432/open (see .env.example).
 DATABASES = {
-    'default': env.db_url_config(_required('DATABASE_URL')),
+    'default': _database(_required('DATABASE_URL')),
 }
 
 
