@@ -134,6 +134,11 @@ def test_debug_off_run_keeps_test_overrides() -> None:
                 "-p",
                 "no:cacheprovider",
                 "--no-cov",
+                # pytest-django passes -v on as Django's verbosity, and Django
+                # writes "Creating test database" only at verbosity 1 or
+                # more. -s stops pytest capturing that line during setup.
+                "-v",
+                "-s",
                 str(tmp_path / "test_probe.py"),
             ],
             cwd=tmp_path,
@@ -146,5 +151,5 @@ def test_debug_off_run_keeps_test_overrides() -> None:
     assert result.returncode == 0, output
     assert "3 passed" in output
     # The probe never touches the database, so it cannot collide with the
-    # outer run's test database.
+    # outer run's test database. -v -s make a database creation visible.
     assert "Creating test database" not in output
