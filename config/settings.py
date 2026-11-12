@@ -203,6 +203,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Email. Every message prints to the console and nothing is sent. Issue
+# #35 makes the backend configurable and adds the provider for staging
+# and production.
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
