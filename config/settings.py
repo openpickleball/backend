@@ -52,16 +52,24 @@ def _list(name: str) -> list[str]:
 
 
 def _database(url: str) -> dict[str, object]:
-    """Parse DATABASE_URL, failing fast without echoing the value."""
-    # django-environ warns with the parsed config, password included, when
-    # it cannot find an engine. Silence that and raise our own error.
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        try:
-            config = environ.Env.db_url_config(url)
-        except ValueError:
-            config = {}
-    if not config.get('ENGINE'):
+    """Parse DATABASE_URL, failing fast without echoing the value.
+
+    Only a scheme django-environ knows, in scheme://host form, with a
+    database name is accepted. django-environ alone accepts unknown
+    schemes as engine names and some malformed URLs with no name.
+    """
+    scheme, separator, _ = url.partition('://')
+    config: dict[str, object] = {}
+    if separator and scheme in environ.Env.DB_SCHEMES:
+        # django-environ warns with the parsed config, password included,
+        # when it cannot find an engine. Silence that; we raise our own.
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            try:
+                config = environ.Env.db_url_config(url)
+            except ValueError:
+                config = {}
+    if not config.get('ENGINE') or not config.get('NAME'):
         raise ImproperlyConfigured(
             'DATABASE_URL is not a database URL. Use the form '
             'postgres://USER:PASSWORD@HOST:PORT/NAME (see .env.example).'
