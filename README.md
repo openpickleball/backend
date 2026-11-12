@@ -10,18 +10,21 @@ Python 3.13 and Django 5.2 LTS, managed with [uv](https://docs.astral.sh/uv/). T
 
 ## Setup and tests
 
-Install the dependencies from `uv.lock` and run Django's system checks:
+Settings come from environment variables. For local development, copy `.env.example` to `.env`; values already set in your shell win over the file. Then install the dependencies from `uv.lock` and run Django's system checks:
 
 ```bash
+cp .env.example .env
 uv sync
 uv run python manage.py check
 ```
 
-Migrations and tests need a reachable Postgres on `localhost:5432` with role and database `open`. The role has no password, so the server must allow trust authentication, and the role needs permission to create databases for the test run. Local Postgres setup arrives with docker compose. Until then, with your own Postgres running:
+Without a `.env` or the variables in your environment, every command that loads settings stops with an error naming the missing variable. `DJANGO_DEBUG` is off unless set to a true value, and with it off `DJANGO_SECRET_KEY` is required.
+
+Migrations and tests need the Postgres that `DATABASE_URL` points to. The value in `.env.example` expects one on `localhost:5432` with role and database `open` and no password, so the server must allow trust authentication, and the role needs permission to create databases for the test run. Local Postgres setup arrives with docker compose. Until then, with your own Postgres running:
 
 ```bash
 uv run python manage.py migrate
-uv run python manage.py test apps
+uv run python manage.py test apps config
 ```
 
 Full setup and test instructions will be added as the foundation work lands.

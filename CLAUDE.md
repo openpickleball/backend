@@ -14,7 +14,7 @@ Planned services, from the project roadmap:
 
 ## Current status
 
-The Django project scaffold exists (`config`, plus `apps/accounts` with the custom email-login user model and the first migration), and no OPEN rating is live. The work is planned as GitHub issues grouped into milestones (M0 Foundation through M4 Partner integration). Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
+The Django project scaffold exists (`config`, with settings read from the environment, plus `apps/accounts` with the custom email-login user model and the first migration), and no OPEN rating is live. The work is planned as GitHub issues grouped into milestones (M0 Foundation through M4 Partner integration). Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
 
 ## Stack (decided, see issue #1)
 
@@ -40,11 +40,18 @@ The Django project scaffold exists (`config`, plus `apps/accounts` with the cust
 - The database enforces the column length, case-insensitive uniqueness (`Lower("email")`), and ASCII. It does not normalize. Raw writes (`save()` without `full_clean()`, `bulk_create`, `update`) skip normalization, so create Accounts through the manager or a form.
 - Find an Account by email (an identity lookup, such as login or linking) only through `get_user_model().objects.get_by_natural_key()` (or `aget_by_natural_key()`), which compares with the unique constraint's own `Lower("email")` expression. Do not use `email__iexact` or an exact match on raw input: on Postgres `iexact` compares `UPPER()`, which can match accounts the constraint treats as distinct.
 
+## Settings
+
+- `config/settings.py` reads its deployment values from the environment (and an optional `.env`). Read a new variable with the helpers there (`_raw`, `_required`, `_list`), not django-environ's `Env` getters: those treat a value starting with `$` as a reference to another variable, which silently swaps secrets and URLs.
+- The errors that `config/settings.py` raises for a bad or missing variable name the variable and never echo its value. django-environ's own `.env` reader is the exception: it logs a malformed `.env` line in full.
+- With DEBUG off, settings turn on the https redirect, secure cookies, and HSTS (see ADR 0004). The test run turns off only the redirect, through `config/test_runner.py`; a new test runner (pytest, #12) must do the same, parallel workers included.
+
 ## Commands
 
-Fill these in as the M0 issues land. A command for a tool or service that has not landed yet fails until its issue does. `migrate`, the tests, and `runserver` (which checks migrations at startup) need a reachable Postgres; until docker compose (#7) lands, start one yourself on `localhost:5432` with role and database `open`, no password (trust authentication, since settings use an empty password), and the CREATEDB privilege (the test runner creates `test_open`). Until pytest (#12) lands, run the tests with `uv run python manage.py test apps`. Expected shape:
+Fill these in as the M0 issues land. A command for a tool or service that has not landed yet fails until its issue does. Every command that loads settings, `check` included, needs the settings variables. Copy `.env.example` to `.env` first; process environment values win over it. `migrate`, the tests, and `runserver` (which checks migrations at startup) need the Postgres that `DATABASE_URL` names; until docker compose (#7) lands, start one yourself on `localhost:5432` with role and database `open`, no password (trust authentication, since the `.env.example` URL has none), and the CREATEDB privilege (the test runner creates `test_open`). Until pytest (#12) lands, run the tests with `uv run python manage.py test apps config`. Expected shape:
 
 ```bash
+cp .env.example .env                      # local settings; never commit .env
 uv sync                                   # install from uv.lock
 uv run python manage.py check             # Django system checks, no database needed
 docker compose up -d                      # local Postgres and Valkey
