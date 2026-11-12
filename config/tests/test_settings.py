@@ -107,7 +107,8 @@ def _settings(values: dict[str, str]) -> dict[str, object]:
     result = _run(["-c", PRINT_SETTINGS], values)
     if result.returncode != 0:
         raise AssertionError(f"settings failed to load:\n{result.stderr}")
-    return json.loads(result.stdout)
+    settings: dict[str, object] = json.loads(result.stdout)
+    return settings
 
 
 def _env_example() -> dict[str, str]:

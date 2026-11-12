@@ -25,25 +25,29 @@ LONG_S = "inſo@example.org"  # U+017F LATIN SMALL LETTER LONG S
 
 
 class NormalizedFormatTests(TestCase):
-    def test_fixture_label_lengths(self):
+    def test_fixture_label_lengths(self) -> None:
         raw_label = EXPANDS_INVALID.split("@")[1].split(".")[0]
         normalized = User.objects.normalize_email(EXPANDS_INVALID)
         self.assertEqual(len(raw_label), 63)
         self.assertEqual(len(normalized.split("@")[1].split(".")[0]), 64)
 
-    def test_full_clean_rejects_address_whose_normalized_form_is_malformed(self):
+    def test_full_clean_rejects_address_whose_normalized_form_is_malformed(
+        self,
+    ) -> None:
         user = User(email=EXPANDS_INVALID)
         user.set_password(PASSWORD)
         with self.assertRaises(ValidationError) as cm:
             user.full_clean()
         self.assertIn(FORMAT_MESSAGE, cm.exception.message_dict["email"])
 
-    def test_create_user_rejects_address_whose_normalized_form_is_malformed(self):
+    def test_create_user_rejects_address_whose_normalized_form_is_malformed(
+        self,
+    ) -> None:
         with self.assertRaises(ValueError):
             User.objects.create_user(EXPANDS_INVALID, password=PASSWORD)
         self.assertEqual(User.objects.count(), 0)
 
-    def test_createsuperuser_noinput_rejects_it(self):
+    def test_createsuperuser_noinput_rejects_it(self) -> None:
         with self.assertRaisesMessage(CommandError, FORMAT_MESSAGE):
             call_command(
                 "createsuperuser",
@@ -54,19 +58,19 @@ class NormalizedFormatTests(TestCase):
             )
         self.assertEqual(User.objects.count(), 0)
 
-    def test_create_user_rejects_malformed_address(self):
+    def test_create_user_rejects_malformed_address(self) -> None:
         with self.assertRaises(ValueError):
             User.objects.create_user("not an email", password=PASSWORD)
         self.assertEqual(User.objects.count(), 0)
 
-    def test_raw_malformed_address_is_reported_once(self):
+    def test_raw_malformed_address_is_reported_once(self) -> None:
         user = User(email="not an email")
         user.set_password(PASSWORD)
         with self.assertRaises(ValidationError) as cm:
             user.full_clean()
         self.assertEqual(cm.exception.message_dict["email"], [FORMAT_MESSAGE])
 
-    def test_long_s_address_is_still_accepted(self):
+    def test_long_s_address_is_still_accepted(self) -> None:
         user = User(email=LONG_S)
         user.set_password(PASSWORD)
         user.full_clean()
@@ -76,16 +80,18 @@ class NormalizedFormatTests(TestCase):
 
 
 class AdminAddFormFormatTests(TestCase):
+    superuser: User
+
     @classmethod
-    def setUpTestData(cls):
+    def setUpTestData(cls) -> None:
         cls.superuser = User.objects.create_superuser(
             "admin@example.org", password=PASSWORD
         )
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.client.force_login(self.superuser)
 
-    def test_add_form_rejects_address_whose_normalized_form_is_malformed(self):
+    def test_add_form_rejects_address_whose_normalized_form_is_malformed(self) -> None:
         response = self.client.post(
             reverse("admin:accounts_user_add"),
             {

@@ -26,7 +26,7 @@ from django.test import SimpleTestCase
 
 
 class _Probe:
-    def test_worker_serves_plain_http(self):
+    def test_worker_serves_plain_http(self) -> None:
         # Proves the test runs in a parallel worker, not the parent.
         self.assertIsNotNone(multiprocessing.parent_process())
         self.assertIs(settings.DEBUG, False)

@@ -21,7 +21,7 @@ class FinalSigmaTests(TestCase):
     character, which these tests keep guarding.
     """
 
-    def test_capital_sigma_lowers_per_character_and_is_rejected(self):
+    def test_capital_sigma_lowers_per_character_and_is_rejected(self) -> None:
         self.assertEqual(User.objects.normalize_email(CAPITAL_SIGMA), SIGMA)
         with self.assertRaisesMessage(
             ValueError, "Email addresses may contain only ASCII characters."
@@ -29,7 +29,7 @@ class FinalSigmaTests(TestCase):
             User.objects.create_user(CAPITAL_SIGMA, password=PASSWORD)
         self.assertIsNone(authenticate(None, username=SIGMA, password=PASSWORD))
 
-    def test_sigma_variant_is_rejected(self):
+    def test_sigma_variant_is_rejected(self) -> None:
         with self.assertRaisesMessage(
             ValueError, "Email addresses may contain only ASCII characters."
         ):
@@ -43,21 +43,21 @@ class NonStringIdentifierTests(TestCase):
     """U2: a non-string login identifier is a failed login, not a crash."""
 
     @classmethod
-    def setUpTestData(cls):
+    def setUpTestData(cls) -> None:
         User.objects.create_user("ann@example.org", password=PASSWORD)
 
-    def test_authenticate_with_int_returns_none(self):
+    def test_authenticate_with_int_returns_none(self) -> None:
         self.assertIsNone(authenticate(None, username=123, password=PASSWORD))
 
-    def test_authenticate_with_list_returns_none(self):
+    def test_authenticate_with_list_returns_none(self) -> None:
         self.assertIsNone(
             authenticate(None, username=["ann@example.org"], password=PASSWORD)
         )
 
-    async def test_aauthenticate_with_int_returns_none(self):
+    async def test_aauthenticate_with_int_returns_none(self) -> None:
         self.assertIsNone(await aauthenticate(None, username=123, password=PASSWORD))
 
-    async def test_aauthenticate_with_list_returns_none(self):
+    async def test_aauthenticate_with_list_returns_none(self) -> None:
         self.assertIsNone(
             await aauthenticate(None, username=["ann@example.org"], password=PASSWORD)
         )

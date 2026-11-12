@@ -14,8 +14,13 @@ import os
 import warnings
 from pathlib import Path
 
+import django_stubs_ext
 import environ
 from django.core.exceptions import ImproperlyConfigured
+
+# Let generic Django classes, such as UserAdmin[User], be subscripted at
+# runtime, as the type stubs expect.
+django_stubs_ext.monkeypatch()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

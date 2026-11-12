@@ -87,7 +87,8 @@ class EnvFileTests(SimpleTestCase):
         result = self._run(["-c", PRINT_SETTINGS], values)
         if result.returncode != 0:
             raise AssertionError(f"settings failed to load:\n{result.stderr}")
-        return json.loads(result.stdout)
+        settings: dict[str, object] = json.loads(result.stdout)
+        return settings
 
     def test_env_file_is_read_when_present(self) -> None:
         self._write_env(DOT_ENV)

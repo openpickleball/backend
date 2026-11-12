@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "django>=5.2,<5.3",
     "django-environ>=0.14.0",
+    "django-stubs-ext>=6.1.2",
     "psycopg[binary]>=3.3.8",
 ]
 
@@ -29,3 +30,18 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 # The email normalization tests use look-alike characters on purpose.
 "**/tests/**" = ["RUF001"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["mypy_django_plugin.main"]
+# Skip ignored directories such as .venv and .claude/worktrees.
+exclude_gitignore = true
+
+[[tool.mypy.overrides]]
+# django-environ ships no type information.
+module = ["environ", "environ.*"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings"

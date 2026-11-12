@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from io import StringIO
 from unittest import mock
 
@@ -10,24 +11,24 @@ COMMAND = "django.contrib.auth.management.commands.createsuperuser"
 
 
 class FakeTTY(StringIO):
-    def isatty(self):
+    def isatty(self) -> bool:
         return True
 
 
 class InteractiveCreateSuperuserTests(TestCase):
-    def run_interactive(self, answers):
+    def run_interactive(self, answers: Iterable[str]) -> tuple[list[str], str]:
         """Run createsuperuser interactively, answering prompts in order.
 
         Return the list of prompts shown and the captured stderr.
         """
-        prompts = []
-        answers = iter(answers)
+        prompts: list[str] = []
+        remaining = iter(answers)
 
-        def fake_input(prompt=""):
+        def fake_input(prompt: str = "") -> str:
             prompts.append(prompt)
-            return next(answers)
+            return next(remaining)
 
-        def fake_getpass(prompt="Password: ", stream=None):
+        def fake_getpass(prompt: str = "Password: ", stream: object = None) -> str:
             prompts.append(prompt)
             return PASSWORD
 
@@ -45,7 +46,7 @@ class InteractiveCreateSuperuserTests(TestCase):
             )
         return prompts, stderr.getvalue()
 
-    def test_prompts_for_email_and_never_username(self):
+    def test_prompts_for_email_and_never_username(self) -> None:
         prompts, _ = self.run_interactive(["Admin@Example.org"])
         self.assertTrue(prompts[0].startswith("Email address"), prompts)
         for prompt in prompts:
@@ -55,7 +56,7 @@ class InteractiveCreateSuperuserTests(TestCase):
         self.assertTrue(user.is_superuser)
         self.assertTrue(user.check_password(PASSWORD))
 
-    def test_duplicate_case_variant_is_rejected_then_reprompted(self):
+    def test_duplicate_case_variant_is_rejected_then_reprompted(self) -> None:
         User = get_user_model()
         User.objects.create_superuser("admin@example.org", password=PASSWORD)
         prompts, stderr = self.run_interactive(

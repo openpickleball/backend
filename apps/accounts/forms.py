@@ -6,7 +6,7 @@ from django.contrib.auth import forms as auth_forms
 from apps.accounts.models import User
 
 
-class UserCreationForm(auth_forms.AdminUserCreationForm):
+class UserCreationForm(auth_forms.AdminUserCreationForm[User]):
     """Admin add form for `User`, keyed on email instead of username."""
 
     class Meta(auth_forms.AdminUserCreationForm.Meta):
@@ -15,7 +15,7 @@ class UserCreationForm(auth_forms.AdminUserCreationForm):
         field_classes: ClassVar[dict[str, type[forms.Field]]] = {}
 
 
-class UserChangeForm(auth_forms.UserChangeForm):
+class UserChangeForm(auth_forms.UserChangeForm[User]):
     """Admin change form for `User`, keyed on email instead of username."""
 
     class Meta(auth_forms.UserChangeForm.Meta):
