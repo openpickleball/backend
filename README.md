@@ -25,9 +25,11 @@ Migrations and tests need the Postgres that `DATABASE_URL` points to. `compose.y
 ```bash
 docker compose up -d --wait
 uv run python manage.py migrate
-uv run python manage.py test apps config
+uv run pytest
 uv run python manage.py runserver
 ```
+
+`uv run pytest` reports coverage and fails if it drops below the floor set in `pyproject.toml`. That floor counts all of `apps` and `config`, so when you run only some tests (one file, or `-k`), add `--no-cov`.
 
 `--wait` returns once both services are healthy. The services listen on `127.0.0.1` only: Postgres on port 5432 and Valkey on 6379. Stop any other Postgres, Redis, or Valkey on those ports first. `docker compose down` stops them and keeps the data; `docker compose down -v` also deletes it. To run the app in a container on http://127.0.0.1:8000 instead of with `runserver` on the host, use `docker compose --profile web up -d --wait`. It uses the same port as `runserver`, so stop one before starting the other.
 
@@ -50,7 +52,7 @@ Full setup and test instructions will be added as the foundation work lands.
 
 ## Test data
 
-Use only made-up or properly de-identified data. Do not put real player names, contact details, or match histories in this repository, including in test fixtures and screenshots.
+Use only made-up or properly de-identified data. Do not put real player names, contact details, or match histories in this repository, including in test fixtures and screenshots. To build test records, prefer the factory_boy factories, such as `UserFactory` in `apps/accounts/tests/factories.py`, which fill in made-up Faker data on example domains.
 
 ## Contributing
 
