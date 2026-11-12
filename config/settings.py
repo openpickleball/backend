@@ -203,6 +203,15 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Email. Nothing is sent. With DEBUG on, every message prints to the
+# console. With DEBUG off, every message is discarded, so no email body or
+# recipient reaches the logs. Issue #35 adds the real provider for staging
+# and production.
+if DEBUG:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
