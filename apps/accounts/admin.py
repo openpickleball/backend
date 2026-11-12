@@ -6,7 +6,7 @@ from apps.accounts.models import User
 
 
 @admin.register(User)
-class UserAdmin(BaseUserAdmin):
+class UserAdmin(BaseUserAdmin[User]):
     form = UserChangeForm
     add_form = UserCreationForm
     fieldsets = (

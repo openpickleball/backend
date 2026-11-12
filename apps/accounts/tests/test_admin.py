@@ -1,23 +1,31 @@
+from typing import TYPE_CHECKING, ClassVar
+
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+if TYPE_CHECKING:
+    from apps.accounts.models import User as Account
+
 PASSWORD = "correct-horse-battery-staple-42"
 
 
 class UserAdminTests(TestCase):
+    User: ClassVar[type["Account"]]
+    superuser: "Account"
+
     @classmethod
-    def setUpTestData(cls):
+    def setUpTestData(cls) -> None:
         cls.User = get_user_model()
         cls.superuser = cls.User.objects.create_superuser(
             "admin@example.org", password=PASSWORD
         )
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.client.force_login(self.superuser)
 
-    def add_form_data(self, email, password=PASSWORD):
+    def add_form_data(self, email: str, password: str = PASSWORD) -> dict[str, str]:
         return {
             "email": email,
             "usable_password": "true",
@@ -25,21 +33,21 @@ class UserAdminTests(TestCase):
             "password2": password,
         }
 
-    def test_user_is_registered(self):
+    def test_user_is_registered(self) -> None:
         self.assertTrue(admin.site.is_registered(self.User))
 
-    def test_changelist_renders(self):
+    def test_changelist_renders(self) -> None:
         response = self.client.get(reverse("admin:accounts_user_changelist"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "admin@example.org")
 
-    def test_add_view_renders_email_and_no_username(self):
+    def test_add_view_renders_email_and_no_username(self) -> None:
         response = self.client.get(reverse("admin:accounts_user_add"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'name="email"')
         self.assertNotContains(response, 'name="username"')
 
-    def test_change_view_renders(self):
+    def test_change_view_renders(self) -> None:
         response = self.client.get(
             reverse("admin:accounts_user_change", args=[self.superuser.pk])
         )
@@ -47,7 +55,7 @@ class UserAdminTests(TestCase):
         self.assertContains(response, 'name="email"')
         self.assertNotContains(response, 'name="first_name"')
 
-    def test_add_form_creates_user_by_email(self):
+    def test_add_form_creates_user_by_email(self) -> None:
         response = self.client.post(
             reverse("admin:accounts_user_add"),
             self.add_form_data("New.Account@Example.org"),
@@ -56,7 +64,7 @@ class UserAdminTests(TestCase):
         user = self.User.objects.get(email="new.account@example.org")
         self.assertTrue(user.check_password(PASSWORD))
 
-    def test_add_form_rejects_case_variant_duplicate(self):
+    def test_add_form_rejects_case_variant_duplicate(self) -> None:
         response = self.client.post(
             reverse("admin:accounts_user_add"),
             self.add_form_data("ADMIN@Example.org"),
@@ -65,7 +73,7 @@ class UserAdminTests(TestCase):
         self.assertContains(response, "already exists")
         self.assertEqual(self.User.objects.count(), 1)
 
-    def test_add_form_runs_password_similarity_validator(self):
+    def test_add_form_runs_password_similarity_validator(self) -> None:
         response = self.client.post(
             reverse("admin:accounts_user_add"),
             self.add_form_data("similar.person@example.org", "similar.person"),

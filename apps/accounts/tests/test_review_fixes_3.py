@@ -22,34 +22,32 @@ FF = "ﬀ"
 # 213 raw characters, 413 after NFKC.
 EXPANDING = "a@" + ".".join([FF * 25] * 8) + ".com"
 # 253 raw characters, exactly 254 after NFKC.
-EXPANDS_TO_254 = (
-    "a@" + FF + "b" * 61 + "." + "c" * 63 + "." + "d" * 63 + "." + "e" * 60
-)
+EXPANDS_TO_254 = "a@" + FF + "b" * 61 + "." + "c" * 63 + "." + "d" * 63 + "." + "e" * 60
 # Exactly 254 plain ASCII characters.
 ASCII_254 = "a@" + "b" * 63 + "." + "c" * 63 + "." + "d" * 63 + "." + "e" * 60
 
 
 class NormalizedLengthTests(TestCase):
-    def test_lengths_of_the_fixtures(self):
+    def test_lengths_of_the_fixtures(self) -> None:
         self.assertEqual(len(EXPANDING), 213)
         self.assertEqual(len(User.objects.normalize_email(EXPANDING)), 413)
         self.assertEqual(len(EXPANDS_TO_254), 253)
         self.assertEqual(len(User.objects.normalize_email(EXPANDS_TO_254)), 254)
         self.assertEqual(len(ASCII_254), 254)
 
-    def test_full_clean_rejects_address_that_expands_past_254(self):
+    def test_full_clean_rejects_address_that_expands_past_254(self) -> None:
         user = User(email=EXPANDING)
         user.set_password(PASSWORD)
         with self.assertRaises(ValidationError) as cm:
             user.full_clean()
         self.assertIn(LENGTH_MESSAGE, cm.exception.message_dict["email"])
 
-    def test_create_user_rejects_address_that_expands_past_254(self):
+    def test_create_user_rejects_address_that_expands_past_254(self) -> None:
         with self.assertRaisesMessage(ValueError, LENGTH_MESSAGE):
             User.objects.create_user(EXPANDING, password=PASSWORD)
         self.assertEqual(User.objects.count(), 0)
 
-    def test_createsuperuser_noinput_reports_length_error(self):
+    def test_createsuperuser_noinput_reports_length_error(self) -> None:
         with self.assertRaisesMessage(CommandError, LENGTH_MESSAGE):
             call_command(
                 "createsuperuser",
@@ -60,7 +58,7 @@ class NormalizedLengthTests(TestCase):
             )
         self.assertEqual(User.objects.count(), 0)
 
-    def test_normalized_length_of_exactly_254_is_accepted(self):
+    def test_normalized_length_of_exactly_254_is_accepted(self) -> None:
         for email in (EXPANDS_TO_254, ASCII_254):
             with self.subTest(raw_length=len(email)):
                 user = User(email=email)
@@ -73,16 +71,18 @@ class NormalizedLengthTests(TestCase):
 
 
 class AdminAddFormLengthTests(TestCase):
+    superuser: User
+
     @classmethod
-    def setUpTestData(cls):
+    def setUpTestData(cls) -> None:
         cls.superuser = User.objects.create_superuser(
             "admin@example.org", password=PASSWORD
         )
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.client.force_login(self.superuser)
 
-    def test_add_form_rejects_address_that_expands_past_254(self):
+    def test_add_form_rejects_address_that_expands_past_254(self) -> None:
         response = self.client.post(
             reverse("admin:accounts_user_add"),
             {

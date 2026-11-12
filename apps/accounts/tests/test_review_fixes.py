@@ -26,11 +26,13 @@ class LookupMatchesConstraintTests(TestCase):
     still guard the original defect: no lookup can match two rows or crash.
     """
 
+    ascii_user: User
+
     @classmethod
-    def setUpTestData(cls):
+    def setUpTestData(cls) -> None:
         cls.ascii_user = User.objects.create_user("info@example.org", password=PASSWORD)
 
-    def test_get_by_natural_key_returns_the_ascii_user(self):
+    def test_get_by_natural_key_returns_the_ascii_user(self) -> None:
         with self.assertRaisesMessage(
             ValueError, "Email addresses may contain only ASCII characters."
         ):
@@ -39,18 +41,20 @@ class LookupMatchesConstraintTests(TestCase):
             User.objects.get_by_natural_key("info@example.org"), self.ascii_user
         )
 
-    def test_authenticate_ascii_address_returns_its_own_user(self):
+    def test_authenticate_ascii_address_returns_its_own_user(self) -> None:
         self.assertEqual(
             authenticate(None, username="info@example.org", password=PASSWORD),
             self.ascii_user,
         )
 
-    def test_authenticate_dotless_address_returns_none(self):
+    def test_authenticate_dotless_address_returns_none(self) -> None:
         self.assertIsNone(authenticate(None, username=DOTLESS, password=PASSWORD))
         with self.assertRaises(IntegrityError), transaction.atomic():
             User(email=DOTLESS).save()
 
-    def test_createsuperuser_noinput_reports_duplicate_instead_of_crashing(self):
+    def test_createsuperuser_noinput_reports_duplicate_instead_of_crashing(
+        self,
+    ) -> None:
         with self.assertRaisesMessage(CommandError, "already taken"):
             call_command(
                 "createsuperuser",
@@ -74,7 +78,7 @@ class LookupMatchesConstraintTests(TestCase):
 class AsyncLookupTests(TestCase):
     """T2: the async lookup is case-insensitive too."""
 
-    async def test_aauthenticate_is_case_insensitive(self):
+    async def test_aauthenticate_is_case_insensitive(self) -> None:
         user = await sync_to_async(User.objects.create_user)(
             "ann@example.org", password=PASSWORD
         )
@@ -87,7 +91,7 @@ class AsyncLookupTests(TestCase):
 class LookupNormalizesInputTests(TestCase):
     """T3: the lookup strips and lowercases its input like storage does."""
 
-    def test_authenticate_with_surrounding_whitespace(self):
+    def test_authenticate_with_surrounding_whitespace(self) -> None:
         user = User.objects.create_user(" bob@example.org ", password=PASSWORD)
         self.assertEqual(
             authenticate(None, username=" bob@example.org ", password=PASSWORD), user
@@ -97,12 +101,12 @@ class LookupNormalizesInputTests(TestCase):
 class NormalizeEmailUnicodeTests(TestCase):
     """T4: the manager applies NFKC like AbstractBaseUser.clean() does."""
 
-    def test_manager_stores_nfkc_normalized_email(self):
+    def test_manager_stores_nfkc_normalized_email(self) -> None:
         user = User.objects.create_user(LONG_S, password=PASSWORD)
         user.refresh_from_db()
         self.assertEqual(user.email, "inso@example.org")
 
-    def test_nfkc_equivalent_address_is_a_duplicate(self):
+    def test_nfkc_equivalent_address_is_a_duplicate(self) -> None:
         User.objects.create_user(LONG_S, password=PASSWORD)
         with self.assertRaises(IntegrityError), transaction.atomic():
             User.objects.create_user("inso@example.org", password=PASSWORD)
@@ -111,10 +115,10 @@ class NormalizeEmailUnicodeTests(TestCase):
 class NameMethodsTests(TestCase):
     """T5: accounts carry no name; Player does."""
 
-    def test_get_full_name_is_empty(self):
+    def test_get_full_name_is_empty(self) -> None:
         self.assertEqual(User(email="ann@example.org").get_full_name(), "")
 
-    def test_get_short_name_is_the_email(self):
+    def test_get_short_name_is_the_email(self) -> None:
         self.assertEqual(
             User(email="ann@example.org").get_short_name(), "ann@example.org"
         )
@@ -123,7 +127,7 @@ class NameMethodsTests(TestCase):
 class CoverageGapTests(TestCase):
     """T7: coverage for paths the earlier tests did not isolate."""
 
-    def test_full_clean_hits_the_lower_constraint(self):
+    def test_full_clean_hits_the_lower_constraint(self) -> None:
         # Stored raw, so the exact field-level unique check cannot match the
         # lowercased candidate; only the Lower("email") constraint can.
         User(email="Zed@Example.org").save()
@@ -135,7 +139,7 @@ class CoverageGapTests(TestCase):
             "An account with this email address already exists.", str(cm.exception)
         )
 
-    def test_createsuperuser_noinput_rejects_case_variant(self):
+    def test_createsuperuser_noinput_rejects_case_variant(self) -> None:
         User.objects.create_user("ann@example.org", password=PASSWORD)
         with self.assertRaisesMessage(CommandError, "already taken"):
             call_command(
@@ -146,7 +150,7 @@ class CoverageGapTests(TestCase):
                 stderr=StringIO(),
             )
 
-    def test_queryset_update_to_case_variant_raises_integrity_error(self):
+    def test_queryset_update_to_case_variant_raises_integrity_error(self) -> None:
         User.objects.create_user("ann@example.org", password=PASSWORD)
         other = User.objects.create_user("other@example.org", password=PASSWORD)
         with self.assertRaises(IntegrityError), transaction.atomic():

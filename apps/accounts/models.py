@@ -85,9 +85,10 @@ class User(AbstractUser):
     an Account can claim by linking.
     """
 
-    username = None
-    first_name = None
-    last_name = None
+    # Removing the inherited fields: the stubs type them as str.
+    username = None  # type: ignore[assignment]
+    first_name = None  # type: ignore[assignment]
+    last_name = None  # type: ignore[assignment]
     email = models.EmailField(
         "email address",
         max_length=EMAIL_MAX_LENGTH,
@@ -99,7 +100,8 @@ class User(AbstractUser):
     EMAIL_FIELD = "email"
     REQUIRED_FIELDS: ClassVar[list[str]] = []
 
-    objects = UserManager()
+    # An email-keyed manager replaces the stubs' username-based UserManager.
+    objects: ClassVar[UserManager] = UserManager()  # type: ignore[assignment]
 
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [

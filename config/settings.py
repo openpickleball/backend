@@ -14,8 +14,13 @@ import os
 import warnings
 from pathlib import Path
 
+import django_stubs_ext
 import environ
 from django.core.exceptions import ImproperlyConfigured
+
+# Let generic Django classes, such as UserAdmin[User], be subscripted at
+# runtime, as the type stubs expect.
+django_stubs_ext.monkeypatch()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,8 +28,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Settings come from the environment. A .env file at the repo root is read
 # only if it exists, and values already in the process environment win
 # over it. Copy .env.example to .env for local development.
-if (BASE_DIR / '.env').is_file():
-    environ.Env.read_env(BASE_DIR / '.env')
+if (BASE_DIR / ".env").is_file():
+    environ.Env.read_env(BASE_DIR / ".env")
 
 # Values are read literally from os.environ. django-environ's Env getters
 # treat a value starting with $ as a reference to another variable, and a
@@ -33,7 +38,7 @@ if (BASE_DIR / '.env').is_file():
 
 def _raw(name: str) -> str:
     """Return a variable's literal value, or '' when it is unset."""
-    return os.environ.get(name, '')
+    return os.environ.get(name, "")
 
 
 def _required(name: str) -> str:
@@ -41,14 +46,14 @@ def _required(name: str) -> str:
     value = _raw(name).strip()
     if not value:
         raise ImproperlyConfigured(
-            f'Set the {name} environment variable (see .env.example).'
+            f"Set the {name} environment variable (see .env.example)."
         )
     return value
 
 
 def _list(name: str) -> list[str]:
     """Split a comma-separated variable, stripping entries, dropping blanks."""
-    return [item.strip() for item in _raw(name).split(',') if item.strip()]
+    return [item.strip() for item in _raw(name).split(",") if item.strip()]
 
 
 def _database(url: str) -> dict[str, object]:
@@ -58,52 +63,52 @@ def _database(url: str) -> dict[str, object]:
     database name is accepted. django-environ alone accepts unknown
     schemes as engine names and some malformed URLs with no name.
     """
-    scheme, separator, _ = url.partition('://')
+    scheme, separator, _ = url.partition("://")
     config: dict[str, object] = {}
     if separator and scheme in environ.Env.DB_SCHEMES:
         # django-environ warns with the parsed config, password included,
         # when it cannot find an engine. Silence that; we raise our own.
         with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
+            warnings.simplefilter("ignore")
             try:
                 config = environ.Env.db_url_config(url)
             except ValueError:
                 config = {}
-    if not config.get('ENGINE') or not config.get('NAME'):
+    if not config.get("ENGINE") or not config.get("NAME"):
         raise ImproperlyConfigured(
-            'DATABASE_URL is not a database URL. Use the form '
-            'postgres://USER:PASSWORD@HOST:PORT/NAME (see .env.example).'
+            "DATABASE_URL is not a database URL. Use the form "
+            "postgres://USER:PASSWORD@HOST:PORT/NAME (see .env.example)."
         )
     return config
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # Off unless DJANGO_DEBUG is a true value.
-DEBUG = environ.Env.parse_value(_raw('DJANGO_DEBUG'), bool)
+DEBUG = environ.Env.parse_value(_raw("DJANGO_DEBUG"), bool)
 
 # SECURITY WARNING: keep the secret key used in production secret!
 # With DEBUG on and no key, a fixed development-only key is used. With
 # DEBUG off, a missing or blank key stops startup. A non-blank key is used
 # exactly as given.
-DEVELOPMENT_SECRET_KEY = 'django-insecure-local-development-only-not-for-production'
-SECRET_KEY = _raw('DJANGO_SECRET_KEY')
+DEVELOPMENT_SECRET_KEY = "django-insecure-local-development-only-not-for-production"
+SECRET_KEY = _raw("DJANGO_SECRET_KEY")
 if not SECRET_KEY.strip():
     if not DEBUG:
         raise ImproperlyConfigured(
-            'Set the DJANGO_SECRET_KEY environment variable when DJANGO_DEBUG '
+            "Set the DJANGO_SECRET_KEY environment variable when DJANGO_DEBUG "
             'is off. Generate one with: python -c "from '
-            'django.core.management.utils import get_random_secret_key; '
+            "django.core.management.utils import get_random_secret_key; "
             'print(get_random_secret_key())"'
         )
     SECRET_KEY = DEVELOPMENT_SECRET_KEY
 
-ALLOWED_HOSTS = _list('DJANGO_ALLOWED_HOSTS')
+ALLOWED_HOSTS = _list("DJANGO_ALLOWED_HOSTS")
 
-CSRF_TRUSTED_ORIGINS = _list('CSRF_TRUSTED_ORIGINS')
+CSRF_TRUSTED_ORIGINS = _list("CSRF_TRUSTED_ORIGINS")
 
 # Valkey URL (redis:// or rediss://). The cache (issue #8) and Celery
 # (issue #9) read it from here.
-REDIS_URL = _required('REDIS_URL')
+REDIS_URL = _required("REDIS_URL")
 
 
 # Application definition
@@ -113,49 +118,49 @@ REDIS_URL = _required('REDIS_URL')
 # The custom OAuth Application model (issue #22) must land before
 # django-oauth-toolkit's migrations are run.
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'apps.accounts',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "apps.accounts",
 ]
 
 # The OPEN Account login model, keyed on email (apps/accounts).
-AUTH_USER_MODEL = 'accounts.User'
+AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = 'config.urls'
+ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+WSGI_APPLICATION = "config.wsgi.application"
 
 # Tests run over plain http whatever DJANGO_DEBUG says (config/test_runner.py).
-TEST_RUNNER = 'config.test_runner.HttpTestRunner'
+TEST_RUNNER = "config.test_runner.HttpTestRunner"
 
 
 # Database
@@ -163,7 +168,7 @@ TEST_RUNNER = 'config.test_runner.HttpTestRunner'
 
 # For example postgres://open@localhost:5432/open (see .env.example).
 DATABASES = {
-    'default': _database(_required('DATABASE_URL')),
+    "default": _database(_required("DATABASE_URL")),
 }
 
 
@@ -172,16 +177,16 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -189,9 +194,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -201,21 +206,21 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = "static/"
 
 # Email. Nothing is sent. With DEBUG on, every message prints to the
 # console. With DEBUG off, every message is discarded, so no email body or
 # recipient reaches the logs. Issue #35 adds the real provider for staging
 # and production.
 if DEBUG:
-    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 else:
-    EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
+    EMAIL_BACKEND = "django.core.mail.backends.dummy.EmailBackend"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 # HTTPS security, on whenever DEBUG is off. Local http development runs
@@ -223,7 +228,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 if not DEBUG:
     # Trust X-Forwarded-Proto only because the app runs behind a proxy that
     # sets it (DigitalOcean App Platform). Never serve the app directly.
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True

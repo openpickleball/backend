@@ -18,7 +18,7 @@ from django.test import SimpleTestCase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-PROBE_TESTS = '''
+PROBE_TESTS = """
 import multiprocessing
 
 from django.conf import settings
@@ -41,9 +41,9 @@ class FirstProbeTests(_Probe, SimpleTestCase):
 
 class SecondProbeTests(_Probe, SimpleTestCase):
     pass
-'''
+"""
 
-RUN_SPAWN = f'''
+RUN_SPAWN = f"""
 import multiprocessing
 import sys
 
@@ -55,31 +55,31 @@ if __name__ == '__main__':
     execute_from_command_line(
         ['manage.py', 'test', 'spawn_probe_tests', '--parallel', '2']
     )
-'''
+"""
 
 
 class ParallelSpawnTests(SimpleTestCase):
     def test_spawned_workers_keep_ssl_redirect_off(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            (tmp_path / 'spawn_probe_tests.py').write_text(PROBE_TESTS)
-            (tmp_path / 'run_spawn.py').write_text(RUN_SPAWN)
+            (tmp_path / "spawn_probe_tests.py").write_text(PROBE_TESTS)
+            (tmp_path / "run_spawn.py").write_text(RUN_SPAWN)
             env = {
-                'PATH': os.environ.get('PATH', ''),
-                'DJANGO_SETTINGS_MODULE': 'config.settings',
+                "PATH": os.environ.get("PATH", ""),
+                "DJANGO_SETTINGS_MODULE": "config.settings",
                 # Every settings variable is set, so no .env value is used.
-                'DJANGO_DEBUG': 'False',
+                "DJANGO_DEBUG": "False",
                 # Generated at runtime for this test only.
-                'DJANGO_SECRET_KEY': secrets.token_urlsafe(50),
-                'DJANGO_ALLOWED_HOSTS': '',
-                'DATABASE_URL': 'postgres://open@localhost:5432/open',
-                'REDIS_URL': 'redis://localhost:6379/0',
-                'CSRF_TRUSTED_ORIGINS': '',
+                "DJANGO_SECRET_KEY": secrets.token_urlsafe(50),
+                "DJANGO_ALLOWED_HOSTS": "",
+                "DATABASE_URL": "postgres://open@localhost:5432/open",
+                "REDIS_URL": "redis://localhost:6379/0",
+                "CSRF_TRUSTED_ORIGINS": "",
             }
-            if 'HOME' in os.environ:
-                env['HOME'] = os.environ['HOME']
+            if "HOME" in os.environ:
+                env["HOME"] = os.environ["HOME"]
             result = subprocess.run(
-                [sys.executable, 'run_spawn.py'],
+                [sys.executable, "run_spawn.py"],
                 cwd=tmp_path,
                 env=env,
                 capture_output=True,
@@ -88,5 +88,5 @@ class ParallelSpawnTests(SimpleTestCase):
             )
         output = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, output)
-        self.assertIn('Ran 2 tests', output)
-        self.assertIn('OK', output)
+        self.assertIn("Ran 2 tests", output)
+        self.assertIn("OK", output)
