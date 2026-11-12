@@ -9,10 +9,11 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels its older run. Runs on main are
-# never cancelled, so every merge gets a full result.
+# A new push to a pull request cancels its older run. Each push to main
+# gets its own group (its commit SHA), so no main run is cancelled or
+# dropped while pending, and every merge gets a full result.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # The job names are required status checks on main. Renaming one blocks
