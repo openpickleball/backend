@@ -1,0 +1,86 @@
+# Local development only. Not for staging or production.
+#
+# Start Postgres and Valkey:   docker compose up -d --wait
+# Also run the app (optional): docker compose --profile web up -d --wait
+# Stop, keeping local data:    docker compose down
+# Stop and delete local data:  docker compose down -v
+#
+# The database and cache URLs in .env.example point at these services
+# without edits. This file holds no real data and no credentials.
+
+services:
+  db:
+    # Same major version as new DigitalOcean managed Postgres clusters.
+    image: postgres:18
+    environment:
+      # No password, matching the .env.example URL. Trust authentication is
+      # safe only because the port is bound to localhost. The open role is a
+      # superuser in this container, so the test runner can create test_open.
+      POSTGRES_USER: open
+      POSTGRES_DB: open
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # Postgres 18 keeps its data under /var/lib/postgresql/18/docker, so
+      # the volume mounts at /var/lib/postgresql, not the older .../data.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U open -d open"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  cache:
+    image: valkey/valkey:8
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Optional. Runs the app with uv, on http://127.0.0.1:8000. The worker and
+  # beat services are added in issue #9. The container runs as root and
+  # mounts the repository, so files it writes (a generated migration, for
+  # example) are owned by root on the host.
+  web:
+    profiles: [web]
+    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+      # The container's virtualenv lives here, away from the host's .venv.
+      - web-venv:/venv
+    env_file:
+      # Raw: read every value literally. Otherwise compose treats a $ in a
+      # value (a generated secret key can have one) as a variable reference.
+      - path: .env
+        required: false
+        format: raw
+    environment:
+      UV_PROJECT_ENVIRONMENT: /venv
+      UV_LINK_MODE: copy
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      # These win over .env and point at the services inside the network.
+      DATABASE_URL: postgres://open@db:5432/open
+      REDIS_URL: redis://cache:6379/0
+    command: ["sh", "-c", "uv sync --locked && uv run python manage.py runserver 0.0.0.0:8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  valkey-data:
+  web-venv:
