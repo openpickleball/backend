@@ -2,7 +2,7 @@
 
 Backend services and APIs for [OPEN](https://github.com/openpickleball), the Open Pickleball Evaluation Network.
 
-> **Project status:** OPEN is in early development. This repository holds the project scaffold and the account model so far, and no OPEN rating is live.
+> **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model, and the local development services so far, and no OPEN rating is live.
 
 ## Technology
 
@@ -20,12 +20,20 @@ uv run python manage.py check
 
 Without a `.env` or the variables in your environment, every command that loads settings stops with an error naming the missing variable. `DJANGO_DEBUG` is off unless set to a true value, and with it off `DJANGO_SECRET_KEY` is required.
 
-Migrations and tests need the Postgres that `DATABASE_URL` points to. The value in `.env.example` expects one on `localhost:5432` with role and database `open` and no password, so the server must allow trust authentication, and the role needs permission to create databases for the test run. Local Postgres setup arrives with docker compose. Until then, with your own Postgres running:
+Migrations and tests need the Postgres that `DATABASE_URL` points to. `compose.yaml` runs Postgres and Valkey for local development, and the values in `.env.example` point at them. With Docker running:
 
 ```bash
+docker compose up -d --wait
 uv run python manage.py migrate
 uv run python manage.py test apps config
+uv run python manage.py runserver
 ```
+
+`--wait` returns once both services are healthy. The services listen on `127.0.0.1` only: Postgres on port 5432 and Valkey on 6379. Stop any other Postgres, Redis, or Valkey on those ports first. `docker compose down` stops them and keeps the data; `docker compose down -v` also deletes it. To run the app in a container on http://127.0.0.1:8000 instead of with `runserver` on the host, use `docker compose --profile web up -d --wait`. It uses the same port as `runserver`, so stop one before starting the other.
+
+Docker Compose also reads `.env` and treats a `$` in a value as a variable reference. If your secret key contains `$`, wrap it in single quotes: `DJANGO_SECRET_KEY='...'`.
+
+No email is sent yet. With `DJANGO_DEBUG` on, every message prints to the console. With it off, messages are discarded until #35 adds a real email provider.
 
 Full setup and test instructions will be added as the foundation work lands.
 
