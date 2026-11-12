@@ -53,3 +53,21 @@ ignore_missing_imports = true
 
 [tool.django-stubs]
 django_settings_module = "config.settings"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings_test"
+# Only test_*.py, so config/settings_test.py is never collected.
+python_files = ["test_*.py"]
+testpaths = ["apps", "config"]
+# A plain `pytest` reports coverage and enforces fail_under. --cov takes an
+# optional value, so an option follows it; otherwise it would swallow a test
+# path given on the command line as a coverage source.
+addopts = ["--cov", "--cov-report=term-missing"]
+
+[tool.coverage.run]
+source = ["apps", "config"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
