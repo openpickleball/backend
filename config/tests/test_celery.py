@@ -57,7 +57,7 @@ def _broker(values: dict[str, str]) -> dict[str, object]:
 class PingTests(SimpleTestCase):
     def test_ping_is_registered_under_its_explicit_name(self) -> None:
         assert ping.name == "config.ping"
-        assert celery_app.tasks["config.ping"] is ping
+        assert celery_app.tasks["config.ping"] == ping
 
     def test_ping_returns_pong(self) -> None:
         assert ping() == "pong"
