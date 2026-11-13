@@ -19,7 +19,7 @@ New here? Start with an issue labeled [`good first issue`](https://github.com/op
 3. Read the issue in full. Many issues cite the backend plan's decisions as "decisions Qn" or "Fn". Those are in [issue #1](https://github.com/openpickleball/backend/issues/1): read the ones the issue names before you start.
 4. Ask questions in the issue. A question early saves a rewrite later.
 
-For anything not already in an issue, open one first, as the organization guide asks.
+This repository links every pull request to an issue, so if none exists for your change, open one first.
 
 ## Branches and pull requests
 
@@ -52,7 +52,7 @@ If the `sign-off` check fails, add the missing sign-offs and push again. For the
 git commit --amend -s --no-edit
 ```
 
-For every commit on your branch:
+For every commit on your branch, rebase onto an up-to-date `main` of this repository (in a fork, fetch the upstream `main` first):
 
 ```bash
 git rebase --signoff main
@@ -76,10 +76,8 @@ uv run pre-commit run --all-files
 The README section [Lint, types, and git hooks](README.md#lint-types-and-git-hooks) explains what mypy needs to run. If a rule can be checked by ruff, enable the ruff rule instead of adding it here. These conventions are the ones a tool cannot check:
 
 - **Names come from [`CONTEXT.md`](CONTEXT.md).** Use its terms for models, endpoints, fields, tests, and docs: Player, Account, Match, Organizer, and so on. Say "player", "match", and "organizer", not "user" or "entity". If you need a new term, add it to `CONTEXT.md` in the same pull request.
-- **Apps live under `apps/`.** Each first-party Django app is a package in `apps/<app>/`, with its tests in `apps/<app>/tests/` and its API operations on a `Router` in `apps/<app>/api.py`. The `config/api.py` docstring shows how to mount a router. Reference the account model through `settings.AUTH_USER_MODEL` or `get_user_model()`, never by importing it.
+- **Apps live under `apps/`.** Each first-party Django app is a package in `apps/<app>/`, with its tests in `apps/<app>/tests/` and its API operations on a `Router` in `apps/<app>/api.py`. The `config/api.py` docstring shows how to mount a router.
 - **Write an ADR for decisions that are hard to reverse.** [`docs/adr/README.md`](docs/adr/README.md) says when to write one and gives the template. Check the existing records before changing a decision they cover.
-- **Do not reimplement rating math.** The backend calls the engine. If a calculation looks wrong, the fix belongs in the engine or the rating spec.
-- **Do not name competing rating systems** in code, docs, issues, or comments. Say "external rating" or "standard external rating system".
 
 ## Tests
 
@@ -89,7 +87,7 @@ Every change to behavior needs tests that would fail without it. A bug fix needs
 - Build test records with the [factory_boy](https://factoryboy.readthedocs.io/) factories, such as `UserFactory` in `apps/accounts/tests/factories.py`. They fill in made-up [Faker](https://faker.readthedocs.io/) data. When you add a model, add a factory for it.
 - Tests run against Postgres, not SQLite. Start the local services as the README describes before you run them.
 - `uv run pytest` fails when total coverage drops below `fail_under` in `pyproject.toml`. Do not lower the floor to make a pull request pass.
-- The floor counts the whole project, so a narrow run (one file, or `-k`) usually fails it. Add `--no-cov` to those runs:
+- The floor counts all of `apps` and `config`, so a narrow run (one file, or `-k`) usually fails it. Add `--no-cov` to those runs:
 
 ```bash
 uv run pytest --no-cov apps/accounts
@@ -105,7 +103,3 @@ uv run pytest --no-cov apps/accounts
 ```bash
 uv run python manage.py makemigrations --check --dry-run
 ```
-
-## Writing docs
-
-Docs use plain, short sentences. No emojis and no em dashes. Update the README, `CONTEXT.md`, or an ADR in the same pull request as the change that makes them out of date.
