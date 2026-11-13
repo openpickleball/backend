@@ -8,7 +8,7 @@ Backend services and APIs for [OPEN](https://github.com/openpickleball), the Ope
 
 ## Technology
 
-Python 3.13 and Django 5.2 LTS, managed with [uv](https://docs.astral.sh/uv/). The stack decisions are in [issue #1](https://github.com/openpickleball/backend/issues/1).
+Python 3.13 and Django 5.2 LTS, managed with [uv](https://docs.astral.sh/uv/). The stack decisions are in [issue #1](https://github.com/openpickleball/backend/issues/1). [ADR 0001](docs/adr/0001-django.md) explains why the backend uses Django, and [`docs/adr/`](docs/adr/) holds the other architecture decision records.
 
 ## Setup and tests
 
