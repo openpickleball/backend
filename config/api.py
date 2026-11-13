@@ -35,6 +35,7 @@ from django.core.exceptions import ImproperlyConfigured
 from ninja import NinjaAPI
 from ninja.errors import ValidationError, ValidationErrorContext
 from ninja.openapi.schema import OpenAPISchema
+from ninja.schema import NinjaGenerateJsonSchema
 
 from config.api_errors import (
     VALIDATION_ERROR_STATUS,
@@ -105,10 +106,21 @@ def _wire_location(error: dict[str, Any], single_attr: str | None) -> dict[str, 
 
 def _document_errors(schema: OpenAPISchema) -> None:
     """Add `ErrorResponse` and a 422 response to every operation with input."""
-    error_schema = ErrorResponse.model_json_schema(ref_template=_SCHEMA_REF)
+    error_schema = ErrorResponse.model_json_schema(
+        ref_template=_SCHEMA_REF, schema_generator=NinjaGenerateJsonSchema
+    )
+    definitions = {
+        **error_schema.pop("$defs", {}),
+        ErrorResponse.__name__: error_schema,
+    }
     schemas = schema.setdefault("components", {}).setdefault("schemas", {})
-    schemas.update(error_schema.pop("$defs", {}))
-    schemas[ErrorResponse.__name__] = error_schema
+    for name, definition in definitions.items():
+        if name in schemas and schemas[name] != definition:
+            raise ImproperlyConfigured(
+                f"An API schema named {name} clashes with the shared error schema "
+                "of the same name. Rename the API schema."
+            )
+        schemas[name] = definition
 
     error_ref = {"$ref": _SCHEMA_REF.format(model=ErrorResponse.__name__)}
     response = {
