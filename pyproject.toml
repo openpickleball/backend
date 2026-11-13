@@ -70,6 +70,12 @@ module = ["config.tests.test_celery"]
 disable_error_code = ["comparison-overlap"]
 
 [[tool.mypy.overrides]]
+# celery-types declares kombu's Queue.queue_declare as returning str | None,
+# but it returns the declare result, whose message_count the test reads.
+module = ["config.tests.test_celery_review_fixes"]
+disable_error_code = ["union-attr"]
+
+[[tool.mypy.overrides]]
 # Its scalar body parameters use the `name: str = Body(...)` form, which
 # ninja's type-checking stubs see as a bare generic.
 module = ["config.tests.test_api_body_field_paths"]
