@@ -110,22 +110,34 @@ def _document_errors(schema: OpenAPISchema) -> None:
     schemas.update(error_schema.pop("$defs", {}))
     schemas[ErrorResponse.__name__] = error_schema
 
+    error_ref = {"$ref": _SCHEMA_REF.format(model=ErrorResponse.__name__)}
     response = {
         "description": "The request is not valid.",
-        "content": {
-            "application/json": {
-                "schema": {"$ref": _SCHEMA_REF.format(model=ErrorResponse.__name__)}
-            }
-        },
+        "content": {"application/json": {"schema": error_ref}},
     }
     for path_item in schema.get("paths", {}).values():
         for operation in path_item.values():
             has_input = bool(operation.get("parameters")) or "requestBody" in operation
+            if not has_input:
+                continue
             responses = operation.setdefault("responses", {})
             # ninja keys responses by int status; JSON rendering makes them strings.
-            documented = {str(code) for code in responses}
-            if has_input and str(VALIDATION_ERROR_STATUS) not in documented:
+            declared = [
+                body
+                for code, body in responses.items()
+                if str(code) == str(VALIDATION_ERROR_STATUS)
+            ]
+            if not declared:
                 responses[VALIDATION_ERROR_STATUS] = response
+                continue
+            content = declared[0].get("content", {}).get("application/json", {})
+            if content.get("schema") != error_ref:
+                raise ImproperlyConfigured(
+                    f"API operation {operation.get('operationId')} declares its own "
+                    f"{VALIDATION_ERROR_STATUS} response, but input validation "
+                    f"always returns {ErrorResponse.__name__}. Remove it or "
+                    f"declare {ErrorResponse.__name__}."
+                )
 
 
 api = OpenNinjaAPI(
