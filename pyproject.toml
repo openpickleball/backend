@@ -16,6 +16,7 @@ dependencies = [
 dev = [
     "django-stubs[compatible-mypy]>=6.1.2",
     "factory-boy>=3.3.3",
+    "jsonschema>=4.26.0",
     "mypy>=2.4.1",
     "openapi-spec-validator>=0.9.0",
     "pre-commit>=4.7.0",
@@ -23,6 +24,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-django>=4.14.0",
     "ruff>=0.17.4",
+    "types-jsonschema>=4.26.0.20261006",
 ]
 
 [tool.ruff]

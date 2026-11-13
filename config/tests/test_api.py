@@ -8,6 +8,7 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.http import Http404, HttpRequest
 from django.test import Client
+from jsonschema import Draft202012Validator
 from ninja import Schema
 from ninja.errors import HttpError
 from ninja.operation import Operation
@@ -109,14 +110,21 @@ def test_validation_error_shape(throwaway_client: TestClient) -> None:
     assert by_field["body.items.0.k"].message
 
 
-def test_validation_error_never_echoes_input(throwaway_client: TestClient) -> None:
+def test_validation_error_copies_no_input_or_ctx(throwaway_client: TestClient) -> None:
+    """Items hold only field, code, and message, so the int_parsing value is absent.
+
+    Pydantic's own message is kept, so this does not prove that no message can
+    ever contain a submitted value: custom validators must not put it there.
+    """
     secret = "do-not-echo-this-value"
     response = throwaway_client.post("/items/1", json={"items": [{"k": secret}]})
 
     assert response.status_code == 422
-    assert secret not in response.content.decode()
-    for error in response.json()["errors"]:
+    errors = response.json()["errors"]
+    assert [error["code"] for error in errors] == ["int_parsing"]
+    for error in errors:
         assert set(error) == {"field", "code", "message"}
+    assert secret not in response.content.decode()
 
 
 def test_malformed_body_returns_error_schema(throwaway_client: TestClient) -> None:
@@ -191,12 +199,19 @@ def test_422_body_matches_documented_schema(
     throwaway_api: OpenNinjaAPI, throwaway_client: TestClient
 ) -> None:
     document = _throwaway_document(throwaway_api)
-    documented = document["components"]["schemas"]["ErrorResponse"]
-    response = throwaway_client.post("/items/abc", json={"items": []})
+    response = throwaway_client.post("/items/abc", json={"items": [{"k": "s"}]})
 
     assert response.status_code == 422
-    assert set(response.json()) == set(documented["properties"])
-    assert set(documented["required"]) == {"code", "message", "errors"}
+    body = response.json()
+    assert {error["field"] for error in body["errors"]} == {
+        "path.pid",
+        "body.items.0.k",
+    }
+    # The root carries the document's components, so "#/components/schemas/..."
+    # references inside ErrorResponse resolve against it.
+    schema = {"$ref": ERROR_REF, "components": document["components"]}
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema).validate(body)
 
 
 def _operations(target: OpenNinjaAPI) -> list[Operation]:

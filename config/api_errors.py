@@ -1,13 +1,20 @@
 """The error response schema shared by every API operation, and its handlers.
 
-Every error ninja handles (a request that fails validation, a body that does
-not parse, a 404, any `HttpError`) comes back as an `ErrorResponse`:
+Errors raised while an operation runs (input that fails validation, a body
+that does not parse, `Http404`, any `HttpError`) come back as an
+`ErrorResponse`:
 
     {"code": "...", "message": "...", "errors": [{"field", "code", "message"}]}
 
 `errors` lists one item per invalid input for a validation error and is empty
-otherwise. Unexpected exceptions keep ninja's default handler, which re-raises
-when DEBUG is off so Django's own 500 handling applies.
+otherwise. Each item copies only pydantic's location, error type, and
+message, never its `input` or `ctx`. The message is pydantic's own text, so a
+custom validator must not put the submitted value in its error message.
+
+These handlers do not see a wrong method on a known path (ninja answers with
+a plain-text 405) or a path that matches no operation (Django's 404 page).
+Unexpected exceptions keep ninja's default handler, which re-raises when
+DEBUG is off so Django's own 500 handling applies.
 """
 
 from collections.abc import Mapping
@@ -53,7 +60,8 @@ def _field_path(loc: list[Any] | tuple[Any, ...]) -> str:
 
 def _field_error(error: Mapping[str, Any]) -> FieldError:
     # Copy only the location, type, and message. Never `input` or `ctx`,
-    # which can echo what the client sent back to it.
+    # which can echo what the client sent back to it. The message itself is
+    # pydantic's text: custom validators must keep the value out of it.
     return FieldError(
         field=_field_path(error.get("loc", [])),
         code=str(error.get("type", "invalid")),

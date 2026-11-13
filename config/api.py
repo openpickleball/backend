@@ -22,11 +22,18 @@ Adding an app's endpoints (one router per app):
 
 Every operation needs an explicit `operation_id`: it names the method in the
 generated client, so it must not change when a view is renamed. Building the
-OpenAPI document raises `ImproperlyConfigured` for an operation without one.
+OpenAPI document raises `ImproperlyConfigured` for an operation in the
+document that has none. An operation left out of the document
+(`include_in_schema=False`) is not checked there; the test that walks every
+operation of `api` covers it.
 
-Every error ninja handles comes back as `ErrorResponse` (see
-`config/api_errors.py`), and every operation that takes input documents a 422
-response with that schema.
+Errors raised while an operation runs (input that fails validation, a body
+that does not parse, `Http404`, any `HttpError`) come back as `ErrorResponse`
+(see `config/api_errors.py`). Every operation that takes input documents a
+422 response with that schema, and may not declare a different 422 schema.
+Two kinds of error never reach these handlers: a known path called with the
+wrong method gets ninja's plain-text 405, and a path under /api/v1/ that
+matches no operation gets Django's own 404 page.
 """
 
 from typing import TYPE_CHECKING, Any
@@ -79,9 +86,10 @@ class OpenNinjaAPI(NinjaAPI):
         return schema
 
     def get_openapi_operation_id(self, operation: "Operation") -> str:
-        # ninja calls this only for an operation declared without an
-        # operation_id. Its default invents one from the function name, which
-        # would change the generated client whenever a view is renamed.
+        # ninja calls this while building the document, only for an operation
+        # in it (include_in_schema=True) declared without an operation_id. Its
+        # default invents one from the function name, which would change the
+        # generated client whenever a view is renamed.
         view = operation.view_func
         raise ImproperlyConfigured(
             f"API operation {view.__module__}.{view.__qualname__} has no "
