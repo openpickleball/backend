@@ -464,6 +464,10 @@ STORAGES = {
     },
 }
 
+# WhiteNoise would add Access-Control-Allow-Origin: * to every static
+# file. CORS covers /api/ paths only, so static files get no CORS header.
+WHITENOISE_ALLOW_ALL_ORIGINS = False
+
 # Email. Nothing is sent. With DEBUG on, every message prints to the
 # console. With DEBUG off, every message is discarded, so no email body or
 # recipient reaches the logs. Issue #35 adds the real provider for staging
