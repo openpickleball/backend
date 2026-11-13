@@ -42,9 +42,9 @@ The Django project scaffold exists (`config`, with settings read from the enviro
 
 ## API
 
-- There is one `NinjaAPI`, `api` in `config/api.py`, mounted at `/api/v1/`. Each app adds its operations to a `Router` in `apps/<app>/api.py`, and `config/api.py` mounts that router. Its module docstring shows how.
+- There is one `NinjaAPI`, `api` in `config/api.py`, mounted at `/api/v1/`. Each app adds its operations to a `Router` in `apps/<app>/api.py`, and `config/api.py` mounts that router. The `config/api.py` docstring shows how.
 - Every operation passes an explicit `operation_id`. It names the method in the generated client, so never change one for a rename. Building the OpenAPI document raises an error for an operation in the document that has none, and a test checks every operation.
-- Validation errors, an unparsable body, `Http404`, and `HttpError` come back as `ErrorResponse` (`config/api_errors.py`), and validation errors return 422. Any other exception gives Django's 500 when DEBUG is off. Raise `HttpError` or `Http404` instead of returning an error body by hand. Never declare a different 422 schema on an operation that takes input: building the document raises an error if you do. ADR 0005 records the versioning and error format.
+- Validation errors, an unparsable body, `Http404`, and `HttpError` come back as `ErrorResponse` (`config/api_errors.py`), and validation errors return 422. With DEBUG off, any other exception goes to Django, which returns its own HTML page: 403 for `PermissionDenied`, 400 for `SuspiciousOperation`, 500 otherwise. Raise `HttpError` or `Http404` instead of returning an error body by hand, and use `HttpError(403, ...)`, never Django's `PermissionDenied`. Never declare a different 422 schema on an operation that takes input: building the document raises an error if you do. ADR 0005 records the versioning and error format.
 - Never put the submitted value in a validation message. The 422 response returns the message to the client.
 
 ## Settings

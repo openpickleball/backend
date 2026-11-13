@@ -11,7 +11,7 @@ Partners, apps, and the OPEN frontend will call the backend's API. The frontend 
 
 - There is one django-ninja API, mounted at `/api/v1/`. Its OpenAPI document is served at `/api/v1/openapi.json`, with interactive docs at `/api/v1/docs`.
 - Every operation has an explicit `operation_id`, which becomes the method name in generated clients. Building the OpenAPI document raises an error for an operation in the document that has none, and a test checks every operation.
-- These errors come back in one shape, `ErrorResponse`: `{"code", "message", "errors": [{"field", "code", "message"}]}`. This covers validation errors, a body that does not parse, `Http404`, and `HttpError` (including authentication, permission, and throttling errors). `errors` is empty except for validation errors. Any other exception is left to Django, which returns its 500 page when DEBUG is off.
+- These errors come back in one shape, `ErrorResponse`: `{"code", "message", "errors": [{"field", "code", "message"}]}`. This covers validation errors, a body that does not parse, `Http404`, and `HttpError` (including authentication, permission, and throttling errors). `errors` is empty except for validation errors. With DEBUG off, any other exception goes to Django, which returns its own HTML page: 403 for `PermissionDenied`, 400 for `SuspiciousOperation`, 500 otherwise. Code raises `HttpError(403, ...)` rather than `PermissionDenied`.
 - Validation errors return 422 with one item per invalid input. `field` is the dotted location on the wire, such as `path.pid`, `query.page`, or `body.items.0.k`. A plain error that django-ninja raises outside pydantic, such as its cursor pagination error, names only the parameter (`cursor`). Every operation that takes input documents this 422 response. An operation that takes input may not declare a different 422 schema: building the document raises an error.
 - The response never copies pydantic's `input` or `ctx` details. Validation messages must not contain the submitted value.
 
@@ -26,4 +26,4 @@ Partners, apps, and the OPEN frontend will call the backend's API. The frontend 
 
 - django-ninja's default errors (`{"detail": ...}`): `detail` is a list for validation errors and a string otherwise, so clients need two error types, and the field location includes the Python name of the body parameter.
 - Generated `operation_id`s: django-ninja builds one from the module and function name, so renaming a view would rename the client method without anyone noticing.
-- Versioning by header instead of URL: harder to try in a browser or with curl, and django-ninja supports URL prefixes directly.
+- Versioning by header instead of URL: harder to try in a browser or with curl, and a URL prefix is a plain Django `path()`.
