@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.core.exceptions import ImproperlyConfigured
 from ninja import NinjaAPI
+from ninja.errors import ValidationError, ValidationErrorContext
 from ninja.openapi.schema import OpenAPISchema
 
 from config.api_errors import (
@@ -53,6 +54,16 @@ class OpenNinjaAPI(NinjaAPI):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         install_error_handlers(self)
+
+    def validation_error_from_error_contexts(
+        self, error_contexts: list[ValidationErrorContext[Any]]
+    ) -> ValidationError:
+        errors: list[dict[str, Any]] = []
+        for context in error_contexts:
+            single_attr = getattr(context.model, "__read_from_single_attr__", None)
+            for error in super().validation_error_from_error_contexts([context]).errors:
+                errors.append(_wire_location(error, single_attr))
+        return ValidationError(errors)
 
     def get_openapi_schema(
         self,
@@ -75,6 +86,21 @@ class OpenNinjaAPI(NinjaAPI):
             f"API operation {view.__module__}.{view.__qualname__} has no "
             "operation_id. Pass operation_id=... to its route decorator."
         )
+
+
+def _wire_location(error: dict[str, Any], single_attr: str | None) -> dict[str, Any]:
+    """Make a body error's location name the key the client sent.
+
+    When an operation has one body parameter, ninja reads the whole body into
+    it and puts the parameter's Python name second in the location
+    (`["body", "payload", "items", 0]`). The client never sent that name, so
+    it is dropped (`["body", "items", 0]`). With several body parameters the
+    second item is a key in the body and stays.
+    """
+    loc = tuple(error.get("loc", ()))
+    if single_attr and len(loc) > 1 and loc[0] == "body" and loc[1] == single_attr:
+        return {**error, "loc": (loc[0], *loc[2:])}
+    return error
 
 
 def _document_errors(schema: OpenAPISchema) -> None:

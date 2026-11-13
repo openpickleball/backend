@@ -46,17 +46,9 @@ class ErrorResponse(Schema):
     errors: list[FieldError]
 
 
-def _field_path(loc: list[Any]) -> str:
-    """Join a pydantic error location into a dotted path.
-
-    For a body error ninja puts the body parameter's Python name second
-    (`["body", "payload", "items", 0]`). That name is an implementation
-    detail, so it is dropped: the path above becomes `body.items.0`.
-    """
-    parts = list(loc)
-    if len(parts) > 1 and parts[0] == "body":
-        del parts[1]
-    return ".".join(str(part) for part in parts)
+def _field_path(loc: list[Any] | tuple[Any, ...]) -> str:
+    """Join an error location into a dotted path (ints become strings)."""
+    return ".".join(str(part) for part in loc)
 
 
 def _field_error(error: Mapping[str, Any]) -> FieldError:

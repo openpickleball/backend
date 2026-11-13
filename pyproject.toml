@@ -53,6 +53,12 @@ exclude_gitignore = true
 module = ["environ", "environ.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# Its scalar body parameters use the `name: str = Body(...)` form, which
+# ninja's type-checking stubs see as a bare generic.
+module = ["config.tests.test_api_body_field_paths"]
+disallow_any_generics = false
+
 [tool.django-stubs]
 django_settings_module = "config.settings"
 
