@@ -4,7 +4,7 @@
 
 Backend services and APIs for [OPEN](https://github.com/openpickleball), the Open Pickleball Evaluation Network.
 
-> **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model, the API mount at `/api/v1/`, the Celery background task setup, and the local development services so far. The API's only operations are the liveness and readiness checks, at `/api/v1/health/live` and `/api/v1/health/ready`. No OPEN rating is live.
+> **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model, the API mount at `/api/v1/`, the Celery background task setup, static file serving and CORS for the API, a gunicorn configuration, and the local development services so far. The API's only operations are the liveness and readiness checks, at `/api/v1/health/live` and `/api/v1/health/ready`. No OPEN rating is live.
 
 ## Technology
 
@@ -45,6 +45,17 @@ uv run celery -A config beat -l info
 ```
 
 Run only one beat process. Tests run tasks eagerly, so they need no worker and no broker.
+
+To serve the app the way production does, with `DJANGO_DEBUG` off, collect the static files first and then start gunicorn. gunicorn reads `gunicorn.conf.py`, which takes `PORT` (default 8000) and `WEB_CONCURRENCY` (default 2 workers) from the process environment, not from `.env`. With `DJANGO_DEBUG` off, settings redirect plain http to https, so a local request needs the `X-Forwarded-Proto: https` header that the hosting proxy would set, and `DJANGO_ALLOWED_HOSTS` must name the host you request (for example `127.0.0.1`).
+
+```bash
+uv run python manage.py collectstatic --noinput
+uv run gunicorn
+```
+
+With `DJANGO_DEBUG` off, the admin and the API docs page return an error until `collectstatic` has run. This also applies to `runserver` and the compose `web` profile.
+
+A browser page on another origin can read API responses only if its origin is listed in `CORS_ALLOWED_ORIGINS`, comma-separated, as exact origins such as `https://app.example.org` or `http://localhost:3000`. It is empty by default, so no other origin is allowed. Only `/api/` paths send CORS headers. CORS limits what browsers let a page read; it is not access control, and it does not limit other clients.
 
 Formatting, lint, and type checks use ruff and mypy (strict, with django-stubs). Install the git hooks once, then run every check by hand when you like:
 
