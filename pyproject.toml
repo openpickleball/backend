@@ -41,13 +41,31 @@ target-version = "py313"
 extend-exclude = ["**/migrations/**", "*.md"]
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "B", "UP", "DJ", "SIM", "RUF"]
+select = ["E", "W", "F", "I", "B", "UP", "DJ", "SIM", "PT", "RUF"]
 # The formatter owns line length; the remaining hits are long strings.
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 # The email normalization tests use look-alike characters on purpose.
 "**/tests/**" = ["RUF001"]
+# These tests predate the pytest-style rules and still use unittest
+# assertions. Remove each entry as its file is converted (issue #146).
+"apps/accounts/tests/test_admin.py" = ["PT"]
+"apps/accounts/tests/test_ascii_policy.py" = ["PT"]
+"apps/accounts/tests/test_createsuperuser.py" = ["PT"]
+"apps/accounts/tests/test_models.py" = ["PT"]
+"apps/accounts/tests/test_review_fixes.py" = ["PT"]
+"apps/accounts/tests/test_review_fixes_2.py" = ["PT"]
+"apps/accounts/tests/test_review_fixes_3.py" = ["PT"]
+"apps/accounts/tests/test_review_fixes_4.py" = ["PT"]
+"config/tests/test_cache.py" = ["PT"]
+"config/tests/test_celery_review_fixes.py" = ["PT"]
+"config/tests/test_database_url.py" = ["PT"]
+"config/tests/test_email_backend.py" = ["PT"]
+"config/tests/test_parallel_spawn.py" = ["PT"]
+"config/tests/test_settings.py" = ["PT"]
+"config/tests/test_settings_env_file.py" = ["PT"]
+"config/tests/test_settings_review_fixes.py" = ["PT"]
 
 [tool.mypy]
 python_version = "3.13"
