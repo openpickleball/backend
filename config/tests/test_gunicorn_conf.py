@@ -2,8 +2,12 @@
 
 gunicorn reads gunicorn.conf.py from the working directory, so
 `uv run gunicorn` at the repo root needs no arguments. The port and the
-worker count come from PORT and WEB_CONCURRENCY. A bad value stops
-startup with an error that names the variable and never echoes it.
+worker count come from PORT and WEB_CONCURRENCY. A bad PORT, or a
+WEB_CONCURRENCY that is a number below 1, stops startup with an error
+that names the variable and never echoes it. gunicorn itself parses
+WEB_CONCURRENCY with int() before it reads this file, so a blank or
+non-integer value stops startup with gunicorn's own error
+(test_gunicorn_startup.py runs the real gunicorn).
 """
 
 import runpy
@@ -33,10 +37,19 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("blank", ["", "  "])
-def test_blank_values_mean_unset(monkeypatch: pytest.MonkeyPatch, blank: str) -> None:
-    conf = _load(monkeypatch, PORT=blank, WEB_CONCURRENCY=blank)
+def test_blank_port_means_unset(monkeypatch: pytest.MonkeyPatch, blank: str) -> None:
+    conf = _load(monkeypatch, PORT=blank)
     assert conf["bind"] == "0.0.0.0:8000"
-    assert conf["workers"] == 2
+
+
+@pytest.mark.parametrize("blank", ["", "  "])
+def test_blank_web_concurrency_is_refused(
+    monkeypatch: pytest.MonkeyPatch, blank: str
+) -> None:
+    # gunicorn refuses a blank value before this file loads, so the file
+    # must not claim blank means the default.
+    with pytest.raises(ValueError, match="WEB_CONCURRENCY"):
+        _load(monkeypatch, WEB_CONCURRENCY=blank)
 
 
 def test_port_and_workers_from_the_environment(
@@ -57,7 +70,8 @@ def test_port_range_edges_are_accepted(
 
 # Made-up bad values. Each is checked against the error message.
 BAD_PORTS = ["0", "65536", "abc", "-1", "1.5", "80x", "+80", "٨٠", "99999999"]
-BAD_WORKERS = ["0", "abc", "-1", "1.5", "2x", "+2", "٤"]
+# Values gunicorn's own int() accepts, but this file refuses.
+BAD_WORKERS = ["0", "-1", "-0", "+2", "٤"]
 
 
 @pytest.mark.parametrize("value", BAD_PORTS)
