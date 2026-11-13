@@ -113,9 +113,11 @@ services:
       web:
         condition: service_healthy
 
-  # Optional. Celery beat, with the database scheduler from settings. Run
-  # `manage.py migrate` first: the scheduler reads django_celery_beat's
-  # tables. Run one beat only, or periodic tasks are sent twice.
+  # Optional. Celery beat, with the database scheduler from settings. The
+  # scheduler reads django_celery_beat's tables, so beat waits, printing a
+  # hint every few seconds, until `manage.py migrate` has been run (or the
+  # database is reachable), then starts. Run one beat only, or periodic
+  # tasks are sent twice.
   beat:
     profiles: [web]
     image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
@@ -129,7 +131,15 @@ services:
       PYTHONUNBUFFERED: "1"
       DATABASE_URL: postgres://open@db:5432/open
       REDIS_URL: redis://cache:6379/0
-    command: uv run --no-sync celery -A config beat -l info
+    command:
+      - sh
+      - -c
+      - |
+        until uv run --no-sync python manage.py migrate --check >/dev/null 2>&1; do
+          echo "beat: waiting for migrations. Run: uv run python manage.py migrate"
+          sleep 5
+        done
+        exec uv run --no-sync celery -A config beat -l info
     depends_on:
       web:
         condition: service_healthy
