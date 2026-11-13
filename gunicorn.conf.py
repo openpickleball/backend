@@ -35,3 +35,6 @@ def _whole_number(
 wsgi_app = "config.wsgi:application"
 bind = f"0.0.0.0:{_whole_number('PORT', 8000, 1, 65535, blank_is_unset=True)}"
 workers = _whole_number("WEB_CONCURRENCY", 2, 1, None, blank_is_unset=False)
+# gunicorn 27 opens a Unix control socket by default that accepts reload,
+# shutdown, and worker commands. Nothing uses it, so it stays off.
+control_socket_disable = True
