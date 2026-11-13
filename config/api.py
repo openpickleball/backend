@@ -1,7 +1,8 @@
 """The OPEN HTTP API: the single django-ninja instance, mounted at /api/v1/.
 
 `config/urls.py` mounts `api` once. The OpenAPI document is served at
-/api/v1/openapi.json and the interactive docs at /api/v1/docs.
+/api/v1/openapi.json and the interactive docs at /api/v1/docs. The health
+router (`config/health.py`) is mounted at /api/v1/health/.
 
 Adding an app's endpoints (one router per app):
 
@@ -49,6 +50,7 @@ from config.api_errors import (
     ErrorResponse,
     install_error_handlers,
 )
+from config.health import router as health_router
 
 _SCHEMA_REF = "#/components/schemas/{model}"
 
@@ -171,3 +173,5 @@ api = OpenNinjaAPI(
     docs_url="/docs",
     openapi_url="/openapi.json",
 )
+
+api.add_router("health/", health_router)
