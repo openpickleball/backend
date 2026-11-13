@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import ssl
 import warnings
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -18,6 +19,7 @@ from urllib.parse import urlsplit
 import django_stubs_ext
 import environ
 from django.core.exceptions import ImproperlyConfigured
+from kombu import Queue
 
 # Let generic Django classes, such as UserAdmin[User], be subscripted at
 # runtime, as the type stubs expect.
@@ -167,6 +169,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "ninja",
+    "django_celery_beat",
     "apps.accounts",
 ]
 
@@ -238,6 +241,60 @@ CACHES = {
 }
 
 
+# Celery
+# https://docs.celeryq.dev/en/stable/userguide/configuration.html
+
+# The broker is the same Valkey as the cache, at REDIS_URL. They share its
+# database without a key clash, but clearing that database (Django's
+# RedisCache.clear() runs FLUSHDB) also drops every queued task.
+CELERY_BROKER_URL = REDIS_URL
+# kombu refuses a rediss:// broker unless certificate checking is set. It
+# is set here, never in the URL, and verification stays on. A redis://
+# broker gets no TLS options.
+CELERY_BROKER_USE_SSL: dict[str, object] | None = None
+if REDIS_URL.startswith("rediss://"):
+    CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": ssl.CERT_REQUIRED}
+
+# Every task runs on one of these queues, and the worker must consume all
+# of them (-Q ratings,email,webhooks,default). A task routed to a queue no
+# worker consumes never runs, and nothing reports it.
+CELERY_TASK_DEFAULT_QUEUE = "default"
+CELERY_TASK_QUEUES = (
+    Queue("default"),
+    Queue("ratings"),
+    Queue("email"),
+    Queue("webhooks"),
+)
+CELERY_TASK_ROUTES = {
+    "apps.ratings.tasks.*": {"queue": "ratings"},
+    "apps.emails.tasks.*": {"queue": "email"},
+    "apps.webhooks.tasks.*": {"queue": "webhooks"},
+}
+
+# A task is acknowledged after it finishes, so a crash mid-task redelivers
+# it. Every task must be safe to run twice.
+CELERY_TASK_ACKS_LATE = True
+# A task that kills its worker is not requeued, so it cannot crash workers
+# forever. This is Celery's default, stated so nobody turns it on lightly.
+CELERY_TASK_REJECT_ON_WORKER_LOST = False
+# One message at a time per process. Celery has no per-queue prefetch, so
+# this covers the ratings queue and every other one.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_SOFT_TIME_LIMIT = 300
+CELERY_TASK_TIME_LIMIT = 360
+# Valkey redelivers a task not acknowledged within the visibility timeout.
+# With late acks, every time limit (and every countdown or ETA) must stay
+# below it, or a task is delivered twice.
+CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 3600}
+# No result backend. Nothing reads task results.
+CELERY_TASK_IGNORE_RESULT = True
+# CELERY_TIMEZONE follows TIME_ZONE (Internationalization, below).
+
+# Periodic tasks live in the database (django_celery_beat). Run one beat
+# process only, or every periodic task is sent twice.
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
@@ -263,6 +320,9 @@ AUTH_PASSWORD_VALIDATORS = [
 LANGUAGE_CODE = "en-us"
 
 TIME_ZONE = "UTC"
+
+# Celery schedules periodic tasks in the same time zone.
+CELERY_TIMEZONE = TIME_ZONE
 
 USE_I18N = True
 
