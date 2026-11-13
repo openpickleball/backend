@@ -4,7 +4,7 @@
 
 Backend services and APIs for [OPEN](https://github.com/openpickleball), the Open Pickleball Evaluation Network.
 
-> **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model, the API mount at `/api/v1/`, and the local development services so far. The API's only operations are the liveness and readiness checks, at `/api/v1/health/live` and `/api/v1/health/ready`. No OPEN rating is live.
+> **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model, the API mount at `/api/v1/`, the Celery background task setup, and the local development services so far. The API's only operations are the liveness and readiness checks, at `/api/v1/health/live` and `/api/v1/health/ready`. No OPEN rating is live.
 
 ## Technology
 
@@ -33,9 +33,18 @@ uv run python manage.py runserver
 
 `uv run pytest` reports coverage and fails if it drops below the floor set in `pyproject.toml`. That floor counts all of `apps` and `config`, so when you run only some tests (one file, or `-k`), add `--no-cov`.
 
-`--wait` returns once both services are healthy. The services listen on `127.0.0.1` only: Postgres on port 5432 and Valkey on 6379. Stop any other Postgres, Redis, or Valkey on those ports first. `docker compose down` stops them and keeps the data; `docker compose down -v` also deletes it. To run the app in a container on http://127.0.0.1:8000 instead of with `runserver` on the host, use `docker compose --profile web up -d --wait`. It uses the same port as `runserver`, so stop one before starting the other.
+`--wait` returns once both services are healthy. The services listen on `127.0.0.1` only: Postgres on port 5432 and Valkey on 6379. Stop any other Postgres, Redis, or Valkey on those ports first. `docker compose down` stops them and keeps the data; `docker compose down -v` also deletes it. To run the app in a container on http://127.0.0.1:8000 instead of with `runserver` on the host, use `docker compose --profile web up -d --wait`. It uses the same port as `runserver`, so stop one before starting the other. The same profile also starts a Celery worker and beat. Beat waits until the migrations are applied, so run `uv run python manage.py migrate` first.
 
 Docker Compose also reads `.env` and treats a `$` in a value as a variable reference. If your secret key contains `$`, wrap it in single quotes: `DJANGO_SECRET_KEY='...'`.
+
+Background tasks run in Celery workers, with Valkey as the broker at the same `REDIS_URL` as the cache. To run a worker and the periodic task scheduler on the host:
+
+```bash
+uv run celery -A config worker -Q ratings,email,webhooks,default -l info
+uv run celery -A config beat -l info
+```
+
+Run only one beat process. Tests run tasks eagerly, so they need no worker and no broker.
 
 Formatting, lint, and type checks use ruff and mypy (strict, with django-stubs). Install the git hooks once, then run every check by hand when you like:
 

@@ -2,6 +2,7 @@
 #
 # Start Postgres and Valkey:   docker compose up -d --wait
 # Also run the app (optional): docker compose --profile web up -d --wait
+#   (the app, a Celery worker, and beat; beat waits until migrate has run)
 # Stop, keeping local data:    docker compose down
 # Stop and delete local data:  docker compose down -v
 #
@@ -115,7 +116,7 @@ services:
 
   # Optional. Celery beat, with the database scheduler from settings. The
   # scheduler reads django_celery_beat's tables, so beat waits, printing a
-  # hint every few seconds, until `manage.py migrate` has been run (or the
+  # hint every few seconds, until `manage.py migrate` has been run (and the
   # database is reachable), then starts. Run one beat only, or periodic
   # tasks are sent twice.
   beat:
