@@ -52,11 +52,13 @@ If the `sign-off` check fails, add the missing sign-offs and push again. For the
 git commit --amend -s --no-edit
 ```
 
-For every commit on your branch, rebase onto an up-to-date `main` of this repository (in a fork, fetch the upstream `main` first):
+For every commit on your branch, fetch the current `main` and rebase onto it. In a fork, first add this repository as a remote once: `git remote add upstream https://github.com/openpickleball/backend.git`.
 
 ```bash
-git rebase --signoff main
+git fetch upstream && git rebase --signoff upstream/main
 ```
+
+For a branch in this repository, use `git fetch origin && git rebase --signoff origin/main` instead.
 
 Both rewrite your branch, so push with `git push --force-with-lease`. Only do this on your own branch.
 
@@ -83,8 +85,8 @@ The README section [Lint, types, and git hooks](README.md#lint-types-and-git-hoo
 
 Every change to behavior needs tests that would fail without it. A bug fix needs a test that reproduces the bug.
 
-- Write tests with [pytest](https://docs.pytest.org/): plain `assert` statements and fixtures, not `unittest` classes.
-- Build test records with the [factory_boy](https://factoryboy.readthedocs.io/) factories, such as `UserFactory` in `apps/accounts/tests/factories.py`. They fill in made-up [Faker](https://faker.readthedocs.io/) data. When you add a model, add a factory for it.
+- Write tests with [pytest](https://docs.pytest.org/).
+- Build test records with the [factory_boy](https://factoryboy.readthedocs.io/) factories, such as `UserFactory` in `apps/accounts/tests/factories.py`. They fill in made-up [Faker](https://faker.readthedocs.io/) data. When you add a model, consider adding a factory for it.
 - Tests run against Postgres, not SQLite. Start the local services as the README describes before you run them.
 - `uv run pytest` fails when total coverage drops below `fail_under` in `pyproject.toml`. Do not lower the floor to make a pull request pass.
 - The floor counts all of `apps` and `config`, so a narrow run (one file, or `-k`) usually fails it. Add `--no-cov` to those runs:
@@ -96,7 +98,7 @@ uv run pytest --no-cov apps/accounts
 ## Migrations
 
 - Generate migrations with `uv run python manage.py makemigrations`. Never write one by hand.
-- Aim for one migration per app per pull request. If you change a model again before your pull request merges, delete your unmerged migration and generate it again, instead of stacking a second one on top.
+- Aim for one migration per app per pull request. If you change a model again before your pull request merges, delete your unmerged migration and generate it again, instead of stacking a second one on top. Before you delete it, migrate your local database back with `uv run python manage.py migrate <app> <previous migration>`, so the database keeps no record of a migration that no longer exists.
 - Never edit or delete a migration that has merged to `main`. Other databases have already applied it. Change the schema with a new migration.
 - CI runs `makemigrations --check --dry-run` and fails when a model change has no migration. Run it yourself before you push:
 
