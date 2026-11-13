@@ -59,6 +59,17 @@ module = ["environ", "environ.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+# django-celery-beat ships no type information.
+module = ["django_celery_beat", "django_celery_beat.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# celery-types declares conf.timezone as a tzinfo, but the app's conf holds
+# the TIME_ZONE string the test compares it with.
+module = ["config.tests.test_celery"]
+disable_error_code = ["comparison-overlap"]
+
+[[tool.mypy.overrides]]
 # Its scalar body parameters use the `name: str = Body(...)` form, which
 # ninja's type-checking stubs see as a bare generic.
 module = ["config.tests.test_api_body_field_paths"]

@@ -286,6 +286,9 @@ CELERY_TASK_TIME_LIMIT = 360
 # With late acks, every time limit (and every countdown or ETA) must stay
 # below it, or a task is delivered twice.
 CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 3600}
+# Tasks go through the broker. The test settings run them eagerly instead.
+CELERY_TASK_ALWAYS_EAGER = False
+CELERY_TASK_EAGER_PROPAGATES = False
 # No result backend. Nothing reads task results.
 CELERY_TASK_IGNORE_RESULT = True
 # CELERY_TIMEZONE follows TIME_ZONE (Internationalization, below).
