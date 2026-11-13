@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import re
 import ssl
 import warnings
 from pathlib import Path
@@ -129,6 +130,43 @@ def _redis_url(url: str) -> str:
     return url
 
 
+# An exact browser origin: a lowercase http or https scheme, a host (a DNS
+# name or a bracketed IPv6 address), and an optional port with no leading
+# zero. Nothing else: no path, trailing slash, query, fragment, user info,
+# or wildcard.
+_ORIGIN = re.compile(
+    r"https?://"
+    r"(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])"
+    r"(?::(?P<port>[1-9][0-9]{0,4}))?"
+)
+
+
+def _is_origin(value: str) -> bool:
+    """Return whether value is exactly scheme://host[:port]."""
+    match = _ORIGIN.fullmatch(value)
+    if match is None:
+        return False
+    port = match.group("port")
+    return port is None or int(port) <= 65535
+
+
+def _cors_origins(name: str) -> list[str]:
+    """Read a list of exact origins, failing fast without echoing it.
+
+    django-cors-headers checks the entries only in a system check, and
+    gunicorn runs none, so a bad entry is refused here at startup.
+    """
+    origins = _list(name)
+    if not all(_is_origin(origin) for origin in origins):
+        raise ImproperlyConfigured(
+            f"{name} has an entry that is not an origin. List exact origins, "
+            "comma-separated, each a scheme (http or https), a host, and an "
+            "optional port, with no path, trailing slash, or wildcard (see "
+            ".env.example)."
+        )
+    return origins
+
+
 def _celery_broker_url(url: str) -> str:
     """Return a checked REDIS_URL in the form kombu reads as one broker.
 
@@ -184,6 +222,17 @@ ALLOWED_HOSTS = _list("DJANGO_ALLOWED_HOSTS")
 
 CSRF_TRUSTED_ORIGINS = _list("CSRF_TRUSTED_ORIGINS")
 
+# CORS (django-cors-headers). Browsers on these exact origins may call the
+# API, for example https://app.example.org. Unset or blank allows no
+# origin. Only /api/ paths get CORS headers.
+CORS_ALLOWED_ORIGINS = _cors_origins("CORS_ALLOWED_ORIGINS")
+CORS_URLS_REGEX = r"^/api/"
+# Never a wildcard, and never read from the environment.
+CORS_ALLOW_ALL_ORIGINS = False
+# Browsers send no cookies or session credentials cross-origin. API
+# clients authenticate with bearer tokens (issue #27).
+CORS_ALLOW_CREDENTIALS = False
+
 # Valkey URL (redis:// or rediss://). The cache and Celery (issue #9)
 # read it from here.
 REDIS_URL = _redis_url(_required("REDIS_URL"))
@@ -202,6 +251,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     "ninja",
     "django_celery_beat",
     "apps.accounts",
@@ -215,6 +265,9 @@ MIDDLEWARE = [
     # Serves the collected static files. It must come right after
     # SecurityMiddleware and only answers STATIC_URL paths.
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    # Adds CORS headers to /api/ responses. It must come before
+    # CommonMiddleware, which can return a response early.
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

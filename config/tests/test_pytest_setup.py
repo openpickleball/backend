@@ -119,6 +119,7 @@ def test_debug_off_run_keeps_test_overrides() -> None:
             # Nothing listens here. The cache must not be used.
             "REDIS_URL": "redis://127.0.0.1:1/0",
             "CSRF_TRUSTED_ORIGINS": "",
+            "CORS_ALLOWED_ORIGINS": "",
         }
         if "HOME" in os.environ:
             env["HOME"] = os.environ["HOME"]
