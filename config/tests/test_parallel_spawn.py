@@ -1,11 +1,10 @@
 """The test runner's overrides hold in parallel workers started with spawn.
 
-With DEBUG off, settings turn on SECURE_SSL_REDIRECT, and the default cache
-points at REDIS_URL. The test runner turns the redirect off and swaps the
-cache for LocMemCache for the test run. That must also hold in parallel
-workers that re-import settings (spawn start method, the default on macOS
-and Windows). REDIS_URL points at a closed port, so a pass proves no cache
-server is used.
+The test runner applies the test overrides in `config/test_runner.py` for
+the test run. They must also hold in parallel workers that re-import
+settings (spawn start method, the default on macOS and Windows). The probe
+checks two of them, the https redirect and the cache: REDIS_URL points at
+a closed port, so a pass proves no cache server is used.
 
 This runs a small probe suite with --parallel 2 under spawn in a fresh
 process. Nothing is written outside a temporary directory.
@@ -89,6 +88,7 @@ class ParallelSpawnTests(SimpleTestCase):
                 # Nothing listens here. The cache must not be used.
                 "REDIS_URL": "redis://127.0.0.1:1/0",
                 "CSRF_TRUSTED_ORIGINS": "",
+                "CORS_ALLOWED_ORIGINS": "",
             }
             if "HOME" in os.environ:
                 env["HOME"] = os.environ["HOME"]

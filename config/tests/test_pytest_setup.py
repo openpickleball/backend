@@ -1,8 +1,8 @@
 """pytest runs the suite with the same test overrides as `manage.py test`.
 
-pytest loads `config.settings_test`, which turns off the https redirect
-and swaps the cache for LocMemCache in the settings module itself, so
-every process that loads it (parallel workers included) gets them.
+pytest loads `config.settings_test`, which applies the test overrides
+listed in `config/test_runner.py` in the settings module itself, so every
+process that loads it (parallel workers included) gets them.
 """
 
 import os
@@ -119,6 +119,7 @@ def test_debug_off_run_keeps_test_overrides() -> None:
             # Nothing listens here. The cache must not be used.
             "REDIS_URL": "redis://127.0.0.1:1/0",
             "CSRF_TRUSTED_ORIGINS": "",
+            "CORS_ALLOWED_ORIGINS": "",
         }
         if "HOME" in os.environ:
             env["HOME"] = os.environ["HOME"]

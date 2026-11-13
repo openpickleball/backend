@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import re
 import ssl
 import warnings
 from pathlib import Path
@@ -129,6 +130,47 @@ def _redis_url(url: str) -> str:
     return url
 
 
+# An exact browser origin: a lowercase http or https scheme, a host (a DNS
+# name or a bracketed IPv6 address), and an optional port with no leading
+# zero. Nothing else: no path, trailing slash, query, fragment, user info,
+# or wildcard. Browsers leave out the scheme's default port (443 for
+# https, 80 for http), so an origin that names it could never match.
+_ORIGIN = re.compile(
+    r"(?P<scheme>https?)://"
+    r"(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])"
+    r"(?::(?P<port>[1-9][0-9]{0,4}))?"
+)
+
+
+def _is_origin(value: str) -> bool:
+    """Return whether value is exactly scheme://host[:port]."""
+    match = _ORIGIN.fullmatch(value)
+    if match is None:
+        return False
+    port = match.group("port")
+    if port is None:
+        return True
+    default_port = 443 if match.group("scheme") == "https" else 80
+    return int(port) <= 65535 and int(port) != default_port
+
+
+def _cors_origins(name: str) -> list[str]:
+    """Read a list of exact origins, failing fast without echoing it.
+
+    django-cors-headers checks the entries only in a system check, and
+    gunicorn runs none, so a bad entry is refused here at startup.
+    """
+    origins = _list(name)
+    if not all(_is_origin(origin) for origin in origins):
+        raise ImproperlyConfigured(
+            f"{name} has an entry that is not an origin. List exact origins, "
+            "comma-separated, each a scheme (http or https), a host, and an "
+            "optional port that is not the scheme's default, with no path, "
+            "trailing slash, or wildcard (see .env.example)."
+        )
+    return origins
+
+
 def _celery_broker_url(url: str) -> str:
     """Return a checked REDIS_URL in the form kombu reads as one broker.
 
@@ -184,6 +226,17 @@ ALLOWED_HOSTS = _list("DJANGO_ALLOWED_HOSTS")
 
 CSRF_TRUSTED_ORIGINS = _list("CSRF_TRUSTED_ORIGINS")
 
+# CORS (django-cors-headers). Browsers on these exact origins may call the
+# API, for example https://app.example.org. Unset or blank allows no
+# origin. Only /api/ paths get CORS headers.
+CORS_ALLOWED_ORIGINS = _cors_origins("CORS_ALLOWED_ORIGINS")
+CORS_URLS_REGEX = r"^/api/"
+# Never a wildcard, and never read from the environment.
+CORS_ALLOW_ALL_ORIGINS = False
+# Browsers send no cookies or session credentials cross-origin. API
+# clients authenticate with bearer tokens (issue #27).
+CORS_ALLOW_CREDENTIALS = False
+
 # Valkey URL (redis:// or rediss://). The cache and Celery (issue #9)
 # read it from here.
 REDIS_URL = _redis_url(_required("REDIS_URL"))
@@ -202,6 +255,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     "ninja",
     "django_celery_beat",
     "apps.accounts",
@@ -212,6 +266,12 @@ AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves the collected static files. It must come right after
+    # SecurityMiddleware and only answers STATIC_URL paths.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    # Adds CORS headers to /api/ responses. It must come before
+    # CommonMiddleware, which can return a response early.
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -386,6 +446,27 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "static/"
+
+# collectstatic writes here (git-ignored), and WhiteNoise serves the files
+# from the app. Run `manage.py collectstatic --noinput` before starting
+# gunicorn with DEBUG off.
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Collected files get a content hash in their names and gzip copies, so
+# WhiteNoise can cache them forever and send them compressed. The test
+# settings swap in Django's plain storage, so tests need no collectstatic.
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+# WhiteNoise would add Access-Control-Allow-Origin: * to every static
+# file. CORS covers /api/ paths only, so static files get no CORS header.
+WHITENOISE_ALLOW_ALL_ORIGINS = False
 
 # Email. Nothing is sent. With DEBUG on, every message prints to the
 # console. With DEBUG off, every message is discarded, so no email body or

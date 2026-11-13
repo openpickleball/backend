@@ -25,6 +25,7 @@ SETTINGS_VARS = (
     "DATABASE_URL",
     "REDIS_URL",
     "CSRF_TRUSTED_ORIGINS",
+    "CORS_ALLOWED_ORIGINS",
 )
 
 # Made-up values for tests only. Not a real secret.
@@ -37,6 +38,7 @@ PRODUCTION_LIKE = {
     "DATABASE_URL": "postgres://open@db.example.org:5432/open",
     "REDIS_URL": "rediss://cache.example.org:6379/0",
     "CSRF_TRUSTED_ORIGINS": "https://api.example.org",
+    "CORS_ALLOWED_ORIGINS": "https://app.example.org",
 }
 
 LOCAL_DEBUG = {
@@ -46,6 +48,7 @@ LOCAL_DEBUG = {
     "DATABASE_URL": "postgres://open@localhost:5432/open",
     "REDIS_URL": "redis://localhost:6379/0",
     "CSRF_TRUSTED_ORIGINS": "",
+    "CORS_ALLOWED_ORIGINS": "",
 }
 
 PRINT_SETTINGS = """
@@ -59,6 +62,7 @@ print(json.dumps({
     'SECRET_KEY': settings.SECRET_KEY,
     'ALLOWED_HOSTS': settings.ALLOWED_HOSTS,
     'CSRF_TRUSTED_ORIGINS': settings.CSRF_TRUSTED_ORIGINS,
+    'CORS_ALLOWED_ORIGINS': settings.CORS_ALLOWED_ORIGINS,
     'REDIS_URL': settings.REDIS_URL,
     'DB_ENGINE': db['ENGINE'],
     'DB_NAME': db['NAME'],

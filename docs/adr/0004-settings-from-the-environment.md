@@ -23,7 +23,7 @@ Some of these choices are hard to undo. A browser that has seen an HSTS header k
 - Any host served with DEBUG off must stay https-only, subdomains included, for a year after a browser last saw the header. The `preload` directive submits nothing by itself; joining a browser preload list is a separate, manual step.
 - Trusting `X-Forwarded-Proto` is safe only behind a proxy that sets it. Running the app with DEBUG off without such a proxy lets a client claim https.
 - A plain-http health probe gets a redirect. The health check issue (#66) needs to exempt its path or probe over https.
-- Tests run over plain http, so the test run turns the redirect off. It also swaps the cache to an in-memory one, so tests need no cache server. pytest gets both overrides from `config/settings_test.py`, and `manage.py test` gets them from its runner (`config/test_runner.py`). Production settings are unchanged.
+- Tests run over plain http, so the test run turns the redirect off. Later issues added more test-only overrides (the full list is in `config/test_runner.py`). pytest gets them from `config/settings_test.py`, and `manage.py test` gets them from its runner (`config/test_runner.py`). Production settings are unchanged.
 
 ## Alternatives considered
 
