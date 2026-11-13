@@ -212,6 +212,9 @@ AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves the collected static files. It must come right after
+    # SecurityMiddleware and only answers STATIC_URL paths.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -386,6 +389,23 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "static/"
+
+# collectstatic writes here (git-ignored), and WhiteNoise serves the files
+# from the app. Run `manage.py collectstatic --noinput` before starting
+# gunicorn with DEBUG off.
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Collected files get a content hash in their names and gzip copies, so
+# WhiteNoise can cache them forever and send them compressed. The test
+# settings swap in Django's plain storage, so tests need no collectstatic.
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 # Email. Nothing is sent. With DEBUG on, every message prints to the
 # console. With DEBUG off, every message is discarded, so no email body or

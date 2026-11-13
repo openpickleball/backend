@@ -1,8 +1,9 @@
 """Test runner for `manage.py test`.
 
 It serves the suite over plain http, swaps the cache for an in-memory
-one, and runs Celery tasks eagerly, so the tests need no cache server or
-broker.
+one, runs Celery tasks eagerly, and stores static files without the
+collectstatic manifest, so the tests need no cache server, broker, or
+collectstatic step.
 """
 
 from typing import Any
@@ -15,11 +16,19 @@ from django.test.utils import override_settings
 # client request would get a 301 to https. Tests run over plain http.
 # Settings point the cache at Valkey. Tests use LocMemCache instead.
 # Settings point Celery at a Valkey broker. Tests run tasks eagerly.
+# Settings store static files with hashed names from a manifest that
+# collectstatic writes. Tests use the plain storage instead.
 _TEST_OVERRIDES: dict[str, Any] = {
     "SECURE_SSL_REDIRECT": False,
     "CACHES": {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
     "CELERY_TASK_ALWAYS_EAGER": True,
     "CELERY_TASK_EAGER_PROPAGATES": True,
+    "STORAGES": {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+        },
+    },
 }
 
 
@@ -43,8 +52,8 @@ class HttpParallelTestSuite(ParallelTestSuite):
 class HttpTestRunner(DiscoverRunner):
     """Run the suite over plain http, an in-memory cache, and eager tasks.
 
-    This turns the redirect off, swaps the cache, and runs Celery tasks
-    eagerly for the test run only,
+    This turns the redirect off, swaps the cache, runs Celery tasks
+    eagerly, and swaps the static files storage for the test run only,
     in the parent and in parallel workers. Production settings are
     unchanged.
     """

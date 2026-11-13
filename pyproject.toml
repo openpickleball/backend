@@ -96,6 +96,9 @@ testpaths = ["apps", "config"]
 # optional value, so an option follows it; otherwise it would swallow a test
 # path given on the command line as a coverage source.
 addopts = ["--cov", "--cov-report=term-missing"]
+# WhiteNoise warns when STATIC_ROOT does not exist. Tests serve static
+# files without collectstatic, so the directory is usually missing.
+filterwarnings = ["ignore:No directory at:UserWarning"]
 
 [tool.coverage.run]
 source = ["apps", "config"]
