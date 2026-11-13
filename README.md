@@ -1,5 +1,7 @@
 # OPEN backend
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/openpickleball/backend/badge)](https://scorecard.dev/viewer/?uri=github.com/openpickleball/backend)
+
 Backend services and APIs for [OPEN](https://github.com/openpickleball), the Open Pickleball Evaluation Network.
 
 > **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model, and the local development services so far, and no OPEN rating is live.
