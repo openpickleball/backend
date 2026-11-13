@@ -133,9 +133,10 @@ def _redis_url(url: str) -> str:
 # An exact browser origin: a lowercase http or https scheme, a host (a DNS
 # name or a bracketed IPv6 address), and an optional port with no leading
 # zero. Nothing else: no path, trailing slash, query, fragment, user info,
-# or wildcard.
+# or wildcard. Browsers leave out the scheme's default port (443 for
+# https, 80 for http), so an origin that names it could never match.
 _ORIGIN = re.compile(
-    r"https?://"
+    r"(?P<scheme>https?)://"
     r"(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])"
     r"(?::(?P<port>[1-9][0-9]{0,4}))?"
 )
@@ -147,7 +148,10 @@ def _is_origin(value: str) -> bool:
     if match is None:
         return False
     port = match.group("port")
-    return port is None or int(port) <= 65535
+    if port is None:
+        return True
+    default_port = 443 if match.group("scheme") == "https" else 80
+    return int(port) <= 65535 and int(port) != default_port
 
 
 def _cors_origins(name: str) -> list[str]:
@@ -161,8 +165,8 @@ def _cors_origins(name: str) -> list[str]:
         raise ImproperlyConfigured(
             f"{name} has an entry that is not an origin. List exact origins, "
             "comma-separated, each a scheme (http or https), a host, and an "
-            "optional port, with no path, trailing slash, or wildcard (see "
-            ".env.example)."
+            "optional port that is not the scheme's default, with no path, "
+            "trailing slash, or wildcard (see .env.example)."
         )
     return origins
 
