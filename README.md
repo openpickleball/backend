@@ -4,7 +4,7 @@
 
 Backend services and APIs for [OPEN](https://github.com/openpickleball), the Open Pickleball Evaluation Network.
 
-> **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model, the API mount at `/api/v1/` (with no API operations yet), and the local development services so far, and no OPEN rating is live.
+> **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model, the API mount at `/api/v1/`, and the local development services so far. The API's only operations are the liveness and readiness checks, at `/api/v1/health/live` and `/api/v1/health/ready`. No OPEN rating is live.
 
 ## Technology
 

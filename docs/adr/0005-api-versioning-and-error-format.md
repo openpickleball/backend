@@ -18,6 +18,7 @@ Partners, apps, and the OPEN frontend will call the backend's API. The frontend 
 ## Consequences
 
 - Generated clients get stable method names and one error type to handle.
+- The readiness check (`GET /api/v1/health/ready`, issue #6) is the one operation that returns a non-2xx body of its own. Its 503 is a status report, not an error: the same `ReadyOut` schema as its 200, with a status and a per-check status, documented in the OpenAPI document. Probes read it by status code.
 - The per-item error shape is the one the match submission endpoints need (issue #80), so single and bulk endpoints can share it.
 - Some errors come from outside the operation and do not use `ErrorResponse`: django-ninja's 405 for a wrong method (plain text), and Django's 404 page for a path that matches no route. Clients should treat a non-JSON error body as a generic failure.
 - The docs page loads Swagger UI from the app's own static files, not a CDN. With DEBUG off it needs static file serving (issue #10).
