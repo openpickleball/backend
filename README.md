@@ -116,7 +116,7 @@ Use only made-up or properly de-identified data. Do not put real player names, c
 
 ## Contributing
 
-See the [contributing guide](https://github.com/openpickleball/.github/blob/main/CONTRIBUTING.md). Every commit must be signed off. Please report security problems privately, as described in the [security policy](https://github.com/openpickleball/.github/blob/main/SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for this repository's workflow: branches and pull requests, code style, tests, and migrations. It adds to the organization [contributing guide](https://github.com/openpickleball/.github/blob/main/CONTRIBUTING.md). Every commit must be signed off. Please report security problems privately, as described in the [security policy](https://github.com/openpickleball/.github/blob/main/SECURITY.md).
 
 ## License
 

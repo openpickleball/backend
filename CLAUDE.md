@@ -93,6 +93,7 @@ uv run pre-commit run --all-files
 ## Documentation
 
 - `README.md`: public overview, setup, and contribution pointers.
+- `CONTRIBUTING.md`: this repository's contribution workflow (pull requests, DCO, code style, tests, migrations, good first issues). It adds to the org guide.
 - `CONTEXT.md`: the domain language (Match, Ledger, Replay, Rating Format, Reliability, and so on). Read it before naming models, endpoints, or fields.
 - `docs/adr/`: architecture decision records. Check here before changing a decision, and add a record when you make one.
 - GitHub issue #1: the backend plan's decisions (Q1 to Q16, F1 to F11) and checked package versions.
