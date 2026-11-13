@@ -5,8 +5,8 @@ It applies the same overrides as config/test_runner.py, the `manage.py test`
 counterpart, and nothing else: tests run over plain http, with an
 in-memory cache, with Celery tasks run eagerly in the caller, and with
 plain static file storage. The overrides live in the settings module, so
-every process that loads it, parallel workers included, gets them. A test fails if the two sets of
-overrides drift apart.
+every process that loads it, parallel workers included, gets them. A test
+fails if the two sets of overrides drift apart.
 """
 
 from config.settings import *  # noqa: F403

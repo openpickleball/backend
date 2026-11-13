@@ -1,8 +1,8 @@
 """pytest runs the suite with the same test overrides as `manage.py test`.
 
-pytest loads `config.settings_test`, which turns off the https redirect
-and swaps the cache for LocMemCache in the settings module itself, so
-every process that loads it (parallel workers included) gets them.
+pytest loads `config.settings_test`, which applies the test overrides
+listed in `config/test_runner.py` in the settings module itself, so every
+process that loads it (parallel workers included) gets them.
 """
 
 import os
