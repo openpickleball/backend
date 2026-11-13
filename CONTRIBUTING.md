@@ -98,7 +98,7 @@ uv run pytest --no-cov apps/accounts
 ## Migrations
 
 - Generate migrations with `uv run python manage.py makemigrations`. Never write one by hand.
-- Aim for one migration per app per pull request. If you change a model again before your pull request merges, delete your unmerged migration and generate it again, instead of stacking a second one on top. Before you delete it, migrate your local database back with `uv run python manage.py migrate <app> <previous migration>`, so the database keeps no record of a migration that no longer exists.
+- Aim for one migration per app per pull request. If you change a model again before your pull request merges, delete your unmerged migration and generate it again, instead of stacking a second one on top. Before you delete it, migrate your local database back with `uv run python manage.py migrate <app> <previous migration>`, so the database keeps no record of a migration that no longer exists. If it is the app's first migration, use `zero` in place of the previous migration.
 - Never edit or delete a migration that has merged to `main`. Other databases have already applied it. Change the schema with a new migration.
 - CI runs `makemigrations --check --dry-run` and fails when a model change has no migration. Run it yourself before you push:
 
