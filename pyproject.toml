@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "django>=5.2,<5.3",
     "django-environ>=0.14.0",
+    "django-ninja>=1.8.0",
     "django-stubs-ext>=6.1.2",
     "psycopg[binary]>=3.3.8",
     "redis>=8.1.0",
@@ -15,12 +16,15 @@ dependencies = [
 dev = [
     "django-stubs[compatible-mypy]>=6.1.2",
     "factory-boy>=3.3.3",
+    "jsonschema>=4.26.0",
     "mypy>=2.4.1",
+    "openapi-spec-validator>=0.9.0",
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
     "pytest-django>=4.14.0",
     "ruff>=0.17.4",
+    "types-jsonschema>=4.26.0.20261006",
 ]
 
 [tool.ruff]
@@ -50,6 +54,12 @@ exclude_gitignore = true
 # django-environ ships no type information.
 module = ["environ", "environ.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Its scalar body parameters use the `name: str = Body(...)` form, which
+# ninja's type-checking stubs see as a bare generic.
+module = ["config.tests.test_api_body_field_paths"]
+disallow_any_generics = false
 
 [tool.django-stubs]
 django_settings_module = "config.settings"

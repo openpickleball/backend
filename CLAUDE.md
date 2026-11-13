@@ -14,7 +14,7 @@ Planned services, from the project roadmap:
 
 ## Current status
 
-The Django project scaffold exists (`config`, with settings read from the environment, plus `apps/accounts` with the custom email-login user model and the first migration, and `compose.yaml` for local services), and no OPEN rating is live. The work is planned as GitHub issues grouped into outcome milestones (v0.1 MVP through v0.4), epics with sub-issues, native blocked-by links, and the "OPEN backend" org project board; `docs/backlog-plan.md` explains the order and the critical path. Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
+The Django project scaffold exists (`config`, with settings read from the environment, plus `apps/accounts` with the custom email-login user model and the first migration, `config/api.py` with the django-ninja API mounted at `/api/v1/` but no operations yet, and `compose.yaml` for local services), and no OPEN rating is live. The work is planned as GitHub issues grouped into outcome milestones (v0.1 MVP through v0.4), epics with sub-issues, native blocked-by links, and the "OPEN backend" org project board; `docs/backlog-plan.md` explains the order and the critical path. Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
 
 ## Stack (decided, see issue #1)
 
@@ -39,6 +39,13 @@ The Django project scaffold exists (`config`, with settings read from the enviro
 - The normalized email must be ASCII, at most 254 characters, and a valid address. The field validator and the manager enforce these rules. Keep every new check on the normalized value, not the raw input.
 - The database enforces the column length, case-insensitive uniqueness (`Lower("email")`), and ASCII. It does not normalize. Raw writes (`save()` without `full_clean()`, `bulk_create`, `update`) skip normalization, so create Accounts through the manager or a form.
 - Find an Account by email (an identity lookup, such as login or linking) only through `get_user_model().objects.get_by_natural_key()` (or `aget_by_natural_key()`), which compares with the unique constraint's own `Lower("email")` expression. Do not use `email__iexact` or an exact match on raw input: on Postgres `iexact` compares `UPPER()`, which can match accounts the constraint treats as distinct.
+
+## API
+
+- There is one `NinjaAPI`, `api` in `config/api.py`, mounted at `/api/v1/`. Each app adds its operations to a `Router` in `apps/<app>/api.py`, and `config/api.py` mounts that router. The `config/api.py` docstring shows how.
+- Every operation passes an explicit `operation_id`. It names the method in the generated client, so never change one for a rename. Building the OpenAPI document raises an error for an operation in the document that has none, and a test checks every operation.
+- Validation errors, an unparsable body, `Http404`, and `HttpError` come back as `ErrorResponse` (`config/api_errors.py`), and validation errors return 422. With DEBUG off, any other exception goes to Django, which returns its own HTML error page (a 500, or another status for exceptions Django maps, such as 403 for `PermissionDenied`). Raise `HttpError` or `Http404` instead of returning an error body by hand, and use `HttpError(403, ...)`, never Django's `PermissionDenied`. Never declare a different 422 schema on an operation that takes input: building the document raises an error if you do. ADR 0005 records the versioning and error format.
+- Never put the submitted value in a validation message. The 422 response returns the message to the client.
 
 ## Settings
 
