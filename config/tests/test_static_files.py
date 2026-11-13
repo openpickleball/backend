@@ -67,6 +67,10 @@ def test_whitenoise_sits_directly_after_the_security_middleware() -> None:
     assert middleware[security + 1] == "whitenoise.middleware.WhiteNoiseMiddleware"
 
 
+def test_whitenoise_sends_no_cors_header() -> None:
+    assert settings.WHITENOISE_ALLOW_ALL_ORIGINS is False
+
+
 def test_tests_use_the_plain_storage() -> None:
     assert settings.STORAGES["staticfiles"] == {"BACKEND": PLAIN_STORAGE}
 
@@ -99,3 +103,9 @@ def test_collected_admin_css_is_served_hashed_and_gzipped(tmp_path: Path) -> Non
         assert gzipped.status_code == 200
         assert gzipped["Content-Type"].startswith("text/css")
         assert gzipped["Content-Encoding"] == "gzip"
+
+        # CORS covers /api/ only. Static files get no CORS header, from
+        # any origin.
+        cross_origin = client.get(href, HTTP_ORIGIN="https://evil.example.org")
+        assert cross_origin.status_code == 200
+        assert "Access-Control-Allow-Origin" not in cross_origin
