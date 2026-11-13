@@ -7,9 +7,11 @@ that does not parse, `Http404`, any `HttpError`) come back as an
     {"code": "...", "message": "...", "errors": [{"field", "code", "message"}]}
 
 `errors` lists one item per invalid input for a validation error and is empty
-otherwise. Each item copies only pydantic's location, error type, and
-message, never its `input` or `ctx`. The message is pydantic's own text, so a
-custom validator must not put the submitted value in its error message.
+otherwise. For a pydantic error, an item copies only pydantic's location,
+error type, and message, never its `input` or `ctx`. The message is
+pydantic's own text, so a custom validator must not put the submitted value
+in its error message. A plain `{name: message}` error (ninja's cursor
+pagination raises these) gives one item per key, with code "invalid".
 
 These handlers do not see a wrong method on a known path (ninja answers with
 a plain-text 405) or a path that matches no operation (Django's 404 page).
@@ -58,15 +60,25 @@ def _field_path(loc: list[Any] | tuple[Any, ...]) -> str:
     return ".".join(str(part) for part in loc)
 
 
-def _field_error(error: Mapping[str, Any]) -> FieldError:
-    # Copy only the location, type, and message. Never `input` or `ctx`,
-    # which can echo what the client sent back to it. The message itself is
-    # pydantic's text: custom validators must keep the value out of it.
-    return FieldError(
-        field=_field_path(error.get("loc", [])),
-        code=str(error.get("type", "invalid")),
-        message=str(error.get("msg", "")),
-    )
+def _field_errors(error: Mapping[str, Any]) -> list[FieldError]:
+    """Turn one item of a ninja `ValidationError` into field errors."""
+    if "loc" not in error:
+        # A plain `{name: message}` item, as ninja's cursor pagination raises.
+        return [
+            FieldError(field=str(name), code="invalid", message=str(message))
+            for name, message in error.items()
+        ]
+    # A pydantic error. Copy only the location, type, and message. Never
+    # `input` or `ctx`, which can echo what the client sent back to it. The
+    # message itself is pydantic's text: custom validators must keep the
+    # value out of it.
+    return [
+        FieldError(
+            field=_field_path(error["loc"]),
+            code=str(error.get("type", "invalid")),
+            message=str(error.get("msg", "")),
+        )
+    ]
 
 
 def _respond(
@@ -83,7 +95,7 @@ def install_error_handlers(api: NinjaAPI) -> None:
         body = ErrorResponse(
             code="validation_error",
             message="The request is not valid.",
-            errors=[_field_error(error) for error in exc.errors],
+            errors=[item for error in exc.errors for item in _field_errors(error)],
         )
         return _respond(api, request, VALIDATION_ERROR_STATUS, body)
 
