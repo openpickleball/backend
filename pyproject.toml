@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Backend services and APIs for OPEN, the Open Pickleball Evaluation Network."
 requires-python = ">=3.13"
 dependencies = [
+    "celery[redis]>=5.7.0",
     "django>=5.2,<5.3",
+    "django-celery-beat>=2.9.0",
     "django-environ>=0.14.0",
     "django-ninja>=1.8.0",
     "django-stubs-ext>=6.1.2",
@@ -14,6 +16,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "celery-types>=0.26.0",
     "django-stubs[compatible-mypy]>=6.1.2",
     "factory-boy>=3.3.3",
     "jsonschema>=4.26.0",
@@ -54,6 +57,23 @@ exclude_gitignore = true
 # django-environ ships no type information.
 module = ["environ", "environ.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# django-celery-beat ships no type information.
+module = ["django_celery_beat", "django_celery_beat.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# celery-types declares conf.timezone as a tzinfo, but the app's conf holds
+# the TIME_ZONE string the test compares it with.
+module = ["config.tests.test_celery"]
+disable_error_code = ["comparison-overlap"]
+
+[[tool.mypy.overrides]]
+# celery-types declares kombu's Queue.queue_declare as returning str | None,
+# but it returns the declare result, whose message_count the test reads.
+module = ["config.tests.test_celery_review_fixes"]
+disable_error_code = ["union-attr"]
 
 [[tool.mypy.overrides]]
 # Its scalar body parameters use the `name: str = Body(...)` form, which

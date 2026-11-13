@@ -1,7 +1,8 @@
 """Test runner for `manage.py test`.
 
-It serves the suite over plain http and swaps the cache for an in-memory
-one, so the tests need no cache server.
+It serves the suite over plain http, swaps the cache for an in-memory
+one, and runs Celery tasks eagerly, so the tests need no cache server or
+broker.
 """
 
 from typing import Any
@@ -13,9 +14,12 @@ from django.test.utils import override_settings
 # With DEBUG off, settings turn on SECURE_SSL_REDIRECT, so every test
 # client request would get a 301 to https. Tests run over plain http.
 # Settings point the cache at Valkey. Tests use LocMemCache instead.
+# Settings point Celery at a Valkey broker. Tests run tasks eagerly.
 _TEST_OVERRIDES: dict[str, Any] = {
     "SECURE_SSL_REDIRECT": False,
     "CACHES": {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    "CELERY_TASK_ALWAYS_EAGER": True,
+    "CELERY_TASK_EAGER_PROPAGATES": True,
 }
 
 
@@ -37,9 +41,10 @@ class HttpParallelTestSuite(ParallelTestSuite):
 
 
 class HttpTestRunner(DiscoverRunner):
-    """Run the suite over plain http and with an in-memory cache.
+    """Run the suite over plain http, an in-memory cache, and eager tasks.
 
-    This turns the redirect off and swaps the cache for the test run only,
+    This turns the redirect off, swaps the cache, and runs Celery tasks
+    eagerly for the test run only,
     in the parent and in parallel workers. Production settings are
     unchanged.
     """

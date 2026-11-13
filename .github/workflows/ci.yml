@@ -62,7 +62,8 @@ jobs:
     timeout-minutes: 10
     services:
       # Same image as compose.yaml. The open role is a superuser, so the
-      # test runner can create test_open. No Valkey: tests use LocMemCache.
+      # test runner can create test_open. No Valkey: tests use LocMemCache and
+      # run Celery tasks eagerly.
       postgres:
         image: postgres:18
         env:

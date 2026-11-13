@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import ssl
 import warnings
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -18,6 +19,7 @@ from urllib.parse import urlsplit
 import django_stubs_ext
 import environ
 from django.core.exceptions import ImproperlyConfigured
+from kombu import Queue
 
 # Let generic Django classes, such as UserAdmin[User], be subscripted at
 # runtime, as the type stubs expect.
@@ -100,6 +102,9 @@ def _is_redis_url(url: str) -> bool:
         return False
     if not parts.hostname:
         return False
+    # kombu splits a broker URL on ";" into failover hosts.
+    if ";" in parts.hostname:
+        return False
     # redis-py reads port 0 as unset and uses 6379.
     if port is not None and not 1 <= port <= 65535:
         return False
@@ -122,6 +127,37 @@ def _redis_url(url: str) -> str:
             "redis://HOST:PORT/DB, or rediss:// for TLS (see .env.example)."
         )
     return url
+
+
+def _celery_broker_url(url: str) -> str:
+    """Return a checked REDIS_URL in the form kombu reads as one broker.
+
+    kombu splits a broker URL on ";" into failover hosts, even inside the
+    password. The host cannot hold one (see _is_redis_url), so encoding
+    ";" in the user and password as %3B leaves one broker. kombu decodes
+    it back, so the password is unchanged.
+    """
+    scheme, _, rest = url.partition("://")
+    userinfo, at, host = rest.rpartition("@")
+    if not at:
+        return url
+    return f"{scheme}://{userinfo.replace(';', '%3B')}@{host}"
+
+
+# Celery reads these from the environment ahead of settings, so one set in
+# the shell or .env would replace the checked REDIS_URL (and its TLS
+# options). They are refused. The error names the variable, never its value.
+for _name in (
+    "CELERY_BROKER_URL",
+    "CELERY_BROKER_READ_URL",
+    "CELERY_BROKER_WRITE_URL",
+    "CELERY_RESULT_BACKEND",
+):
+    if _raw(_name):
+        raise ImproperlyConfigured(
+            f"Unset the {_name} environment variable. Celery uses REDIS_URL "
+            "(see .env.example)."
+        )
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
@@ -167,6 +203,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "ninja",
+    "django_celery_beat",
     "apps.accounts",
 ]
 
@@ -238,6 +275,79 @@ CACHES = {
 }
 
 
+# Celery
+# https://docs.celeryq.dev/en/stable/userguide/configuration.html
+
+# The broker is the same Valkey as the cache, at REDIS_URL. They share its
+# database without a key clash, but clearing that database (Django's
+# RedisCache.clear() runs FLUSHDB) also drops every queued task.
+CELERY_BROKER_URL = _celery_broker_url(REDIS_URL)
+# kombu warns and falls back to CERT_NONE (no certificate check) for a
+# rediss:// broker without certificate options, so they are set here,
+# never in the URL, and verification stays on. A redis:// broker gets no
+# TLS options.
+CELERY_BROKER_USE_SSL: dict[str, object] | None = None
+if REDIS_URL.startswith("rediss://"):
+    CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": ssl.CERT_REQUIRED}
+
+# Every task runs on one of these queues, and the worker must consume all
+# of them (-Q ratings,email,webhooks,default). A task routed to a queue no
+# worker consumes never runs, and nothing reports it.
+CELERY_TASK_DEFAULT_QUEUE = "default"
+# Each queue binds with its own name as the routing key. Left unset, all
+# four would share the key "default", and a message sent to that key (a
+# periodic task with an exchange and routing key, for example) would land
+# in every queue.
+CELERY_TASK_QUEUES = tuple(
+    Queue(name, routing_key=name)
+    for name in ("default", "ratings", "email", "webhooks")
+)
+# Routing to a queue not declared above raises QueueNotFound, instead of
+# creating a queue that no worker consumes.
+CELERY_TASK_CREATE_MISSING_QUEUES = False
+CELERY_TASK_ROUTES = {
+    "apps.ratings.tasks.*": {"queue": "ratings"},
+    "apps.emails.tasks.*": {"queue": "email"},
+    "apps.webhooks.tasks.*": {"queue": "webhooks"},
+}
+
+# A task is acknowledged after it finishes, so a crash mid-task redelivers
+# it. Every task must be safe to run twice.
+CELERY_TASK_ACKS_LATE = True
+# A task that kills its worker is not requeued, so it cannot crash workers
+# forever. This is Celery's default, set explicitly so nobody turns it on
+# lightly.
+CELERY_TASK_REJECT_ON_WORKER_LOST = False
+# One message at a time per process. Celery has no per-queue prefetch, so
+# this covers the ratings queue and every other one.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_SOFT_TIME_LIMIT = 300
+CELERY_TASK_TIME_LIMIT = 360
+# Valkey redelivers a task not acknowledged within the visibility timeout.
+# With late acks, every time limit (and every countdown or ETA) must stay
+# below it, or a task is delivered twice. Connecting fails after 5 seconds,
+# like the cache, so a .delay() cannot hang on an unreachable broker. The
+# redis transport reads the connect timeout only from these options.
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "visibility_timeout": 3600,
+    "socket_connect_timeout": 5,
+}
+# A worker that starts before the broker is reachable keeps retrying.
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# Tasks go through the broker. The test settings run them eagerly instead.
+CELERY_TASK_ALWAYS_EAGER = False
+CELERY_TASK_EAGER_PROPAGATES = False
+# No result backend. Nothing reads task results. Results never expire, so
+# beat does not add a celery.backend_cleanup periodic task.
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_RESULT_EXPIRES = None
+# CELERY_TIMEZONE follows TIME_ZONE (Internationalization, below).
+
+# Periodic tasks live in the database (django_celery_beat). Run one beat
+# process only, or every periodic task is sent twice.
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
@@ -263,6 +373,9 @@ AUTH_PASSWORD_VALIDATORS = [
 LANGUAGE_CODE = "en-us"
 
 TIME_ZONE = "UTC"
+
+# Celery schedules periodic tasks in the same time zone.
+CELERY_TIMEZONE = TIME_ZONE
 
 USE_I18N = True
 

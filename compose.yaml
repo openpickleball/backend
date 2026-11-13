@@ -2,6 +2,7 @@
 #
 # Start Postgres and Valkey:   docker compose up -d --wait
 # Also run the app (optional): docker compose --profile web up -d --wait
+#   (the app, a Celery worker, and beat; beat waits until migrate has run)
 # Stop, keeping local data:    docker compose down
 # Stop and delete local data:  docker compose down -v
 #
@@ -47,8 +48,8 @@ services:
       retries: 10
       start_period: 10s
 
-  # Optional. Runs the app with uv, on http://127.0.0.1:8000. The worker and
-  # beat services are added in issue #9. The container runs as root and
+  # Optional. Runs the app with uv, on http://127.0.0.1:8000, with the
+  # Celery worker and beat services below. The container runs as root and
   # mounts the repository, so files it writes (a generated migration, for
   # example) are owned by root on the host.
   web:
@@ -90,6 +91,58 @@ services:
       db:
         condition: service_healthy
       cache:
+        condition: service_healthy
+
+  # Optional. The Celery worker, consuming every queue. It shares web's
+  # image and virtualenv, and starts once web is healthy, so web's
+  # `uv sync --locked` has finished and --no-sync never races it.
+  worker:
+    profiles: [web]
+    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+      - web-venv:/venv
+    environment:
+      UV_PROJECT_ENVIRONMENT: /venv
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgres://open@db:5432/open
+      REDIS_URL: redis://cache:6379/0
+    command: uv run --no-sync celery -A config worker -Q ratings,email,webhooks,default -l info
+    depends_on:
+      web:
+        condition: service_healthy
+
+  # Optional. Celery beat, with the database scheduler from settings. The
+  # scheduler reads django_celery_beat's tables, so beat waits, printing a
+  # hint every few seconds, until `manage.py migrate` has been run (and the
+  # database is reachable), then starts. Run one beat only, or periodic
+  # tasks are sent twice.
+  beat:
+    profiles: [web]
+    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+      - web-venv:/venv
+    environment:
+      UV_PROJECT_ENVIRONMENT: /venv
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgres://open@db:5432/open
+      REDIS_URL: redis://cache:6379/0
+    command:
+      - sh
+      - -c
+      - |
+        until uv run --no-sync python manage.py migrate --check >/dev/null 2>&1; do
+          echo "beat: waiting for migrations. Run: uv run python manage.py migrate"
+          sleep 5
+        done
+        exec uv run --no-sync celery -A config beat -l info
+    depends_on:
+      web:
         condition: service_healthy
 
 volumes:
