@@ -10,6 +10,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import FieldDoesNotExist
+from django.db import models
+from django.test.utils import isolate_apps
 from django.utils import timezone
 
 from apps.accounts.tests.factories import UserFactory
@@ -270,3 +272,30 @@ def test_str_names_the_action_and_target_without_values() -> None:
     assert "Manual rating edit" in text
     assert str(target.pk) in text
     assert "made-up-value" not in text
+
+
+def test_snapshot_of_datetime_decimal_and_uuid_fields_is_recorded() -> None:
+    when = datetime.datetime(2026, 3, 4, 5, 6, 7, tzinfo=datetime.UTC)
+    ident = uuid.UUID("87654321-4321-8765-4321-876543210987")
+    with isolate_apps("apps.audit"):
+        # A throwaway model, never saved, so it needs no table or __str__.
+        class Measured(models.Model):  # noqa: DJ008
+            at = models.DateTimeField()
+            score = models.DecimalField(max_digits=5, decimal_places=2)
+            ref = models.UUIDField()
+
+        before = snapshot(
+            Measured(at=when, score=Decimal("4.25"), ref=ident),
+            ["at", "score", "ref"],
+        )
+
+    assert before == {"at": when, "score": Decimal("4.25"), "ref": ident}
+    event = record_event(
+        action=AuditAction.RATING_EDIT, target=UserFactory.create(), before=before
+    )
+
+    assert AuditEvent.objects.get(pk=event.pk).before == {
+        "at": "2026-03-04T05:06:07Z",
+        "score": "4.25",
+        "ref": str(ident),
+    }
