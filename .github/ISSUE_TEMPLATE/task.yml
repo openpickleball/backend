@@ -33,7 +33,7 @@ body:
     id: depends-on
     attributes:
       label: Depends on
-      description: Issues that must land first, such as #12.
+      description: List the issue numbers that must land first.
     validations:
       required: false
   - type: dropdown
