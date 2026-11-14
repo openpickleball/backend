@@ -60,6 +60,13 @@ def test_trigger_refuses_raw_delete(event: AuditEvent) -> None:
 
 
 def test_trigger_refuses_truncate_of_a_non_empty_table(event: AuditEvent) -> None:
+    # The row was inserted in this test's transaction, so its deferred
+    # foreign key checks are still pending, and Postgres refuses TRUNCATE
+    # for that reason before the audit trigger runs. Run them now, so the
+    # TRUNCATE below reaches the trigger.
+    with connection.cursor() as cursor:
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
     error = _execute_refused(f"TRUNCATE {TABLE}")
 
     assert "TRUNCATE" in str(error)
