@@ -14,7 +14,6 @@ from typing import Any
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.contenttypes.models import ContentType
-from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 
 from apps.audit.models import AuditAction, AuditEvent
@@ -69,8 +68,8 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
     A binary field (raw bytes do not belong in an audit event) and every
     other kind (reverse relations, generic relations and generic foreign
     keys, other foreign objects) raise ``ValueError`` naming the field. So
-    does an accepted field whose value ``DjangoJSONEncoder`` cannot encode
-    (a range, an array of bytes). An unknown name raises
+    does an accepted field whose value the AuditEvent JSON encoder cannot
+    encode (a range, an array of bytes). An unknown name raises
     ``FieldDoesNotExist``.
     """
     values: dict[str, Any] = {}
@@ -102,13 +101,23 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
     return values
 
 
+def _audit_json_encoder() -> type[json.JSONEncoder] | None:
+    """The encoder AuditEvent's before and after fields store with.
+
+    Read from the model, so this check and the stored row cannot drift.
+    """
+    field = AuditEvent._meta.get_field("before")
+    assert isinstance(field, models.JSONField)
+    return field.encoder
+
+
 def _require_json_encodable(name: str, value: Any) -> None:
     """Refuse a value the AuditEvent JSON fields could not store.
 
     Raised ``from None``: the encoder's own message can include the value.
     """
     try:
-        json.dumps(value, cls=DjangoJSONEncoder)
+        json.dumps(value, cls=_audit_json_encoder())
     except (TypeError, ValueError):
         raise ValueError(
             f"{name} cannot be snapshotted: its value cannot be stored as JSON."
