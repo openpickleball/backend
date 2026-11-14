@@ -19,10 +19,19 @@ from apps.audit.models import AuditAction, AuditEvent
 
 REDACTED = "[redacted]"
 
-# A key whose lowercased name contains any of these has its value replaced.
+# A key is lowercased and stripped of every non-alphanumeric character
+# (so apiKey, api-key, and api_key all become apikey). If the result contains
+# any of these, its value is replaced. "seed" is left out on purpose: Seed is
+# an OPEN rating term (CONTEXT.md).
 _SENSITIVE_KEY = re.compile(
-    r"password|passwd|secret|token|recovery|otp|api_key|private_key|session_key"
+    r"password|passwd|secret|token|recovery|otp|apikey|privatekey|sessionkey"
+    r"|sessiondata"
 )
+_NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]")
+
+
+def _is_sensitive(key: object) -> bool:
+    return bool(_SENSITIVE_KEY.search(_NON_ALPHANUMERIC.sub("", str(key).lower())))
 
 
 def _redact(value: Any) -> Any:
@@ -33,7 +42,7 @@ def _redact(value: Any) -> Any:
     """
     if isinstance(value, Mapping):
         return {
-            key: REDACTED if _SENSITIVE_KEY.search(str(key).lower()) else _redact(item)
+            key: REDACTED if _is_sensitive(key) else _redact(item)
             for key, item in value.items()
         }
     if isinstance(value, list | tuple):
