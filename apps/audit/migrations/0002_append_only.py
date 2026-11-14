@@ -11,17 +11,28 @@ class Migration(migrations.Migration):
 
     # Audit events are append-only. These triggers refuse UPDATE and DELETE
     # of any row, and TRUNCATE of a non-empty table. TRUNCATE of an empty
-    # table is allowed so Django's flush (used by transactional tests) works.
+    # table is allowed so Django's flush (used by transactional tests) works,
+    # but only under READ COMMITTED: an older REPEATABLE READ or SERIALIZABLE
+    # snapshot can miss a row another session has since committed. The check
+    # reads the table that fired the trigger (TG_RELID), and the search_path
+    # is pinned, so a temp table of the same name cannot stand in for it.
     # SQLSTATE 42501 (insufficient_privilege) reaches Django as
     # django.db.ProgrammingError.
     operations = [
         migrations.RunSQL(
             sql="""
 CREATE FUNCTION audit_auditevent_append_only() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    has_rows boolean;
 BEGIN
-    IF TG_OP = 'TRUNCATE' THEN
-        IF NOT EXISTS (SELECT 1 FROM audit_auditevent) THEN
+    IF TG_OP = 'TRUNCATE'
+        AND current_setting('transaction_isolation') = 'read committed' THEN
+        EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s)', TG_RELID::regclass)
+            INTO has_rows;
+        IF NOT has_rows THEN
             RETURN NULL;
         END IF;
     END IF;
