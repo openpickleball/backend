@@ -14,7 +14,7 @@ Planned services, from the project roadmap:
 
 ## Current status
 
-The Django project scaffold exists (`config`, with settings read from the environment, plus `apps/accounts` with the custom email-login user model and the first migration, `config/api.py` with the django-ninja API mounted at `/api/v1/` with the health checks in `config/health.py` as its only operations so far, the Celery app in `config/celery.py`, configured in the Celery section of `config/settings.py` (four queues, django-celery-beat), static files through WhiteNoise, CORS for `/api/` through django-cors-headers, `gunicorn.conf.py` for serving, and `compose.yaml` for local services), and no OPEN rating is live. The work is planned as GitHub issues grouped into outcome milestones (v0.1 MVP through v0.4), epics with sub-issues, native blocked-by links, and the "OPEN backend" org project board. Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
+The Django project scaffold exists (`config`, with settings read from the environment, plus `apps/accounts` with the custom email-login user model and the first migration, `apps/audit` with the append-only audit log (`AuditEvent`, `record_event`), `config/api.py` with the django-ninja API mounted at `/api/v1/` with the health checks in `config/health.py` as its only operations so far, the Celery app in `config/celery.py`, configured in the Celery section of `config/settings.py` (four queues, django-celery-beat), static files through WhiteNoise, CORS for `/api/` through django-cors-headers, `gunicorn.conf.py` for serving, and `compose.yaml` for local services), and no OPEN rating is live. The work is planned as GitHub issues grouped into outcome milestones (v0.1 MVP through v0.4), epics with sub-issues, native blocked-by links, and the "OPEN backend" org project board. Issue #1 records the plan's decisions and open questions; other issues cite them as "decisions Qn" or "Fn". Read the relevant ones before starting an issue.
 
 ## Stack (decided, see issue #1)
 
@@ -40,6 +40,14 @@ The Django project scaffold exists (`config`, with settings read from the enviro
 - The normalized email must be ASCII, at most 254 characters, and a valid address. The field validator and the manager enforce these rules. Keep every new check on the normalized value, not the raw input.
 - The database enforces the column length, case-insensitive uniqueness (`Lower("email")`), and ASCII. It does not normalize. Raw writes (`save()` without `full_clean()`, `bulk_create`, `update`) skip normalization, so create Accounts through the manager or a form.
 - Find an Account by email (an identity lookup, such as login or linking) only through `get_user_model().objects.get_by_natural_key()` (or `aget_by_natural_key()`), which compares with the unique constraint's own `Lower("email")` expression. Do not use `email__iexact` or an exact match on raw input: on Postgres `iexact` compares `UPPER()`, which can match accounts the constraint treats as distinct.
+
+## Audit log
+
+- Write an `AuditEvent` only through `apps.audit.services.record_event()`, inside the same `transaction.atomic()` as the change it records. Record a delete before calling `delete()`. Build `before` and `after` with `snapshot(instance, fields)`, which takes an explicit field list, so a password hash is never captured by accident. `record_event` redacts values under sensitive key names, but never put a secret, token, or recovery code in `before`, `after`, or `reason`.
+- Audit rows are append-only. In app code the ORM refuses every change or delete. A database trigger (migration `0002_append_only`) refuses `UPDATE`, `DELETE`, and `TRUNCATE` of a non-empty table. Inside a migration, a historical model gets no ORM guard, so only the trigger protects the rows. The trigger does not stop the table's owner or a database superuser, who can disable it. The runtime database role must not own the table: #103 must make sure of that (a comment there asks for it).
+- A new action type is a new `AuditAction` value plus its generated migration. The issue that adds a feature records that feature's events, with a test.
+- `flush` (and so the teardown of a transactional test) fails once the audit table has a row. Tests that record events should run in a transaction that rolls back (the default `django_db` mark).
+- `actor_user` and `target_content_type` use `PROTECT`: an Account that has acted cannot be hard-deleted (deactivate it instead), and a content type an event points at cannot be removed. Plan account deletion around this.
 
 ## API
 

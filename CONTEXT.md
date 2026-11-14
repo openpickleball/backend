@@ -93,6 +93,12 @@ A player whose change was cut short by the rating floor or ceiling. Engine: `Mat
 **Shadow Mode**:
 Running the engine on real results without publishing or relying on its Ratings. OPEN is in shadow mode until validation results are published and the governing board is seated.
 
+## Records
+
+**Audit Event**:
+One recorded sensitive action: who did it (an Account, or nobody), what it changed (the target), the values before and after, and a reason. Audit Events are append-only. They record moderation, manual edits, account security changes, and partner application requests and decisions; they are not part of the Ledger and never feed ratings. Backend: `audit.AuditEvent`.
+_Avoid_: log entry (Django's admin `LogEntry` is a different thing), history.
+
 ## Governance terms
 
 **Rating Spec**:
