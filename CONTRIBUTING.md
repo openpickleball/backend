@@ -19,7 +19,7 @@ New here? Start with an issue labeled [`good first issue`](https://github.com/op
 3. Read the issue in full. Many issues cite the backend plan's decisions as "decisions Qn" or "Fn". Those are in [issue #1](https://github.com/openpickleball/backend/issues/1): read the ones the issue names before you start.
 4. Ask questions in the issue. A question early saves a rewrite later.
 
-This repository links every pull request to an issue, so if none exists for your change, open one first.
+This repository links every pull request to an issue, so if none exists for your change, open one first. Pick the form that fits: a task for planned work, a bug report for something broken, or an epic to group related work. Each form asks for acceptance criteria, the checkable statements that say when the work is done.
 
 ## Branches and pull requests
 
