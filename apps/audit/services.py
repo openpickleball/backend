@@ -5,6 +5,7 @@ inside the same ``transaction.atomic()`` block as the change it records, so
 the change and its audit event commit together or not at all.
 """
 
+import copy
 import json
 import re
 from collections.abc import Iterable, Mapping
@@ -62,7 +63,8 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
     - a foreign key (or one-to-one) gives the value it stores: the related
       primary key, or the ``to_field`` value when ``to_field`` is set;
     - a file field gives its stored name (the path in storage), not the file;
-    - any other concrete, non-relational field gives its value.
+    - any other concrete, non-relational field gives a deep copy of its
+      value, so changing the instance afterwards cannot change the snapshot.
 
     A binary field (raw bytes do not belong in an audit event) and every
     other kind (reverse relations, generic relations and generic foreign
@@ -88,7 +90,10 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
             value = field.value_from_object(instance)
             if isinstance(field, models.FileField):
                 value = value.name or ""
-            values[name] = value
+            # A copy: a JSONField or ArrayField value is the instance's own
+            # dict or list, and an in-place change after the snapshot would
+            # otherwise change the snapshot too.
+            values[name] = copy.deepcopy(value)
         else:
             raise ValueError(
                 f"{name} cannot be snapshotted: its kind is not supported."
