@@ -115,6 +115,8 @@ uv run pre-commit run --all-files
 
 - Every commit needs a DCO sign-off (`git commit -s`). CI (`.github/workflows/dco.yml`) rejects pull requests with unsigned commits. That check runs only on pull requests, so commits pushed straight to `main` must be signed off by hand.
 - Founding phase: repository admins may push directly to `main` while the project is getting established. Everyone else, and admins once this phase ends, uses one change per pull request, linked to an issue. Add or update tests and docs when behavior changes.
+- `.github/CODEOWNERS` makes the maintainers team the owner of every path. When an app for a security-sensitive area (hard rule 8) or the match ledger lands, give its directory its own entry, owned by the maintainers team, in the same pull request. A test requires every CODEOWNERS path to match a tracked file or a directory that holds one.
+- The `.editorconfig` Python settings (indent and line length) must agree with ruff format. A test compares them with ruff's resolved settings, so change both together.
 - License: AGPL-3.0-or-later for this repository. API specifications are Apache-2.0 and published separately, so do not place OpenAPI specs here as the canonical copy.
 - Before proposing a feature, ask whether it makes the standard more accurate, more trusted, or easier to adopt. If not, it probably belongs in a partner's product.
 
