@@ -77,9 +77,9 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
         field = instance._meta.get_field(name)
         if isinstance(field, models.ManyToManyField):
             related = field.value_from_object(instance)
-            values[name] = sorted(item.pk for item in related)
+            value: Any = sorted(item.pk for item in related)
         elif isinstance(field, models.ForeignKey):
-            values[name] = field.value_from_object(instance)
+            value = field.value_from_object(instance)
         elif (
             isinstance(field, models.Field)
             and field.concrete
@@ -89,15 +89,17 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
             value = field.value_from_object(instance)
             if isinstance(field, models.FileField):
                 value = value.name or ""
-            # A copy: a JSONField or ArrayField value is the instance's own
-            # dict or list, and an in-place change after the snapshot would
-            # otherwise change the snapshot too.
-            values[name] = copy.deepcopy(value)
         else:
             raise ValueError(
                 f"{name} cannot be snapshotted: its kind is not supported."
             )
-        _require_json_encodable(name, values[name])
+        # Check the live value first: a value that cannot be encoded may not
+        # be copyable either, and a copy error can carry the value's state.
+        _require_json_encodable(name, value)
+        # A copy: a JSONField or ArrayField value is the instance's own dict
+        # or list, and an in-place change after the snapshot would otherwise
+        # change the snapshot too.
+        values[name] = copy.deepcopy(value)
     return values
 
 
