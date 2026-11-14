@@ -227,7 +227,9 @@ def test_record_event_rejects_an_unknown_action(action: Any) -> None:
 
 
 @pytest.mark.parametrize("actor", [None, AnonymousUser()])
-def test_anonymous_or_missing_actor_stores_no_actor(actor: AnonymousUser | None) -> None:
+def test_anonymous_or_missing_actor_stores_no_actor(
+    actor: AnonymousUser | None,
+) -> None:
     target = UserFactory.create()
 
     event = record_event(action=AuditAction.SESSION_END, target=target, actor=actor)

@@ -3,6 +3,8 @@
 Write an AuditEvent only through ``apps.audit.services.record_event``.
 """
 
+from typing import ClassVar
+
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -61,10 +63,10 @@ class AuditEvent(models.Model):
     reason = models.TextField(blank=True)
 
     class Meta:
-        ordering = ["-created_at", "-id"]
+        ordering: ClassVar[list[str]] = ["-created_at", "-id"]
         # Only a view permission exists: nobody may add, change, or delete.
         default_permissions = ("view",)
-        indexes = [
+        indexes: ClassVar[list[models.Index]] = [
             models.Index(fields=["target_content_type", "target_object_id"]),
         ]
         verbose_name = "audit event"
