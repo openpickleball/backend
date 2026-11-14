@@ -155,7 +155,16 @@ def test_config_disables_blank_issues_and_links_org_forms() -> None:
     ]
 
 
-def test_no_pull_request_template() -> None:
-    names = {path.name.lower() for path in GITHUB_DIR.iterdir()}
-    assert "pull_request_template.md" not in names
-    assert "pull_request_template" not in names
+@pytest.mark.parametrize("directory", [BASE_DIR, BASE_DIR / "docs", GITHUB_DIR])
+def test_no_pull_request_template(directory: Path) -> None:
+    # GitHub reads a pull request template from any of these places, in any
+    # case, and a repository template would replace the organization one.
+    if not directory.is_dir():
+        return
+    templates = [
+        path.name
+        for path in directory.iterdir()
+        if path.name.lower() == "pull_request_template"
+        or path.name.lower().startswith("pull_request_template.")
+    ]
+    assert templates == []
