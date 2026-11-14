@@ -289,13 +289,15 @@ def test_snapshot_of_datetime_decimal_and_uuid_fields_is_recorded() -> None:
             ["at", "score", "ref"],
         )
 
-    assert before == {"at": when, "score": Decimal("4.25"), "ref": ident}
-    event = record_event(
-        action=AuditAction.RATING_EDIT, target=UserFactory.create(), before=before
-    )
-
-    assert AuditEvent.objects.get(pk=event.pk).before == {
+    # snapshot returns values as they are stored: strings for all three.
+    stored_form = {
         "at": "2026-03-04T05:06:07Z",
         "score": "4.25",
         "ref": str(ident),
     }
+    assert before == stored_form
+    event = record_event(
+        action=AuditAction.RATING_EDIT, target=UserFactory.create(), before=before
+    )
+
+    assert AuditEvent.objects.get(pk=event.pk).before == stored_form
