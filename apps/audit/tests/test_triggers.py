@@ -110,3 +110,16 @@ def test_flush_still_works_when_no_audit_event_exists() -> None:
     UserFactory.create()
 
     assert not AuditEvent.objects.exists()
+
+
+def test_trigger_function_turns_row_security_off() -> None:
+    # The emptiness check must see every row: a SELECT policy must make it
+    # fail, not hide rows from it (TRUNCATE itself ignores policies).
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT proconfig FROM pg_proc WHERE proname = %s",
+            ["audit_auditevent_append_only"],
+        )
+        (config,) = cursor.fetchone() or (None,)
+
+    assert "row_security=off" in (config or [])

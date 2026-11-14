@@ -16,6 +16,9 @@ class Migration(migrations.Migration):
     # snapshot can miss a row another session has since committed. The check
     # reads the table that fired the trigger (TG_RELID), and the search_path
     # is pinned, so a temp table of the same name cannot stand in for it.
+    # row_security is off inside the function, so a SELECT policy cannot
+    # hide rows from the check (TRUNCATE ignores policies): a caller subject
+    # to a policy gets an error instead, failing closed.
     # SQLSTATE 42501 (insufficient_privilege) reaches Django as
     # django.db.ProgrammingError.
     operations = [
@@ -24,6 +27,7 @@ class Migration(migrations.Migration):
 CREATE FUNCTION audit_auditevent_append_only() RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, pg_temp
+SET row_security = off
 AS $$
 DECLARE
     has_rows boolean;
