@@ -3,7 +3,7 @@
 Write an AuditEvent only through ``apps.audit.services.record_event``.
 """
 
-from typing import ClassVar
+from typing import Any, ClassVar, NoReturn
 
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
@@ -35,8 +35,33 @@ class AuditAction(models.TextChoices):
     OAUTH_APP_REVOKE = "oauth_app.revoke", "OAuth application revocation"
 
 
+class AuditEventImmutable(RuntimeError):
+    """Raised when code tries to change or delete an AuditEvent."""
+
+
+_IMMUTABLE_MESSAGE = "Audit events are append-only: they cannot be changed or deleted."
+
+
+class AuditEventQuerySet(models.QuerySet["AuditEvent"]):
+    """Refuses bulk changes and deletes before any SQL runs."""
+
+    def update(self, **kwargs: Any) -> NoReturn:
+        raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
+
+    def delete(self) -> NoReturn:
+        raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
+
+    def bulk_update(self, *args: Any, **kwargs: Any) -> NoReturn:
+        raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
+
+
 class AuditEvent(models.Model):
-    """One recorded action: who did it, to what, and the before and after."""
+    """One recorded action: who did it, to what, and the before and after.
+
+    Rows are append-only. The ORM refuses changes here, and a database
+    trigger (migration 0002) refuses UPDATE, DELETE, and TRUNCATE of a
+    non-empty table.
+    """
 
     created_at = models.DateTimeField(
         default=timezone.now, db_index=True, editable=False
@@ -62,6 +87,8 @@ class AuditEvent(models.Model):
     after = models.JSONField(null=True, blank=True, encoder=DjangoJSONEncoder)
     reason = models.TextField(blank=True)
 
+    objects = AuditEventQuerySet.as_manager()
+
     class Meta:
         ordering: ClassVar[list[str]] = ["-created_at", "-id"]
         # Only a view permission exists: nobody may add, change, or delete.
@@ -76,3 +103,11 @@ class AuditEvent(models.Model):
             f"{self.get_action_display()}: {self.target_content_type.model} "
             f"{self.target_object_id} at {self.created_at.isoformat()}"
         )
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> NoReturn:
+        raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
