@@ -1,0 +1,18 @@
+# Code owners for openpickleball/backend.
+#
+# GitHub requests a review from the owners of every path a pull request
+# changes. The last matching rule wins, so the default comes first.
+#
+# Security-sensitive areas (see CLAUDE.md) get their own entries. When an
+# app for score confirmation, organizer verification, duplicate detection,
+# identity linking, or rating changes lands, or the match ledger app lands,
+# add an entry for its directory here in the same pull request. List only
+# paths that exist: a test checks every path below.
+
+* @openpickleball/maintainers
+
+# Account identity and login, the base for identity linking.
+/apps/accounts/ @openpickleball/maintainers
+
+# CI, the DCO check, and this file.
+/.github/ @openpickleball/maintainers
