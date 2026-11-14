@@ -1,0 +1,46 @@
+name: Epic
+description: Group related backend work under one outcome, tracked as sub-issues.
+labels: ["type:epic"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: The problem this epic solves, and who has it.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What this epic covers. Track each piece of work as a sub-issue of this epic.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Done when (acceptance criteria)
+      description: Checkable statements that are true when the whole epic is done.
+      placeholder: |
+        - [ ] Every sub-issue is closed.
+        - [ ] An organizer can...
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: Related work this epic does not cover.
+    validations:
+      required: false
+  - type: checkboxes
+    id: agreements
+    attributes:
+      label: Before you submit
+      options:
+        - label: This epic fits the [mission charter](https://github.com/openpickleball/.github/blob/main/CHARTER.md), which rules out subscriptions, paid tiers, advertisements, and premium features.
+          required: true
+        - label: This epic does not contain real player names, contact details, or match histories.
+          required: true
+        - label: I agree to follow the [Code of Conduct](https://github.com/openpickleball/.github/blob/main/CODE_OF_CONDUCT.md).
+          required: true

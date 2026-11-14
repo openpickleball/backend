@@ -1,0 +1,68 @@
+name: Bug report
+description: Something in the OPEN backend is wrong or broken.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not report security problems here. Follow the [security policy](https://github.com/openpickleball/.github/blob/main/SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the steps someone else can follow to see the same problem.
+      placeholder: |
+        1. Go to...
+        2. Run...
+        3. See...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The release, commit, or page where you saw the problem.
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, browser, device, or runtime, if relevant.
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Checkable statements that are true once the bug is fixed. Leave this blank if you are not sure. A maintainer will fill it in.
+      placeholder: |
+        - [ ] The steps above no longer show the problem.
+        - [ ] A test reproduces the bug and passes.
+    validations:
+      required: false
+  - type: checkboxes
+    id: agreements
+    attributes:
+      label: Before you submit
+      options:
+        - label: This report fits the [mission charter](https://github.com/openpickleball/.github/blob/main/CHARTER.md), which rules out subscriptions, paid tiers, advertisements, and premium features.
+          required: true
+        - label: This report does not contain real player names, contact details, or match histories.
+          required: true
+        - label: I agree to follow the [Code of Conduct](https://github.com/openpickleball/.github/blob/main/CODE_OF_CONDUCT.md).
+          required: true
