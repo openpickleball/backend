@@ -57,3 +57,4 @@ Add each record here when it merges.
 - [0004. Settings from the environment, secure by default](0004-settings-from-the-environment.md) (issue #4)
 - [0005. API versioning and error format](0005-api-versioning-and-error-format.md) (issue #5)
 - [0006. Celery queues and broker](0006-celery-queues-and-broker.md) (issue #9)
+- [0007. An append-only audit log enforced in the database](0007-append-only-audit-log.md) (issue #17)
