@@ -12,7 +12,6 @@ from typing import Any
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.contenttypes.models import ContentType
-from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 
 from apps.audit.models import AuditAction, AuditEvent
@@ -54,29 +53,41 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
     """Return the named fields' values, for ``before`` or ``after``.
 
     The field list is required, so a field such as a password hash is never
-    captured by accident. Every value is JSON-safe for ``record_event``:
+    captured by accident. Only field kinds with a JSON-safe value for
+    ``record_event`` are accepted:
 
-    - a foreign key gives its primary key value;
     - a many-to-many field gives the sorted list of related primary keys;
+    - a foreign key (or one-to-one) gives its primary key value;
     - a file field gives its stored name (the path in storage), not the file;
-    - a binary field raises ``ValueError``: raw bytes do not belong in an
-      audit event.
+    - any other concrete, non-relational field gives its value.
 
-    An unknown name raises ``FieldDoesNotExist``.
+    A binary field (raw bytes do not belong in an audit event) and every
+    other kind (reverse relations, generic relations and generic foreign
+    keys, other foreign objects) raise ``ValueError`` naming the field. An
+    unknown name raises ``FieldDoesNotExist``.
     """
     values: dict[str, Any] = {}
     for name in fields:
         field = instance._meta.get_field(name)
-        if not isinstance(field, models.Field):
-            raise FieldDoesNotExist(f"{name} is not a concrete field.")
-        if isinstance(field, models.BinaryField):
-            raise ValueError(f"{name} is a binary field and cannot be snapshotted.")
-        value = field.value_from_object(instance)
         if isinstance(field, models.ManyToManyField):
-            value = sorted(related.pk for related in value)
-        elif isinstance(field, models.FileField):
-            value = value.name or ""
-        values[name] = value
+            related = field.value_from_object(instance)
+            values[name] = sorted(item.pk for item in related)
+        elif isinstance(field, models.ForeignKey):
+            values[name] = field.value_from_object(instance)
+        elif (
+            isinstance(field, models.Field)
+            and field.concrete
+            and not field.is_relation
+            and not isinstance(field, models.BinaryField)
+        ):
+            value = field.value_from_object(instance)
+            if isinstance(field, models.FileField):
+                value = value.name or ""
+            values[name] = value
+        else:
+            raise ValueError(
+                f"{name} cannot be snapshotted: its kind is not supported."
+            )
     return values
 
 
