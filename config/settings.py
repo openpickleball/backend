@@ -259,6 +259,7 @@ INSTALLED_APPS = [
     "ninja",
     "django_celery_beat",
     "apps.accounts",
+    "apps.audit",
 ]
 
 # The OPEN Account login model, keyed on email (apps/accounts).
