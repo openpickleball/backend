@@ -36,8 +36,19 @@ def _tracked_files() -> list[str]:
 
 
 def _codeowners_pattern_owns_tracked(pattern: str, tracked: list[str]) -> bool:
-    """Return whether an anchored CODEOWNERS pattern owns a tracked path."""
-    return (BASE_DIR / pattern.strip("/")).exists()
+    """Return whether an anchored CODEOWNERS pattern owns a tracked path.
+
+    A pattern ending in `/` matches only a directory, so it must be a
+    directory prefix of a tracked path. Any other pattern must be a tracked
+    file or a directory prefix of a tracked path.
+    """
+    path = pattern.strip("/")
+    if not path:
+        return False
+    is_directory = any(name.startswith(f"{path}/") for name in tracked)
+    if pattern.endswith("/"):
+        return is_directory
+    return is_directory or path in tracked
 
 
 def _editorconfig() -> configparser.ConfigParser:
