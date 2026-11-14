@@ -45,15 +45,29 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
     """Return the named fields' values, for ``before`` or ``after``.
 
     The field list is required, so a field such as a password hash is never
-    captured by accident. A foreign key gives its primary key value. An
-    unknown name raises ``FieldDoesNotExist``.
+    captured by accident. Every value is JSON-safe for ``record_event``:
+
+    - a foreign key gives its primary key value;
+    - a many-to-many field gives the sorted list of related primary keys;
+    - a file field gives its stored name (the path in storage), not the file;
+    - a binary field raises ``ValueError``: raw bytes do not belong in an
+      audit event.
+
+    An unknown name raises ``FieldDoesNotExist``.
     """
     values: dict[str, Any] = {}
     for name in fields:
         field = instance._meta.get_field(name)
         if not isinstance(field, models.Field):
             raise FieldDoesNotExist(f"{name} is not a concrete field.")
-        values[name] = field.value_from_object(instance)
+        if isinstance(field, models.BinaryField):
+            raise ValueError(f"{name} is a binary field and cannot be snapshotted.")
+        value = field.value_from_object(instance)
+        if isinstance(field, models.ManyToManyField):
+            value = sorted(related.pk for related in value)
+        elif isinstance(field, models.FileField):
+            value = value.name or ""
+        values[name] = value
     return values
 
 
