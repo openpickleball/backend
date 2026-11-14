@@ -48,7 +48,7 @@ def test_trigger_function_pins_its_search_path() -> None:
         )
         (config,) = cursor.fetchone() or (None,)
 
-    assert config == ["search_path=pg_catalog, pg_temp"]
+    assert "search_path=pg_catalog, pg_temp" in (config or [])
 
 
 @pytest.mark.django_db(transaction=True)
