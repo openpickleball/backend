@@ -5,6 +5,7 @@ inside the same ``transaction.atomic()`` block as the change it records, so
 the change and its audit event commit together or not at all.
 """
 
+import json
 import re
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.contenttypes.models import ContentType
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 
 from apps.audit.models import AuditAction, AuditEvent
@@ -57,14 +59,17 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
     ``record_event`` are accepted:
 
     - a many-to-many field gives the sorted list of related primary keys;
-    - a foreign key (or one-to-one) gives its primary key value;
+    - a foreign key (or one-to-one) gives the value it stores: the related
+      primary key, or the ``to_field`` value when ``to_field`` is set;
     - a file field gives its stored name (the path in storage), not the file;
     - any other concrete, non-relational field gives its value.
 
     A binary field (raw bytes do not belong in an audit event) and every
     other kind (reverse relations, generic relations and generic foreign
-    keys, other foreign objects) raise ``ValueError`` naming the field. An
-    unknown name raises ``FieldDoesNotExist``.
+    keys, other foreign objects) raise ``ValueError`` naming the field. So
+    does an accepted field whose value ``DjangoJSONEncoder`` cannot encode
+    (a range, an array of bytes). An unknown name raises
+    ``FieldDoesNotExist``.
     """
     values: dict[str, Any] = {}
     for name in fields:
@@ -88,7 +93,21 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
             raise ValueError(
                 f"{name} cannot be snapshotted: its kind is not supported."
             )
+        _require_json_encodable(name, values[name])
     return values
+
+
+def _require_json_encodable(name: str, value: Any) -> None:
+    """Refuse a value the AuditEvent JSON fields could not store.
+
+    Raised ``from None``: the encoder's own message can include the value.
+    """
+    try:
+        json.dumps(value, cls=DjangoJSONEncoder)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"{name} cannot be snapshotted: its value cannot be stored as JSON."
+        ) from None
 
 
 def _is_saved(instance: models.Model | AbstractBaseUser) -> bool:
