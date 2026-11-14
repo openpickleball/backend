@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Player, club, or platform feedback
+    url: https://github.com/openpickleball/.github/issues/new?template=community_feedback.yml
+    about: Tell us what you need from a rating. No coding knowledge needed.
+  - name: Rating spec change
+    url: https://github.com/openpickleball/.github/issues/new?template=rating_spec_change.yml
+    about: Propose or challenge a change to how OPEN ratings are calculated.
+  - name: Report a security problem
+    url: https://github.com/openpickleball/.github/blob/main/SECURITY.md
+    about: Please report security problems privately, not in a public issue.
+  - name: Ask a question
+    url: https://github.com/openpickleball/.github/discussions
+    about: Ask questions and talk through ideas with the community.
