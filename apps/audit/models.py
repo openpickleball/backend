@@ -3,6 +3,7 @@
 Write an AuditEvent only through ``apps.audit.services.record_event``.
 """
 
+from collections.abc import Collection, Iterable
 from typing import Any, ClassVar, NoReturn
 
 from django.conf import settings
@@ -10,6 +11,8 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
 from django.utils import timezone
 
 
@@ -54,6 +57,26 @@ class AuditEventQuerySet(models.QuerySet["AuditEvent"]):
     def bulk_update(self, *args: Any, **kwargs: Any) -> NoReturn:
         raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
 
+    def bulk_create(
+        self,
+        objs: Iterable["AuditEvent"],
+        batch_size: int | None = None,
+        ignore_conflicts: bool = False,
+        update_conflicts: bool = False,
+        update_fields: Collection[str] | None = None,
+        unique_fields: Collection[str] | None = None,
+    ) -> list["AuditEvent"]:
+        # An upsert would update an existing row.
+        if update_conflicts:
+            raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
+        return super().bulk_create(
+            objs,
+            batch_size=batch_size,
+            ignore_conflicts=ignore_conflicts,
+            update_fields=update_fields,
+            unique_fields=unique_fields,
+        )
+
 
 class AuditEvent(models.Model):
     """One recorded action: who did it, to what, and the before and after.
@@ -97,6 +120,9 @@ class AuditEvent(models.Model):
             models.Index(fields=["target_content_type", "target_object_id"]),
         ]
         verbose_name = "audit event"
+        # Django's internal queries (related lookups, deletion collection)
+        # use the base manager, so it must be the guarded one too.
+        base_manager_name = "objects"
 
     def __str__(self) -> str:
         return (
@@ -104,10 +130,58 @@ class AuditEvent(models.Model):
             f"{self.target_object_id} at {self.created_at.isoformat()}"
         )
 
-    def save(self, *args: Any, **kwargs: Any) -> None:
-        if not self._state.adding:
+    def save_base(
+        self,
+        raw: bool = False,
+        force_insert: bool | tuple[models.base.ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
+        # save() and create() go through here. The pre_save receiver below
+        # applies the same rule to callers that skip this override.
+        if force_update:
             raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
-        super().save(*args, **kwargs)
+        _refuse_unless_new(self, update_fields)
+        super().save_base(
+            raw=raw,
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )
 
     def delete(self, *args: Any, **kwargs: Any) -> NoReturn:
         raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
+
+
+def _refuse_unless_new(
+    instance: AuditEvent, update_fields: Iterable[str] | None
+) -> None:
+    """Refuse any save that could update an existing row.
+
+    Only a brand new instance with no primary key may be saved, and then
+    only as a plain insert.
+    """
+    if (
+        not instance._state.adding
+        or instance.pk is not None
+        or update_fields is not None
+    ):
+        raise AuditEventImmutable(_IMMUTABLE_MESSAGE)
+
+
+@receiver(pre_save, sender=AuditEvent)
+def _refuse_audit_event_changes(
+    sender: type[AuditEvent],
+    instance: AuditEvent,
+    update_fields: Iterable[str] | None = None,
+    **kwargs: Any,
+) -> None:
+    """Apply the rule to every save, raw ones included.
+
+    Deserialization (loaddata) calls ``models.Model.save_base`` directly,
+    which skips the override on AuditEvent but still sends pre_save before
+    any SQL runs.
+    """
+    _refuse_unless_new(instance, update_fields)
