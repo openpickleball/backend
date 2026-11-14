@@ -14,5 +14,8 @@
 # Account identity and login, the base for identity linking.
 /apps/accounts/ @openpickleball/maintainers
 
+# Audit log, append-only: the record of rating, match, and moderation changes.
+/apps/audit/ @openpickleball/maintainers
+
 # CI, the DCO check, and this file.
 /.github/ @openpickleball/maintainers
