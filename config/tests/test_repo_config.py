@@ -4,7 +4,8 @@ import configparser
 import subprocess
 from pathlib import Path
 
-from ruff.__main__ import find_ruff_bin  # type: ignore[import-untyped]
+import pytest
+from ruff import find_ruff_bin  # type: ignore[import-untyped]
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CODEOWNERS = BASE_DIR / ".github" / "CODEOWNERS"
@@ -21,6 +22,22 @@ def _codeowners_rules() -> list[tuple[str, list[str]]]:
         pattern, *owners = stripped.split()
         rules.append((pattern, owners))
     return rules
+
+
+def _tracked_files() -> list[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=BASE_DIR,
+    )
+    return [path for path in result.stdout.split("\0") if path]
+
+
+def _codeowners_pattern_owns_tracked(pattern: str, tracked: list[str]) -> bool:
+    """Return whether an anchored CODEOWNERS pattern owns a tracked path."""
+    return (BASE_DIR / pattern.strip("/")).exists()
 
 
 def _editorconfig() -> configparser.ConfigParser:
@@ -57,10 +74,32 @@ def test_codeowners_default_owner_is_maintainers() -> None:
 def test_codeowners_paths_exist() -> None:
     patterns = [pattern for pattern, _ in _codeowners_rules() if pattern != "*"]
 
-    missing = [p for p in patterns if not (BASE_DIR / p.strip("/")).exists()]
+    tracked = _tracked_files()
+
+    missing = [p for p in patterns if not _codeowners_pattern_owns_tracked(p, tracked)]
 
     assert patterns
     assert missing == []
+
+
+@pytest.mark.parametrize(
+    ("pattern", "expected"),
+    [
+        ("/apps/accounts/", True),
+        ("/.github/", True),
+        ("/manage.py", True),
+        ("/apps", True),
+        ("/.env", False),
+        ("/manage.py/", False),
+        ("/no-such-dir/", False),
+        ("/no-such-file", False),
+        ("/apps/acc", False),
+    ],
+)
+def test_codeowners_pattern_owns_tracked(pattern: str, *, expected: bool) -> None:
+    tracked = _tracked_files()
+
+    assert _codeowners_pattern_owns_tracked(pattern, tracked) is expected
 
 
 def test_codeowners_owners_are_maintainers() -> None:
