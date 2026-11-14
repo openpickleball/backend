@@ -100,6 +100,10 @@ def record_event(
 ) -> AuditEvent:
     """Store one AuditEvent and return it.
 
+    This is the only supported way to write an AuditEvent. Call it inside
+    the same ``transaction.atomic()`` block as the change it records, so the
+    change and its audit event commit together or not at all.
+
     ``action`` is an AuditAction member or its value. ``target`` and an
     Account ``actor`` must be saved: loaded from or written to the database,
     with a primary key. To record a delete, call this before ``delete()``,
