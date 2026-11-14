@@ -5,7 +5,6 @@ inside the same ``transaction.atomic()`` block as the change it records, so
 the change and its audit event commit together or not at all.
 """
 
-import copy
 import json
 import re
 from collections.abc import Iterable, Mapping
@@ -62,14 +61,19 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
     - a foreign key (or one-to-one) gives the value it stores: the related
       primary key, or the ``to_field`` value when ``to_field`` is set;
     - a file field gives its stored name (the path in storage), not the file;
-    - any other concrete, non-relational field gives a deep copy of its
-      value, so changing the instance afterwards cannot change the snapshot.
+    - any other concrete, non-relational field gives its value.
+
+    Every value is copied by a JSON round trip through the encoder the
+    AuditEvent fields store with, so the snapshot holds exactly what will be
+    stored, as plain JSON types (a datetime, Decimal, or UUID comes back as
+    a string), and changing the instance afterwards cannot change it.
 
     A binary field (raw bytes do not belong in an audit event) and every
     other kind (reverse relations, generic relations and generic foreign
     keys, other foreign objects) raise ``ValueError`` naming the field. So
     does an accepted field whose value the AuditEvent JSON encoder cannot
-    encode (a range, an array of bytes). An unknown name raises
+    encode (a range, an array of bytes, a value nested too deeply). An
+    unknown name raises
     ``FieldDoesNotExist``.
     """
     values: dict[str, Any] = {}
@@ -93,13 +97,7 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
             raise ValueError(
                 f"{name} cannot be snapshotted: its kind is not supported."
             )
-        # Check the live value first: a value that cannot be encoded may not
-        # be copyable either, and a copy error can carry the value's state.
-        _require_json_encodable(name, value)
-        # A copy: a JSONField or ArrayField value is the instance's own dict
-        # or list, and an in-place change after the snapshot would otherwise
-        # change the snapshot too.
-        values[name] = copy.deepcopy(value)
+        values[name] = _json_round_trip(name, value)
     return values
 
 
@@ -113,14 +111,18 @@ def _audit_json_encoder() -> type[json.JSONEncoder] | None:
     return field.encoder
 
 
-def _require_json_encodable(name: str, value: Any) -> None:
-    """Refuse a value the AuditEvent JSON fields could not store.
+def _json_round_trip(name: str, value: Any) -> Any:
+    """Return ``value`` as the AuditEvent JSON fields would store it.
 
-    Raised ``from None``: the encoder's own message can include the value.
+    One step both checks and copies: the result is new plain JSON data, so
+    a JSONField or ArrayField value changed in place later cannot change it,
+    and no custom ``__deepcopy__`` runs. Any encoder failure becomes a
+    ValueError naming the field, raised ``from None`` because the encoder's
+    own message can include the value.
     """
     try:
-        json.dumps(value, cls=_audit_json_encoder())
-    except (TypeError, ValueError):
+        return json.loads(json.dumps(value, cls=_audit_json_encoder()))
+    except (TypeError, ValueError, RecursionError):
         raise ValueError(
             f"{name} cannot be snapshotted: its value cannot be stored as JSON."
         ) from None
