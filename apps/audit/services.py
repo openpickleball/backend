@@ -71,6 +71,15 @@ def snapshot(instance: models.Model, fields: Iterable[str]) -> dict[str, Any]:
     return values
 
 
+def _is_saved(instance: models.Model | AbstractBaseUser) -> bool:
+    """True when ``instance`` is a row in the database.
+
+    A primary key alone is not enough: a UUID primary key default is set
+    before the instance is saved.
+    """
+    return not instance._state.adding and instance.pk is not None
+
+
 def record_event(
     *,
     action: AuditAction,
@@ -83,18 +92,20 @@ def record_event(
     """Store one AuditEvent and return it.
 
     ``action`` is an AuditAction member or its value. ``target`` and an
-    Account ``actor`` must be saved. An anonymous or missing actor is stored
-    as no actor. Sensitive keys in ``before`` and ``after`` are redacted
-    (see ``_redact``).
+    Account ``actor`` must be saved: loaded from or written to the database,
+    with a primary key. To record a delete, call this before ``delete()``,
+    which clears the instance's primary key. An anonymous or missing actor
+    is stored as no actor. Sensitive keys in ``before`` and ``after`` are
+    redacted (see ``_redact``).
     """
     if not isinstance(action, str) or action not in AuditAction.values:
         raise ValueError("The action is not an AuditAction.")
-    if target.pk is None:
+    if not _is_saved(target):
         raise ValueError("The target must be saved before it is audited.")
 
     actor_id: Any = None
     if actor is not None and actor.is_authenticated:
-        if actor.pk is None:
+        if not _is_saved(actor):
             raise ValueError("The actor must be saved before it is audited.")
         actor_id = actor.pk
 
