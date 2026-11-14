@@ -85,7 +85,7 @@ The README section [Lint, types, and git hooks](README.md#lint-types-and-git-hoo
 
 Every change to behavior needs tests that would fail without it. A bug fix needs a test that reproduces the bug.
 
-- Write tests with [pytest](https://docs.pytest.org/).
+- Write tests with [pytest](https://docs.pytest.org/): plain functions, plain `assert`, `pytest.raises`, and fixtures. Do not use `self.assert*` or `assertRaises`. Ruff's pytest-style rules (`PT`) check this. Some older files are exempt until issue #146 converts them.
 - Build test records with the [factory_boy](https://factoryboy.readthedocs.io/) factories, such as `UserFactory` in `apps/accounts/tests/factories.py`. They fill in made-up [Faker](https://faker.readthedocs.io/) data. When you add a model, consider adding a factory for it.
 - Tests run against Postgres, not SQLite. Start the local services as the README describes before you run them.
 - `uv run pytest` fails when total coverage drops below `fail_under` in `pyproject.toml`. Do not lower the floor to make a pull request pass.
