@@ -69,6 +69,7 @@ The tools are the source of truth for style. Do not argue formatting in review: 
 - [ruff](https://docs.astral.sh/ruff/) for lint and formatting, configured in `pyproject.toml`.
 - [mypy](https://mypy.readthedocs.io/) in strict mode with django-stubs, configured in `pyproject.toml`.
 - [pre-commit](https://pre-commit.com/) runs both, plus hygiene checks, on every commit. See `.pre-commit-config.yaml`.
+- `.editorconfig` sets encoding and whitespace defaults for your editor: UTF-8, LF line endings, a final newline, no trailing spaces, and the indent size for Python, YAML, and TOML files. Its Python settings match ruff format.
 
 ```bash
 uv run pre-commit install
