@@ -101,6 +101,18 @@ def test_form_ends_with_required_agreements(name: str) -> None:
     assert all(option["required"] is True for option in options)
 
 
+@pytest.mark.parametrize("name", FORMS)
+def test_form_descriptions_are_whole_sentences(name: str) -> None:
+    # An unquoted " #" starts a YAML comment and silently cuts the text.
+    descriptions = [_load(name)["description"]] + [
+        e["attributes"]["description"]
+        for e in _elements(name)
+        if "description" in e.get("attributes", {})
+    ]
+    truncated = [d for d in descriptions if not d.rstrip().endswith((".", "?", "!"))]
+    assert truncated == []
+
+
 def test_task_size_offers_small_medium_large() -> None:
     size = _element("task.yml", "size")
     assert size["type"] == "dropdown"
