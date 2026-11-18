@@ -249,13 +249,28 @@
         "type": "string"
       },
       "MatchOut": {
-        "description": "A match, its teams, and its games.",
+        "description": "A match, its teams, and its games, as the signed-in Account sees it.\n\n``my_team`` is the viewer's own team, null when the viewer's Player did\nnot play in the match. ``my_decision`` is the latest confirm or dispute\nthis player recorded on the match, ``none`` when they recorded none or\ndid not play. A repeated decision is not recorded again, so confirming\nagain after a dispute that a moderator resolved still shows\n``dispute``. An organizer's confirmation is not a player decision: a\nplayer who confirms as a member of the match's Event Organizer still\nshows ``none``. For a participant, ``confirmed_by_team`` says whether\na player on each team recorded a confirmation (a dispute is not a\nconfirmation); it is null for anyone else. A confirmation still shows\nin ``confirmed_by_team`` after the same player disputes, since a\nrecorded decision is never withdrawn. It counts player confirmations\nonly: a match confirmed by an organizer or a moderator, or a\ncorrection, can be confirmed with both false, so read ``status`` for\nwhether the match is confirmed. ``created_at`` is when the match was\nsubmitted.",
         "properties": {
           "best_of": {
             "$ref": "#/components/schemas/BestOf"
           },
           "code": {
             "title": "Code",
+            "type": "string"
+          },
+          "confirmed_by_team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TeamConfirmationsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
           "format": {
@@ -270,6 +285,19 @@
             },
             "title": "Games",
             "type": "array"
+          },
+          "my_decision": {
+            "$ref": "#/components/schemas/MyDecision"
+          },
+          "my_team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Team"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "played_on": {
             "format": "date",
@@ -307,7 +335,11 @@
           "game_target",
           "team_a",
           "team_b",
-          "games"
+          "games",
+          "my_team",
+          "my_decision",
+          "confirmed_by_team",
+          "created_at"
         ],
         "title": "MatchOut",
         "type": "object"
@@ -321,6 +353,16 @@
           "voided"
         ],
         "title": "MatchStatus",
+        "type": "string"
+      },
+      "MyDecision": {
+        "description": "The viewer's own latest decision on a match.",
+        "enum": [
+          "confirm",
+          "dispute",
+          "none"
+        ],
+        "title": "MyDecision",
         "type": "string"
       },
       "PagedMatchOut": {
@@ -485,6 +527,34 @@
         ],
         "title": "ScoringType",
         "type": "string"
+      },
+      "Team": {
+        "description": "One side of a Match.",
+        "enum": [
+          "A",
+          "B"
+        ],
+        "title": "Team",
+        "type": "string"
+      },
+      "TeamConfirmationsOut": {
+        "description": "Whether a player on each team has confirmed the match.",
+        "properties": {
+          "a": {
+            "title": "A",
+            "type": "boolean"
+          },
+          "b": {
+            "title": "B",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "title": "TeamConfirmationsOut",
+        "type": "object"
       }
     },
     "securitySchemes": {

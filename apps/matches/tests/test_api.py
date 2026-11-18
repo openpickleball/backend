@@ -6,6 +6,7 @@ every refusal is fixed text that never repeats a submitted value. Made-up
 data only.
 """
 
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -96,7 +97,14 @@ def test_participant_submits_a_pending_match_with_defaults(
 
     assert response.status_code == 201
     match = Match.objects.get()
-    assert response.json() == {
+    content = response.json()
+    # Django's JSON encoder keeps milliseconds, and none on an exact second,
+    # so compare the parsed time.
+    shown = datetime.fromisoformat(content.pop("created_at"))
+    assert shown == match.created_at.replace(
+        microsecond=match.created_at.microsecond // 1000 * 1000
+    )
+    assert content == {
         "code": match.public_code,
         "status": "pending",
         "format": "doubles",
@@ -107,6 +115,9 @@ def test_participant_submits_a_pending_match_with_defaults(
         "team_a": _team(players[:2]),
         "team_b": _team(players[2:]),
         "games": [{"number": n, **game} for n, game in enumerate(GAMES, start=1)],
+        "my_team": "A",
+        "my_decision": "none",
+        "confirmed_by_team": {"a": False, "b": False},
     }
     assert match.status == MatchStatus.PENDING
     assert match.submitted_by_user_id == players[0].account_id
