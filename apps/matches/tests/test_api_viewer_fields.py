@@ -13,8 +13,12 @@ import pytest
 from django.core.cache import cache
 from django.test import Client
 
-from apps.matches.models import Match
-from apps.matches.workflow import confirm_match
+from apps.accounts.models import User
+from apps.clubs.tests.factories import OrganizerMemberFactory
+from apps.events.models import Event
+from apps.matches.models import Match, MatchStatus
+from apps.matches.tests.factories import MatchFactory
+from apps.matches.workflow import confirm_match, dispute_match, resolve_dispute
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
@@ -198,9 +202,64 @@ def test_history_read_by_the_player_shows_their_fields(
     }
 
 
+# The fields show recorded player decisions only.
+
+
+def test_repeat_confirm_after_a_resolved_dispute_still_shows_dispute(
+    pending: Match, players: list[Player], moderator: User
+) -> None:
+    confirm_match(pending, actor=players[0].account)
+    dispute_match(pending, actor=players[0].account)
+    resolve_dispute(
+        pending,
+        actor=moderator,
+        outcome=MatchStatus.CONFIRMED,
+        reason="Scores checked with both teams.",
+    )
+
+    response = signed_in(players[0].account).post(
+        f"{MATCHES}{pending.public_code}/confirm"
+    )
+
+    # The confirmation was recorded already, so no new row is added, and
+    # the latest recorded decision is still the dispute.
+    assert response.status_code == 200
+    item = response.json()
+    assert item["status"] == "confirmed"
+    assert viewer_fields(item) == {
+        "my_team": "A",
+        "my_decision": "dispute",
+        "confirmed_by_team": {"a": True, "b": False},
+    }
+
+
+def test_organizer_member_who_plays_confirms_as_organizer(event: Event) -> None:
+    match: Match = MatchFactory.create(event=event)
+    participant = match.participants.get(team="A")
+    account = participant.player.account
+    OrganizerMemberFactory.create(organizer=event.organizer, account=account)
+
+    response = signed_in(account).post(f"{MATCHES}{match.public_code}/confirm")
+
+    # The organizer path records no player decision, so the match is
+    # confirmed with no team confirmation.
+    assert response.status_code == 200
+    item = response.json()
+    assert item["status"] == "confirmed"
+    assert viewer_fields(item) == {
+        "my_team": "A",
+        "my_decision": "none",
+        "confirmed_by_team": {"a": False, "b": False},
+    }
+
+
 def test_new_fields_are_documented() -> None:
     schemas = Client().get("/api/v1/openapi.json").json()["components"]["schemas"]
 
     match = schemas["MatchOut"]
     assert set(match["required"]) >= VIEWER_KEYS
+    description = " ".join(match["description"].split())
+    assert "A repeated decision is not recorded again" in description
+    assert "An organizer's confirmation is not a player decision" in description
+    assert "read ``status`` for whether the match counts" in description
     assert set(schemas["TeamConfirmationsOut"]["properties"]) == {"a", "b"}

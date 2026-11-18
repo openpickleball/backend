@@ -147,11 +147,19 @@ class MatchOut(Schema):
     """A match, its teams, and its games, as the signed-in Account sees it.
 
     ``my_team`` is the viewer's own team, null when the viewer's Player did
-    not play in the match. ``my_decision`` is the viewer's latest decision
-    on it, ``none`` when they gave none or did not play. For a participant,
-    ``confirmed_by_team`` says whether a player on each team has confirmed
-    the match (a dispute is not a confirmation); it is null for anyone
-    else. ``created_at`` is when the match was submitted.
+    not play in the match. ``my_decision`` is the latest confirm or dispute
+    this player recorded on the match, ``none`` when they recorded none or
+    did not play. A repeated decision is not recorded again, so confirming
+    again after a dispute that a moderator resolved still shows
+    ``dispute``. An organizer's confirmation is not a player decision: a
+    player who confirms as a member of the match's Event Organizer still
+    shows ``none``. For a participant, ``confirmed_by_team`` says whether
+    a player on each team recorded a confirmation (a dispute is not a
+    confirmation); it is null for anyone else. It counts player
+    confirmations only: a match confirmed by an organizer or a moderator,
+    or a correction, can be confirmed with both false, so read ``status``
+    for whether the match counts. ``created_at`` is when the match was
+    submitted.
     """
 
     code: str
