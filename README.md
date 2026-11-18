@@ -104,7 +104,7 @@ uv run pre-commit run --all-files
 
 mypy loads the Django settings, so it needs `.env` (or the variables) like `check` does. Without them mypy fails with "Error constructing plugin instance", and the message does not name the missing variable. The mypy hook checks the whole project, so an untracked `.py` file with type errors also blocks a commit. The ruff and mypy hooks run through `uv run --locked`: after changing dependencies in `pyproject.toml`, run `uv lock` before you commit.
 
-CI runs lint, types, and tests on every pull request. The test job also runs `manage.py check` and the missing-migrations check (`makemigrations --check --dry-run`).
+CI runs lint, types, and tests on every pull request. The test job also runs `manage.py check` and the missing-migrations check (`makemigrations --check --dry-run`), and fails when the committed OpenAPI document `openapi/openapi.json` is out of date (`export_openapi_schema --check`). After changing the API, regenerate it with `uv run python manage.py export_openapi_schema` and commit it.
 
 ### Email
 
@@ -131,8 +131,8 @@ The audit log is append-only, so `flush` cannot empty a seeded database. To star
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for this repository's workflow: branches and pull requests, code style, tests, and migrations. It adds to the organization [contributing guide](https://github.com/openpickleball/.github/blob/main/CONTRIBUTING.md). Every commit must be signed off. Please report security problems privately, as described in the [security policy](https://github.com/openpickleball/.github/blob/main/SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for this repository's workflow: branches and pull requests, code style, tests, migrations, and the API schema. It adds to the organization [contributing guide](https://github.com/openpickleball/.github/blob/main/CONTRIBUTING.md). Every commit must be signed off. Please report security problems privately, as described in the [security policy](https://github.com/openpickleball/.github/blob/main/SECURITY.md).
 
 ## License
 
-This repository is licensed under [AGPL-3.0-or-later](LICENSE). See [how OPEN is licensed](https://github.com/openpickleball/.github/blob/main/LICENSING.md). API specifications are licensed under Apache-2.0 and will be published separately.
+This repository is licensed under [AGPL-3.0-or-later](LICENSE). See [how OPEN is licensed](https://github.com/openpickleball/.github/blob/main/LICENSING.md). API specifications are licensed under Apache-2.0 and will be published separately by the `partner-docs` repository. The `openapi/openapi.json` file here is a generated copy for review and release assets, not the canonical one.
