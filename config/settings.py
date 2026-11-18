@@ -317,6 +317,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "corsheaders",
+    # Before ninja, so its export_openapi_schema command wins over
+    # django-ninja's: Django uses the first app that defines a command.
+    "apps.openapi",
     "ninja",
     "django_celery_beat",
     "oauth2_provider",

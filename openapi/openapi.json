@@ -1,0 +1,935 @@
+{
+  "components": {
+    "schemas": {
+      "BestOf": {
+        "description": "How many games a Match is played to (decision F15 in #1).",
+        "enum": [
+          1,
+          3,
+          5
+        ],
+        "title": "BestOf",
+        "type": "integer"
+      },
+      "CurrentAccount": {
+        "description": "The signed-in Account.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "CurrentAccount",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "The body of every error response.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/FieldError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "errors"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "FieldError": {
+        "description": "One invalid input: where it is, what kind of error, and a message.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "code",
+          "message"
+        ],
+        "title": "FieldError",
+        "type": "object"
+      },
+      "GameOut": {
+        "description": "One game's number and the points each team won.",
+        "properties": {
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "team_a": {
+            "title": "Team A",
+            "type": "integer"
+          },
+          "team_b": {
+            "title": "Team B",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "number",
+          "team_a",
+          "team_b"
+        ],
+        "title": "GameOut",
+        "type": "object"
+      },
+      "GameScoreIn": {
+        "description": "One game's score: the points each team won.",
+        "properties": {
+          "team_a": {
+            "title": "Team A",
+            "type": "integer"
+          },
+          "team_b": {
+            "title": "Team B",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "team_a",
+          "team_b"
+        ],
+        "title": "GameScoreIn",
+        "type": "object"
+      },
+      "GameTarget": {
+        "description": "The points a game is played to (decision F15 in #1).\n\nThe values are the points in the engine's ``ALL_GAME_FORMATS``.",
+        "enum": [
+          11,
+          15,
+          21
+        ],
+        "title": "GameTarget",
+        "type": "integer"
+      },
+      "Input": {
+        "properties": {
+          "limit": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "title": "Input",
+        "type": "object"
+      },
+      "LiveOut": {
+        "properties": {
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "LiveOut",
+        "type": "object"
+      },
+      "MatchCreateIn": {
+        "description": "A player's own match submission.\n\nThe field names are ``validate_match``'s argument names, so its issues\nname the request fields. A missing game target means 11, a missing\nscoring type means side-out, and a missing best-of is inferred from\nthe games. Each team takes at most ``MAX_TEAM_ENTRIES`` codes and the\ngames at most ``MAX_GAME_ENTRIES`` scores.",
+        "properties": {
+          "best_of": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BestOf"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "format": {
+            "$ref": "#/components/schemas/MatchFormat"
+          },
+          "game_target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/GameScoreIn"
+            },
+            "maxItems": 20,
+            "title": "Games",
+            "type": "array"
+          },
+          "played_on": {
+            "format": "date",
+            "title": "Played On",
+            "type": "string"
+          },
+          "scoring_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScoringType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "team_a": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Team A",
+            "type": "array"
+          },
+          "team_b": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Team B",
+            "type": "array"
+          }
+        },
+        "required": [
+          "format",
+          "played_on",
+          "team_a",
+          "team_b",
+          "games"
+        ],
+        "title": "MatchCreateIn",
+        "type": "object"
+      },
+      "MatchFormat": {
+        "description": "Singles or doubles.\n\nThe values are the two base values of ``open_engine.RatingFormat``. The\nengine's doubles categories (mixed, men's, women's) are not stored here:\n#44 derives them from the players.",
+        "enum": [
+          "singles",
+          "doubles"
+        ],
+        "title": "MatchFormat",
+        "type": "string"
+      },
+      "MatchOut": {
+        "description": "A match, its teams, and its games.",
+        "properties": {
+          "best_of": {
+            "$ref": "#/components/schemas/BestOf"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "format": {
+            "$ref": "#/components/schemas/MatchFormat"
+          },
+          "game_target": {
+            "$ref": "#/components/schemas/GameTarget"
+          },
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/GameOut"
+            },
+            "title": "Games",
+            "type": "array"
+          },
+          "played_on": {
+            "format": "date",
+            "title": "Played On",
+            "type": "string"
+          },
+          "scoring_type": {
+            "$ref": "#/components/schemas/ScoringType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MatchStatus"
+          },
+          "team_a": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantOut"
+            },
+            "title": "Team A",
+            "type": "array"
+          },
+          "team_b": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantOut"
+            },
+            "title": "Team B",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "status",
+          "format",
+          "played_on",
+          "best_of",
+          "scoring_type",
+          "game_target",
+          "team_a",
+          "team_b",
+          "games"
+        ],
+        "title": "MatchOut",
+        "type": "object"
+      },
+      "MatchStatus": {
+        "description": "Where a Match is in confirmation.\n\nOnly ``record_match`` (the initial status) and the services in\n``apps.matches.workflow`` set it.",
+        "enum": [
+          "pending",
+          "confirmed",
+          "disputed",
+          "voided"
+        ],
+        "title": "MatchStatus",
+        "type": "string"
+      },
+      "PagedMatchOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MatchOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "PagedMatchOut",
+        "type": "object"
+      },
+      "ParticipantOut": {
+        "description": "A player in a match. ``code`` is null for a Private player.",
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "display_name"
+        ],
+        "title": "ParticipantOut",
+        "type": "object"
+      },
+      "ReadyChecks": {
+        "properties": {
+          "cache": {
+            "enum": [
+              "ok",
+              "fail"
+            ],
+            "title": "Cache",
+            "type": "string"
+          },
+          "database": {
+            "enum": [
+              "ok",
+              "fail"
+            ],
+            "title": "Database",
+            "type": "string"
+          }
+        },
+        "required": [
+          "database",
+          "cache"
+        ],
+        "title": "ReadyChecks",
+        "type": "object"
+      },
+      "ReadyOut": {
+        "properties": {
+          "checks": {
+            "$ref": "#/components/schemas/ReadyChecks"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadyOut",
+        "type": "object"
+      },
+      "ScoringType": {
+        "description": "How points are scored. The values are ``open_engine.ScoringType``'s.",
+        "enum": [
+          "side_out",
+          "rally"
+        ],
+        "title": "ScoringType",
+        "type": "string"
+      }
+    },
+    "securitySchemes": {
+      "SessionAuth": {
+        "in": "cookie",
+        "name": "sessionid",
+        "type": "apiKey"
+      },
+      "SessionTokenAuth": {
+        "in": "header",
+        "name": "X-Session-Token",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "The free and open API of OPEN, the Open Pickleball Evaluation Network. No OPEN rating is live yet: any rating it serves is a demonstration rating. Account sign-up, login, and email verification: see /_allauth/openapi.html.",
+    "title": "OPEN API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/accounts/me": {
+      "get": {
+        "description": "Return the Account that the session token or session cookie belongs to.",
+        "operationId": "get_current_account",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentAccount"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Current Account",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/v1/health/live": {
+      "get": {
+        "operationId": "health_live",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Live",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "operationId": "health_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyOut"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/matches/": {
+      "post": {
+        "description": "Submit a match you played in. It stays pending until both teams confirm.\n\nPlayers are given by OPEN Code. A missing game target means 11, a\nmissing scoring type means side-out, and a missing best-of is inferred\nfrom the games.",
+        "operationId": "create_match",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create Match",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
+    "/api/v1/matches/{code}/confirm": {
+      "post": {
+        "description": "Confirm a match you played in.\n\nA pending match becomes confirmed once a player on each team confirms\nit. Confirming again changes nothing. A disputed or voided match\ncannot be confirmed (409). Anyone who did not play in the match gets\n404, as for an unknown code.",
+        "operationId": "confirm_match",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "M-7K3M-QX9R-D2KR"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "M-7K3M-QX9R-D2KR"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Confirm Match",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
+    "/api/v1/matches/{code}/dispute": {
+      "post": {
+        "description": "Dispute a match you played in. A moderator then reviews it.\n\nDisputing again changes nothing. A voided match cannot be disputed\n(409). Anyone who did not play in the match gets 404, as for an\nunknown code.",
+        "operationId": "dispute_match",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "M-7K3M-QX9R-D2KR"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "M-7K3M-QX9R-D2KR"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Dispute Match",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
+    "/api/v1/players/{code}/matches": {
+      "get": {
+        "description": "The matches a player played, newest first.\n\nThe player sees every status. Anyone else signed in sees confirmed\nmatches only, and gets 404, as for an unknown code, when the player\nkeeps their match history private or their Account is inactive.",
+        "operationId": "list_player_matches",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "P-7K3M-QX9H"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "P-7K3M-QX9H"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedMatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Player Matches",
+        "tags": [
+          "players"
+        ]
+      }
+    }
+  },
+  "servers": []
+}
