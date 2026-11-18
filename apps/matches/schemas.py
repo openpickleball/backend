@@ -173,10 +173,15 @@ class MatchOut(Schema):
 def with_match_details(queryset: QuerySet[Match]) -> QuerySet[Match]:
     """Prefetch what ``match_out`` reads, in a fixed number of queries."""
     participants = MatchParticipant.objects.select_related("player__account")
-    return queryset.prefetch_related(
-        Prefetch("participants", queryset=participants.order_by("pk")),
-        Prefetch("games", queryset=Game.objects.order_by("game_number")),
-        Prefetch("confirmations", queryset=MatchConfirmation.objects.order_by("pk")),
+    confirmations = MatchConfirmation.objects.order_by("pk")
+    return (
+        queryset.prefetch_related(
+            Prefetch("participants", queryset=participants.order_by("pk"))
+        )
+        .prefetch_related(
+            Prefetch("games", queryset=Game.objects.order_by("game_number"))
+        )
+        .prefetch_related(Prefetch("confirmations", queryset=confirmations))
     )
 
 
