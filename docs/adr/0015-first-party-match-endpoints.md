@@ -24,6 +24,7 @@ Issue #31 asked to show a private player as "Private player" in other players' m
 - In a match history, the player's own Account sees all of its matches, in every status. Another signed-in Account sees only confirmed matches, and only while the player's `match_history_visibility` allows it (`PlayerPrivacy.visible_to`, which also hides everything while the player's Account is inactive).
 - Every response shows each participant's display name and OPEN Code, whatever that participant's own privacy settings. A participant whose Account is inactive is shown as "Private player" with no code, except to that participant's own Account. ADR 0002 guarantees a name only while the Account is active, so this record hides it otherwise.
 - Responses show no row id, submitter, flag, or confirmation row.
+- Every match response also carries fields derived for the signed-in Account (#193). `my_team` is the viewer's own team, and `my_decision` their own latest decision (`confirm`, `dispute`, or `none`). `confirmed_by_team` (`a` and `b`, booleans only) says whether a player on each team has confirmed; a dispute is not a confirmation. A viewer whose Player did not play in the match gets a null `my_team`, `none`, and a null `confirmed_by_team`, so a stranger never learns who confirmed. `created_at` is when the match was submitted. None of these names a player or shows a confirmation row.
 
 ### How the endpoints refuse
 

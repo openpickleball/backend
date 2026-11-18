@@ -107,6 +107,12 @@ def test_participant_submits_a_pending_match_with_defaults(
         "team_a": _team(players[:2]),
         "team_b": _team(players[2:]),
         "games": [{"number": n, **game} for n, game in enumerate(GAMES, start=1)],
+        "my_team": "A",
+        "my_decision": "none",
+        "confirmed_by_team": {"a": False, "b": False},
+        "created_at": match.created_at.isoformat(timespec="milliseconds").replace(
+            "+00:00", "Z"
+        ),
     }
     assert match.status == MatchStatus.PENDING
     assert match.submitted_by_user_id == players[0].account_id

@@ -10,10 +10,19 @@ import pytest
 from django.contrib.auth import get_user_model
 from pytest_django import DjangoAssertNumQueries
 
+from apps.accounts.tests.factories import UserFactory
 from apps.matches.models import Match
-from apps.matches.schemas import PRIVATE_PLAYER_NAME, match_out, with_match_details
+from apps.matches.schemas import (
+    PRIVATE_PLAYER_NAME,
+    MatchOut,
+    TeamConfirmationsOut,
+    match_out,
+    with_match_details,
+)
 from apps.matches.tests.conftest import WORKFLOW_GAMES, WORKFLOW_PLAYED_ON
+from apps.matches.workflow import confirm_match, dispute_match
 from apps.players.models import Player, PlayerPrivacy, Visibility
+from apps.players.tests.factories import PlayerFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -45,6 +54,10 @@ def test_match_out_lists_teams_games_and_settings(
             {"number": number, "team_a": a, "team_b": b}
             for number, (a, b) in enumerate(WORKFLOW_GAMES, start=1)
         ],
+        "my_team": "A",
+        "my_decision": "none",
+        "confirmed_by_team": {"a": False, "b": False},
+        "created_at": pending.created_at,
     }
 
 
@@ -98,7 +111,125 @@ def test_match_out_reads_only_prefetched_rows(
     players: list[Player],
     django_assert_num_queries: DjangoAssertNumQueries,
 ) -> None:
+    confirm_match(pending, actor=players[0].account)
+    dispute_match(pending, actor=players[2].account)
     loaded = _loaded(pending)
 
     with django_assert_num_queries(0):
-        match_out(loaded, players[0].account)
+        out = match_out(loaded, players[2].account)
+
+    assert out.my_team == "B"
+    assert out.my_decision == "dispute"
+    assert out.confirmed_by_team is not None
+    assert out.confirmed_by_team.a is True
+
+
+# The viewer's own team, decision, and each team's confirmation (#193).
+
+
+@pytest.mark.parametrize(("index", "team"), [(0, "A"), (1, "A"), (2, "B"), (3, "B")])
+def test_participant_sees_their_own_team(
+    pending: Match, players: list[Player], index: int, team: str
+) -> None:
+    out = match_out(_loaded(pending), players[index].account)
+
+    assert out.my_team == team
+    assert out.my_decision == "none"
+    assert out.confirmed_by_team is not None
+    assert out.confirmed_by_team.model_dump() == {"a": False, "b": False}
+
+
+def test_confirmation_shows_for_the_confirming_team_only(
+    pending: Match, players: list[Player]
+) -> None:
+    confirm_match(pending, actor=players[3].account)
+
+    for_confirmer = match_out(_loaded(pending), players[3].account)
+    for_teammate = match_out(_loaded(pending), players[2].account)
+    for_opponent = match_out(_loaded(pending), players[0].account)
+
+    assert for_confirmer.my_decision == "confirm"
+    assert for_teammate.my_decision == "none"
+    assert for_opponent.my_decision == "none"
+    for out in (for_confirmer, for_teammate, for_opponent):
+        assert out.confirmed_by_team is not None
+        assert out.confirmed_by_team.model_dump() == {"a": False, "b": True}
+
+
+def test_both_teams_confirmed(confirmed: Match, players: list[Player]) -> None:
+    out = match_out(_loaded(confirmed), players[1].account)
+
+    assert out.status == "confirmed"
+    assert out.my_decision == "none"
+    assert out.confirmed_by_team is not None
+    assert out.confirmed_by_team.model_dump() == {"a": True, "b": True}
+
+
+def test_latest_decision_wins(confirmed: Match, players: list[Player]) -> None:
+    dispute_match(confirmed, actor=players[0].account)
+
+    out = match_out(_loaded(confirmed), players[0].account)
+
+    assert out.my_decision == "dispute"
+    # The earlier confirmation still counts for the team.
+    assert out.confirmed_by_team is not None
+    assert out.confirmed_by_team.model_dump() == {"a": True, "b": True}
+
+
+def test_dispute_does_not_count_as_confirmation(
+    pending: Match, players: list[Player]
+) -> None:
+    dispute_match(pending, actor=players[0].account)
+
+    out = match_out(_loaded(pending), players[0].account)
+
+    assert out.my_decision == "dispute"
+    assert out.confirmed_by_team is not None
+    assert out.confirmed_by_team.model_dump() == {"a": False, "b": False}
+
+
+def test_non_participant_gets_no_viewer_fields(confirmed: Match) -> None:
+    outsider = PlayerFactory.create()
+
+    out = match_out(_loaded(confirmed), outsider.account)
+
+    assert out.my_team is None
+    assert out.my_decision == "none"
+    assert out.confirmed_by_team is None
+    assert out.created_at == confirmed.created_at
+
+
+def test_account_without_a_player_gets_no_viewer_fields(confirmed: Match) -> None:
+    out = match_out(_loaded(confirmed), UserFactory.create())
+
+    assert out.my_team is None
+    assert out.my_decision == "none"
+    assert out.confirmed_by_team is None
+
+
+def test_no_viewer_gets_no_viewer_fields(confirmed: Match) -> None:
+    out = match_out(_loaded(confirmed), None)
+
+    assert out.my_team is None
+    assert out.my_decision == "none"
+    assert out.confirmed_by_team is None
+
+
+def test_match_out_has_only_the_documented_fields() -> None:
+    assert set(MatchOut.model_fields) == {
+        "code",
+        "status",
+        "format",
+        "played_on",
+        "best_of",
+        "scoring_type",
+        "game_target",
+        "team_a",
+        "team_b",
+        "games",
+        "my_team",
+        "my_decision",
+        "confirmed_by_team",
+        "created_at",
+    }
+    assert set(TeamConfirmationsOut.model_fields) == {"a", "b"}

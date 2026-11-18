@@ -7,11 +7,16 @@ while their Account is active, so they show as ``PRIVATE_PLAYER_NAME``
 with no code, unless the viewer is that participant's own Account.
 
 No schema here carries a row id, the submitter, a flag, or any personal
-field other than a display name.
+field other than a display name. Confirmation state shows only as values
+derived for the viewer (issue #193): their own team, their own latest
+decision, and, for a participant, whether each team has a confirmation.
+No confirmation row, and nothing that says who confirmed or disputed, is
+shown.
 """
 
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated
 
 from django.db.models import Prefetch, QuerySet
@@ -21,9 +26,11 @@ from pydantic_core import PydanticCustomError
 
 from apps.matches.models import (
     BestOf,
+    ConfirmationDecision,
     Game,
     GameTarget,
     Match,
+    MatchConfirmation,
     MatchFormat,
     MatchParticipant,
     MatchStatus,
@@ -121,8 +128,31 @@ class GameOut(Schema):
     team_b: int
 
 
+class MyDecision(StrEnum):
+    """The viewer's own latest decision on a match."""
+
+    CONFIRM = "confirm"
+    DISPUTE = "dispute"
+    NONE = "none"
+
+
+class TeamConfirmationsOut(Schema):
+    """Whether a player on each team has confirmed the match."""
+
+    a: bool
+    b: bool
+
+
 class MatchOut(Schema):
-    """A match, its teams, and its games."""
+    """A match, its teams, and its games, as the signed-in Account sees it.
+
+    ``my_team`` is the viewer's own team, null when the viewer's Player did
+    not play in the match. ``my_decision`` is the viewer's latest decision
+    on it, ``none`` when they gave none or did not play. For a participant,
+    ``confirmed_by_team`` says whether a player on each team has confirmed
+    the match (a dispute is not a confirmation); it is null for anyone
+    else. ``created_at`` is when the match was submitted.
+    """
 
     code: str
     status: MatchStatus
@@ -134,14 +164,20 @@ class MatchOut(Schema):
     team_a: list[ParticipantOut]
     team_b: list[ParticipantOut]
     games: list[GameOut]
+    my_team: Team | None
+    my_decision: MyDecision
+    confirmed_by_team: TeamConfirmationsOut | None
+    created_at: datetime
 
 
 def with_match_details(queryset: QuerySet[Match]) -> QuerySet[Match]:
     """Prefetch what ``match_out`` reads, in a fixed number of queries."""
     participants = MatchParticipant.objects.select_related("player__account")
     return queryset.prefetch_related(
-        Prefetch("participants", queryset=participants.order_by("pk"))
-    ).prefetch_related(Prefetch("games", queryset=Game.objects.order_by("game_number")))
+        Prefetch("participants", queryset=participants.order_by("pk")),
+        Prefetch("games", queryset=Game.objects.order_by("game_number")),
+        Prefetch("confirmations", queryset=MatchConfirmation.objects.order_by("pk")),
+    )
 
 
 def _participant_out(
@@ -154,13 +190,54 @@ def _participant_out(
     return ParticipantOut(code=player.public_code, display_name=player.display_name)
 
 
+def _viewer_fields(
+    participants: list[MatchParticipant],
+    confirmations: list[MatchConfirmation],
+    viewer: "_User | None",
+) -> tuple[Team | None, MyDecision, TeamConfirmationsOut | None]:
+    """The viewer's team, latest decision, and each team's confirmation.
+
+    A viewer whose Player did not play in the match gets no team, no
+    decision, and no team confirmations. The confirmations are in
+    insertion order, so the viewer's last row is their latest decision.
+    """
+    own = next(
+        (
+            p
+            for p in participants
+            if viewer is not None and p.player.account_id == viewer.pk
+        ),
+        None,
+    )
+    if own is None:
+        return None, MyDecision.NONE, None
+    decision = MyDecision.NONE
+    for row in confirmations:
+        if row.player_id == own.player_id:
+            decision = MyDecision(row.decision)
+    team_of = {p.player_id: p.team for p in participants}
+    confirmed = {
+        team_of.get(row.player_id)
+        for row in confirmations
+        if row.decision == ConfirmationDecision.CONFIRM
+    }
+    return (
+        Team(own.team),
+        decision,
+        TeamConfirmationsOut(a=Team.A in confirmed, b=Team.B in confirmed),
+    )
+
+
 def match_out(match: Match, viewer: "_User | None") -> MatchOut:
     """The response for ``match`` as ``viewer`` sees it.
 
-    Reads the participants, their players and Accounts, and the games, so
-    load the match through ``with_match_details`` first.
+    Reads the participants, their players and Accounts, the games, and the
+    confirmations, so load the match through ``with_match_details`` first.
     """
     participants = list(match.participants.all())
+    my_team, my_decision, confirmed_by_team = _viewer_fields(
+        participants, list(match.confirmations.all()), viewer
+    )
     return MatchOut(
         code=match.public_code,
         status=MatchStatus(match.status),
@@ -175,4 +252,8 @@ def match_out(match: Match, viewer: "_User | None") -> MatchOut:
             GameOut(number=g.game_number, team_a=g.team_a_score, team_b=g.team_b_score)
             for g in match.games.all()
         ],
+        my_team=my_team,
+        my_decision=my_decision,
+        confirmed_by_team=confirmed_by_team,
+        created_at=match.created_at,
     )
