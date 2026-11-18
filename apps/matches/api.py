@@ -11,6 +11,12 @@ Submission refuses an Account whose own Player is not on either team
 before it looks up any code or validates anything, so a refused submitter
 learns nothing about which codes exist. ``record_match`` checks again.
 
+One match is at /api/v1/matches/{code}, for the players who played in it
+only (``permissions.participant_player``, the rule confirm and dispute
+use). Anyone else, an organizer of its Event included, gets the same 404
+as an unknown or malformed code, so the response never reveals that the
+match exists (ADR 0008).
+
 Confirm and dispute answer an actor the workflow refuses
 (``MatchActionDenied``) with the same 404 as an unknown or malformed
 code, so the response never reveals that the match exists (ADR 0008).
@@ -43,7 +49,11 @@ from ninja.pagination import paginate
 from apps.matches import workflow
 from apps.matches.models import Match
 from apps.matches.pagination import MatchHistoryPagination
-from apps.matches.permissions import MatchActionDenied, MatchPermissionDenied
+from apps.matches.permissions import (
+    MatchActionDenied,
+    MatchPermissionDenied,
+    participant_player,
+)
 from apps.matches.schemas import MatchCreateIn, MatchOut, match_out, with_match_details
 from apps.matches.services import MatchIssue, MatchValidationError, record_match
 from apps.players.models import Player
@@ -172,6 +182,23 @@ def create_match(request: HttpRequest, payload: MatchCreateIn) -> Status[MatchOu
     except MatchValidationError as error:
         raise _in_body(error) from None
     return Status(201, match_out(_loaded(recorded.match), account))
+
+
+@router.get(
+    "/{code}",
+    response={200: MatchOut, 404: ErrorResponse},
+    operation_id="get_match",
+)
+def get_match(request: HttpRequest, code: MatchCode) -> MatchOut:
+    """One match you played in, by its OPEN Code, in any status.
+
+    Anyone who did not play in the match gets 404, as for an unknown code.
+    """
+    account = request_account(request)
+    match = get_by_public_code(Match.objects.all(), code)
+    if participant_player(account, match) is None:
+        raise Http404
+    return match_out(_loaded(match), account)
 
 
 _CHANGE_RESPONSES = {

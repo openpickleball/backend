@@ -753,6 +753,87 @@
         ]
       }
     },
+    "/api/v1/matches/{code}": {
+      "get": {
+        "description": "One match you played in, by its OPEN Code, in any status.\n\nAnyone who did not play in the match gets 404, as for an unknown code.",
+        "operationId": "get_match",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "M-7K3M-QX9R-D2KR"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "M-7K3M-QX9R-D2KR"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Match",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
     "/api/v1/matches/{code}/confirm": {
       "post": {
         "description": "Confirm a match you played in.\n\nA pending match becomes confirmed once a player on each team confirms\nit. Confirming again changes nothing. A disputed or voided match\ncannot be confirmed (409). Anyone who did not play in the match gets\n404, as for an unknown code.",

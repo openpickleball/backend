@@ -1,7 +1,7 @@
 """A refused actor learns nothing about whether a record exists (ADR 0008).
 
-A non-participant's confirm or dispute of a real match, and another
-Account's read of a private or inactive player's match history, get
+A non-participant's read, confirm, or dispute of a real match, and
+another Account's read of a private or inactive player's match history, get
 exactly the 404 ``ErrorResponse`` that an unknown or malformed code gets.
 Made-up data only.
 """
@@ -13,7 +13,10 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 
 from apps.accounts.tests.factories import UserFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory
+from apps.events.models import Event
 from apps.matches.models import Match, MatchStatus
+from apps.matches.tests.factories import MatchFactory
 from apps.players.models import Player, PlayerPrivacy, Visibility
 from apps.players.tests.factories import PlayerFactory
 
@@ -62,6 +65,40 @@ def test_account_without_player_gets_the_unknown_code_404(
     _same(refused, unknown)
     confirmed.refresh_from_db()
     assert confirmed.status == MatchStatus.CONFIRMED
+
+
+@pytest.mark.parametrize("missing", [UNKNOWN_MATCH, MALFORMED])
+def test_non_participant_read_gets_the_unknown_code_404(
+    pending: Match, missing: str
+) -> None:
+    client = signed_in(PlayerFactory.create().account)
+
+    refused = client.get(f"/api/v1/matches/{pending.public_code}")
+    unknown = client.get(f"/api/v1/matches/{missing}")
+
+    _same(refused, unknown)
+
+
+def test_account_without_player_read_gets_the_unknown_code_404(
+    confirmed: Match,
+) -> None:
+    client = signed_in(UserFactory.create())
+
+    refused = client.get(f"/api/v1/matches/{confirmed.public_code}")
+    unknown = client.get(f"/api/v1/matches/{UNKNOWN_MATCH}")
+
+    _same(refused, unknown)
+
+
+def test_event_organizer_read_gets_the_unknown_code_404(event: Event) -> None:
+    match: Match = MatchFactory.create(event=event)
+    member = OrganizerMemberFactory.create(organizer=event.organizer)
+    client = signed_in(member.account)
+
+    refused = client.get(f"/api/v1/matches/{match.public_code}")
+    unknown = client.get(f"/api/v1/matches/{UNKNOWN_MATCH}")
+
+    _same(refused, unknown)
 
 
 def _unknown_history(client: Client) -> Any:
