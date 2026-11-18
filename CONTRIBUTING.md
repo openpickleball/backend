@@ -124,4 +124,4 @@ uv run python manage.py export_openapi_schema
 uv run python manage.py export_openapi_schema --check
 ```
 
-- Each published GitHub release carries the file as the asset `openapi.json`. The published Apache-2.0 copy of the API specification lives in the `partner-docs` repository, not here.
+- Each published GitHub release carries the file as the asset `openapi.json`. The published Apache-2.0 copy of the API specification will live in the `partner-docs` repository, not here.

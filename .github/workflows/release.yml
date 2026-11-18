@@ -3,7 +3,7 @@ name: Release
 # Attaches the reviewed OpenAPI document to each published GitHub release,
 # so partner-docs (#184) can publish the document for that version. This
 # asset is the reviewed copy from this repository. The published
-# Apache-2.0 copy lives in partner-docs.
+# Apache-2.0 copy will live in partner-docs.
 #
 # A release created with GITHUB_TOKEN does not start workflows.
 # Maintainers publish releases themselves, so this runs for each one.
