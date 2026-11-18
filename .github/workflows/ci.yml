@@ -89,6 +89,8 @@ jobs:
       - run: cp .env.example .env
       - run: uv run python manage.py check
       - run: uv run python manage.py makemigrations --check --dry-run
+      # Fails when openapi/openapi.json differs from the API it documents.
+      - run: uv run python manage.py export_openapi_schema --check
       # Default addopts include --cov, so the coverage floor is enforced.
       # -n auto runs one pytest-xdist worker per CPU, each with its own
       # test database; pytest-cov combines their coverage.
