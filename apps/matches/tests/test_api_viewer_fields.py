@@ -263,5 +263,9 @@ def test_new_fields_are_documented() -> None:
     assert "An organizer's confirmation is not a player decision" in description
     assert "read ``status`` for whether the match is confirmed" in description
     assert "whether the match counts" not in description
-    assert "A confirmation still counts after the same player disputes" in description
+    assert (
+        "A confirmation still shows in ``confirmed_by_team`` after the same "
+        "player disputes" in description
+    )
+    assert "still counts" not in description
     assert set(schemas["TeamConfirmationsOut"]["properties"]) == {"a", "b"}

@@ -10,8 +10,8 @@ No schema here carries a row id, the submitter, a flag, or any personal
 field other than a display name. Confirmation state shows only as values
 derived for the viewer (issue #193): their own team, their own latest
 decision, and, for a participant, whether each team has a confirmation.
-No confirmation row, and nothing that says who confirmed or disputed, is
-shown.
+No confirmation row is shown, and nothing names who confirmed or
+disputed, though a participant can sometimes infer it (ADR 0015).
 """
 
 from collections.abc import Callable
@@ -155,12 +155,13 @@ class MatchOut(Schema):
     player who confirms as a member of the match's Event Organizer still
     shows ``none``. For a participant, ``confirmed_by_team`` says whether
     a player on each team recorded a confirmation (a dispute is not a
-    confirmation); it is null for anyone else. A confirmation still counts
-    after the same player disputes, since a recorded decision is never
-    withdrawn. It counts player confirmations only: a match confirmed by
-    an organizer or a moderator, or a correction, can be confirmed with
-    both false, so read ``status`` for whether the match is confirmed.
-    ``created_at`` is when the match was submitted.
+    confirmation); it is null for anyone else. A confirmation still shows
+    in ``confirmed_by_team`` after the same player disputes, since a
+    recorded decision is never withdrawn. It counts player confirmations
+    only: a match confirmed by an organizer or a moderator, or a
+    correction, can be confirmed with both false, so read ``status`` for
+    whether the match is confirmed. ``created_at`` is when the match was
+    submitted.
     """
 
     code: str
