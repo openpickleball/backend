@@ -155,11 +155,12 @@ class MatchOut(Schema):
     player who confirms as a member of the match's Event Organizer still
     shows ``none``. For a participant, ``confirmed_by_team`` says whether
     a player on each team recorded a confirmation (a dispute is not a
-    confirmation); it is null for anyone else. It counts player
-    confirmations only: a match confirmed by an organizer or a moderator,
-    or a correction, can be confirmed with both false, so read ``status``
-    for whether the match counts. ``created_at`` is when the match was
-    submitted.
+    confirmation); it is null for anyone else. A confirmation still counts
+    after the same player disputes, since a recorded decision is never
+    withdrawn. It counts player confirmations only: a match confirmed by
+    an organizer or a moderator, or a correction, can be confirmed with
+    both false, so read ``status`` for whether the match is confirmed.
+    ``created_at`` is when the match was submitted.
     """
 
     code: str

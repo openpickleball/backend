@@ -261,5 +261,7 @@ def test_new_fields_are_documented() -> None:
     description = " ".join(match["description"].split())
     assert "A repeated decision is not recorded again" in description
     assert "An organizer's confirmation is not a player decision" in description
-    assert "read ``status`` for whether the match counts" in description
+    assert "read ``status`` for whether the match is confirmed" in description
+    assert "whether the match counts" not in description
+    assert "A confirmation still counts after the same player disputes" in description
     assert set(schemas["TeamConfirmationsOut"]["properties"]) == {"a", "b"}
