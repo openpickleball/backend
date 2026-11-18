@@ -1,0 +1,2 @@
+# --check compares bytes, so a checkout with autocrlf must still get LF.
+openapi/openapi.json text eol=lf

@@ -43,7 +43,8 @@ class Command(BaseCommand):
         if options["check"]:
             if not output.is_file():
                 raise CommandError(f"{name} is missing. Generate it with: {REGENERATE}")
-            if output.read_text(encoding="utf-8") != text:
+            # Bytes, not text: reading text would fold CRLF into LF.
+            if output.read_bytes() != text.encode("utf-8"):
                 raise CommandError(
                     f"{name} is out of date. Regenerate it with: {REGENERATE}"
                 )
