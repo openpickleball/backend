@@ -163,8 +163,10 @@ def test_q_with_a_lone_surrogate_is_refused() -> None:
     # string with replacement), so the schema is checked directly.
     from apps.players.api import PlayerSearchQuery
 
-    with pytest.raises(ValidationError):
-        PlayerSearchQuery(q="ab\ud800cd")
+    with pytest.raises(ValidationError) as refused:
+        PlayerSearchQuery(q="ab\ud800cd", limit=10)
+
+    assert [error["type"] for error in refused.value.errors()] == ["invalid_characters"]
 
 
 @pytest.mark.parametrize("q", ["ZQ", "ZQMARK" + "x" * 64, "ZQMARK\x00"])
