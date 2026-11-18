@@ -33,7 +33,7 @@ A pull request merges only when these checks pass:
 
 - `lint`: `ruff check`, `ruff format --check`, and the pre-commit hygiene hooks.
 - `types`: `mypy .`.
-- `test`: `manage.py check`, the missing-migrations check, and `pytest -n auto` (in parallel) with the coverage floor.
+- `test`: `manage.py check`, the missing-migrations check, the API schema check, and `pytest -n auto` (in parallel) with the coverage floor.
 - `sign-off`: every commit carries a DCO sign-off.
 
 A maintainer reviews and merges every pull request.
@@ -108,3 +108,20 @@ uv run pytest --no-cov apps/accounts
 ```bash
 uv run python manage.py makemigrations --check --dry-run
 ```
+
+## API schema
+
+- `openapi/openapi.json` is the API's OpenAPI document. A command generates it. Never edit it by hand.
+- Regenerate it whenever you change an operation, a schema, or the API's title, version, or description, and commit it with the change:
+
+```bash
+uv run python manage.py export_openapi_schema
+```
+
+- CI runs `export_openapi_schema --check` and fails when the committed file differs from the API. The test suite checks it too. Run the check yourself before you push:
+
+```bash
+uv run python manage.py export_openapi_schema --check
+```
+
+- Each published GitHub release carries the file as the asset `openapi.json`. The published Apache-2.0 copy of the API specification lives in the `partner-docs` repository, not here.
