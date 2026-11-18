@@ -49,7 +49,7 @@ from datetime import date, datetime, timedelta
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 
 from apps.audit.models import AuditAction
@@ -191,6 +191,35 @@ def _both_teams_confirmed(match: Match) -> bool:
         ).values_list("team", flat=True)
     )
     return teams >= {Team.A, Team.B}
+
+
+def awaiting_confirmation(player: Player) -> QuerySet[Match]:
+    """The matches waiting for ``player``'s team to confirm them. Read only.
+
+    A Match is listed when it is pending, ``player`` played in it, and no
+    player on ``player``'s team has confirmed it. A pending match needs one
+    confirmation from each team (``_both_teams_confirmed``), so once a
+    teammate confirms, the team is done and the match is not listed. A
+    match the other team alone confirmed is listed, and so is a match
+    ``player`` submitted, since a submission records no confirmation.
+
+    One row per Match: a Player plays in a Match at most once (a database
+    constraint), so the join on participants adds no duplicates.
+    """
+    viewer_team = MatchParticipant.objects.filter(
+        match=OuterRef("pk"), player=player
+    ).values("team")[:1]
+    team_confirmed = MatchConfirmation.objects.filter(
+        match=OuterRef("pk"),
+        decision=ConfirmationDecision.CONFIRM,
+        player__match_participations__match=OuterRef("pk"),
+        player__match_participations__team=OuterRef("viewer_team"),
+    )
+    return (
+        Match.objects.filter(status=MatchStatus.PENDING, participants__player=player)
+        .annotate(viewer_team=Subquery(viewer_team))
+        .filter(~Exists(team_confirmed))
+    )
 
 
 def _record_decision(

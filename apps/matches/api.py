@@ -17,6 +17,13 @@ code, so the response never reveals that the match exists (ADR 0008).
 A participant whose change the match's status does not allow still gets
 409.
 
+The matches awaiting the signed-in player's confirmation are at
+/api/v1/me/matches/awaiting-confirmation (``me_router``): pending matches
+the player played in that nobody on their team has confirmed yet
+(``workflow.awaiting_confirmation``). It reads only the signed-in
+Account's own Player, so it never shows another player's matches. An
+Account with no Player gets an empty page.
+
 Each service runs in its own transaction, never inside another one: their
 advisory locks last until the outermost transaction ends.
 
@@ -28,11 +35,14 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, cast
 
 from django.db import transaction
+from django.db.models import QuerySet
 from django.http import Http404, HttpRequest
 from ninja import Router, Status
+from ninja.pagination import paginate
 
 from apps.matches import workflow
 from apps.matches.models import Match
+from apps.matches.pagination import MatchHistoryPagination
 from apps.matches.permissions import MatchActionDenied, MatchPermissionDenied
 from apps.matches.schemas import MatchCreateIn, MatchOut, match_out, with_match_details
 from apps.matches.services import MatchIssue, MatchValidationError, record_match
@@ -46,6 +56,8 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
 router = Router(tags=["matches"], auth=account_auth)
+# The signed-in Account's own matches, mounted at /api/v1/me/.
+me_router = Router(tags=["matches"], auth=account_auth)
 
 MatchCode = Annotated[str, PublicCodePath(CodeType.MATCH)]
 
@@ -233,3 +245,26 @@ def dispute_match(request: HttpRequest, code: MatchCode) -> MatchOut:
     unknown code.
     """
     return _change(request, code, workflow.dispute_match)
+
+
+@me_router.get(
+    "/matches/awaiting-confirmation",
+    response={200: list[MatchOut]},
+    operation_id="list_matches_awaiting_confirmation",
+)
+@paginate(MatchHistoryPagination)
+def list_matches_awaiting_confirmation(request: HttpRequest) -> QuerySet[Match]:
+    """The pending matches waiting for your confirmation, newest first.
+
+    A match is listed while it is pending, you played in it, and nobody on
+    your team has confirmed it yet. Once you or a teammate confirms it,
+    your team is done and it leaves the list. A match you submitted is
+    listed too, since submitting is not confirming.
+    """
+    viewer = request_account(request)
+    player = Player.objects.filter(account=viewer).first()
+    if player is None:
+        return Match.objects.none()
+    return with_match_details(workflow.awaiting_confirmation(player)).order_by(
+        "-played_on", "-created_at", "-pk"
+    )

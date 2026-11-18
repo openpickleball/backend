@@ -885,6 +885,82 @@
         ]
       }
     },
+    "/api/v1/me/matches/awaiting-confirmation": {
+      "get": {
+        "description": "The pending matches waiting for your confirmation, newest first.\n\nA match is listed while it is pending, you played in it, and nobody on\nyour team has confirmed it yet. Once you or a teammate confirms it,\nyour team is done and it leaves the list. A match you submitted is\nlisted too, since submitting is not confirming.",
+        "operationId": "list_matches_awaiting_confirmation",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedMatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Matches Awaiting Confirmation",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
     "/api/v1/players/search": {
       "get": {
         "description": "Find players by the start of a word in their display name.\n\nFor picking an opponent or partner. Players whose Account is inactive\nnever appear. Limited per Account to 30 searches a minute and 300 a\nday; past that the answer is 429 with a Retry-After header.",
