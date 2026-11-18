@@ -7,17 +7,19 @@ from listing every player. Made-up data only.
 """
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from django.core.cache import cache
+from django.core.cache import cache, caches
+from django.core.cache.backends.locmem import LocMemCache
 from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
-from ninja.throttling import SimpleRateThrottle
 from pydantic import ValidationError
 
 from apps.accounts.tests.factories import UserFactory
+from apps.players.api import SearchThrottle
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
@@ -26,6 +28,10 @@ pytestmark = pytest.mark.django_db
 SEARCH = "/api/v1/players/search"
 MINUTE_LIMIT = 30
 DAY_LIMIT = 300
+MINUTE = 60
+DAY = 86_400
+# Eight hours into a UTC day, on a minute boundary: far from either edge.
+START = 20_833 * DAY + 8 * 3_600
 
 
 @pytest.fixture(autouse=True)
@@ -39,8 +45,8 @@ def _clear_cache() -> Iterator[None]:
 @pytest.fixture
 def clock(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     """A throttle clock the test moves by hand: ``clock[0]`` is now."""
-    now = [1_800_000_000.0]
-    monkeypatch.setattr(SimpleRateThrottle, "timer", staticmethod(lambda: now[0]))
+    now = [float(START)]
+    monkeypatch.setattr(SearchThrottle, "timer", staticmethod(lambda: now[0]))
     return now
 
 
@@ -352,7 +358,7 @@ def _throttled(response: Any) -> None:
         "message": "Too many requests.",
         "errors": [],
     }
-    assert int(response["Retry-After"]) > 0
+    assert 1 <= int(response["Retry-After"]) <= MINUTE
 
 
 def test_31st_request_in_a_minute_gets_429(client: Client, clock: list[float]) -> None:
@@ -370,13 +376,49 @@ def test_minute_limit_resets_after_a_minute(client: Client, clock: list[float]) 
     assert search(client, q="sam").status_code == 200
 
 
+def test_31st_request_retry_after_is_the_rest_of_the_minute(
+    client: Client, clock: list[float]
+) -> None:
+    for _ in range(MINUTE_LIMIT):
+        search(client, q="sam")
+    clock[0] += 20
+
+    assert search(client, q="sam")["Retry-After"] == "40"
+
+
+def test_wait_is_at_least_one_second(clock: list[float]) -> None:
+    throttle = SearchThrottle("player_search_wait_test")
+    request = SimpleNamespace(auth=SimpleNamespace(pk=1))
+    clock[0] += MINUTE - 0.25
+    for _ in range(MINUTE_LIMIT):
+        assert throttle.allow_request(request)  # type: ignore[arg-type]
+
+    assert not throttle.allow_request(request)  # type: ignore[arg-type]
+    assert throttle.wait() == 1.0
+
+
 def test_301st_request_in_a_day_gets_429(client: Client, clock: list[float]) -> None:
     for _ in range(DAY_LIMIT // MINUTE_LIMIT):
         for _ in range(MINUTE_LIMIT):
             assert search(client, q="sam").status_code == 200
         clock[0] += 61
 
-    _throttled(search(client, q="sam"))
+    response = search(client, q="sam")
+
+    assert response.status_code == 429
+    assert response.json()["code"] == "throttled"
+    # The rest of the UTC day.
+    assert int(response["Retry-After"]) == DAY - 8 * 3_600 - 10 * 61
+
+
+def test_day_limit_resets_the_next_utc_day(client: Client, clock: list[float]) -> None:
+    for _ in range(DAY_LIMIT // MINUTE_LIMIT):
+        for _ in range(MINUTE_LIMIT):
+            search(client, q="sam")
+        clock[0] += 61
+    clock[0] = START - 8 * 3_600 + DAY
+
+    assert search(client, q="sam").status_code == 200
 
 
 def test_refused_422_requests_count(client: Client, clock: list[float]) -> None:
@@ -396,25 +438,52 @@ def test_accounts_have_separate_counters(client: Client, clock: list[float]) -> 
     assert search(other, q="sam").status_code == 200
 
 
+def _stored_keys() -> list[str]:
+    store = caches["default"]
+    assert isinstance(store, LocMemCache)
+    # LocMemCache keeps its entries in a private dict; stubs omit it.
+    return [str(key) for key in store._cache]  # type: ignore[attr-defined]
+
+
+def _counter(name: str, pk: Any, period: int) -> Any:
+    return cache.get(f"throttle:player_search:{name}:{pk}:{START // period}")
+
+
 def test_401_requests_do_not_count(clock: list[float]) -> None:
     anonymous = Client()
     for _ in range(MINUTE_LIMIT + 1):
         assert anonymous.get(SEARCH, {"q": "sam"}).status_code == 401
 
-    client = signed_in(UserFactory.create())
-    for _ in range(MINUTE_LIMIT):
-        assert search(client, q="sam").status_code == 200
+    assert [key for key in _stored_keys() if "throttle" in key] == []
 
 
-def test_throttle_is_keyed_by_account_pk_not_email(
-    client: Client, clock: list[float]
-) -> None:
+def test_each_request_adds_one_to_both_counters(clock: list[float]) -> None:
+    account = UserFactory.create()
+    client = signed_in(account)
+    for _ in range(7):
+        search(client, q="sam")
+
+    assert _counter("minute", account.pk, MINUTE) == 7
+    assert _counter("day", account.pk, DAY) == 7
+
+
+def test_minute_refused_request_does_not_add_to_the_day(clock: list[float]) -> None:
+    account = UserFactory.create()
+    client = signed_in(account)
+    for _ in range(MINUTE_LIMIT + 5):
+        search(client, q="sam")
+
+    assert _counter("day", account.pk, DAY) == MINUTE_LIMIT
+
+
+def test_throttle_is_keyed_by_account_pk_not_email(clock: list[float]) -> None:
     account = UserFactory.create()
     search(signed_in(account), q="sam")
 
-    assert len(cache.get(f"throttle_player_search_minute_{account.pk}")) == 1
-    assert len(cache.get(f"throttle_player_search_day_{account.pk}")) == 1
-    assert cache.get(f"throttle_player_search_minute_{account.email}") is None
+    throttle_keys = [key for key in _stored_keys() if "throttle" in key]
+    assert len(throttle_keys) == 2
+    assert all(f":{account.pk}:" in key for key in throttle_keys)
+    assert not any(account.email in key for key in throttle_keys)
 
 
 # Criterion 10: the OpenAPI document.
