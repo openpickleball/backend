@@ -370,6 +370,66 @@
         "title": "ParticipantOut",
         "type": "object"
       },
+      "PlayerSearchOut": {
+        "description": "The players found, best match first. No count and no paging.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlayerSearchResult"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PlayerSearchOut",
+        "type": "object"
+      },
+      "PlayerSearchQuery": {
+        "description": "The search text and how many players to return.",
+        "properties": {
+          "limit": {
+            "default": 10,
+            "maximum": 20,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "q": {
+            "description": "The start of a word in the display name, 3 to 64 characters after leading and trailing spaces are removed.",
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Q",
+            "type": "string"
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "PlayerSearchQuery",
+        "type": "object"
+      },
+      "PlayerSearchResult": {
+        "description": "One player found: their OPEN Code and display name, nothing else.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "display_name"
+        ],
+        "title": "PlayerSearchResult",
+        "type": "object"
+      },
       "ReadyChecks": {
         "properties": {
           "cache": {
@@ -822,6 +882,93 @@
         "summary": "Dispute Match",
         "tags": [
           "matches"
+        ]
+      }
+    },
+    "/api/v1/players/search": {
+      "get": {
+        "description": "Find players by the start of a word in their display name.\n\nFor picking an opponent or partner. Players whose Account is inactive\nnever appear. Limited per Account to 30 searches a minute and 300 a\nday; past that the answer is 429 with a Retry-After header.",
+        "operationId": "search_players",
+        "parameters": [
+          {
+            "description": "The start of a word in the display name, 3 to 64 characters after leading and trailing spaces are removed.",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "The start of a word in the display name, 3 to 64 characters after leading and trailing spaces are removed.",
+              "maxLength": 64,
+              "minLength": 3,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSearchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Search Players",
+        "tags": [
+          "players"
         ]
       }
     },
