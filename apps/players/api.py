@@ -26,21 +26,24 @@ import threading
 import time
 import unicodedata
 from collections.abc import Callable
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, ClassVar
 
 from django.core.cache import cache as default_cache
 from django.db.models import Case, IntegerField, Q, QuerySet, Value, When
 from django.db.models.functions import Lower
 from django.http import Http404, HttpRequest
 from ninja import Field, Query, Router, Schema
-from ninja.pagination import LimitOffsetPagination, paginate
+from ninja.pagination import paginate
 from ninja.throttling import BaseThrottle
 from pydantic import BeforeValidator
 from pydantic_core import PydanticCustomError
 
 from apps.matches.api import request_account
 from apps.matches.models import Match, MatchStatus
-from apps.matches.schemas import MatchOut, match_out, with_match_details
+from apps.matches.pagination import (
+    MatchHistoryPagination,
+)
+from apps.matches.schemas import MatchOut, with_match_details
 from apps.players.models import Player
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
@@ -50,11 +53,6 @@ from config.auth import account_auth
 router = Router(tags=["players"], auth=account_auth)
 
 PlayerCode = Annotated[str, PublicCodePath(CodeType.PLAYER)]
-
-HISTORY_PAGE_SIZE = 20
-HISTORY_MAX_PAGE_SIZE = 100
-# Postgres takes a bigint OFFSET: a larger one would fail in the database.
-HISTORY_MAX_OFFSET = 2**63 - 1
 
 SEARCH_MIN_LENGTH = 3
 SEARCH_MAX_LENGTH = 64
@@ -70,35 +68,6 @@ THROTTLE_TIMEOUT_MARGIN = 60
 # Control characters and lone surrogates. Postgres refuses a NUL in a
 # query parameter, which would be a 500.
 _REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
-
-
-class MatchHistoryPagination(LimitOffsetPagination):
-    """Limit and offset paging of a match history, newest first.
-
-    Each page's matches become ``MatchOut`` as the signed-in Account sees
-    them (the Private player rule depends on the viewer).
-    """
-
-    class Input(Schema):
-        limit: int = Field(HISTORY_PAGE_SIZE, ge=1, le=HISTORY_MAX_PAGE_SIZE)
-        offset: int = Field(0, ge=0, le=HISTORY_MAX_OFFSET)
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(max_limit=HISTORY_MAX_PAGE_SIZE, **kwargs)
-
-    def paginate_queryset(
-        self,
-        queryset: QuerySet[Match],
-        pagination: Any,
-        request: HttpRequest,
-        **params: Any,
-    ) -> Any:
-        page = super().paginate_queryset(queryset, pagination, request, **params)
-        viewer = request_account(request)
-        page[self.items_attribute] = [
-            match_out(match, viewer) for match in page[self.items_attribute]
-        ]
-        return page
 
 
 @router.get(
