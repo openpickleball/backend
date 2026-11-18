@@ -1,0 +1,43 @@
+name: Release
+
+# Attaches the reviewed OpenAPI document to each published GitHub release,
+# so partner-docs (#184) can publish the document for that version. This
+# asset is the reviewed copy from this repository. The published
+# Apache-2.0 copy will live in partner-docs.
+#
+# A release created with GITHUB_TOKEN does not start workflows.
+# Maintainers publish releases themselves, so this runs for each one.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  openapi:
+    name: attach OpenAPI document
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # A release event checks out the release's tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # This job holds a write token, so it restores no cache.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+      - run: uv sync --locked
+      # Settings need the variables in .env.example.
+      - run: cp .env.example .env
+      # Never attach a document that differs from the tagged API.
+      - run: uv run python manage.py export_openapi_schema --check
+      # Values come in through env, never ${{ }} inside run (script injection).
+      - run: gh release upload "$TAG" openapi/openapi.json --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
