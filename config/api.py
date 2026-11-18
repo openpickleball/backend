@@ -8,7 +8,7 @@ dispute at /api/v1/matches/, a player's match history and player
 search (/api/v1/players/search) at /api/v1/players/, and the matches
 awaiting the signed-in player's confirmation at /api/v1/me/.
 
-Adding an app's endpoints (one router per app):
+Adding an app's endpoints (usually one router per app):
 
 1. In `apps/<app>/api.py`, define the app's router and its operations:
 
@@ -24,6 +24,10 @@ Adding an app's endpoints (one router per app):
        from apps.<app>.api import router as <app>_router
 
        api.add_router("<prefix>/", <app>_router)
+
+An app may add a second router when some of its operations belong under a
+different prefix. `apps.matches.api.me_router` does this: it holds the
+signed-in player's own match lists and is mounted at `me/`.
 
 Every operation needs an explicit `operation_id`: it names the method in the
 generated client, so it must not change when a view is renamed. Building the
