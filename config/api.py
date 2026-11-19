@@ -3,8 +3,8 @@
 `config/urls.py` mounts `api` once. The OpenAPI document is served at
 /api/v1/openapi.json and the interactive docs at /api/v1/docs. The health
 router (`config/health.py`) is mounted at /api/v1/health/, the signed-in
-Account at /api/v1/accounts/, match submission, confirmation, and
-dispute at /api/v1/matches/, a player's match history and player
+Account at /api/v1/accounts/, match submission, reading one match,
+confirmation, and dispute at /api/v1/matches/, a player's match history and player
 search (/api/v1/players/search) at /api/v1/players/, and the matches
 awaiting the signed-in player's confirmation at /api/v1/me/.
 

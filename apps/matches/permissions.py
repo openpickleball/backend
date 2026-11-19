@@ -40,7 +40,8 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
 
 - ``participant_player``: the actor's Player when the actor is an active
   Account whose Player plays in the match. A participant may confirm or
-  dispute it.
+  dispute it. The first-party API also uses it to decide who may read one
+  match (``get_match``).
 - ``can_confirm_as_organizer``: event authority over the stored match's
   Event (as above). Such an actor's confirmation confirms a pending match
   alone. Club authority alone does not, through ``confirm_match``. But

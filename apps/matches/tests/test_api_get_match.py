@@ -18,7 +18,7 @@ from apps.events.models import Event
 from apps.matches.models import Match
 from apps.matches.schemas import match_out, with_match_details
 from apps.matches.tests.factories import DoublesMatchFactory, MatchFactory
-from apps.matches.workflow import dispute_match, void_match
+from apps.matches.workflow import confirm_match, dispute_match, void_match
 from apps.players.models import Player
 
 pytestmark = pytest.mark.django_db
@@ -130,8 +130,49 @@ def _count(match: Match) -> tuple[int, int]:
     return response.status_code, len(queries)
 
 
-def test_queries_do_not_grow_with_participants() -> None:
-    singles = _count(MatchFactory.create())
-    doubles = _count(DoublesMatchFactory.create())
+def test_queries_do_not_grow_with_participants_or_games() -> None:
+    singles = MatchFactory.create()
+    doubles = DoublesMatchFactory.create()
+    long_doubles = DoublesMatchFactory.create(best_of_5=True)
+    assert singles.games.count() == doubles.games.count() == 1
+    assert long_doubles.games.count() >= 3
 
-    assert singles == doubles == (200, QUERIES)
+    assert _count(singles) == _count(doubles) == _count(long_doubles)
+    assert _count(long_doubles) == (200, QUERIES)
+
+
+def test_participant_sees_their_own_decision(
+    pending: Match, players: list[Player]
+) -> None:
+    confirm_match(pending, actor=players[0].account)
+    dispute_match(pending, actor=players[2].account)
+
+    def viewed(index: int) -> dict[str, Any]:
+        response = signed_in(players[index].account).get(
+            f"{MATCHES}{pending.public_code}"
+        )
+        assert response.status_code == 200
+        body: dict[str, Any] = response.json()
+        return {
+            key: body[key]
+            for key in ("status", "my_team", "my_decision", "confirmed_by_team")
+        }
+
+    assert viewed(0) == {
+        "status": "disputed",
+        "my_team": "A",
+        "my_decision": "confirm",
+        "confirmed_by_team": {"a": True, "b": False},
+    }
+    assert viewed(1) == {
+        "status": "disputed",
+        "my_team": "A",
+        "my_decision": "none",
+        "confirmed_by_team": {"a": True, "b": False},
+    }
+    assert viewed(2) == {
+        "status": "disputed",
+        "my_team": "B",
+        "my_decision": "dispute",
+        "confirmed_by_team": {"a": True, "b": False},
+    }
