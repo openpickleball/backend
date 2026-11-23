@@ -365,6 +365,59 @@
         "title": "MyDecision",
         "type": "string"
       },
+      "MyPlayerOut": {
+        "description": "The signed-in Account's own Player, with every profile field.\n\nReturned only to that Account. Empty optional text fields are ``\"\"``.",
+        "properties": {
+          "birth_month": {
+            "title": "Birth Month",
+            "type": "integer"
+          },
+          "birth_year": {
+            "title": "Birth Year",
+            "type": "integer"
+          },
+          "city": {
+            "title": "City",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "gender_division": {
+            "title": "Gender Division",
+            "type": "string"
+          },
+          "legal_name": {
+            "title": "Legal Name",
+            "type": "string"
+          },
+          "privacy": {
+            "$ref": "#/components/schemas/PrivacyOut"
+          },
+          "region": {
+            "title": "Region",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "display_name",
+          "legal_name",
+          "birth_year",
+          "birth_month",
+          "gender_division",
+          "city",
+          "region",
+          "privacy"
+        ],
+        "title": "MyPlayerOut",
+        "type": "object"
+      },
       "PagedMatchOut": {
         "properties": {
           "count": {
@@ -410,6 +463,87 @@
           "display_name"
         ],
         "title": "ParticipantOut",
+        "type": "object"
+      },
+      "PlayerCreateIn": {
+        "additionalProperties": false,
+        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` are read only when the session holds\nno age from signup (ADR 0017); a held age is used instead. Optional\ntext fields left out or null are empty. ``gender_division`` is\n``mens``, ``womens``, or empty. Unknown keys are refused.",
+        "properties": {
+          "birth_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Month"
+          },
+          "birth_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Year"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "gender_division": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender Division"
+          },
+          "legal_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Name"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "PlayerCreateIn",
         "type": "object"
       },
       "PlayerProfileOut": {
@@ -515,6 +649,35 @@
         "title": "PlayerSearchResult",
         "type": "object"
       },
+      "PrivacyOut": {
+        "description": "Who may see each of the player's other profile details.",
+        "properties": {
+          "city_region_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "home_club_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "match_history_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "rating_history_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "stats_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          }
+        },
+        "required": [
+          "city_region_visibility",
+          "match_history_visibility",
+          "rating_history_visibility",
+          "stats_visibility",
+          "home_club_visibility"
+        ],
+        "title": "PrivacyOut",
+        "type": "object"
+      },
       "ReadyChecks": {
         "properties": {
           "cache": {
@@ -598,6 +761,15 @@
         ],
         "title": "TeamConfirmationsOut",
         "type": "object"
+      },
+      "Visibility": {
+        "description": "Who may see a profile detail. ``PRIVATE`` is the most restrictive.",
+        "enum": [
+          "signed_in",
+          "private"
+        ],
+        "title": "Visibility",
+        "type": "string"
       }
     },
     "securitySchemes": {
@@ -1152,6 +1324,87 @@
         "summary": "List Matches Awaiting Confirmation",
         "tags": [
           "matches"
+        ]
+      }
+    },
+    "/api/v1/me/player": {
+      "post": {
+        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). The birth year and month\ncome from the age held at signup in this session (ADR 0017); the body's\nare used only when the session holds none, and are then required. The\nheld age is removed only once the Player exists, so a refused create\ncan be retried. A player under 13 is refused with a fixed message.",
+        "operationId": "create_my_player",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyPlayerOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create My Player",
+        "tags": [
+          "players"
         ]
       }
     },

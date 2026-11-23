@@ -26,19 +26,30 @@ OPEN Code and display name, what search already shows, and their city
 and region while the player's ``city_region_visibility`` lets the viewer.
 A player whose Account is inactive gets the same 404 as an unknown or
 malformed code (ADR 0008, ADR 0015).
+
+The signed-in Account's own Player is at /api/v1/me/player (``me_router``,
+issue #124). POST creates it, once per Account, only for an Account whose
+own login address is verified. The birth year and month come from the
+age the signup held in the session (ADR 0017, ``auth_session`` for either
+headless client), and from the body only when the session holds none.
 """
 
 import threading
 import time
 import unicodedata
 from collections.abc import Callable
-from typing import Annotated, ClassVar
+from typing import TYPE_CHECKING, Annotated, ClassVar
 
+from allauth.account.models import EmailAddress
 from django.core.cache import cache as default_cache
+from django.core.exceptions import NON_FIELD_ERRORS
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Case, IntegerField, Q, QuerySet, Value, When
 from django.db.models.functions import Lower
 from django.http import Http404, HttpRequest
-from ninja import Field, Query, Router, Schema
+from ninja import Field, Query, Router, Schema, Status
+from ninja.errors import HttpError
+from ninja.errors import ValidationError as NinjaValidationError
 from ninja.pagination import paginate
 from ninja.throttling import BaseThrottle
 from pydantic import BeforeValidator
@@ -50,14 +61,27 @@ from apps.matches.pagination import (
     MatchHistoryPagination,
 )
 from apps.matches.schemas import MatchOut, with_match_details
+from apps.players.age import peek_signup_birth, take_signup_birth
 from apps.players.models import Player
-from apps.players.schemas import PlayerProfileOut, player_profile_out
+from apps.players.schemas import (
+    MyPlayerOut,
+    PlayerCreateIn,
+    PlayerProfileOut,
+    my_player_out,
+    player_profile_out,
+)
+from apps.players.services import create_player
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
 from config.api_errors import ErrorResponse
-from config.auth import account_auth
+from config.auth import account_auth, auth_session
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import _User
 
 router = Router(tags=["players"], auth=account_auth)
+# The signed-in Account's own Player, mounted at /api/v1/me/.
+me_router = Router(tags=["players"], auth=account_auth)
 
 PlayerCode = Annotated[str, PublicCodePath(CodeType.PLAYER)]
 
@@ -72,6 +96,13 @@ DAY = 24 * 60 * 60
 # Extra seconds a counter outlives its window, so it is never dropped
 # while its window is still open.
 THROTTLE_TIMEOUT_MARGIN = 60
+# Fixed text, never a submitted value.
+EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email address before creating your player."
+ALREADY_HAS_PLAYER_MESSAGE = "This account already has a player."
+_MISSING_BIRTH_MESSAGES = {
+    "birth_year": "Enter your birth year.",
+    "birth_month": "Enter your birth month.",
+}
 # Control characters and lone surrogates. Postgres refuses a NUL in a
 # query parameter, which would be a 500.
 _REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
@@ -309,3 +340,110 @@ def get_player(request: HttpRequest, code: PlayerCode) -> PlayerProfileOut:
     if not player.account.is_active:
         raise Http404
     return player_profile_out(player, viewer)
+
+
+def _has_verified_email(account: "_User") -> bool:
+    """Whether the Account's own login address is verified.
+
+    Only the row for ``User.email`` counts: a verified old address, or
+    another pending one, does not.
+    """
+    return bool(
+        EmailAddress.objects.filter(
+            user=account, email=account.email, verified=True
+        ).exists()
+    )
+
+
+def _has_player(account: "_User") -> bool:
+    return Player.objects.filter(account=account).exists()
+
+
+def _is_duplicate_player(error: DjangoValidationError) -> bool:
+    """Whether ``create_player`` refused a second Player for the Account."""
+    found = getattr(error, "error_dict", {}).get("account", [])
+    return any(item.code == "unique" for item in found)
+
+
+def _body_errors(error: DjangoValidationError) -> NinjaValidationError:
+    """A model ``ValidationError`` as the API's 422, located in the body.
+
+    The model's messages are fixed text, never a submitted value
+    (``apps.players.models``), and only they are copied.
+    """
+    by_field = (
+        error.error_dict
+        if hasattr(error, "error_dict")
+        else {NON_FIELD_ERRORS: error.error_list}
+    )
+    items: list[dict[str, object]] = []
+    for name, field_errors in by_field.items():
+        loc = ("body",) if name == NON_FIELD_ERRORS else ("body", name)
+        for item in field_errors:
+            items.extend(
+                {"loc": loc, "type": item.code or "invalid", "msg": message}
+                for message in item
+            )
+    return NinjaValidationError(items)
+
+
+def _birth_from_body(payload: PlayerCreateIn) -> tuple[int, int]:
+    """The body's birth year and month, or a 422 naming each one missing."""
+    missing = [
+        {"loc": ("body", name), "type": "missing", "msg": message}
+        for name, message in _MISSING_BIRTH_MESSAGES.items()
+        if getattr(payload, name) is None
+    ]
+    if missing or payload.birth_year is None or payload.birth_month is None:
+        raise NinjaValidationError(missing)
+    return payload.birth_year, payload.birth_month
+
+
+@me_router.post(
+    "/player",
+    response={201: MyPlayerOut, 403: ErrorResponse, 409: ErrorResponse},
+    operation_id="create_my_player",
+)
+def create_my_player(
+    request: HttpRequest, payload: PlayerCreateIn
+) -> Status[MyPlayerOut]:
+    """Create the signed-in Account's Player.
+
+    The Account's own email address must be verified (403 otherwise), and
+    an Account has one Player (409 for a second). The birth year and month
+    come from the age held at signup in this session (ADR 0017); the body's
+    are used only when the session holds none, and are then required. The
+    held age is removed only once the Player exists, so a refused create
+    can be retried. A player under 13 is refused with a fixed message.
+    """
+    account = request_account(request)
+    if not _has_verified_email(account):
+        raise HttpError(403, EMAIL_NOT_VERIFIED_MESSAGE)
+    if _has_player(account):
+        raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE)
+    session = auth_session(request)
+    held = peek_signup_birth(session, account)
+    birth_year, birth_month = held or _birth_from_body(payload)
+    try:
+        player = create_player(
+            account=account,
+            display_name=payload.display_name,
+            birth_year=birth_year,
+            birth_month=birth_month,
+            legal_name=payload.legal_name,
+            gender_division=payload.gender_division,
+            city=payload.city,
+            region=payload.region,
+        )
+    except DjangoValidationError as error:
+        # create_player locks the Account, so a concurrent second create
+        # lands here.
+        if _is_duplicate_player(error):
+            raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE) from None
+        raise _body_errors(error) from None
+    taken = take_signup_birth(session, account)
+    if taken is not None and session is not request.session:
+        # The token's session: Django's middleware saves only the cookie's.
+        # save() keeps the key, so the token still works.
+        session.save()
+    return Status(201, my_player_out(player, player.privacy))
