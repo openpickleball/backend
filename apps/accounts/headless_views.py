@@ -189,8 +189,9 @@ class SignupView(BaseSignupView):
     signup (403) answers, made as allauth makes them, then the age screen
     (the age and the gender division), then allauth's input (and so its
     email lookup). allauth itself answers invalid input before its 409 and
-    403; here a malformed age or gender division comes after them too, so the screen only ever answers, or flags, a session that
-    allauth would let sign up.
+    403; here a malformed age or gender division comes after them too,
+    so the screen only ever answers, or flags, a session that allauth
+    would let sign up.
     """
 
     input_class: ClassVar[dict[str, type[SignupInput]]] = {"POST": SignupInput}
