@@ -53,11 +53,22 @@
         "type": "object"
       },
       "FieldError": {
-        "description": "One invalid input: where it is, what kind of error, and a message.",
+        "description": "One invalid input: where it is, what kind of error, and a message.\n\n`existing_code` is the earlier match's OPEN code. Only a duplicate match\nitem has it, and only when the submitter may know that match.",
         "properties": {
           "code": {
             "title": "Code",
             "type": "string"
+          },
+          "existing_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Existing Code"
           },
           "field": {
             "title": "Field",

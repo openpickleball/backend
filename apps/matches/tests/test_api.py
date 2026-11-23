@@ -349,6 +349,7 @@ def test_exact_duplicate_gets_409(players: list[Player]) -> None:
     assert content["message"] == (
         f"This match was already submitted as {first.json()['code']}."
     )
+    assert content["errors"][0]["existing_code"] == first.json()["code"]
     assert Match.objects.count() == 1
 
 
