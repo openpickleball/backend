@@ -1,6 +1,7 @@
 # 0009. Personal data: what OPEN collects and how it is protected
 
 - Status: Accepted
+- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (gender division required for every new Player)
 - Date: 2026-11-14
 
 ## Context

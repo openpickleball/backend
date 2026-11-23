@@ -29,7 +29,7 @@ A Player's choice of who sees one of their other profile details (city and regio
 _Avoid_: visibility flag, opt-out.
 
 **Gender Division**:
-The gender division a Player enters for divisions and gender-specific Rating Formats: men's, women's, or none. OPEN stores no other gender data (ADR 0009).
+The gender division a Player enters for divisions and gender-specific Rating Formats: men's or women's. Every new Player has one, chosen at signup, or when the Player is created if the signup session no longer holds it (ADR 0019). OPEN stores no other gender data (ADR 0009).
 _Avoid_: gender, sex.
 
 **Organizer**:
