@@ -34,6 +34,7 @@ age the signup held in the session (ADR 0017, ``auth_session`` for either
 headless client), and from the body only when the session holds none.
 """
 
+import contextlib
 import threading
 import time
 import unicodedata
@@ -41,6 +42,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, ClassVar
 
 from allauth.account.models import EmailAddress
+from django.contrib.sessions.backends.base import SessionBase, UpdateError
 from django.core.cache import cache as default_cache
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -408,6 +410,21 @@ def _birth_from_body(payload: PlayerCreateIn) -> tuple[int, int]:
     return payload.birth_year, payload.birth_month
 
 
+def _take_hold(request: HttpRequest, session: SessionBase, account: "_User") -> None:
+    """Remove the signup age held for ``account`` from ``session``.
+
+    The browser client's session is saved by Django's middleware. The app
+    client's token session is saved here: ``save()`` keeps its key, so the
+    token still works. When a concurrent logout already deleted that
+    session, ``save()`` raises ``UpdateError``; the session and its hold
+    are gone, so there is nothing left to remove.
+    """
+    if take_signup_birth(session, account) is None or session is request.session:
+        return
+    with contextlib.suppress(UpdateError):
+        session.save()
+
+
 @me_router.post(
     "/player",
     response={201: MyPlayerOut, 403: ErrorResponse, 409: ErrorResponse},
@@ -450,11 +467,7 @@ def create_my_player(
         if _is_duplicate_player(error):
             raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE) from None
         raise _body_errors(error) from None
-    taken = take_signup_birth(session, account)
-    if taken is not None and session is not request.session:
-        # The token's session: Django's middleware saves only the cookie's.
-        # save() keeps the key, so the token still works.
-        session.save()
+    _take_hold(request, session, account)
     return Status(201, my_player_out(player, player.privacy))
 
 
