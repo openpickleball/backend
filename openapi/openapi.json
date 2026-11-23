@@ -1053,7 +1053,7 @@
     },
     "/api/v1/matches/": {
       "post": {
-        "description": "Submit a match you played in. It stays pending until both teams confirm.\n\nPlayers are given by OPEN Code. A missing game target means 11, a\nmissing scoring type means side-out, and a missing best-of is inferred\nfrom the games.",
+        "description": "Submit a match you played in. It counts as your team's confirmation.\n\nThe match stays pending until a player on the other team confirms it.\nPlayers are given by OPEN Code. A missing game target means 11, a\nmissing scoring type means side-out, and a missing best-of is inferred\nfrom the games.",
         "operationId": "create_match",
         "parameters": [],
         "requestBody": {
@@ -1417,7 +1417,7 @@
     },
     "/api/v1/me/matches/awaiting-confirmation": {
       "get": {
-        "description": "The pending matches waiting for your confirmation, newest first.\n\nA match is listed while it is pending, you played in it, and nobody on\nyour team has confirmed it yet. Once you or a teammate confirms it,\nyour team is done and it leaves the list. A match you submitted is\nlisted too, since submitting is not confirming.",
+        "description": "The pending matches waiting for your confirmation, newest first.\n\nA match is listed while it is pending, you played in it, and nobody on\nyour team has confirmed it yet. Once you or a teammate confirms it,\nyour team is done and it leaves the list. A match you submitted is not\nlisted, since submitting confirms it for your team.",
         "operationId": "list_matches_awaiting_confirmation",
         "parameters": [
           {

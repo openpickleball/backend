@@ -200,8 +200,10 @@ def awaiting_confirmation(player: Player) -> QuerySet[Match]:
     player on ``player``'s team has confirmed it. A pending match needs one
     confirmation from each team (``_both_teams_confirmed``), so once a
     teammate confirms, the team is done and the match is not listed. A
-    match the other team alone confirmed is listed, and so is a match
-    ``player`` submitted, since a submission records no confirmation.
+    match the other team alone confirmed is listed. ``record_match`` itself
+    records no confirmation, so a match it created is listed for its
+    submitter too, but ``create_match`` confirms for the submitter's team
+    in the same transaction (#197), so a match submitted there is not.
 
     One row per Match: a Player plays in a Match at most once (a database
     constraint), so the join on participants adds no duplicates.
