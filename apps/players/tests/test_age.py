@@ -19,6 +19,7 @@ from apps.players.age import (
     hold_signup_birth,
     is_minor,
     is_old_enough,
+    peek_signup_birth,
     take_signup_birth,
 )
 
@@ -186,3 +187,34 @@ def test_take_ignores_a_malformed_value() -> None:
 
 def test_age_module_does_not_import_accounts() -> None:
     assert "apps.accounts" not in Path(age.__file__).read_text()
+
+
+def test_peek_returns_the_held_age_and_keeps_it() -> None:
+    session = SessionStore()
+    hold_signup_birth(session, _account(7), 2000, 4)
+
+    session.modified = False
+
+    assert peek_signup_birth(session, _account(7)) == (2000, 4)
+    assert peek_signup_birth(session, _account(7)) == (2000, 4)
+    assert session.modified is False
+    assert take_signup_birth(session, _account(7)) == (2000, 4)
+
+
+def test_peek_hands_nothing_to_another_account_or_nobody() -> None:
+    session = SessionStore()
+    hold_signup_birth(session, _account(7), 2000, 4)
+    unbound = SessionStore()
+    hold_signup_birth(unbound, None, 2000, 4)
+
+    assert peek_signup_birth(session, _account(8)) is None
+    assert peek_signup_birth(unbound, _account(7)) is None
+    assert peek_signup_birth(SessionStore(), _account(7)) is None
+
+
+def test_peek_ignores_a_malformed_value() -> None:
+    session = SessionStore()
+    session[SIGNUP_BIRTH_SESSION_KEY] = {"account": 7, "year": "2000", "month": 4}
+
+    assert peek_signup_birth(session, _account(7)) is None
+    assert SIGNUP_BIRTH_SESSION_KEY in session
