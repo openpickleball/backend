@@ -33,7 +33,8 @@ def _minor_birth_year() -> int:
 
 
 def _gender_division() -> str:
-    return str(_faker.random_element(["", *GenderDivision.values]))
+    # Every new Player has one (issue #215).
+    return str(_faker.random_element(GenderDivision.values))
 
 
 class PlayerFactory(DjangoModelFactory[Player]):

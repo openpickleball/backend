@@ -100,6 +100,7 @@ def test_e2_huge_int_is_refused_on_create(field: str) -> None:
         "display_name": "Made-up Player",
         "birth_year": 1990,
         "birth_month": 6,
+        "gender_division": "mens",
         field: HUGE,
     }
 
@@ -115,6 +116,7 @@ def test_e2_none_display_name_is_still_required() -> None:
         "display_name": None,
         "birth_year": 1990,
         "birth_month": 6,
+        "gender_division": "mens",
     }
 
     with pytest.raises(ValidationError) as caught:
@@ -127,8 +129,8 @@ def test_e2_none_still_clears_optional_fields(player: Player, owner: "_User") ->
     update_profile(
         player=player,
         actor=owner,
-        changes={"city": None, "gender_division": None},
+        changes={"city": None, "legal_name": None},
     )
 
     stored = Player.objects.get(pk=player.pk)
-    assert (stored.city, stored.gender_division) == ("", "")
+    assert (stored.city, stored.legal_name) == ("", "")

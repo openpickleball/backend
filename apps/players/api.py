@@ -115,6 +115,7 @@ ALREADY_HAS_PLAYER_MESSAGE = "This account already has a player."
 _MISSING_DETAIL_MESSAGES = {
     "birth_year": "Enter your birth year.",
     "birth_month": "Enter your birth month.",
+    "gender_division": "Choose a gender division.",
 }
 # Control characters and lone surrogates. Postgres refuses a NUL in a
 # query parameter, which would be a 500.
@@ -405,7 +406,8 @@ def _body_errors(
 def _details_from_body(payload: PlayerCreateIn) -> SignupDetails:
     """The body's birth year and month and gender division.
 
-    A 422 names each birth field missing.
+    A 422 names each one missing (left out or null). ``create_player``
+    checks the values.
     """
     missing = [
         {"loc": ("body", name), "type": "missing", "msg": message}
@@ -413,9 +415,9 @@ def _details_from_body(payload: PlayerCreateIn) -> SignupDetails:
         if getattr(payload, name) is None
     ]
     year, month = payload.birth_year, payload.birth_month
-    if missing or year is None or month is None:
+    division = payload.gender_division
+    if missing or year is None or month is None or division is None:
         raise NinjaValidationError(missing)
-    division = payload.gender_division or ""
     return SignupDetails(birth_year=year, birth_month=month, gender_division=division)
 
 
@@ -446,11 +448,12 @@ def create_my_player(
 
     The Account's own email address must be verified (403 otherwise), and
     an Account has one Player (409 for a second). The birth year and month
-    come from the age held at signup in this session (ADR 0017); the body's
-    are used only when the session holds none, and are then required. The
-    held age is removed once the Player exists (on a 409 too), so a
-    create refused for any other reason can be retried. A player under 13
-    is refused with a fixed message.
+    and the gender division come from the details held at signup in this
+    session (ADR 0017, issue #215); the body's are used only when the
+    session holds none, and are then required. The held details are
+    removed once the Player exists (on a 409 too), so a create refused for
+    any other reason can be retried. A player under 13 is refused with a
+    fixed message.
     """
     account = request_account(request)
     if not _has_verified_email(account):
@@ -511,7 +514,9 @@ def get_my_player(request: HttpRequest) -> MyPlayerOut:
 def update_my_player(request: HttpRequest, payload: PlayerUpdateIn) -> MyPlayerOut:
     """Change the signed-in Account's own profile fields and privacy settings.
 
-    Only the fields sent change. Both kinds of change apply together or
+    Only the fields sent change. The gender division can change between
+    divisions but cannot be cleared (422). Both kinds of change apply
+    together or
     not at all: a 422 on either changes nothing. Each kind that changes
     records one Audit Event (profile changes by field name only). 404 when
     the Account has no Player.

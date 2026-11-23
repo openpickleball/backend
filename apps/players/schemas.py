@@ -27,10 +27,11 @@ class PlayerCreateIn(Schema):
     a numeric string, or a float is refused, as ``Player.clean_fields``
     refuses them.
 
-    ``birth_year`` and ``birth_month`` are read only when the session holds
-    no age from signup (ADR 0017); a held age is used instead. Optional
-    text fields left out or null are empty. ``gender_division`` is
-    ``mens``, ``womens``, or empty. Unknown keys are refused.
+    ``birth_year``, ``birth_month``, and ``gender_division`` are read only
+    when the session holds no details from signup (ADR 0017, issue #215),
+    and are then required; held details are used instead. ``gender_division``
+    is ``mens`` or ``womens``. Optional text fields left out or null are
+    empty. Unknown keys are refused.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -60,8 +61,9 @@ class PlayerUpdateIn(Schema):
     """Changes to the signed-in Account's own Player.
 
     Only the fields sent change. Null clears an optional text field
-    (``legal_name``, ``gender_division``, ``city``, ``region``); the
-    display name, birth year, and birth month cannot be cleared.
+    (``legal_name``, ``city``, ``region``); the display name, birth year,
+    birth month, and gender division cannot be cleared. ``gender_division``
+    is ``mens`` or ``womens``.
     ``privacy`` changes the settings it names. Unknown keys are refused.
     """
 
@@ -91,6 +93,8 @@ class MyPlayerOut(Schema):
     """The signed-in Account's own Player, with every profile field.
 
     Returned only to that Account. Empty optional text fields are ``""``.
+    ``gender_division`` is ``""`` only for a Player stored before it was
+    required (issue #215).
     """
 
     code: str

@@ -38,6 +38,7 @@ def player(owner: "_User") -> Player:
         display_name="Made-up Player",
         birth_year=1990,
         birth_month=6,
+        gender_division="mens",
         city="Madeupville",
     )
 
@@ -48,6 +49,7 @@ def _build(**overrides: Any) -> Player:
         "display_name": "Made-up Player",
         "birth_year": 1990,
         "birth_month": 6,
+        "gender_division": "mens",
     }
     values.update(overrides)
     return Player(**values)
@@ -168,6 +170,7 @@ def test_c4_create_player_locks_the_account_row() -> None:
             display_name="Made-up Player",
             birth_year=1990,
             birth_month=6,
+            gender_division="mens",
         )
 
     assert any(
@@ -183,6 +186,7 @@ def test_c4_second_player_is_a_validation_error(player: Player) -> None:
             display_name="Another Made-up Player",
             birth_year=1991,
             birth_month=2,
+            gender_division="mens",
         )
 
     assert "account" in caught.value.message_dict
@@ -192,7 +196,7 @@ def test_c4_second_player_is_a_validation_error(player: Player) -> None:
 # C5: None clears an optional text field.
 
 
-@pytest.mark.parametrize("field", ["legal_name", "gender_division", "city", "region"])
+@pytest.mark.parametrize("field", ["legal_name", "city", "region"])
 def test_c5_none_clears_optional_field_on_update(
     player: Player, owner: "_User", field: str
 ) -> None:
@@ -201,7 +205,7 @@ def test_c5_none_clears_optional_field_on_update(
     assert getattr(Player.objects.get(pk=player.pk), field) == ""
 
 
-@pytest.mark.parametrize("field", ["legal_name", "gender_division", "city", "region"])
+@pytest.mark.parametrize("field", ["legal_name", "city", "region"])
 def test_c5_none_is_stored_empty_on_create(field: str) -> None:
     values: dict[str, Any] = {field: None}
     created = create_player(
@@ -209,6 +213,7 @@ def test_c5_none_is_stored_empty_on_create(field: str) -> None:
         display_name="Made-up Player",
         birth_year=1990,
         birth_month=6,
+        gender_division="mens",
         **values,
     )
 

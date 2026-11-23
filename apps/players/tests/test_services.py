@@ -82,12 +82,13 @@ def test_create_player_stores_the_values(player: Player, owner: "_User") -> None
     assert stored.gender_division == "mens"
 
 
-@pytest.mark.parametrize("field", ["birth_year", "birth_month"])
-def test_create_player_without_birth_year_or_month_fails(field: str) -> None:
+@pytest.mark.parametrize("field", ["birth_year", "birth_month", "gender_division"])
+def test_create_player_without_a_required_detail_fails(field: str) -> None:
     values: dict[str, Any] = {
         "display_name": "Made-up Player",
         "birth_year": 1990,
         "birth_month": 6,
+        "gender_division": "womens",
         field: None,
     }
     account = UserFactory.create()
@@ -100,6 +101,34 @@ def test_create_player_without_birth_year_or_month_fails(field: str) -> None:
     assert not PlayerPrivacy.objects.exists()
 
 
+def test_create_player_with_an_empty_gender_division_fails() -> None:
+    with pytest.raises(ValidationError) as caught:
+        create_player(
+            account=UserFactory.create(),
+            display_name="Made-up Player",
+            birth_year=1990,
+            birth_month=6,
+            gender_division="",
+        )
+
+    assert caught.value.message_dict == {
+        "gender_division": ["Choose a gender division."]
+    }
+    assert not Player.objects.exists()
+
+
+def test_create_player_needs_a_gender_division_argument() -> None:
+    with pytest.raises(TypeError):
+        create_player(  # type: ignore[call-arg]
+            account=UserFactory.create(),
+            display_name="Made-up Player",
+            birth_year=1990,
+            birth_month=6,
+        )
+
+    assert not Player.objects.exists()
+
+
 def test_create_player_twice_for_one_account_fails(player: Player) -> None:
     with pytest.raises(ValidationError) as caught:
         create_player(
@@ -107,6 +136,7 @@ def test_create_player_twice_for_one_account_fails(player: Player) -> None:
             display_name="Another Made-up Player",
             birth_year=1991,
             birth_month=2,
+            gender_division="mens",
         )
 
     assert "account" in caught.value.message_dict
@@ -114,6 +144,44 @@ def test_create_player_twice_for_one_account_fails(player: Player) -> None:
 
 
 # update_profile
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_gender_division_cannot_be_cleared(
+    player: Player, owner: "_User", value: object
+) -> None:
+    # Every Player keeps a gender division (issue #215).
+    with pytest.raises(ValidationError) as caught:
+        update_profile(player=player, actor=owner, changes={"gender_division": value})
+
+    assert caught.value.message_dict == {
+        "gender_division": ["Choose a gender division."]
+    }
+    assert Player.objects.get(pk=player.pk).gender_division == "mens"
+    assert not _events()
+
+
+def test_gender_division_changes_between_divisions(
+    player: Player, owner: "_User"
+) -> None:
+    update_profile(player=player, actor=owner, changes={"gender_division": "womens"})
+
+    assert Player.objects.get(pk=player.pk).gender_division == "womens"
+    [event] = _events()
+    assert event.after == {"changed_fields": ["gender_division"]}
+
+
+def test_a_stored_empty_gender_division_does_not_block_another_change(
+    player: Player, owner: "_User"
+) -> None:
+    # A Player stored before issue #215 may have none.
+    Player.objects.filter(pk=player.pk).update(gender_division="")
+    player.refresh_from_db()
+
+    update_profile(player=player, actor=owner, changes={"city": "Othertown"})
+
+    stored = Player.objects.get(pk=player.pk)
+    assert (stored.city, stored.gender_division) == ("Othertown", "")
 
 
 def test_owner_updates_profile(player: Player, owner: "_User") -> None:

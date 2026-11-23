@@ -44,8 +44,8 @@ def create_player(
     display_name: str,
     birth_year: int,
     birth_month: int,
+    gender_division: str,
     legal_name: str | None = "",
-    gender_division: str | None = "",
     city: str | None = "",
     region: str | None = "",
 ) -> Player:
@@ -53,8 +53,9 @@ def create_player(
 
     Raises ``ValidationError`` for an invalid or missing value, for a
     player under 13 on the age limit date (``apps.players.age``), or when
-    the Account already has a Player. None for an optional text field means
-    empty. A player aged 13 to 17 starts with every privacy setting
+    the Account already has a Player. ``gender_division`` is required,
+    ``mens`` or ``womens`` (issue #215). None for an optional text field
+    means empty. A player aged 13 to 17 starts with every privacy setting
     ``PRIVATE``; an older one gets the model defaults. Turning 18 later
     changes no setting. Records no Audit Event: creating a Player changes
     no privacy setting.
@@ -69,7 +70,7 @@ def create_player(
             legal_name=legal_name or "",
             birth_year=birth_year,
             birth_month=birth_month,
-            gender_division=gender_division or "",
+            gender_division=gender_division,
             city=city or "",
             region=region or "",
         )

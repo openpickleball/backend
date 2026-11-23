@@ -29,6 +29,7 @@ def player(owner: "_User") -> Player:
         display_name="Made-up Player",
         birth_year=1990,
         birth_month=6,
+        gender_division="mens",
         city="Madeupville",
     )
 
