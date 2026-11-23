@@ -40,6 +40,39 @@ class PlayerCreateIn(Schema):
     region: str | None = None
 
 
+class PrivacyIn(Schema):
+    """Privacy settings to change. Only the settings sent change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    city_region_visibility: Visibility | None = None
+    match_history_visibility: Visibility | None = None
+    rating_history_visibility: Visibility | None = None
+    stats_visibility: Visibility | None = None
+    home_club_visibility: Visibility | None = None
+
+
+class PlayerUpdateIn(Schema):
+    """Changes to the signed-in Account's own Player.
+
+    Only the fields sent change. Null clears an optional text field
+    (``legal_name``, ``gender_division``, ``city``, ``region``); the
+    display name, birth year, and birth month cannot be cleared.
+    ``privacy`` changes the settings it names. Unknown keys are refused.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = None
+    legal_name: str | None = None
+    birth_year: int | None = None
+    birth_month: int | None = None
+    gender_division: str | None = None
+    city: str | None = None
+    region: str | None = None
+    privacy: PrivacyIn | None = None
+
+
 class PrivacyOut(Schema):
     """Who may see each of the player's other profile details."""
 

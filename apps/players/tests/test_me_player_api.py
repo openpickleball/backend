@@ -31,6 +31,7 @@ from apps.accounts.tests.headless import (
     key_from_link,
     link_in_last_mail,
 )
+from apps.audit.models import AuditAction, AuditEvent
 from apps.players import api as players_api
 from apps.players.age import SIGNUP_BIRTH_SESSION_KEY, age_limit_date, hold_signup_birth
 from apps.players.models import Player, Visibility
@@ -467,3 +468,245 @@ def test_the_account_is_unchanged_by_a_create() -> None:
     stored = get_user_model().objects.get(pk=account.pk)
     assert stored.email == account.email
     assert stored.player.public_code
+
+
+# GET and PATCH: the Account's own Player
+
+NOT_FOUND = {"code": "not_found", "message": "Not found.", "errors": []}
+
+
+@pytest.fixture
+def mine() -> Player:
+    return PlayerFactory.create(
+        display_name="Robin Q.",
+        legal_name="Robin Quill",
+        birth_year=1985,
+        birth_month=3,
+        gender_division="womens",
+        city="Springfield",
+        region="Ohio",
+    )
+
+
+def patch(client: Client, data: Any) -> Any:
+    return client.patch(ME_PLAYER, data, content_type="application/json")
+
+
+def events(action: AuditAction) -> list[AuditEvent]:
+    return list(AuditEvent.objects.filter(action=action))
+
+
+def test_get_returns_the_own_profile(mine: Player) -> None:
+    response = signed_in(mine.account).get(ME_PLAYER)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "code": mine.public_code,
+        "display_name": "Robin Q.",
+        "legal_name": "Robin Quill",
+        "birth_year": 1985,
+        "birth_month": 3,
+        "gender_division": "womens",
+        "city": "Springfield",
+        "region": "Ohio",
+        "privacy": {
+            "city_region_visibility": "signed_in",
+            "match_history_visibility": "signed_in",
+            "rating_history_visibility": "signed_in",
+            "stats_visibility": "signed_in",
+            "home_club_visibility": "signed_in",
+        },
+    }
+
+
+def test_get_with_no_player_gets_404() -> None:
+    PlayerFactory.create()
+
+    response = signed_in(verified_account()).get(ME_PLAYER)
+
+    assert response.status_code == 404
+    assert response.json() == NOT_FOUND
+
+
+def test_get_signed_out_gets_401() -> None:
+    assert Client().get(ME_PLAYER).status_code == 401
+
+
+@pytest.mark.parametrize("base", CLIENTS)
+def test_get_works_on_both_clients(base: str) -> None:
+    session = verified_session(base)
+    call(session, "POST", {"display_name": "Robin Q."})
+
+    response = call(session, "GET")
+
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Robin Q."
+
+
+def test_patch_changes_only_the_profile_fields_sent(mine: Player) -> None:
+    response = patch(
+        signed_in(mine.account), {"display_name": "Robin R.", "city": "Shelbyville"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["display_name"] == "Robin R."
+    assert body["city"] == "Shelbyville"
+    assert body["region"] == "Ohio"
+    assert body["legal_name"] == "Robin Quill"
+    mine.refresh_from_db()
+    assert (mine.display_name, mine.city, mine.region) == (
+        "Robin R.",
+        "Shelbyville",
+        "Ohio",
+    )
+
+
+def test_a_profile_change_records_field_names_only(mine: Player) -> None:
+    patch(signed_in(mine.account), {"display_name": "Robin R.", "city": "Shelbyville"})
+
+    [event] = events(AuditAction.PLAYER_PROFILE_CHANGE)
+    assert event.actor_user_id == mine.account.pk
+    assert event.after == {"changed_fields": ["city", "display_name"]}
+    assert event.before is None
+    assert "Shelbyville" not in str(event.after)
+    assert events(AuditAction.PRIVACY_CHANGE) == []
+
+
+def test_null_clears_an_optional_text_field(mine: Player) -> None:
+    response = patch(signed_in(mine.account), {"city": None, "legal_name": None})
+
+    assert response.status_code == 200
+    assert response.json()["city"] == ""
+    assert response.json()["legal_name"] == ""
+
+
+def test_patch_changes_a_privacy_setting(mine: Player) -> None:
+    response = patch(
+        signed_in(mine.account),
+        {"privacy": {"city_region_visibility": "private"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["privacy"]["city_region_visibility"] == "private"
+    assert response.json()["privacy"]["stats_visibility"] == "signed_in"
+    [event] = events(AuditAction.PRIVACY_CHANGE)
+    assert event.before == {"city_region_visibility": "signed_in"}
+    assert event.after == {"city_region_visibility": "private"}
+    assert events(AuditAction.PLAYER_PROFILE_CHANGE) == []
+
+
+def test_patch_changes_profile_and_privacy_together(mine: Player) -> None:
+    response = patch(
+        signed_in(mine.account),
+        {"region": "Iowa", "privacy": {"stats_visibility": "private"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["region"] == "Iowa"
+    assert response.json()["privacy"]["stats_visibility"] == "private"
+    assert len(events(AuditAction.PLAYER_PROFILE_CHANGE)) == 1
+    assert len(events(AuditAction.PRIVACY_CHANGE)) == 1
+
+
+def test_a_refused_privacy_change_rolls_back_the_profile_change(
+    mine: Player,
+) -> None:
+    response = patch(
+        signed_in(mine.account),
+        {"region": "Iowa", "privacy": {"city_region_visibility": None}},
+    )
+
+    assert response.status_code == 422
+    assert "body.privacy.city_region_visibility" in fields(response)
+    mine.refresh_from_db()
+    assert mine.region == "Ohio"
+    assert AuditEvent.objects.count() == 0
+
+
+def test_an_invalid_privacy_level_gets_422_without_the_value(mine: Player) -> None:
+    response = patch(
+        signed_in(mine.account),
+        {"privacy": {"city_region_visibility": "made-up-level"}},
+    )
+
+    assert response.status_code == 422
+    assert "body.privacy.city_region_visibility" in fields(response)
+    assert "made-up-level" not in response.content.decode()
+    assert AuditEvent.objects.count() == 0
+
+
+def test_an_under_13_birth_change_gets_a_fixed_422(mine: Player) -> None:
+    this_year = age_limit_date().year
+
+    response = patch(
+        signed_in(mine.account), {"birth_year": this_year - 5, "birth_month": 1}
+    )
+
+    assert response.status_code == 422
+    assert fields(response)["body.birth_month"][1] == (
+        "This birth year and month can't be used."
+    )
+    assert str(this_year - 5) not in response.content.decode()
+    mine.refresh_from_db()
+    assert mine.birth_year == 1985
+
+
+def test_a_null_display_name_gets_422(mine: Player) -> None:
+    response = patch(signed_in(mine.account), {"display_name": None})
+
+    assert response.status_code == 422
+    assert "body.display_name" in fields(response)
+    mine.refresh_from_db()
+    assert mine.display_name == "Robin Q."
+
+
+def test_a_too_long_city_gets_422_without_the_value(mine: Player) -> None:
+    response = patch(signed_in(mine.account), {"city": "Q" * 101})
+
+    assert response.status_code == 422
+    assert "body.city" in fields(response)
+    assert "Q" * 101 not in response.content.decode()
+
+
+@pytest.mark.parametrize(
+    "data",
+    [{"account": 1}, {"code": "P-AAAA-AAAA"}, {"privacy": {"made_up_setting": "x"}}],
+)
+def test_an_unknown_key_gets_422_and_changes_nothing(
+    mine: Player, data: dict[str, Any]
+) -> None:
+    response = patch(signed_in(mine.account), data)
+
+    assert response.status_code == 422
+    assert AuditEvent.objects.count() == 0
+
+
+def test_an_empty_patch_changes_nothing(mine: Player) -> None:
+    response = patch(signed_in(mine.account), {})
+
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Robin Q."
+    assert AuditEvent.objects.count() == 0
+
+
+def test_patch_with_no_player_gets_404() -> None:
+    response = patch(signed_in(verified_account()), {"city": "Shelbyville"})
+
+    assert response.status_code == 404
+    assert response.json() == NOT_FOUND
+
+
+def test_patch_signed_out_gets_401(mine: Player) -> None:
+    assert patch(Client(), {"city": "Shelbyville"}).status_code == 401
+
+
+@pytest.mark.parametrize("base", CLIENTS)
+def test_patch_works_on_both_clients(base: str) -> None:
+    session = verified_session(base)
+    call(session, "POST", {"display_name": "Robin Q."})
+
+    response = call(session, "PATCH", {"privacy": {"stats_visibility": "private"}})
+
+    assert response.status_code == 200
+    assert response.json()["privacy"]["stats_visibility"] == "private"

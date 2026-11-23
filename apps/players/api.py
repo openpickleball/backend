@@ -44,6 +44,7 @@ from allauth.account.models import EmailAddress
 from django.core.cache import cache as default_cache
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Case, IntegerField, Q, QuerySet, Value, When
 from django.db.models.functions import Lower
 from django.http import Http404, HttpRequest
@@ -67,10 +68,16 @@ from apps.players.schemas import (
     MyPlayerOut,
     PlayerCreateIn,
     PlayerProfileOut,
+    PlayerUpdateIn,
     my_player_out,
     player_profile_out,
 )
-from apps.players.services import create_player
+from apps.players.services import (
+    NotOwnPlayer,
+    create_player,
+    update_privacy,
+    update_profile,
+)
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
 from config.api_errors import ErrorResponse
@@ -365,8 +372,10 @@ def _is_duplicate_player(error: DjangoValidationError) -> bool:
     return any(item.code == "unique" for item in found)
 
 
-def _body_errors(error: DjangoValidationError) -> NinjaValidationError:
-    """A model ``ValidationError`` as the API's 422, located in the body.
+def _body_errors(
+    error: DjangoValidationError, prefix: tuple[str, ...] = ("body",)
+) -> NinjaValidationError:
+    """A model ``ValidationError`` as the API's 422, located under ``prefix``.
 
     The model's messages are fixed text, never a submitted value
     (``apps.players.models``), and only they are copied.
@@ -378,7 +387,7 @@ def _body_errors(error: DjangoValidationError) -> NinjaValidationError:
     )
     items: list[dict[str, object]] = []
     for name, field_errors in by_field.items():
-        loc = ("body",) if name == NON_FIELD_ERRORS else ("body", name)
+        loc = prefix if name == NON_FIELD_ERRORS else (*prefix, name)
         for item in field_errors:
             items.extend(
                 {"loc": loc, "type": item.code or "invalid", "msg": message}
@@ -447,3 +456,59 @@ def create_my_player(
         # save() keeps the key, so the token still works.
         session.save()
     return Status(201, my_player_out(player, player.privacy))
+
+
+def _own_player(account: "_User") -> Player:
+    """The Account's Player, with its privacy settings, or 404."""
+    player = Player.objects.select_related("privacy").filter(account=account).first()
+    if player is None:
+        raise Http404
+    return player
+
+
+@me_router.get(
+    "/player",
+    response={200: MyPlayerOut, 404: ErrorResponse},
+    operation_id="get_my_player",
+)
+def get_my_player(request: HttpRequest) -> MyPlayerOut:
+    """The signed-in Account's own Player, with every profile field and
+    privacy setting. 404 when the Account has no Player."""
+    player = _own_player(request_account(request))
+    return my_player_out(player, player.privacy)
+
+
+@me_router.patch(
+    "/player",
+    response={200: MyPlayerOut, 404: ErrorResponse},
+    operation_id="update_my_player",
+)
+def update_my_player(request: HttpRequest, payload: PlayerUpdateIn) -> MyPlayerOut:
+    """Change the signed-in Account's own profile fields and privacy settings.
+
+    Only the fields sent change. Both kinds of change apply together or
+    not at all: a 422 on either changes nothing. Each kind that changes
+    records one Audit Event (profile changes by field name only). 404 when
+    the Account has no Player.
+    """
+    account = request_account(request)
+    player = _own_player(account)
+    profile = payload.model_dump(exclude_unset=True)
+    privacy = profile.pop("privacy", None) or {}
+    try:
+        with transaction.atomic():
+            if profile:
+                try:
+                    update_profile(player=player, actor=account, changes=profile)
+                except DjangoValidationError as error:
+                    raise _body_errors(error) from None
+            if privacy:
+                try:
+                    update_privacy(player=player, actor=account, changes=privacy)
+                except DjangoValidationError as error:
+                    raise _body_errors(error, ("body", "privacy")) from None
+    except NotOwnPlayer:
+        # The Account was deactivated meanwhile: as if it had no Player.
+        raise Http404 from None
+    player = _own_player(account)
+    return my_player_out(player, player.privacy)
