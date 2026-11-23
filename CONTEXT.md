@@ -84,7 +84,7 @@ How each game is scored: side-out or rally scoring, points to win, win-by margin
 Where the result came from, which affects its weight: `tournament`, `league`, `rec_verified`, or `self_reported`. Engine: `MatchType`.
 
 **Confirmation**:
-Agreement that a reported score is correct. A self-reported Match stays pending until at least one player from each team confirms it, or an Organizer, Club, or Partner Application with permission submits the same Match (same teams, date, and scores). A Match that an Organizer, Club, or Partner Application with permission submits is confirmed when it is created (decision F4). Only a confirmed Match can count. Engine: `Match.confirmed_by`. Backend: `matches.MatchConfirmation`, one row per player's decision, and `Match.status` (ADR 0013).
+Agreement that a reported score is correct. A self-reported Match stays pending until at least one player from each team confirms it (a player's own submission counts as their team's confirmation), or an Organizer, Club, or Partner Application with permission submits the same Match (same teams, date, and scores). A Match that an Organizer, Club, or Partner Application with permission submits is confirmed when it is created (decision F4). Only a confirmed Match can count. Engine: `Match.confirmed_by`. Backend: `matches.MatchConfirmation`, one row per player's decision, and `Match.status` (ADR 0013).
 
 **Dispute**:
 A participant's statement that a Match's score is wrong. A disputed Match stops counting until a moderator resolves it as confirmed or voided. Each player disputes a Match at most once. Backend: `matches.MatchConfirmation` with decision `dispute`.

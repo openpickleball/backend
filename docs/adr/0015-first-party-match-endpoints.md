@@ -13,7 +13,7 @@ Issue #31 asked to show a private player as "Private player" in other players' m
 
 ### Operations
 
-- `POST /api/v1/matches/` (`create_match`) is a player's self-submission (decision F1): no Event, no Club, no external id, location, or time. It takes the format, the date played, both teams as Player OPEN Codes, the game scores, and optionally best-of, scoring type, and game target, with `validate_match()`'s defaults (decision F15). The match is created pending through `record_match()` and needs a confirmation from each team.
+- `POST /api/v1/matches/` (`create_match`) is a player's self-submission (decision F1): no Event, no Club, no external id, location, or time. It takes the format, the date played, both teams as Player OPEN Codes, the game scores, and optionally best-of, scoring type, and game target, with `validate_match()`'s defaults (decision F15). The match is created pending through `record_match()` and needs a confirmation from each team. The submission counts as the submitter team's confirmation: in the same transaction, `create_match` calls `confirm_match` for the submitter (issue #197, ADR 0013), so only the other team's confirmation is still needed.
 - `POST /api/v1/matches/{code}/confirm` (`confirm_match`) and `POST /api/v1/matches/{code}/dispute` (`dispute_match`) call the workflow services. A dispute takes no body, so no dispute text is stored anywhere.
 - `GET /api/v1/matches/{code}` (`get_match`, issue #194) returns one match by its OPEN Code, for a match detail screen or a link to a match.
 - `GET /api/v1/players/{code}/matches` (`list_player_matches`) pages a player's matches by limit and offset, newest first.
