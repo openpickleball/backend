@@ -48,7 +48,6 @@ def test_change_form_date_typo_reports_only_the_typo(
             "club": "",
             "start_date": start_date,
             "end_date": end_date,
-            "weight": str(event.weight),
         },
     )
 

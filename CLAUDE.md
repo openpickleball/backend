@@ -107,9 +107,9 @@ ADR 0016 records the outbox decisions (the rules on queuing, sending, retries, a
 ## Events
 
 - An Event's `kind` is the Match Type its matches count as. Its values are the engine's `MatchType` values except `self_reported`, since self-reported matches have no Event (decision F1). Never add a value the engine lacks.
-- `Event.weight` (0.01 to 1.00, default 1.00) is stored but not applied to ratings: the engine takes no per-event weight (openpickleball/engine#30). No backend code may apply it (hard rule 2).
+- An Event has no weight. The engine weights a match only by its Match Type and takes no per-event weight (openpickleball/engine#30), so never add or apply one in the backend (hard rule 2).
 - `Event.organizer` and `Event.club` use `PROTECT`, so an Organizer or Club with an Event cannot be deleted. `Match.event` uses `PROTECT`, so an Event with a Match cannot be deleted.
-- Event fields override Django's default messages that include the submitted value: an invalid choice, number, or date, and a foreign key that names no row (whose default names the row id).
+- Event fields override Django's default messages that include the submitted value: an invalid choice or date, and a foreign key that names no row (whose default names the row id).
 - A form that edits an Event subclasses `apps.events.admin.EventAdminForm`, and an override of its `clean()` calls `super().clean()`. The form gives `kind` a message without the value (a ModelForm's choice field repeats it), and its `clean()` clears a date that failed, so the model's order check does not compare the other new date with the stored one.
 - Event changes record no Audit Event until #125 lands.
 - In tests, build Events with `EventFactory` (`apps/events/tests/factories.py`).

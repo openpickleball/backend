@@ -46,7 +46,7 @@ _Avoid_: venue, team.
 An Account's role at a Club: admin or match manager. Either role may submit the Club's matches (a match that also names an Event needs authority for that Event too). Of the Club Roles, only admin may change them. Backend: `clubs.ClubRole`.
 
 **Event**:
-A tournament, league, or verified rec play that an Organizer runs, optionally at a Club, from a start date to an end date. Its kind is the Match Type its matches count as: `tournament`, `league`, or `rec_verified`. Self-reported matches have no Event. An Event also stores a per-event weight from 0.01 to 1.00, which is not applied to ratings. Backend: `events.Event`.
+A tournament, league, or verified rec play that an Organizer runs, optionally at a Club, from a start date to an end date. Its kind is the Match Type its matches count as: `tournament`, `league`, or `rec_verified`. Self-reported matches have no Event. An Event has no weight of its own: a match's weight comes from its Match Type alone. Backend: `events.Event`.
 _Avoid_: competition.
 
 **Partner**:
