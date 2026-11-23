@@ -1,8 +1,7 @@
-"""Events: their OPEN Codes, kinds, weights, dates, and links."""
+"""Events: their OPEN Codes, kinds, dates, and links."""
 
 import re
 from datetime import date
-from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -108,47 +107,13 @@ def test_database_refuses_other_kinds(organizer: Organizer, kind: str) -> None:
         Event.objects.create(**_values(organizer, kind=kind))
 
 
-def test_weight_defaults_to_one(organizer: Organizer) -> None:
-    event = Event.objects.create(**_values(organizer))
+def test_event_has_no_weight() -> None:
+    # The engine takes no per-event weight (openpickleball/engine#30, #189).
+    field_names = {field.name for field in Event._meta.get_fields()}
+    constraint_names = {constraint.name for constraint in Event._meta.constraints}
 
-    event.refresh_from_db()
-    assert event.weight == Decimal("1.00")
-
-
-@pytest.mark.parametrize("weight", [Decimal("0.01"), Decimal("0.50"), Decimal("1.00")])
-def test_weight_in_range_passes(organizer: Organizer, weight: Decimal) -> None:
-    event = Event(**_values(organizer, weight=weight))
-
-    event.full_clean()
-    event.save()
-
-
-@pytest.mark.parametrize(
-    "weight", [Decimal("0"), Decimal("-0.50"), Decimal("1.01"), Decimal("1.50")]
-)
-def test_full_clean_refuses_weight_out_of_range(
-    organizer: Organizer, weight: Decimal
-) -> None:
-    error = _clean_errors(organizer, weight=weight)
-
-    assert "weight" in error.message_dict
-
-
-@pytest.mark.parametrize(
-    "weight", [Decimal("0"), Decimal("-0.50"), Decimal("1.01"), Decimal("1.50")]
-)
-def test_database_refuses_weight_out_of_range(
-    organizer: Organizer, weight: Decimal
-) -> None:
-    with pytest.raises(IntegrityError), transaction.atomic():
-        Event.objects.create(**_values(organizer, weight=weight))
-
-
-def test_bad_weight_text_is_refused_without_echo(organizer: Organizer) -> None:
-    error = _clean_errors(organizer, weight=MARKER)
-
-    assert "weight" in error.message_dict
-    assert MARKER not in _messages(error)
+    assert "weight" not in field_names
+    assert "events_event_weight_range" not in constraint_names
 
 
 @pytest.mark.parametrize("field", ["start_date", "end_date"])
