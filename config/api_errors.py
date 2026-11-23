@@ -10,6 +10,9 @@ that does not parse, `Http404`, any `HttpError`,
 
     {"code": "...", "message": "...", "errors": [{"field", "code", "message"}]}
 
+A duplicate match item may also carry `existing_code` (see below). No
+other item has that key.
+
 `errors` lists one item per invalid input for a validation error (a
 `MatchValidationError` gives one item per `MatchIssue`, with its field,
 code, and fixed message), one item for a duplicate match (409), and is
@@ -26,7 +29,9 @@ field `external_id` and code `duplicate_external_id` for a repeated
 external id. The message is fixed text, never a submitted value. It
 names the earlier match's OPEN code only when `existing_code` is set: the
 submitter sent that match, or the submitting Account's Player played in
-it. A repeated external id always names it.
+it. A repeated external id always names it. When the message names the
+code, the item also carries it as `existing_code`, so a client need not
+parse the message. When it does not, the item has no `existing_code` key.
 
 A `MatchPermissionDenied` returns 403 with code "forbidden", fixed text,
 and no items. It never says which rule failed.
@@ -85,11 +90,18 @@ _STATUS_CODES: Mapping[int, str] = {
 
 
 class FieldError(Schema):
-    """One invalid input: where it is, what kind of error, and a message."""
+    """One invalid input: where it is, what kind of error, and a message.
+
+    `existing_code` is the earlier match's OPEN code. Only a duplicate match
+    item has it, and only when the submitter may know that match.
+    """
 
     field: str
     code: str
     message: str
+    # `_respond` leaves out every None field, so items without a code have no
+    # `existing_code` key. A new nullable field here would be left out too.
+    existing_code: str | None = None
 
 
 class ErrorResponse(Schema):
@@ -129,7 +141,11 @@ def _field_errors(error: Mapping[str, Any]) -> list[FieldError]:
 def _respond(
     api: NinjaAPI, request: HttpRequest, status: int, body: ErrorResponse
 ) -> HttpResponse:
-    return api.create_response(request, body.model_dump(), status=status)
+    # Leave out None fields: only `existing_code` can be None, and an item
+    # without a code must not carry the key.
+    return api.create_response(
+        request, body.model_dump(exclude_none=True), status=status
+    )
 
 
 def install_error_handlers(api: NinjaAPI) -> None:
@@ -182,6 +198,7 @@ def install_error_handlers(api: NinjaAPI) -> None:
                     field=_DUPLICATE_FIELDS[exc.kind],
                     code=exc.kind.value,
                     message=exc.message,
+                    existing_code=exc.existing_code,
                 )
             ],
         )
