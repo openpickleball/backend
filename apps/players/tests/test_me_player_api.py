@@ -129,11 +129,11 @@ def fields(response: Any) -> dict[str, tuple[str, str]]:
     }
 
 
-# POST: through the headless flows, with the age held at signup
+# POST: through the headless flows, with the details held at signup
 
 
 @pytest.mark.parametrize("base", CLIENTS)
-def test_create_takes_the_age_held_at_signup(base: str) -> None:
+def test_create_takes_the_details_held_at_signup(base: str) -> None:
     session = verified_session(base)
 
     response = call(session, "POST", {"display_name": "Robin Q."})
@@ -163,7 +163,7 @@ def test_the_session_still_works_after_create(base: str) -> None:
 
 
 @pytest.mark.parametrize("base", CLIENTS)
-def test_the_held_age_wins_over_the_body(base: str) -> None:
+def test_the_held_details_win_over_the_body(base: str) -> None:
     session = verified_session(base)
 
     response = call(
@@ -183,7 +183,7 @@ def test_the_held_age_wins_over_the_body(base: str) -> None:
 
 
 @pytest.mark.parametrize("base", CLIENTS)
-def test_a_failed_create_keeps_the_held_age_for_a_retry(base: str) -> None:
+def test_a_failed_create_keeps_the_held_details_for_a_retry(base: str) -> None:
     session = verified_session(base)
 
     refused = call(session, "POST", {"display_name": "   "})
@@ -199,10 +199,10 @@ def test_a_failed_create_keeps_the_held_age_for_a_retry(base: str) -> None:
     assert (retried.json()["birth_year"], retried.json()["birth_month"]) == HELD
 
 
-# POST: with no age held
+# POST: with no details held
 
 
-def test_with_no_hold_the_body_gives_the_age() -> None:
+def test_with_no_hold_the_body_gives_the_details() -> None:
     client = signed_in(verified_account())
 
     response = post(
@@ -219,7 +219,7 @@ def test_with_no_hold_the_body_gives_the_age() -> None:
     assert Player.objects.get().gender_division == "mens"
 
 
-def test_an_age_held_for_another_account_is_not_used() -> None:
+def test_details_held_for_another_account_are_not_used() -> None:
     account = verified_account()
     other = UserFactory.create()
     client = signed_in(account)
@@ -237,7 +237,7 @@ def test_an_age_held_for_another_account_is_not_used() -> None:
     assert client.session[SIGNUP_DETAILS_SESSION_KEY]["account"] == other.pk
 
 
-def test_with_no_hold_a_missing_age_gets_422_on_each_field() -> None:
+def test_with_no_hold_missing_details_get_422_on_each_field() -> None:
     client = signed_in(verified_account())
 
     response = post(client, {"display_name": "Robin Q."})
@@ -694,6 +694,35 @@ def test_a_stored_empty_gender_division_can_change_another_field(
     assert response.status_code == 200
     assert response.json()["city"] == "Shelbyville"
     assert response.json()["gender_division"] == ""
+
+
+def test_a_stored_empty_gender_division_resent_empty_is_unchanged(
+    mine: Player,
+) -> None:
+    # Resending the stored value changes nothing, so it is not checked.
+    Player.objects.filter(pk=mine.pk).update(gender_division="")
+
+    response = patch(signed_in(mine.account), {"gender_division": ""})
+
+    assert response.status_code == 200
+    assert response.json()["gender_division"] == ""
+    mine.refresh_from_db()
+    assert mine.gender_division == ""
+    assert AuditEvent.objects.count() == 0
+
+
+def test_a_stored_empty_gender_division_cannot_be_sent_null(mine: Player) -> None:
+    Player.objects.filter(pk=mine.pk).update(gender_division="")
+
+    response = patch(signed_in(mine.account), {"gender_division": None})
+
+    assert response.status_code == 422
+    assert fields(response) == {
+        "body.gender_division": ("null", "Choose a gender division."),
+    }
+    mine.refresh_from_db()
+    assert mine.gender_division == ""
+    assert AuditEvent.objects.count() == 0
 
 
 def test_null_clears_an_optional_text_field(mine: Player) -> None:

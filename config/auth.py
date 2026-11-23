@@ -18,7 +18,7 @@ unsafe request without a valid CSRF token gets 403.
 `auth_session(request)` returns the session behind the request's
 authentication: the session the `X-Session-Token` names for the app
 client, `request.session` for the browser client. A view that reads or
-changes a session value (the signup age, ADR 0017) uses it. The browser
+changes a session value (the signup details, ADR 0017) uses it. The browser
 session is saved by Django's middleware; a view that changes the token
 session saves it itself (`save()` keeps its key, so the token still works).
 """

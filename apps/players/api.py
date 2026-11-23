@@ -29,9 +29,10 @@ malformed code (ADR 0008, ADR 0015).
 
 The signed-in Account's own Player is at /api/v1/me/player (``me_router``,
 issue #124). POST creates it, once per Account, only for an Account whose
-own login address is verified. The birth year and month come from the
-age the signup held in the session (ADR 0017, ``auth_session`` for either
-headless client), and from the body only when the session holds none.
+own login address is verified. The birth year and month and the gender
+division come from the details the signup held in the session (ADR 0017,
+issue #215, ``auth_session`` for either headless client), and from the
+body only when the session holds none, where all three are required.
 """
 
 import contextlib
@@ -516,10 +517,9 @@ def update_my_player(request: HttpRequest, payload: PlayerUpdateIn) -> MyPlayerO
 
     Only the fields sent change. The gender division can change between
     divisions but cannot be cleared (422). Both kinds of change apply
-    together or
-    not at all: a 422 on either changes nothing. Each kind that changes
-    records one Audit Event (profile changes by field name only). 404 when
-    the Account has no Player.
+    together or not at all: a 422 on either changes nothing. Each kind
+    that changes records one Audit Event (profile changes by field name
+    only). 404 when the Account has no Player.
     """
     account = request_account(request)
     player = _own_player(account)

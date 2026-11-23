@@ -411,7 +411,7 @@ def test_new_and_taken_addresses_answer_alike(base: str) -> None:
     assert _outline(new)["token"] is (base == APP)
 
 
-# The held age is handed over once, to the right Account
+# The held details are handed over once, to the right Account
 
 
 def _verify_then_log_in(session: Session) -> Any:

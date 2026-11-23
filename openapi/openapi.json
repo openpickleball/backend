@@ -1542,7 +1542,7 @@
         ]
       },
       "patch": {
-        "description": "Change the signed-in Account's own profile fields and privacy settings.\n\nOnly the fields sent change. The gender division can change between\ndivisions but cannot be cleared (422). Both kinds of change apply\ntogether or\nnot at all: a 422 on either changes nothing. Each kind that changes\nrecords one Audit Event (profile changes by field name only). 404 when\nthe Account has no Player.",
+        "description": "Change the signed-in Account's own profile fields and privacy settings.\n\nOnly the fields sent change. The gender division can change between\ndivisions but cannot be cleared (422). Both kinds of change apply\ntogether or not at all: a 422 on either changes nothing. Each kind\nthat changes records one Audit Event (profile changes by field name\nonly). 404 when the Account has no Player.",
         "operationId": "update_my_player",
         "parameters": [],
         "requestBody": {

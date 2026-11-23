@@ -183,13 +183,13 @@ def _is_held_for_login(held: object, email: object) -> bool:
 # counts once, age screen answers included, and a 429 comes first.
 @method_decorator(rate_limit(action="signup"), name="handle")
 class SignupView(BaseSignupView):
-    """allauth's sign-up, behind the age screen (issue #114).
+    """allauth's sign-up, behind the age screen (issues #114 and #215).
 
     Order: allauth's rate limit, then its signed-in (409) and closed
-    signup (403) answers, made as allauth makes them, then the age screen,
-    then allauth's input (and so its email lookup). allauth itself answers
-    invalid input before its 409 and 403; here a malformed age comes after
-    them too, so the screen only ever answers, or flags, a session that
+    signup (403) answers, made as allauth makes them, then the age screen
+    (the age and the gender division), then allauth's input (and so its
+    email lookup). allauth itself answers invalid input before its 409 and
+    403; here a malformed age or gender division comes after them too, so the screen only ever answers, or flags, a session that
     allauth would let sign up.
     """
 

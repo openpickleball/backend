@@ -1,6 +1,6 @@
-"""A 409 create takes the held signup age too (#124 review).
+"""A 409 create takes the held signup details too (#124 review).
 
-The age held at signup lives only until the Account's Player exists
+The details held at signup live only until the Account's Player exists
 (ADR 0009, ADR 0017). When the Account already has one, a create gets
 409, and the hold for that Account is removed then too, on both 409
 paths and on both headless clients. Made-up data only.
