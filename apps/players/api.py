@@ -439,15 +439,18 @@ def create_my_player(
     an Account has one Player (409 for a second). The birth year and month
     come from the age held at signup in this session (ADR 0017); the body's
     are used only when the session holds none, and are then required. The
-    held age is removed only once the Player exists, so a refused create
-    can be retried. A player under 13 is refused with a fixed message.
+    held age is removed once the Player exists (on a 409 too), so a
+    create refused for any other reason can be retried. A player under 13
+    is refused with a fixed message.
     """
     account = request_account(request)
     if not _has_verified_email(account):
         raise HttpError(403, EMAIL_NOT_VERIFIED_MESSAGE)
-    if _has_player(account):
-        raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE)
     session = auth_session(request)
+    if _has_player(account):
+        # The hold lives only until the Player exists (ADR 0017).
+        _take_hold(request, session, account)
+        raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE)
     held = peek_signup_birth(session, account)
     birth_year, birth_month = held or _birth_from_body(payload)
     try:
@@ -465,6 +468,7 @@ def create_my_player(
         # create_player locks the Account, so a concurrent second create
         # lands here.
         if _is_duplicate_player(error):
+            _take_hold(request, session, account)
             raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE) from None
         raise _body_errors(error) from None
     _take_hold(request, session, account)

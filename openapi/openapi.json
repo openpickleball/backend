@@ -1600,7 +1600,7 @@
         ]
       },
       "post": {
-        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). The birth year and month\ncome from the age held at signup in this session (ADR 0017); the body's\nare used only when the session holds none, and are then required. The\nheld age is removed only once the Player exists, so a refused create\ncan be retried. A player under 13 is refused with a fixed message.",
+        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). The birth year and month\ncome from the age held at signup in this session (ADR 0017); the body's\nare used only when the session holds none, and are then required. The\nheld age is removed once the Player exists (on a 409 too), so a\ncreate refused for any other reason can be retried. A player under 13\nis refused with a fixed message.",
         "operationId": "create_my_player",
         "parameters": [],
         "requestBody": {
