@@ -1,8 +1,9 @@
 """The age screen on allauth's headless signup, for both clients (#114).
 
-Signup asks for a birth year and month. Under 13 is refused with one
-fixed answer, before allauth reads the email, and the session cannot try
-again. Made-up addresses on example.org only.
+Signup asks for a birth year and month and a gender division (#215).
+Under 13 is refused with one fixed answer, before allauth reads the
+email, and the session cannot try again. Made-up addresses on example.org
+only.
 """
 
 from importlib import import_module
@@ -21,6 +22,7 @@ from apps.accounts.tests.headless import (
     APP,
     BROWSER,
     PASSWORD,
+    SIGNUP_GENDER_DIVISION,
     VERIFY_PREFIX,
     HeadlessSession,
     app_headers,
@@ -29,11 +31,12 @@ from apps.accounts.tests.headless import (
     link_in_last_mail,
 )
 from apps.emails.models import QueuedEmail
-from apps.players.age import (
-    SIGNUP_BIRTH_SESSION_KEY,
+from apps.players.age import age_limit_date
+from apps.players.signup import (
+    SIGNUP_DETAILS_SESSION_KEY,
     SIGNUP_REFUSED_SESSION_KEY,
-    age_limit_date,
-    take_signup_birth,
+    SignupDetails,
+    take_signup_details,
 )
 
 pytestmark = pytest.mark.django_db
@@ -101,12 +104,83 @@ def test_a_malformed_age_does_not_lock_the_session(base: str) -> None:
     assert _accounts() == 1
 
 
-def test_spec_lists_the_age_fields_as_required() -> None:
+# Signup asks for the gender division (#215)
+
+
+@pytest.mark.parametrize("base", CLIENTS)
+@pytest.mark.parametrize(
+    "value",
+    [..., None, "", "other", f"x{MARKER}", "MENS", " mens", 1, True, [MARKER]],
+)
+def test_missing_or_malformed_gender_division_is_a_field_error(
+    base: str, value: object
+) -> None:
+    session = Session(base)
+
+    response = session.signup(gender_division=value)
+
+    assert response.status_code == 400
+    errors = response.json()["errors"]
+    assert [error.get("param") for error in errors] == ["gender_division"]
+    assert MARKER not in response.content.decode()
+    assert _accounts() == 0
+    assert not QueuedEmail.objects.exists()
+    assert mail.outbox == []
+    stored = session.store()
+    assert SIGNUP_REFUSED_SESSION_KEY not in stored
+    assert SIGNUP_DETAILS_SESSION_KEY not in stored
+
+
+@pytest.mark.parametrize("base", CLIENTS)
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (..., "Choose a gender division."),
+        ("", "Choose a gender division."),
+        ("other", "Choose one of the listed options."),
+    ],
+)
+def test_gender_division_errors_have_fixed_messages(
+    base: str, value: object, message: str
+) -> None:
+    response = Session(base).signup(gender_division=value)
+
+    [error] = response.json()["errors"]
+    assert error["message"] == message
+
+
+@pytest.mark.parametrize("base", CLIENTS)
+def test_a_missing_gender_division_with_an_under_13_age_is_not_refused(
+    base: str,
+) -> None:
+    session = Session(base)
+    young = {"birth_year": age_limit_date().year - 5, "birth_month": 6}
+
+    response = session.signup(gender_division=..., **young)
+
+    assert response.status_code == 400
+    assert [e.get("param") for e in response.json()["errors"]] == ["gender_division"]
+    assert dict(session.store().items()) == {}
+
+
+@pytest.mark.parametrize("base", CLIENTS)
+def test_a_malformed_gender_division_does_not_lock_the_session(base: str) -> None:
+    session = Session(base)
+    session.signup(gender_division="other")
+
+    response = session.signup()
+
+    assert response.status_code == 401
+    assert _accounts() == 1
+
+
+def test_spec_lists_the_signup_details_as_required() -> None:
     spec = Client().get("/_allauth/openapi.json").json()
     base_signup = spec["components"]["schemas"]["BaseSignup"]
+    details = {"birth_year", "birth_month", "gender_division"}
 
-    assert {"birth_year", "birth_month"} <= set(base_signup["required"])
-    assert {"birth_year", "birth_month"} <= set(base_signup["properties"])
+    assert details <= set(base_signup["required"])
+    assert details <= set(base_signup["properties"])
 
 
 # Under 13 is refused, neutrally, before anything else
@@ -255,7 +329,7 @@ def test_app_refusal_in_a_session_that_had_a_token() -> None:
     assert mail.outbox == []
     stored = session.store()
     assert stored[SIGNUP_REFUSED_SESSION_KEY] is True
-    assert SIGNUP_BIRTH_SESSION_KEY not in stored
+    assert SIGNUP_DETAILS_SESSION_KEY not in stored
 
 
 def test_a_fresh_session_is_not_refused() -> None:
@@ -276,27 +350,28 @@ def _pending_flows(response: Any) -> list[str]:
 
 
 @pytest.mark.parametrize("base", CLIENTS)
-def test_13_or_older_signs_up_and_holds_the_age(base: str) -> None:
+def test_13_or_older_signs_up_and_holds_the_details(base: str) -> None:
     session = Session(base)
     year = age_limit_date().year - 14
 
-    response = session.signup(birth_year=year, birth_month=1)
+    response = session.signup(birth_year=year, birth_month=1, gender_division="mens")
 
     assert response.status_code == 401
     assert _pending_flows(response) == ["verify_email"]
     assert [message.to for message in mail.outbox] == [[EMAIL]]
     account = get_user_model()._default_manager.get_by_natural_key(EMAIL)
     stored = session.store()
-    assert stored[SIGNUP_BIRTH_SESSION_KEY] == {
+    assert stored[SIGNUP_DETAILS_SESSION_KEY] == {
         "account": account.pk,
         "year": year,
         "month": 1,
+        "gender_division": "mens",
     }
     assert SIGNUP_REFUSED_SESSION_KEY not in stored
 
 
 @pytest.mark.parametrize("base", CLIENTS)
-def test_taken_address_holds_the_age_with_no_account(base: str) -> None:
+def test_taken_address_holds_the_details_with_no_account(base: str) -> None:
     taken = UserFactory.create(email="taken.player@example.org")
     EmailAddress.objects.create(user=taken, email=taken.email, verified=True)
     session = Session(base)
@@ -304,10 +379,11 @@ def test_taken_address_holds_the_age_with_no_account(base: str) -> None:
     response = session.signup("taken.player@example.org")
 
     assert response.status_code == 401
-    assert session.store()[SIGNUP_BIRTH_SESSION_KEY] == {
+    assert session.store()[SIGNUP_DETAILS_SESSION_KEY] == {
         "account": None,
         "year": ADULT_BIRTH["birth_year"],
         "month": ADULT_BIRTH["birth_month"],
+        "gender_division": SIGNUP_GENDER_DIVISION,
     }
     assert _accounts() == 1
 
@@ -335,7 +411,7 @@ def test_new_and_taken_addresses_answer_alike(base: str) -> None:
     assert _outline(new)["token"] is (base == APP)
 
 
-# The held age is handed over once, to the right Account
+# The held details are handed over once, to the right Account
 
 
 def _verify_then_log_in(session: Session) -> Any:
@@ -355,7 +431,7 @@ def _verify_then_log_in(session: Session) -> Any:
 
 
 @pytest.mark.parametrize("base", CLIENTS)
-def test_the_age_is_taken_once_after_verify_and_login(base: str) -> None:
+def test_the_details_are_taken_once_after_verify_and_login(base: str) -> None:
     session = Session(base)
     session.signup()
     before = session.store().session_key
@@ -367,14 +443,15 @@ def test_the_age_is_taken_once_after_verify_and_login(base: str) -> None:
     stored = session.store()
     # Login cycles the session key and keeps the session's data.
     assert stored.session_key != before
-    assert take_signup_birth(stored, other) is None
-    assert take_signup_birth(stored, account) == (
-        ADULT_BIRTH["birth_year"],
-        ADULT_BIRTH["birth_month"],
+    assert take_signup_details(stored, other) is None
+    assert take_signup_details(stored, account) == SignupDetails(
+        birth_year=ADULT_BIRTH["birth_year"],
+        birth_month=ADULT_BIRTH["birth_month"],
+        gender_division=SIGNUP_GENDER_DIVISION,
     )
-    assert take_signup_birth(stored, account) is None
+    assert take_signup_details(stored, account) is None
     stored.save()
-    assert take_signup_birth(session.store(), account) is None
+    assert take_signup_details(session.store(), account) is None
 
 
 @pytest.mark.parametrize("base", CLIENTS)
@@ -389,15 +466,15 @@ def test_a_login_to_another_account_never_gets_the_age(base: str) -> None:
     )
 
     assert logged_in.status_code == 200
-    assert take_signup_birth(session.store(), other) is None
+    assert take_signup_details(session.store(), other) is None
 
 
 @pytest.mark.parametrize("base", CLIENTS)
-def test_logout_removes_the_held_age(base: str) -> None:
+def test_logout_removes_the_held_details(base: str) -> None:
     session = Session(base)
     session.signup()
     _verify_then_log_in(session)
-    assert SIGNUP_BIRTH_SESSION_KEY in session.store()
+    assert SIGNUP_DETAILS_SESSION_KEY in session.store()
     before = session.store().session_key
 
     if base == BROWSER:
@@ -406,6 +483,6 @@ def test_logout_removes_the_held_age(base: str) -> None:
         headers = app_headers(session.token)
     session.client.delete(f"{base}/auth/session", headers=headers)
 
-    assert SIGNUP_BIRTH_SESSION_KEY not in session.store()
+    assert SIGNUP_DETAILS_SESSION_KEY not in session.store()
     store_class = import_module(settings.SESSION_ENGINE).SessionStore
     assert not store_class().exists(before)

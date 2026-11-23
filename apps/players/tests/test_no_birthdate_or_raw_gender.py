@@ -16,7 +16,7 @@ from django.test.utils import isolate_apps
 
 from apps.accounts.forms import SignupAgeForm
 from apps.accounts.tests.headless import APP, signup
-from apps.players.age import SIGNUP_BIRTH_SESSION_KEY
+from apps.players.signup import SIGNUP_DETAILS_SESSION_KEY
 
 APPS_DIR = Path(__file__).resolve().parents[2]
 
@@ -77,8 +77,12 @@ def test_no_fixtures_under_apps() -> None:
     assert sorted(APPS_DIR.glob("**/fixtures/*")) == []
 
 
-def test_signup_age_form_asks_for_year_and_month_only() -> None:
-    assert set(SignupAgeForm.base_fields) == {"birth_year", "birth_month"}
+def test_signup_age_form_asks_for_year_month_and_division_only() -> None:
+    assert set(SignupAgeForm.base_fields) == {
+        "birth_year",
+        "birth_month",
+        "gender_division",
+    }
 
 
 def test_signup_input_has_no_day_or_raw_gender_field() -> None:
@@ -90,6 +94,7 @@ def test_signup_input_has_no_day_or_raw_gender_field() -> None:
     }
     assert not {name for name in names if "day" in name or "date" in name}
     assert not names & RAW_GENDER_NAMES
+    assert {name for name in names if "gender" in name} == {"gender_division"}
 
 
 @pytest.fixture
@@ -102,12 +107,13 @@ def _clear_rate_limits() -> Iterator[None]:
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures("_clear_rate_limits", "commit_after_each_request")
-def test_signup_session_holds_year_and_month_only() -> None:
+def test_signup_session_holds_year_month_and_division_only() -> None:
     response = signup(Client(), APP, "no.birthdate@example.org")
     token = response.json()["meta"]["session_token"]
 
     store = import_module(settings.SESSION_ENGINE).SessionStore(session_key=token)
-    held = store[SIGNUP_BIRTH_SESSION_KEY]
+    held = store[SIGNUP_DETAILS_SESSION_KEY]
 
-    assert set(held) == {"account", "year", "month"}
+    assert set(held) == {"account", "year", "month", "gender_division"}
     assert all(isinstance(held[key], int) for key in ("year", "month"))
+    assert held["gender_division"] in {"mens", "womens"}

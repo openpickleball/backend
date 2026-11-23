@@ -16,7 +16,8 @@ from apps.accounts.tests.headless import (
     HeadlessSession,
     csrf_header,
 )
-from apps.players.age import SIGNUP_REFUSED_SESSION_KEY, age_limit_date
+from apps.players.age import age_limit_date
+from apps.players.signup import SIGNUP_REFUSED_SESSION_KEY
 
 pytestmark = pytest.mark.django_db
 

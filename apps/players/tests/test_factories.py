@@ -39,7 +39,7 @@ def test_values_are_in_range() -> None:
     for player in PlayerFactory.create_batch(20):
         assert this_year - 70 <= player.birth_year <= this_year - 19
         assert 1 <= player.birth_month <= 12
-        assert player.gender_division in {"", *GenderDivision.values}
+        assert player.gender_division in GenderDivision.values
         assert player.display_name
         assert len(player.region) <= 100
         assert player.legal_name == ""

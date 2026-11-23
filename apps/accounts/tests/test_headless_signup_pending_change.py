@@ -18,10 +18,10 @@ from django.core.cache import cache
 from django.test import Client
 
 from apps.accounts.tests.headless import (
-    ADULT_BIRTH,
     APP,
     BROWSER,
     PASSWORD,
+    SIGNUP_DETAILS,
     VERIFY_PREFIX,
     app_headers,
     browser_client,
@@ -68,7 +68,7 @@ def test_signup_with_a_pending_change_address_creates_the_account(base: str) -> 
     _pending_change_key()
 
     response = _post(
-        base, "auth/signup", {"email": X_EMAIL, "password": PASSWORD, **ADULT_BIRTH}
+        base, "auth/signup", {"email": X_EMAIL, "password": PASSWORD, **SIGNUP_DETAILS}
     )
 
     assert response.status_code == 401
@@ -83,7 +83,9 @@ def test_signup_with_a_pending_change_address_creates_the_account(base: str) -> 
 @pytest.mark.parametrize("base", CLIENTS)
 def test_the_old_key_is_refused_and_the_new_owner_verifies(base: str) -> None:
     old_key = _pending_change_key()
-    _post(base, "auth/signup", {"email": X_EMAIL, "password": PASSWORD, **ADULT_BIRTH})
+    _post(
+        base, "auth/signup", {"email": X_EMAIL, "password": PASSWORD, **SIGNUP_DETAILS}
+    )
     new_key = key_from_link(link_in_last_mail(VERIFY_PREFIX), VERIFY_PREFIX)
 
     refused = _post(base, "auth/email/verify", {"key": old_key})
@@ -109,7 +111,7 @@ def test_signup_with_a_real_login_stays_enumeration_safe(base: str) -> None:
     cache.clear()
 
     response = _post(
-        base, "auth/signup", {"email": A_EMAIL, "password": PASSWORD, **ADULT_BIRTH}
+        base, "auth/signup", {"email": A_EMAIL, "password": PASSWORD, **SIGNUP_DETAILS}
     )
 
     assert response.status_code == 401

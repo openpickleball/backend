@@ -13,7 +13,8 @@ from allauth.account.models import EmailAddress
 from apps.accounts.adapter import AccountAdapter
 from apps.accounts.tests.factories import UserFactory
 from apps.accounts.tests.headless import APP, BROWSER, PASSWORD, HeadlessSession
-from apps.players.age import SIGNUP_REFUSED_SESSION_KEY, age_limit_date
+from apps.players.age import age_limit_date
+from apps.players.signup import SIGNUP_REFUSED_SESSION_KEY
 
 pytestmark = pytest.mark.django_db
 

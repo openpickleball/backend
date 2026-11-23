@@ -34,6 +34,7 @@ def _create(account: "_User", birth_year: int, birth_month: int) -> Player:
         display_name="Made-up Player",
         birth_year=birth_year,
         birth_month=birth_month,
+        gender_division="mens",
     )
 
 

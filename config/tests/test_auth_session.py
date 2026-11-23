@@ -3,7 +3,7 @@
 The app client's session is the one its ``X-Session-Token`` names, not
 ``request.session`` (which, with no cookie, is a new empty session). The
 browser client's is ``request.session``. Views that read or change a
-value the session holds (the signup age, ADR 0017) go through
+value the session holds (the signup details, ADR 0017) go through
 ``auth_session``. Made-up data only.
 """
 

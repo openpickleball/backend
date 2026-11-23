@@ -25,6 +25,10 @@ PASSWORD = "made-up-Passw0rd-for-tests"
 NEW_PASSWORD = "another-made-up-Passw0rd-2"
 # The age screen's fields for a made-up adult (issue #114).
 ADULT_BIRTH = {"birth_year": 1990, "birth_month": 6}
+# Every signup detail besides the email and password: the age and the
+# gender division (issue #215).
+SIGNUP_GENDER_DIVISION = "womens"
+SIGNUP_DETAILS = {**ADULT_BIRTH, "gender_division": SIGNUP_GENDER_DIVISION}
 
 VERIFY_PREFIX = f"{FRONTEND_URL}/account/verify-email/"
 RESET_PREFIX = f"{FRONTEND_URL}/account/password/reset/key/"
@@ -47,8 +51,8 @@ def signup(
     password: str = PASSWORD,
     **headers: str,
 ) -> Any:
-    """Sign up with a made-up adult birth year and month (issue #114)."""
-    data = {"email": email, "password": password, **ADULT_BIRTH}
+    """Sign up with a made-up adult age and a gender division (#114, #215)."""
+    data = {"email": email, "password": password, **SIGNUP_DETAILS}
     return post(client, f"{base}/auth/signup", data, **headers)
 
 
@@ -143,7 +147,7 @@ class HeadlessSession:
 
     def signup(self, email: object = SESSION_EMAIL, **fields: object) -> Any:
         data: dict[str, object] = {"email": email, "password": PASSWORD}
-        data.update(ADULT_BIRTH)
+        data.update(SIGNUP_DETAILS)
         data.update(fields)
         return self.post("auth/signup", {k: v for k, v in data.items() if v is not ...})
 

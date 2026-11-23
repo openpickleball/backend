@@ -2,7 +2,7 @@
 
 The app client's session is the one its ``X-Session-Token`` names. If a
 concurrent logout deletes that session row after auth, saving the taken
-signup age raises ``UpdateError``. The Player is already created, and the
+signup details raises ``UpdateError``. The Player is already created, and the
 session, with its hold, is gone, so the answer is still 201. Made-up data
 only.
 """

@@ -29,6 +29,12 @@ if TYPE_CHECKING:
 # Messages never include the submitted value (CLAUDE.md, API). Django's
 # defaults for these keys do.
 _CHOICE_MESSAGES = {"invalid_choice": "Choose one of the listed options."}
+_GENDER_DIVISION_REQUIRED = "Choose a gender division."
+_GENDER_DIVISION_MESSAGES = {
+    **_CHOICE_MESSAGES,
+    "blank": _GENDER_DIVISION_REQUIRED,
+    "null": _GENDER_DIVISION_REQUIRED,
+}
 _WHOLE_NUMBER = "Enter a whole number."
 _INTEGER_MESSAGES = {"invalid": _WHOLE_NUMBER}
 _CONTROL_CHARACTER = "Remove control or invalid characters."
@@ -46,7 +52,7 @@ _VISIBLE_CATEGORY_GROUPS = ("L", "N", "P", "S", "Cn")
 # validation, so max_length counts the stored value.
 TEXT_FIELDS = ("display_name", "legal_name", "city", "region")
 # Optional text fields where None means cleared, stored as "".
-OPTIONAL_TEXT_FIELDS = ("legal_name", "gender_division", "city", "region")
+OPTIONAL_TEXT_FIELDS = ("legal_name", "city", "region")
 # Fields that take only text (or None). Django's own conversion calls
 # str(), which turns any value into text and raises ValueError on an int
 # past Python's digit limit.
@@ -75,7 +81,11 @@ class Visibility(models.TextChoices):
 
 
 class GenderDivision(models.TextChoices):
-    """The gender division a Player enters. An empty value means none."""
+    """The gender division a Player enters (issue #215).
+
+    Every new Player has one. The column still allows an empty value,
+    only so that a later removal (#190, #116) can clear it.
+    """
 
     MENS = "mens", "Men's"
     WOMENS = "womens", "Women's"
@@ -107,11 +117,12 @@ class Player(PublicCodeModel):
         validators=[MinValueValidator(1), MaxValueValidator(12)],
         error_messages=_INTEGER_MESSAGES,
     )
+    # Required for every new Player (issue #215). The check constraint
+    # below still allows "", for a later removal (#190, #116).
     gender_division = models.CharField(
         max_length=8,
         choices=GenderDivision,
-        blank=True,
-        error_messages=_CHOICE_MESSAGES,
+        error_messages=_GENDER_DIVISION_MESSAGES,
     )
     city = models.CharField(max_length=100, blank=True)
     region = models.CharField(max_length=100, blank=True)

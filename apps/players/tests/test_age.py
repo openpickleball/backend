@@ -2,29 +2,19 @@
 
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
-from django.contrib.auth import get_user_model
-from django.contrib.sessions.backends.db import SessionStore
 from django.utils import timezone
 
 from apps.players import age
 from apps.players.age import (
     ADULT_AGE,
     MINIMUM_AGE,
-    SIGNUP_BIRTH_SESSION_KEY,
     age_limit_date,
     age_on,
-    hold_signup_birth,
     is_minor,
     is_old_enough,
-    peek_signup_birth,
-    take_signup_birth,
 )
-
-if TYPE_CHECKING:
-    from django.contrib.auth.base_user import AbstractBaseUser
 
 
 def test_limits() -> None:
@@ -138,83 +128,5 @@ def test_minor_defaults_to_the_age_limit_date(
     assert not is_minor(2008, 5)
 
 
-# The signup age held in the session
-
-
-def _account(pk: int) -> "AbstractBaseUser":
-    # An unsaved Account with a pk: the helpers read only the pk.
-    account: AbstractBaseUser = get_user_model()(pk=pk)
-    return account
-
-
-def test_held_age_is_handed_once_to_its_account() -> None:
-    session = SessionStore()
-    hold_signup_birth(session, _account(7), 2000, 4)
-
-    assert session[SIGNUP_BIRTH_SESSION_KEY] == {
-        "account": 7,
-        "year": 2000,
-        "month": 4,
-    }
-    assert take_signup_birth(session, _account(7)) == (2000, 4)
-    assert SIGNUP_BIRTH_SESSION_KEY not in session
-    assert take_signup_birth(session, _account(7)) is None
-
-
-def test_held_age_is_not_handed_to_another_account() -> None:
-    session = SessionStore()
-    hold_signup_birth(session, _account(7), 2000, 4)
-
-    assert take_signup_birth(session, _account(8)) is None
-    assert session[SIGNUP_BIRTH_SESSION_KEY]["account"] == 7
-
-
-def test_age_held_without_an_account_is_handed_to_nobody() -> None:
-    session = SessionStore()
-    hold_signup_birth(session, None, 2000, 4)
-
-    assert session[SIGNUP_BIRTH_SESSION_KEY]["account"] is None
-    assert take_signup_birth(session, _account(7)) is None
-    assert SIGNUP_BIRTH_SESSION_KEY in session
-
-
-def test_take_ignores_a_malformed_value() -> None:
-    session = SessionStore()
-    session[SIGNUP_BIRTH_SESSION_KEY] = "not a dict"
-
-    assert take_signup_birth(session, _account(7)) is None
-
-
 def test_age_module_does_not_import_accounts() -> None:
     assert "apps.accounts" not in Path(age.__file__).read_text()
-
-
-def test_peek_returns_the_held_age_and_keeps_it() -> None:
-    session = SessionStore()
-    hold_signup_birth(session, _account(7), 2000, 4)
-
-    session.modified = False
-
-    assert peek_signup_birth(session, _account(7)) == (2000, 4)
-    assert peek_signup_birth(session, _account(7)) == (2000, 4)
-    assert session.modified is False
-    assert take_signup_birth(session, _account(7)) == (2000, 4)
-
-
-def test_peek_hands_nothing_to_another_account_or_nobody() -> None:
-    session = SessionStore()
-    hold_signup_birth(session, _account(7), 2000, 4)
-    unbound = SessionStore()
-    hold_signup_birth(unbound, None, 2000, 4)
-
-    assert peek_signup_birth(session, _account(8)) is None
-    assert peek_signup_birth(unbound, _account(7)) is None
-    assert peek_signup_birth(SessionStore(), _account(7)) is None
-
-
-def test_peek_ignores_a_malformed_value() -> None:
-    session = SessionStore()
-    session[SIGNUP_BIRTH_SESSION_KEY] = {"account": 7, "year": "2000", "month": 4}
-
-    assert peek_signup_birth(session, _account(7)) is None
-    assert SIGNUP_BIRTH_SESSION_KEY in session

@@ -1,6 +1,7 @@
 # 0017. The signup age screen and the 13-and-older rule
 
 - Status: Proposed
+- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (signup also takes the gender division, held with the age as `open_signup_details`)
 - Date: 2026-11-17
 
 ## Context
@@ -20,7 +21,7 @@ Signup creates an Account (allauth's headless API, ADR 0014), but the Player com
 
 ### The age screen at signup
 
-- Signup on both headless clients takes two more required fields, `birth_year` and `birth_month` (`ACCOUNT_SIGNUP_FORM_CLASS`, so allauth's OpenAPI document lists them). The web and Expo apps ask for them on the first screen, before the email address.
+- Signup on both headless clients takes two more required fields, `birth_year` and `birth_month` (`ACCOUNT_SIGNUP_FORM_CLASS`, so allauth's OpenAPI document lists them). ADR 0019 adds a third, `gender_division`, checked with them. The web and Expo apps ask for them on the first screen, before the email address.
 - OPEN's signup view checks, in this order:
   1. allauth's signup rate limit;
   2. allauth's own answers for a signed-in session (409) and for closed signup (403);
@@ -29,7 +30,7 @@ Signup creates an Account (allauth's headless API, ADR 0014), but the Player com
   The age is checked before allauth reads the email address, so a refused signup never looks up an address, creates nothing, and sends no mail.
 - Under 13 gets one fixed 400 (`signup_refused`, "We can't create an account with these details."), whatever email and password come with it. The session then holds a flag, `open_signup_refused`, and no age. Every later signup in that session gets the same answer. Logout keeps the flag. ADR 0009 says a refused attempt keeps nothing. The flag is the one exception in the session: it holds no personal data, no age, and nothing about the email or password, and it lasts only as long as the session. Without it, the same session could simply retry with an older age. allauth's signup rate limit also counts refused requests, so its counter keeps the client's IP address in the cache for the limit's period, as for any other signup. An app client that sent no token gets one in the refusal, so its retries carry the flag too.
 - A missing or malformed age gets allauth's 400 with a field error. It does not set the flag.
-- A signup that passes holds `open_signup_birth` in the session: the birth year, the month, and the new Account's id. #124's create endpoint reads it with `peek_signup_birth(session, account)` and takes it with `take_signup_birth(session, account)` once the Player exists, or when the Account already has one. Both return it only to that Account, and the take removes it. The binding stops the age from reaching another Account that logs in later in the same browser. Login keeps it, and logout removes it.
+- A signup that passes holds `open_signup_details` in the session: the birth year, the month, the gender division (ADR 0019), and the new Account's id. #124's create endpoint reads it with `peek_signup_details(session, account)` and takes it with `take_signup_details(session, account)` (`apps/players/signup.py`) once the Player exists, or when the Account already has one. Both return it only to that Account, and the take removes it. The binding stops the age from reaching another Account that logs in later in the same browser. Login keeps it, and logout removes it.
 - When the address is already some Account's login, allauth creates nothing, and the age is held bound to no Account. The session changes the same way as for a new address, so the app client's answer (a session token or not) does not reveal whether the address is taken. A repeated submit of the same new address keeps the earlier hold for the Account it created.
 
 ## Consequences

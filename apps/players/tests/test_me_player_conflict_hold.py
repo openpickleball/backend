@@ -1,6 +1,6 @@
-"""A 409 create takes the held signup age too (#124 review).
+"""A 409 create takes the held signup details too (#124 review).
 
-The age held at signup lives only until the Account's Player exists
+The details held at signup live only until the Account's Player exists
 (ADR 0009, ADR 0017). When the Account already has one, a create gets
 409, and the hold for that Account is removed then too, on both 409
 paths and on both headless clients. Made-up data only.
@@ -29,8 +29,12 @@ from apps.accounts.tests.headless import (
     link_in_last_mail,
 )
 from apps.players import api as players_api
-from apps.players.age import SIGNUP_BIRTH_SESSION_KEY, hold_signup_birth
 from apps.players.models import Player
+from apps.players.signup import (
+    SIGNUP_DETAILS_SESSION_KEY,
+    SignupDetails,
+    hold_signup_details,
+)
 from apps.players.tests.factories import PlayerFactory
 
 pytestmark = [
@@ -79,12 +83,12 @@ def own_account() -> Any:
 def test_a_409_create_removes_the_hold(base: str) -> None:
     session = signed_in_session(base)
     PlayerFactory.create(account=own_account(), display_name="Robin Q.")
-    assert SIGNUP_BIRTH_SESSION_KEY in session.store()
+    assert SIGNUP_DETAILS_SESSION_KEY in session.store()
 
     response = create(session)
 
     assert response.status_code == 409
-    assert SIGNUP_BIRTH_SESSION_KEY not in session.store()
+    assert SIGNUP_DETAILS_SESSION_KEY not in session.store()
 
 
 @pytest.mark.parametrize("base", [APP, BROWSER])
@@ -98,7 +102,7 @@ def test_a_create_that_loses_the_race_removes_the_hold(
     response = create(session)
 
     assert response.status_code == 409
-    assert SIGNUP_BIRTH_SESSION_KEY not in session.store()
+    assert SIGNUP_DETAILS_SESSION_KEY not in session.store()
     assert Player.objects.get().display_name == "Robin Q."
 
 
@@ -112,7 +116,7 @@ def test_a_409_keeps_an_age_held_for_another_account() -> None:
     client = Client()
     client.force_login(account)
     store = client.session
-    hold_signup_birth(store, other, 1970, 2)
+    hold_signup_details(store, other, SignupDetails(1970, 2, "mens"))
     store.save()
 
     response = client.post(
@@ -120,7 +124,7 @@ def test_a_409_keeps_an_age_held_for_another_account() -> None:
     )
 
     assert response.status_code == 409
-    assert client.session[SIGNUP_BIRTH_SESSION_KEY]["account"] == other.pk
+    assert client.session[SIGNUP_DETAILS_SESSION_KEY]["account"] == other.pk
 
 
 def test_a_409_whose_app_session_was_deleted_still_answers_409(

@@ -29,9 +29,10 @@ malformed code (ADR 0008, ADR 0015).
 
 The signed-in Account's own Player is at /api/v1/me/player (``me_router``,
 issue #124). POST creates it, once per Account, only for an Account whose
-own login address is verified. The birth year and month come from the
-age the signup held in the session (ADR 0017, ``auth_session`` for either
-headless client), and from the body only when the session holds none.
+own login address is verified. The birth year and month and the gender
+division come from the details the signup held in the session (ADR 0017,
+issue #215, ``auth_session`` for either headless client), and from the
+body only when the session holds none, where all three are required.
 """
 
 import contextlib
@@ -64,7 +65,6 @@ from apps.matches.pagination import (
     MatchHistoryPagination,
 )
 from apps.matches.schemas import MatchOut, with_match_details
-from apps.players.age import peek_signup_birth, take_signup_birth
 from apps.players.models import Player
 from apps.players.schemas import (
     MyPlayerOut,
@@ -79,6 +79,11 @@ from apps.players.services import (
     create_player,
     update_privacy,
     update_profile,
+)
+from apps.players.signup import (
+    SignupDetails,
+    peek_signup_details,
+    take_signup_details,
 )
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
@@ -108,9 +113,10 @@ THROTTLE_TIMEOUT_MARGIN = 60
 # Fixed text, never a submitted value.
 EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email address before creating your player."
 ALREADY_HAS_PLAYER_MESSAGE = "This account already has a player."
-_MISSING_BIRTH_MESSAGES = {
+_MISSING_DETAIL_MESSAGES = {
     "birth_year": "Enter your birth year.",
     "birth_month": "Enter your birth month.",
+    "gender_division": "Choose a gender division.",
 }
 # Control characters and lone surrogates. Postgres refuses a NUL in a
 # query parameter, which would be a 500.
@@ -398,20 +404,26 @@ def _body_errors(
     return NinjaValidationError(items)
 
 
-def _birth_from_body(payload: PlayerCreateIn) -> tuple[int, int]:
-    """The body's birth year and month, or a 422 naming each one missing."""
+def _details_from_body(payload: PlayerCreateIn) -> SignupDetails:
+    """The body's birth year and month and gender division.
+
+    A 422 names each one missing (left out or null). ``create_player``
+    checks the values.
+    """
     missing = [
         {"loc": ("body", name), "type": "missing", "msg": message}
-        for name, message in _MISSING_BIRTH_MESSAGES.items()
+        for name, message in _MISSING_DETAIL_MESSAGES.items()
         if getattr(payload, name) is None
     ]
-    if missing or payload.birth_year is None or payload.birth_month is None:
+    year, month = payload.birth_year, payload.birth_month
+    division = payload.gender_division
+    if missing or year is None or month is None or division is None:
         raise NinjaValidationError(missing)
-    return payload.birth_year, payload.birth_month
+    return SignupDetails(birth_year=year, birth_month=month, gender_division=division)
 
 
 def _take_hold(request: HttpRequest, session: SessionBase, account: "_User") -> None:
-    """Remove the signup age held for ``account`` from ``session``.
+    """Remove the signup details held for ``account`` from ``session``.
 
     The browser client's session is saved by Django's middleware. The app
     client's token session is saved here: ``save()`` keeps its key, so the
@@ -419,7 +431,7 @@ def _take_hold(request: HttpRequest, session: SessionBase, account: "_User") -> 
     session, ``save()`` raises ``UpdateError``; the session and its hold
     are gone, so there is nothing left to remove.
     """
-    if take_signup_birth(session, account) is None or session is request.session:
+    if take_signup_details(session, account) is None or session is request.session:
         return
     with contextlib.suppress(UpdateError):
         session.save()
@@ -437,11 +449,12 @@ def create_my_player(
 
     The Account's own email address must be verified (403 otherwise), and
     an Account has one Player (409 for a second). The birth year and month
-    come from the age held at signup in this session (ADR 0017); the body's
-    are used only when the session holds none, and are then required. The
-    held age is removed once the Player exists (on a 409 too), so a
-    create refused for any other reason can be retried. A player under 13
-    is refused with a fixed message.
+    and the gender division come from the details held at signup in this
+    session (ADR 0017, issue #215); the body's are used only when the
+    session holds none, and are then required. The held details are
+    removed once the Player exists (on a 409 too), so a create refused for
+    any other reason can be retried. A player under 13 is refused with a
+    fixed message.
     """
     account = request_account(request)
     if not _has_verified_email(account):
@@ -451,16 +464,15 @@ def create_my_player(
         # The hold lives only until the Player exists (ADR 0017).
         _take_hold(request, session, account)
         raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE)
-    held = peek_signup_birth(session, account)
-    birth_year, birth_month = held or _birth_from_body(payload)
+    details = peek_signup_details(session, account) or _details_from_body(payload)
     try:
         player = create_player(
             account=account,
             display_name=payload.display_name,
-            birth_year=birth_year,
-            birth_month=birth_month,
+            birth_year=details.birth_year,
+            birth_month=details.birth_month,
             legal_name=payload.legal_name,
-            gender_division=payload.gender_division,
+            gender_division=details.gender_division,
             city=payload.city,
             region=payload.region,
         )
@@ -503,10 +515,11 @@ def get_my_player(request: HttpRequest) -> MyPlayerOut:
 def update_my_player(request: HttpRequest, payload: PlayerUpdateIn) -> MyPlayerOut:
     """Change the signed-in Account's own profile fields and privacy settings.
 
-    Only the fields sent change. Both kinds of change apply together or
-    not at all: a 422 on either changes nothing. Each kind that changes
-    records one Audit Event (profile changes by field name only). 404 when
-    the Account has no Player.
+    Only the fields sent change. The gender division can change between
+    divisions but cannot be cleared (422). Both kinds of change apply
+    together or not at all: a 422 on either changes nothing. Each kind
+    that changes records one Audit Event (profile changes by field name
+    only). 404 when the Account has no Player.
     """
     account = request_account(request)
     player = _own_player(account)

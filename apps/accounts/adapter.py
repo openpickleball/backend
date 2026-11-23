@@ -16,7 +16,7 @@ from apps.accounts.validators import (
     normalized_email_errors,
 )
 from apps.emails.services import queue_email
-from apps.players.age import SIGNUP_REFUSED_SESSION_KEY
+from apps.players.signup import SIGNUP_REFUSED_SESSION_KEY
 
 if TYPE_CHECKING:
     from allauth.account.models import EmailAddress

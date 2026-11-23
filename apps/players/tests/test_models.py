@@ -28,6 +28,7 @@ def _valid(**overrides: Any) -> dict[str, Any]:
         "display_name": "Made-up Player",
         "birth_year": 1990,
         "birth_month": 6,
+        "gender_division": "mens",
     }
     values.update(overrides)
     return values
@@ -132,20 +133,42 @@ def test_valid_player_passes_full_clean() -> None:
     player = Player(
         account=UserFactory.create(),
         legal_name="Made-up Legal Name",
-        gender_division=GenderDivision.WOMENS,
         city="Madeupville",
         region="Made-up Region",
-        **_valid(),
+        **_valid(gender_division=GenderDivision.WOMENS),
     )
 
     player.full_clean()
 
 
-@pytest.mark.parametrize("value", ["", "mens", "womens"])
+@pytest.mark.parametrize("value", ["mens", "womens"])
 def test_gender_division_accepts_each_value(value: str) -> None:
-    player = Player(account=UserFactory.create(), gender_division=value, **_valid())
+    player = Player(account=UserFactory.create(), **_valid(gender_division=value))
 
     player.full_clean()
+
+
+@pytest.mark.parametrize("value", ["", None])
+def test_a_missing_gender_division_is_refused(value: object) -> None:
+    # Every Player has a gender division (issue #215).
+    player = Player(account=UserFactory.create(), **_valid(gender_division=value))
+
+    with pytest.raises(ValidationError) as caught:
+        player.full_clean()
+
+    assert caught.value.message_dict == {
+        "gender_division": ["Choose a gender division."]
+    }
+
+
+def test_the_database_still_allows_an_empty_gender_division() -> None:
+    # Kept so a later removal (#190, #116) can clear it.
+    player = _player()
+
+    Player.objects.filter(pk=player.pk).update(gender_division="")
+
+    player.refresh_from_db()
+    assert player.gender_division == ""
 
 
 def test_gender_division_values() -> None:
