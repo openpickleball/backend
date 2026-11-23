@@ -4,37 +4,29 @@ An Event groups the matches played under one Organizer, optionally at a
 Club, over a span of dates. Its ``kind`` is the match type its matches
 count as. Self-reported matches have no Event (decision F1 in #1).
 
-The ``weight`` is stored and validated but not yet applied to ratings. The
-engine weights a match only by its match type today and takes no
-per-event weight, so applying it here would be rating math outside the
-engine (CLAUDE.md, hard rule 2). An engine issue asks whether the engine
-should accept it.
+An Event has no weight of its own. The engine weights a match only by its
+match type and takes no per-event weight (openpickleball/engine#30), so
+any weight applied here would be rating math outside the engine
+(CLAUDE.md, hard rule 2).
 
 #125 adds the Event API.
 """
 
 import datetime
-from decimal import Decimal
 from typing import ClassVar
 
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import F, Q
 
 from apps.clubs.models import _CleanedTextModel
 from apps.public_ids.codes import CodeType
 
-MIN_WEIGHT = Decimal("0.01")
-MAX_WEIGHT = Decimal("1.00")
-DEFAULT_WEIGHT = Decimal("1.00")
-
 # Messages never include the submitted value (CLAUDE.md, API). Django's
 # defaults for these keys do.
 CHOICE_MESSAGES = {"invalid_choice": "Choose one of the listed options."}
 _DATE_MESSAGE = "Enter a valid date in YYYY-MM-DD format."
 _DATE_MESSAGES = {"invalid": _DATE_MESSAGE, "invalid_date": _DATE_MESSAGE}
-_NUMBER_MESSAGES = {"invalid": "Enter a number."}
 _DATES_ORDER = "The end date cannot be before the start date."
 # Django's default names the submitted row id.
 _ORGANIZER_MESSAGES = {"invalid": "Choose an existing organizer."}
@@ -80,16 +72,6 @@ class Event(_CleanedTextModel):
     )
     start_date = models.DateField(error_messages=_DATE_MESSAGES)
     end_date = models.DateField(error_messages=_DATE_MESSAGES)
-    weight = models.DecimalField(
-        max_digits=3,
-        decimal_places=2,
-        default=DEFAULT_WEIGHT,
-        validators=[MinValueValidator(MIN_WEIGHT), MaxValueValidator(MAX_WEIGHT)],
-        error_messages=_NUMBER_MESSAGES,
-        help_text=(
-            "From 0.01 to 1.00. Stored for later use: not yet applied to ratings."
-        ),
-    )
 
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [
@@ -101,10 +83,6 @@ class Event(_CleanedTextModel):
             models.CheckConstraint(
                 condition=Q(kind__in=EventKind.values),
                 name="events_event_kind_valid",
-            ),
-            models.CheckConstraint(
-                condition=Q(weight__gt=0, weight__lte=MAX_WEIGHT),
-                name="events_event_weight_range",
             ),
             models.CheckConstraint(
                 condition=Q(end_date__gte=F("start_date")),

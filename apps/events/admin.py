@@ -24,7 +24,6 @@ class EventAdminForm(forms.ModelForm[Event]):
             "club",
             "start_date",
             "end_date",
-            "weight",
         )
         error_messages: ClassVar[dict[str, dict[str, str]]] = {"kind": CHOICE_MESSAGES}
 
@@ -53,7 +52,6 @@ class EventAdmin(admin.ModelAdmin[Event]):
         "club",
         "start_date",
         "end_date",
-        "weight",
     )
     readonly_fields = ("public_code",)
     search_fields = ("public_code", "name")

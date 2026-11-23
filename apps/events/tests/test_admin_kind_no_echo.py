@@ -35,7 +35,6 @@ def test_add_form_refuses_unknown_kind_without_echo(client: Client, kind: str) -
             "club": "",
             "start_date": "2026-09-05",
             "end_date": "2026-09-06",
-            "weight": "1.00",
         },
     )
 

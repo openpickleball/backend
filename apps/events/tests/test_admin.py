@@ -39,7 +39,6 @@ def _add_data(organizer: Organizer, **extra: str) -> dict[str, str]:
         "club": "",
         "start_date": "2026-09-05",
         "end_date": "2026-09-06",
-        "weight": "0.75",
     }
     data.update(extra)
     return data
@@ -62,7 +61,6 @@ def test_admin_settings() -> None:
         "club",
         "start_date",
         "end_date",
-        "weight",
     )
     assert "public_code" in event_admin.readonly_fields
     assert set(event_admin.search_fields) == {"public_code", "name"}
@@ -115,25 +113,9 @@ def test_add_form_creates_an_event(superuser_client: Client) -> None:
     assert (event.organizer, event.club, event.kind) == (organizer, club, "tournament")
 
 
-@pytest.mark.parametrize("weight", ["1.5", "0", "-0.25"])
-def test_add_form_refuses_weight_out_of_range(
-    superuser_client: Client, weight: str
-) -> None:
-    organizer: Organizer = OrganizerFactory.create()
-
-    response = superuser_client.post(
-        reverse(EVENT_ADD), _add_data(organizer, weight=weight)
-    )
-
-    assert "weight" in _form_errors(response)
-    assert not Event.objects.exists()
-
-
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("weight", "1.5"),
-        ("weight", "zqxjmarker"),
         ("start_date", "zqxjmarker"),
         ("end_date", "2026-02-31"),
     ],
