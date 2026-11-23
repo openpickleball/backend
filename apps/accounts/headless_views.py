@@ -11,14 +11,15 @@ allauth's URLconf (`config/urls.py`).
 - Sign-up: an address is taken only when it is some Account's `User.email`
   (ADR 0003). allauth also counts every other EmailAddress row, so an
   address another Account had only added, unverified, blocked sign-up.
-- Sign-up age screen (issue #114, ADR 0017): the birth year and month
-  (`SignupAgeForm`) are checked before anything else. Under 13 gets one
-  fixed refusal, whatever the email and password, before allauth reads
-  them, so no lookup, Account, or mail results. The session is then
-  flagged, and every later sign-up in it gets the same refusal. Thirteen
-  and older signs up as before, and the age is held in the session, bound
-  to the new Account (or to none, for a taken address, so both answers
-  stay alike), for the Player create endpoint (#124).
+- Sign-up age screen (issues #114 and #215, ADR 0017): the birth year
+  and month and the gender division (`SignupAgeForm`) are checked before
+  anything else. Under 13 gets one fixed refusal, whatever the email and
+  password, before allauth reads them, so no lookup, Account, or mail
+  results. The session is then flagged, and every later sign-up in it
+  gets the same refusal. Thirteen and older signs up as before, and the
+  age and gender division are held in the session, bound to the new
+  Account (or to none, for a taken address, so both answers stay alike),
+  for the Player create endpoint (#124).
 - Email verification: an address that is another Account's login cannot
   be verified (allauth's `email_taken`, a 400). allauth checks only other
   verified EmailAddress rows, so verifying would set the address as this
@@ -52,11 +53,12 @@ from django.utils.decorators import method_decorator
 
 from apps.accounts.forms import SignupAgeForm
 from apps.accounts.validators import is_canonical_email
-from apps.players.age import (
-    SIGNUP_BIRTH_SESSION_KEY,
+from apps.players.age import is_old_enough
+from apps.players.signup import (
+    SIGNUP_DETAILS_SESSION_KEY,
     SIGNUP_REFUSED_SESSION_KEY,
-    hold_signup_birth,
-    is_old_enough,
+    SignupDetails,
+    hold_signup_details,
 )
 
 if TYPE_CHECKING:
@@ -126,29 +128,29 @@ class SignupInput(BaseSignupInput):
     def try_save(
         self, request: "HttpRequest"
     ) -> "tuple[AbstractBaseUser | None, HttpResponseBase | None]":
-        """allauth's save, then the age held for the new Account.
+        """allauth's save, then the signup details held for the new Account.
 
-        A taken address creates no Account, and its age is held bound to
-        none: both paths write the session alike, so the app client's
+        A taken address creates no Account, and its details are held bound
+        to none: both paths write the session alike, so the app client's
         answers (a session token or not) stay the same (enumeration). One
-        exception: when the session already holds an age bound to the
+        exception: when the session already holds details bound to the
         Account whose login is this address (a repeated signup), that hold
-        is written back unchanged, so the Account keeps its age.
+        is written back unchanged, so the Account keeps its details.
         """
         user, response = super().try_save(request)
         session = request.session
-        held = session.get(SIGNUP_BIRTH_SESSION_KEY)
+        held = session.get(SIGNUP_DETAILS_SESSION_KEY)
         if user is None and _is_held_for_login(held, self.cleaned_data.get("email")):
             # Written back, not skipped, so the session changes as on the
             # other paths.
-            session[SIGNUP_BIRTH_SESSION_KEY] = held
+            session[SIGNUP_DETAILS_SESSION_KEY] = held
         else:
-            hold_signup_birth(
-                session,
-                user,
-                self.cleaned_data["birth_year"],
-                self.cleaned_data["birth_month"],
+            details = SignupDetails(
+                birth_year=self.cleaned_data["birth_year"],
+                birth_month=self.cleaned_data["birth_month"],
+                gender_division=self.cleaned_data["gender_division"],
             )
+            hold_signup_details(session, user, details)
         return user, response
 
     def save(self, request: "HttpRequest") -> "AbstractBaseUser":
@@ -220,14 +222,14 @@ class SignupView(BaseSignupView):
             return _refusal(request)
         age = SignupAgeForm(data=self._parse_json(request) or {})
         if not age.is_valid():
-            # allauth's 400, with only the age fields' errors.
+            # allauth's 400, with only the signup details' errors.
             invalid: HttpResponseBase = ErrorResponse(request, input=age)
             return invalid
         if not is_old_enough(
             age.cleaned_data["birth_year"], age.cleaned_data["birth_month"]
         ):
-            # A flag only, never the age (ADR 0009).
-            request.session.pop(SIGNUP_BIRTH_SESSION_KEY, None)
+            # A flag only, never the age or gender division (ADR 0009).
+            request.session.pop(SIGNUP_DETAILS_SESSION_KEY, None)
             request.session[SIGNUP_REFUSED_SESSION_KEY] = True
             return _refusal(request)
         return None

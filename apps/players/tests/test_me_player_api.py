@@ -33,8 +33,13 @@ from apps.accounts.tests.headless import (
 )
 from apps.audit.models import AuditAction, AuditEvent
 from apps.players import api as players_api
-from apps.players.age import SIGNUP_BIRTH_SESSION_KEY, age_limit_date, hold_signup_birth
+from apps.players.age import age_limit_date
 from apps.players.models import Player, Visibility
+from apps.players.signup import (
+    SIGNUP_DETAILS_SESSION_KEY,
+    SignupDetails,
+    hold_signup_details,
+)
 from apps.players.tests.factories import PlayerFactory
 
 # allauth's account emails are sent when each request returns (ADR 0016).
@@ -137,7 +142,7 @@ def test_create_takes_the_age_held_at_signup(base: str) -> None:
     assert (body["birth_year"], body["birth_month"]) == HELD
     assert (player.birth_year, player.birth_month) == HELD
     assert player.account.email == SESSION_EMAIL
-    assert SIGNUP_BIRTH_SESSION_KEY not in session.store()
+    assert SIGNUP_DETAILS_SESSION_KEY not in session.store()
 
 
 @pytest.mark.parametrize("base", CLIENTS)
@@ -176,7 +181,7 @@ def test_a_failed_create_keeps_the_held_age_for_a_retry(base: str) -> None:
     assert refused.status_code == 422
     assert "body.display_name" in fields(refused)
     assert not Player.objects.exists()
-    assert session.store()[SIGNUP_BIRTH_SESSION_KEY]["year"] == HELD[0]
+    assert session.store()[SIGNUP_DETAILS_SESSION_KEY]["year"] == HELD[0]
 
     retried = call(session, "POST", {"display_name": "Robin Q."})
 
@@ -206,7 +211,7 @@ def test_an_age_held_for_another_account_is_not_used() -> None:
     other = UserFactory.create()
     client = signed_in(account)
     session = client.session
-    hold_signup_birth(session, other, 1970, 2)
+    hold_signup_details(session, other, SignupDetails(1970, 2, "mens"))
     session.save()
 
     response = post(
@@ -215,7 +220,7 @@ def test_an_age_held_for_another_account_is_not_used() -> None:
 
     assert response.status_code == 201
     assert response.json()["birth_year"] == 1985
-    assert client.session[SIGNUP_BIRTH_SESSION_KEY]["account"] == other.pk
+    assert client.session[SIGNUP_DETAILS_SESSION_KEY]["account"] == other.pk
 
 
 def test_with_no_hold_a_missing_age_gets_422_on_each_field() -> None:
@@ -404,7 +409,7 @@ def test_an_unverified_address_gets_403_and_keeps_the_hold() -> None:
     )
     client = signed_in(account)
     session = client.session
-    hold_signup_birth(session, account, *HELD)
+    hold_signup_details(session, account, SignupDetails(*HELD, "womens"))
     session.save()
 
     response = post(client, {"display_name": "Robin Q."})
@@ -412,7 +417,7 @@ def test_an_unverified_address_gets_403_and_keeps_the_hold() -> None:
     assert response.status_code == 403
     assert response.json() == FORBIDDEN
     assert not Player.objects.exists()
-    assert client.session[SIGNUP_BIRTH_SESSION_KEY]["account"] == account.pk
+    assert client.session[SIGNUP_DETAILS_SESSION_KEY]["account"] == account.pk
 
 
 def test_an_account_with_no_address_row_gets_403() -> None:
