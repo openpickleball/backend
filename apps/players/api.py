@@ -20,6 +20,12 @@ most ``SEARCH_MAX_LIMIT`` results, and a per-Account throttle
 (``SearchThrottle``) keep it from listing every player. ninja checks
 throttles after auth and before it parses the query, so a refused query
 counts toward the limit and an unauthenticated request does not.
+
+A player's profile (issue #124): any signed-in Account sees a player's
+OPEN Code and display name, what search already shows, and their city
+and region while the player's ``city_region_visibility`` lets the viewer.
+A player whose Account is inactive gets the same 404 as an unknown or
+malformed code (ADR 0008, ADR 0015).
 """
 
 import threading
@@ -45,6 +51,7 @@ from apps.matches.pagination import (
 )
 from apps.matches.schemas import MatchOut, with_match_details
 from apps.players.models import Player
+from apps.players.schemas import PlayerProfileOut, player_profile_out
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
 from config.api_errors import ErrorResponse
@@ -280,3 +287,25 @@ def search_players(
             for player in players
         ]
     )
+
+
+# Registered after "/search", so that path never reaches this one.
+@router.get(
+    "/{code}",
+    response={200: PlayerProfileOut, 404: ErrorResponse},
+    operation_id="get_player",
+)
+def get_player(request: HttpRequest, code: PlayerCode) -> PlayerProfileOut:
+    """A player's OPEN Code and display name, and their city and region
+    when the player's privacy settings let the viewer see them.
+
+    A player whose Account is inactive gets the same 404 as an unknown or
+    malformed code.
+    """
+    viewer = request_account(request)
+    player = get_by_public_code(
+        Player.objects.select_related("account", "privacy"), code
+    )
+    if not player.account.is_active:
+        raise Http404
+    return player_profile_out(player, viewer)

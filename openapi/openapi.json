@@ -412,6 +412,49 @@
         "title": "ParticipantOut",
         "type": "object"
       },
+      "PlayerProfileOut": {
+        "description": "A player as another signed-in Account sees them.\n\n``city`` and ``region`` are null when the player's\n``city_region_visibility`` hides them from the viewer, and when they\nare empty, so the answer never tells the two apart.",
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          }
+        },
+        "required": [
+          "code",
+          "display_name",
+          "city",
+          "region"
+        ],
+        "title": "PlayerProfileOut",
+        "type": "object"
+      },
       "PlayerSearchOut": {
         "description": "The players found, best match first. No count and no paging.",
         "properties": {
@@ -1194,6 +1237,87 @@
           }
         ],
         "summary": "Search Players",
+        "tags": [
+          "players"
+        ]
+      }
+    },
+    "/api/v1/players/{code}": {
+      "get": {
+        "description": "A player's OPEN Code and display name, and their city and region\nwhen the player's privacy settings let the viewer see them.\n\nA player whose Account is inactive gets the same 404 as an unknown or\nmalformed code.",
+        "operationId": "get_player",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "P-7K3M-QX9H"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "P-7K3M-QX9H"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerProfileOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Player",
         "tags": [
           "players"
         ]
