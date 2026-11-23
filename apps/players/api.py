@@ -20,19 +20,39 @@ most ``SEARCH_MAX_LIMIT`` results, and a per-Account throttle
 (``SearchThrottle``) keep it from listing every player. ninja checks
 throttles after auth and before it parses the query, so a refused query
 counts toward the limit and an unauthenticated request does not.
+
+A player's profile (issue #124): any signed-in Account sees a player's
+OPEN Code and display name, what search already shows, and their city
+and region while the player's ``city_region_visibility`` lets the viewer.
+A player whose Account is inactive gets the same 404 as an unknown or
+malformed code (ADR 0008, ADR 0015).
+
+The signed-in Account's own Player is at /api/v1/me/player (``me_router``,
+issue #124). POST creates it, once per Account, only for an Account whose
+own login address is verified. The birth year and month come from the
+age the signup held in the session (ADR 0017, ``auth_session`` for either
+headless client), and from the body only when the session holds none.
 """
 
+import contextlib
 import threading
 import time
 import unicodedata
 from collections.abc import Callable
-from typing import Annotated, ClassVar
+from typing import TYPE_CHECKING, Annotated, ClassVar
 
+from allauth.account.models import EmailAddress
+from django.contrib.sessions.backends.base import SessionBase, UpdateError
 from django.core.cache import cache as default_cache
+from django.core.exceptions import NON_FIELD_ERRORS
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Case, IntegerField, Q, QuerySet, Value, When
 from django.db.models.functions import Lower
 from django.http import Http404, HttpRequest
-from ninja import Field, Query, Router, Schema
+from ninja import Field, Query, Router, Schema, Status
+from ninja.errors import HttpError
+from ninja.errors import ValidationError as NinjaValidationError
 from ninja.pagination import paginate
 from ninja.throttling import BaseThrottle
 from pydantic import BeforeValidator
@@ -44,13 +64,33 @@ from apps.matches.pagination import (
     MatchHistoryPagination,
 )
 from apps.matches.schemas import MatchOut, with_match_details
+from apps.players.age import peek_signup_birth, take_signup_birth
 from apps.players.models import Player
+from apps.players.schemas import (
+    MyPlayerOut,
+    PlayerCreateIn,
+    PlayerProfileOut,
+    PlayerUpdateIn,
+    my_player_out,
+    player_profile_out,
+)
+from apps.players.services import (
+    NotOwnPlayer,
+    create_player,
+    update_privacy,
+    update_profile,
+)
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
 from config.api_errors import ErrorResponse
-from config.auth import account_auth
+from config.auth import account_auth, auth_session
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import _User
 
 router = Router(tags=["players"], auth=account_auth)
+# The signed-in Account's own Player, mounted at /api/v1/me/.
+me_router = Router(tags=["players"], auth=account_auth)
 
 PlayerCode = Annotated[str, PublicCodePath(CodeType.PLAYER)]
 
@@ -65,6 +105,13 @@ DAY = 24 * 60 * 60
 # Extra seconds a counter outlives its window, so it is never dropped
 # while its window is still open.
 THROTTLE_TIMEOUT_MARGIN = 60
+# Fixed text, never a submitted value.
+EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email address before creating your player."
+ALREADY_HAS_PLAYER_MESSAGE = "This account already has a player."
+_MISSING_BIRTH_MESSAGES = {
+    "birth_year": "Enter your birth year.",
+    "birth_month": "Enter your birth month.",
+}
 # Control characters and lone surrogates. Postgres refuses a NUL in a
 # query parameter, which would be a 500.
 _REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
@@ -280,3 +327,205 @@ def search_players(
             for player in players
         ]
     )
+
+
+# Registered after "/search", so that path never reaches this one.
+@router.get(
+    "/{code}",
+    response={200: PlayerProfileOut, 404: ErrorResponse},
+    operation_id="get_player",
+)
+def get_player(request: HttpRequest, code: PlayerCode) -> PlayerProfileOut:
+    """A player's OPEN Code and display name, and their city and region
+    when the player's privacy settings let the viewer see them.
+
+    A player whose Account is inactive gets the same 404 as an unknown or
+    malformed code.
+    """
+    viewer = request_account(request)
+    player = get_by_public_code(
+        Player.objects.select_related("account", "privacy"), code
+    )
+    if not player.account.is_active:
+        raise Http404
+    return player_profile_out(player, viewer)
+
+
+def _has_verified_email(account: "_User") -> bool:
+    """Whether the Account's own login address is verified.
+
+    Only the row for ``User.email`` counts: a verified old address, or
+    another pending one, does not.
+    """
+    return bool(
+        EmailAddress.objects.filter(
+            user=account, email=account.email, verified=True
+        ).exists()
+    )
+
+
+def _has_player(account: "_User") -> bool:
+    return Player.objects.filter(account=account).exists()
+
+
+def _is_duplicate_player(error: DjangoValidationError) -> bool:
+    """Whether ``create_player`` refused a second Player for the Account."""
+    found = getattr(error, "error_dict", {}).get("account", [])
+    return any(item.code == "unique" for item in found)
+
+
+def _body_errors(
+    error: DjangoValidationError, prefix: tuple[str, ...] = ("body",)
+) -> NinjaValidationError:
+    """A model ``ValidationError`` as the API's 422, located under ``prefix``.
+
+    The model's messages are fixed text, never a submitted value
+    (``apps.players.models``), and only they are copied.
+    """
+    by_field = (
+        error.error_dict
+        if hasattr(error, "error_dict")
+        else {NON_FIELD_ERRORS: error.error_list}
+    )
+    items: list[dict[str, object]] = []
+    for name, field_errors in by_field.items():
+        loc = prefix if name == NON_FIELD_ERRORS else (*prefix, name)
+        for item in field_errors:
+            items.extend(
+                {"loc": loc, "type": item.code or "invalid", "msg": message}
+                for message in item
+            )
+    return NinjaValidationError(items)
+
+
+def _birth_from_body(payload: PlayerCreateIn) -> tuple[int, int]:
+    """The body's birth year and month, or a 422 naming each one missing."""
+    missing = [
+        {"loc": ("body", name), "type": "missing", "msg": message}
+        for name, message in _MISSING_BIRTH_MESSAGES.items()
+        if getattr(payload, name) is None
+    ]
+    if missing or payload.birth_year is None or payload.birth_month is None:
+        raise NinjaValidationError(missing)
+    return payload.birth_year, payload.birth_month
+
+
+def _take_hold(request: HttpRequest, session: SessionBase, account: "_User") -> None:
+    """Remove the signup age held for ``account`` from ``session``.
+
+    The browser client's session is saved by Django's middleware. The app
+    client's token session is saved here: ``save()`` keeps its key, so the
+    token still works. When a concurrent logout already deleted that
+    session, ``save()`` raises ``UpdateError``; the session and its hold
+    are gone, so there is nothing left to remove.
+    """
+    if take_signup_birth(session, account) is None or session is request.session:
+        return
+    with contextlib.suppress(UpdateError):
+        session.save()
+
+
+@me_router.post(
+    "/player",
+    response={201: MyPlayerOut, 403: ErrorResponse, 409: ErrorResponse},
+    operation_id="create_my_player",
+)
+def create_my_player(
+    request: HttpRequest, payload: PlayerCreateIn
+) -> Status[MyPlayerOut]:
+    """Create the signed-in Account's Player.
+
+    The Account's own email address must be verified (403 otherwise), and
+    an Account has one Player (409 for a second). The birth year and month
+    come from the age held at signup in this session (ADR 0017); the body's
+    are used only when the session holds none, and are then required. The
+    held age is removed once the Player exists (on a 409 too), so a
+    create refused for any other reason can be retried. A player under 13
+    is refused with a fixed message.
+    """
+    account = request_account(request)
+    if not _has_verified_email(account):
+        raise HttpError(403, EMAIL_NOT_VERIFIED_MESSAGE)
+    session = auth_session(request)
+    if _has_player(account):
+        # The hold lives only until the Player exists (ADR 0017).
+        _take_hold(request, session, account)
+        raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE)
+    held = peek_signup_birth(session, account)
+    birth_year, birth_month = held or _birth_from_body(payload)
+    try:
+        player = create_player(
+            account=account,
+            display_name=payload.display_name,
+            birth_year=birth_year,
+            birth_month=birth_month,
+            legal_name=payload.legal_name,
+            gender_division=payload.gender_division,
+            city=payload.city,
+            region=payload.region,
+        )
+    except DjangoValidationError as error:
+        # create_player locks the Account, so a concurrent second create
+        # lands here.
+        if _is_duplicate_player(error):
+            _take_hold(request, session, account)
+            raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE) from None
+        raise _body_errors(error) from None
+    _take_hold(request, session, account)
+    return Status(201, my_player_out(player, player.privacy))
+
+
+def _own_player(account: "_User") -> Player:
+    """The Account's Player, with its privacy settings, or 404."""
+    player = Player.objects.select_related("privacy").filter(account=account).first()
+    if player is None:
+        raise Http404
+    return player
+
+
+@me_router.get(
+    "/player",
+    response={200: MyPlayerOut, 404: ErrorResponse},
+    operation_id="get_my_player",
+)
+def get_my_player(request: HttpRequest) -> MyPlayerOut:
+    """The signed-in Account's own Player, with every profile field and
+    privacy setting. 404 when the Account has no Player."""
+    player = _own_player(request_account(request))
+    return my_player_out(player, player.privacy)
+
+
+@me_router.patch(
+    "/player",
+    response={200: MyPlayerOut, 404: ErrorResponse},
+    operation_id="update_my_player",
+)
+def update_my_player(request: HttpRequest, payload: PlayerUpdateIn) -> MyPlayerOut:
+    """Change the signed-in Account's own profile fields and privacy settings.
+
+    Only the fields sent change. Both kinds of change apply together or
+    not at all: a 422 on either changes nothing. Each kind that changes
+    records one Audit Event (profile changes by field name only). 404 when
+    the Account has no Player.
+    """
+    account = request_account(request)
+    player = _own_player(account)
+    profile = payload.model_dump(exclude_unset=True)
+    privacy = profile.pop("privacy", None) or {}
+    try:
+        with transaction.atomic():
+            if profile:
+                try:
+                    update_profile(player=player, actor=account, changes=profile)
+                except DjangoValidationError as error:
+                    raise _body_errors(error) from None
+            if privacy:
+                try:
+                    update_privacy(player=player, actor=account, changes=privacy)
+                except DjangoValidationError as error:
+                    raise _body_errors(error, ("body", "privacy")) from None
+    except NotOwnPlayer:
+        # The Account was deactivated meanwhile: as if it had no Player.
+        raise Http404 from None
+    player = _own_player(account)
+    return my_player_out(player, player.privacy)

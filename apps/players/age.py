@@ -8,8 +8,9 @@ earliest calendar date anywhere on Earth, the date at UTC-12
 
 Signup asks for the birth year and month before an Account exists. The
 signup view holds them in the session, bound to the new Account
-(``hold_signup_birth``), and the Player create endpoint (#124) takes them
-once (``take_signup_birth``). The session never holds a day.
+(``hold_signup_birth``), and the Player create endpoint (#124) reads them
+(``peek_signup_birth``) and takes them once the Player exists
+(``take_signup_birth``). The session never holds a day.
 """
 
 import calendar
@@ -89,13 +90,14 @@ def hold_signup_birth(
     }
 
 
-def take_signup_birth(
+def peek_signup_birth(
     session: "SessionBase", account: "AbstractBaseUser"
 ) -> tuple[int, int] | None:
-    """The held ``(year, month)`` for ``account``, removed once taken.
+    """The held ``(year, month)`` for ``account``, left in the session.
 
-    None, with the session left as it was, when nothing is held or it is
-    held for another Account (or none).
+    None when nothing is held or it is held for another Account (or none).
+    The Player create endpoint reads it first and takes it only once the
+    Player exists, so a create that fails keeps it for a retry.
     """
     held = session.get(SIGNUP_BIRTH_SESSION_KEY)
     if not isinstance(held, dict) or account.pk is None:
@@ -105,5 +107,18 @@ def take_signup_birth(
     year, month = held.get("year"), held.get("month")
     if not isinstance(year, int) or not isinstance(month, int):
         return None
-    del session[SIGNUP_BIRTH_SESSION_KEY]
     return year, month
+
+
+def take_signup_birth(
+    session: "SessionBase", account: "AbstractBaseUser"
+) -> tuple[int, int] | None:
+    """The held ``(year, month)`` for ``account``, removed once taken.
+
+    None, with the session left as it was, when nothing is held or it is
+    held for another Account (or none).
+    """
+    birth = peek_signup_birth(session, account)
+    if birth is not None:
+        del session[SIGNUP_BIRTH_SESSION_KEY]
+    return birth

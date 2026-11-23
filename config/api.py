@@ -5,8 +5,9 @@
 router (`config/health.py`) is mounted at /api/v1/health/, the signed-in
 Account at /api/v1/accounts/, match submission, reading one match,
 confirmation, and dispute at /api/v1/matches/, a player's match history and player
-search (/api/v1/players/search) at /api/v1/players/, and the matches
-awaiting the signed-in player's confirmation at /api/v1/me/.
+search (/api/v1/players/search), and a player's profile at
+/api/v1/players/, and at /api/v1/me/ the matches awaiting the signed-in
+player's confirmation and the signed-in Account's own Player.
 
 Adding an app's endpoints (usually one router per app):
 
@@ -28,6 +29,8 @@ Adding an app's endpoints (usually one router per app):
 An app may add a second router when some of its operations belong under a
 different prefix. `apps.matches.api.me_router` does this: it holds the
 signed-in player's own match lists and is mounted at `me/`.
+`apps.players.api.me_router`, the Account's own Player, is mounted at
+`me/` too: ninja accepts several routers under one prefix.
 
 Every operation needs an explicit `operation_id`: it names the method in the
 generated client, so it must not change when a view is renamed. Building the
@@ -61,6 +64,7 @@ from ninja.schema import NinjaGenerateJsonSchema
 from apps.accounts.api import router as accounts_router
 from apps.matches.api import me_router
 from apps.matches.api import router as matches_router
+from apps.players.api import me_router as players_me_router
 from apps.players.api import router as players_router
 from config.api_errors import (
     UNAUTHORIZED_STATUS,
@@ -207,3 +211,4 @@ api.add_router("accounts/", accounts_router)
 api.add_router("matches/", matches_router)
 api.add_router("players/", players_router)
 api.add_router("me/", me_router)
+api.add_router("me/", players_me_router)

@@ -365,6 +365,59 @@
         "title": "MyDecision",
         "type": "string"
       },
+      "MyPlayerOut": {
+        "description": "The signed-in Account's own Player, with every profile field.\n\nReturned only to that Account. Empty optional text fields are ``\"\"``.",
+        "properties": {
+          "birth_month": {
+            "title": "Birth Month",
+            "type": "integer"
+          },
+          "birth_year": {
+            "title": "Birth Year",
+            "type": "integer"
+          },
+          "city": {
+            "title": "City",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "gender_division": {
+            "title": "Gender Division",
+            "type": "string"
+          },
+          "legal_name": {
+            "title": "Legal Name",
+            "type": "string"
+          },
+          "privacy": {
+            "$ref": "#/components/schemas/PrivacyOut"
+          },
+          "region": {
+            "title": "Region",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "display_name",
+          "legal_name",
+          "birth_year",
+          "birth_month",
+          "gender_division",
+          "city",
+          "region",
+          "privacy"
+        ],
+        "title": "MyPlayerOut",
+        "type": "object"
+      },
       "PagedMatchOut": {
         "properties": {
           "count": {
@@ -410,6 +463,130 @@
           "display_name"
         ],
         "title": "ParticipantOut",
+        "type": "object"
+      },
+      "PlayerCreateIn": {
+        "additionalProperties": false,
+        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` take JSON integers only: a boolean,\na numeric string, or a float is refused, as ``Player.clean_fields``\nrefuses them.\n\n``birth_year`` and ``birth_month`` are read only when the session holds\nno age from signup (ADR 0017); a held age is used instead. Optional\ntext fields left out or null are empty. ``gender_division`` is\n``mens``, ``womens``, or empty. Unknown keys are refused.",
+        "properties": {
+          "birth_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Month"
+          },
+          "birth_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Year"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "gender_division": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender Division"
+          },
+          "legal_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Name"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "PlayerCreateIn",
+        "type": "object"
+      },
+      "PlayerProfileOut": {
+        "description": "A player as another signed-in Account sees them.\n\n``city`` and ``region`` are null when the player's\n``city_region_visibility`` hides them from the viewer, and when they\nare empty, so the answer never tells the two apart.",
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          }
+        },
+        "required": [
+          "code",
+          "display_name",
+          "city",
+          "region"
+        ],
+        "title": "PlayerProfileOut",
         "type": "object"
       },
       "PlayerSearchOut": {
@@ -470,6 +647,188 @@
           "display_name"
         ],
         "title": "PlayerSearchResult",
+        "type": "object"
+      },
+      "PlayerUpdateIn": {
+        "additionalProperties": false,
+        "description": "Changes to the signed-in Account's own Player.\n\nOnly the fields sent change. Null clears an optional text field\n(``legal_name``, ``gender_division``, ``city``, ``region``); the\ndisplay name, birth year, and birth month cannot be cleared.\n``privacy`` changes the settings it names. Unknown keys are refused.",
+        "properties": {
+          "birth_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Month"
+          },
+          "birth_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Year"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "gender_division": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender Division"
+          },
+          "legal_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Name"
+          },
+          "privacy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrivacyIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          }
+        },
+        "title": "PlayerUpdateIn",
+        "type": "object"
+      },
+      "PrivacyIn": {
+        "additionalProperties": false,
+        "description": "Privacy settings to change. Only the settings sent change.",
+        "properties": {
+          "city_region_visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "home_club_visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "match_history_visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rating_history_visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stats_visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "PrivacyIn",
+        "type": "object"
+      },
+      "PrivacyOut": {
+        "description": "Who may see each of the player's other profile details.",
+        "properties": {
+          "city_region_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "home_club_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "match_history_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "rating_history_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "stats_visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          }
+        },
+        "required": [
+          "city_region_visibility",
+          "match_history_visibility",
+          "rating_history_visibility",
+          "stats_visibility",
+          "home_club_visibility"
+        ],
+        "title": "PrivacyOut",
         "type": "object"
       },
       "ReadyChecks": {
@@ -555,6 +914,15 @@
         ],
         "title": "TeamConfirmationsOut",
         "type": "object"
+      },
+      "Visibility": {
+        "description": "Who may see a profile detail. ``PRIVATE`` is the most restrictive.",
+        "enum": [
+          "signed_in",
+          "private"
+        ],
+        "title": "Visibility",
+        "type": "string"
       }
     },
     "securitySchemes": {
@@ -1112,6 +1480,205 @@
         ]
       }
     },
+    "/api/v1/me/player": {
+      "get": {
+        "description": "The signed-in Account's own Player, with every profile field and\nprivacy setting. 404 when the Account has no Player.",
+        "operationId": "get_my_player",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyPlayerOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get My Player",
+        "tags": [
+          "players"
+        ]
+      },
+      "patch": {
+        "description": "Change the signed-in Account's own profile fields and privacy settings.\n\nOnly the fields sent change. Both kinds of change apply together or\nnot at all: a 422 on either changes nothing. Each kind that changes\nrecords one Audit Event (profile changes by field name only). 404 when\nthe Account has no Player.",
+        "operationId": "update_my_player",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyPlayerOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update My Player",
+        "tags": [
+          "players"
+        ]
+      },
+      "post": {
+        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). The birth year and month\ncome from the age held at signup in this session (ADR 0017); the body's\nare used only when the session holds none, and are then required. The\nheld age is removed once the Player exists (on a 409 too), so a\ncreate refused for any other reason can be retried. A player under 13\nis refused with a fixed message.",
+        "operationId": "create_my_player",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyPlayerOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create My Player",
+        "tags": [
+          "players"
+        ]
+      }
+    },
     "/api/v1/players/search": {
       "get": {
         "description": "Find players by the start of a word in their display name.\n\nFor picking an opponent or partner. Players whose Account is inactive\nnever appear. Limited per Account to 30 searches a minute and 300 a\nday; past that the answer is 429 with a Retry-After header.",
@@ -1194,6 +1761,87 @@
           }
         ],
         "summary": "Search Players",
+        "tags": [
+          "players"
+        ]
+      }
+    },
+    "/api/v1/players/{code}": {
+      "get": {
+        "description": "A player's OPEN Code and display name, and their city and region\nwhen the player's privacy settings let the viewer see them.\n\nA player whose Account is inactive gets the same 404 as an unknown or\nmalformed code.",
+        "operationId": "get_player",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "P-7K3M-QX9H"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "P-7K3M-QX9H"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerProfileOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Player",
         "tags": [
           "players"
         ]
