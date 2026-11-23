@@ -84,8 +84,9 @@ def test_create_response_shows_the_submitters_team(players: list[Player]) -> Non
     assert set(item) == MATCH_KEYS
     assert viewer_fields(item) == {
         "my_team": "B",
-        "my_decision": "none",
-        "confirmed_by_team": {"a": False, "b": False},
+        # The submission is the submitter's confirmation (#197).
+        "my_decision": "confirm",
+        "confirmed_by_team": {"a": False, "b": True},
     }
     assert_created_at(item, Match.objects.get())
 

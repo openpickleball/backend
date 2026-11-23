@@ -116,8 +116,9 @@ def test_participant_submits_a_pending_match_with_defaults(
         "team_b": _team(players[2:]),
         "games": [{"number": n, **game} for n, game in enumerate(GAMES, start=1)],
         "my_team": "A",
-        "my_decision": "none",
-        "confirmed_by_team": {"a": False, "b": False},
+        # The submission is the submitter's confirmation (#197).
+        "my_decision": "confirm",
+        "confirmed_by_team": {"a": True, "b": False},
     }
     assert match.status == MatchStatus.PENDING
     assert match.submitted_by_user_id == players[0].account_id

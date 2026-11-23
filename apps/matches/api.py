@@ -2,7 +2,11 @@
 
 A signed-in player submits a match they played in. With no Event and no
 Club it is a self-submission (decision F1): it is created pending, and
-becomes confirmed once a player on each team confirms it. Score
+becomes confirmed once a player on each team confirms it. The submission
+counts as the submitter's own confirmation (issue #197): ``create_match``
+calls ``workflow.confirm_match`` for the submitter in the transaction that
+records the match, so the other team's confirmation is the one it still
+needs. One team alone never confirms a match. Score
 confirmation is a security-sensitive area (CLAUDE.md, hard rule 8), so
 every rule lives in the services these views call: ``record_match`` and
 ``apps.matches.workflow``. The views only translate requests.
@@ -31,7 +35,12 @@ Account's own Player, so it never shows another player's matches. An
 Account with no Player gets an empty page.
 
 Each service runs in its own transaction, never inside another one: their
-advisory locks last until the outermost transaction ends.
+advisory locks last until the outermost transaction ends. The one
+exception is ``create_match``, which confirms the match it just recorded
+in the same transaction. That is one ``record_match`` call per
+transaction, and ``confirm_match`` takes the lineup lock ``record_match``
+already holds, then the row lock of a match no other transaction can see
+yet, so the lock order stays the same and nothing can wait on it.
 
 No rule reads payment status: every player may submit and confirm every
 match (hard rule 7).
@@ -157,8 +166,9 @@ _SUBMIT_RESPONSES = {201: MatchOut, 403: ErrorResponse, 409: ErrorResponse}
 
 @router.post("/", response=_SUBMIT_RESPONSES, operation_id="create_match")
 def create_match(request: HttpRequest, payload: MatchCreateIn) -> Status[MatchOut]:
-    """Submit a match you played in. It stays pending until both teams confirm.
+    """Submit a match you played in. It counts as your team's confirmation.
 
+    The match stays pending until a player on the other team confirms it.
     Players are given by OPEN Code. A missing game target means 11, a
     missing scoring type means side-out, and a missing best-of is inferred
     from the games.
@@ -179,6 +189,13 @@ def create_match(request: HttpRequest, payload: MatchCreateIn) -> Status[MatchOu
                 scoring_type=payload.scoring_type,
                 submitted_by_user=account,
             )
+            # The submission is the submitter's own confirmation (#197). A
+            # self-submission is always created pending, and the submitter
+            # is a participant, so this adds their team's confirmation
+            # only: the other team's is still needed. The guard keeps a
+            # future change from adding a confirmation to an existing match.
+            if recorded.created:
+                workflow.confirm_match(recorded.match, actor=account)
     except MatchValidationError as error:
         raise _in_body(error) from None
     return Status(201, match_out(_loaded(recorded.match), account))
@@ -285,8 +302,8 @@ def list_matches_awaiting_confirmation(request: HttpRequest) -> QuerySet[Match]:
 
     A match is listed while it is pending, you played in it, and nobody on
     your team has confirmed it yet. Once you or a teammate confirms it,
-    your team is done and it leaves the list. A match you submitted is
-    listed too, since submitting is not confirming.
+    your team is done and it leaves the list. A match you submitted is not
+    listed, since submitting confirms it for your team.
     """
     viewer = request_account(request)
     player = Player.objects.filter(account=viewer).first()

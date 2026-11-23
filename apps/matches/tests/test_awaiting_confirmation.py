@@ -44,7 +44,8 @@ def test_pending_match_is_listed_for_every_player_in_it(
 def test_submitter_sees_their_own_pending_match(
     pending: Match, players: list[Player]
 ) -> None:
-    # players[0] submitted it; a submission records no confirmation.
+    # players[0] submitted it through record_match, which records no
+    # confirmation (create_match does, #197).
     assert pending.submitted_by_user == players[0].account
     assert _codes(players[0]) == {pending.public_code}
 
