@@ -14,13 +14,26 @@ reads the actor's model class. A request that
 neither one authenticates gets a 401 `ErrorResponse`
 (`config/api_errors.py`), whatever its method. A signed-in session's
 unsafe request without a valid CSRF token gets 403.
+
+`auth_session(request)` returns the session behind the request's
+authentication: the session the `X-Session-Token` names for the app
+client, `request.session` for the browser client. A view that reads or
+changes a session value (the signup age, ADR 0017) uses it. The browser
+session is saved by Django's middleware; a view that changes the token
+session saves it itself (`save()` keeps its key, so the token still works).
 """
 
 from typing import Any
 
 from allauth.headless.contrib.ninja.security import XSessionTokenAuth
+from allauth.headless.internal.sessionkit import authenticate_by_x_session_token
+from allauth.usersessions.internal import usersessionkit
+from django.contrib.sessions.backends.base import SessionBase
 from django.http import HttpRequest
 from ninja.security import SessionAuth as NinjaSessionAuth
+
+# Where SessionTokenAuth keeps the token's session on the request.
+_TOKEN_SESSION_ATTRIBUTE = "open_token_session"
 
 
 class SessionTokenAuth(XSessionTokenAuth):
@@ -32,6 +45,24 @@ class SessionTokenAuth(XSessionTokenAuth):
 
     openapi_in: str = "header"
     openapi_name: str = "X-Session-Token"
+
+    def __call__(self, request: HttpRequest) -> Any | None:
+        """allauth's check, keeping the token's session on the request.
+
+        The same steps as allauth's ``__call__`` (with anonymous users and
+        invalid tokens refused, its defaults), plus the session, which
+        allauth's class drops. Set only when the token authenticates.
+        """
+        token = self.get_session_token(request)
+        if not token:
+            return None
+        result = authenticate_by_x_session_token(token)
+        if result is None or result.user is None:
+            return None
+        usersessionkit.track_activity(request, user=result.user, session=result.session)
+        request.user = result.user
+        setattr(request, _TOKEN_SESSION_ATTRIBUTE, result.session)
+        return result.user
 
 
 class SessionAuth(NinjaSessionAuth):
@@ -62,3 +93,13 @@ class SessionAuth(NinjaSessionAuth):
 
 
 account_auth = [SessionTokenAuth(), SessionAuth()]
+
+
+def auth_session(request: HttpRequest) -> SessionBase:
+    """The session behind the request's authentication.
+
+    The token's session when ``SessionTokenAuth`` authenticated the
+    request, otherwise ``request.session`` (the browser client's cookie).
+    """
+    session: SessionBase | None = getattr(request, _TOKEN_SESSION_ATTRIBUTE, None)
+    return session if session is not None else request.session
