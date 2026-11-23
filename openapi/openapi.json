@@ -467,7 +467,7 @@
       },
       "PlayerCreateIn": {
         "additionalProperties": false,
-        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` are read only when the session holds\nno age from signup (ADR 0017); a held age is used instead. Optional\ntext fields left out or null are empty. ``gender_division`` is\n``mens``, ``womens``, or empty. Unknown keys are refused.",
+        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` take JSON integers only: a boolean,\na numeric string, or a float is refused, as ``Player.clean_fields``\nrefuses them.\n\n``birth_year`` and ``birth_month`` are read only when the session holds\nno age from signup (ADR 0017); a held age is used instead. Optional\ntext fields left out or null are empty. ``gender_division`` is\n``mens``, ``womens``, or empty. Unknown keys are refused.",
         "properties": {
           "birth_month": {
             "anyOf": [

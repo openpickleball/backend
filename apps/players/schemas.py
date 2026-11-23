@@ -12,7 +12,7 @@ division (ADR 0009).
 from typing import TYPE_CHECKING
 
 from ninja import Schema
-from pydantic import ConfigDict
+from pydantic import ConfigDict, StrictInt
 
 from apps.players.models import Player, PlayerPrivacy, Visibility
 
@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 class PlayerCreateIn(Schema):
     """A new Player for the signed-in Account.
 
+    ``birth_year`` and ``birth_month`` take JSON integers only: a boolean,
+    a numeric string, or a float is refused, as ``Player.clean_fields``
+    refuses them.
+
     ``birth_year`` and ``birth_month`` are read only when the session holds
     no age from signup (ADR 0017); a held age is used instead. Optional
     text fields left out or null are empty. ``gender_division`` is
@@ -32,8 +36,8 @@ class PlayerCreateIn(Schema):
     model_config = ConfigDict(extra="forbid")
 
     display_name: str
-    birth_year: int | None = None
-    birth_month: int | None = None
+    birth_year: StrictInt | None = None
+    birth_month: StrictInt | None = None
     legal_name: str | None = None
     gender_division: str | None = None
     city: str | None = None
@@ -65,8 +69,8 @@ class PlayerUpdateIn(Schema):
 
     display_name: str | None = None
     legal_name: str | None = None
-    birth_year: int | None = None
-    birth_month: int | None = None
+    birth_year: StrictInt | None = None
+    birth_month: StrictInt | None = None
     gender_division: str | None = None
     city: str | None = None
     region: str | None = None
