@@ -1,8 +1,7 @@
 """The engine is installed from a git tag, and the backend reports its version.
 
-The tag in ``pyproject.toml``, the tag and commit in ``uv.lock``, and the
-version of the installed package must agree, so a tag bump that forgets to
-relock fails here.
+The tag in ``pyproject.toml``, the tag in ``uv.lock``, and the version of the
+installed package must agree.
 """
 
 import re

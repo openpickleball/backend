@@ -27,9 +27,10 @@ status changes are ``apps.matches.workflow``. Which matches count is
 
 ``ScoringType`` values equal ``open_engine.ScoringType``'s and
 ``GameTarget`` values equal the points in the engine's ``ALL_GAME_FORMATS``,
-so #44 maps them directly. ``MatchFormat`` holds only the two base values
-of ``open_engine.RatingFormat``: #44 derives the doubles categories (mixed,
-men's, women's) from the players. ``MatchStatus``, ``BestOf``, and ``Team``
+so the engine adapter (``apps.ratings.engine_adapter``) maps them
+directly. ``MatchFormat`` holds only the two base values of
+``open_engine.RatingFormat``: the engine adapter derives the doubles
+categories (mixed, men's, women's) from the players. ``MatchStatus``, ``BestOf``, and ``Team``
 have no engine enum. The match type is not stored: it comes from the
 Event's kind, or is self-reported when there is no Event (decision F1 in
 #1).
@@ -121,6 +122,7 @@ _OFFSET_NEEDS_PLAYED_AT = (
 _PLAYED_AT_NAIVE = "Give the time played with its time zone."
 _PLAYED_AT_OUT_OF_RANGE = "Enter a time played within the supported dates."
 _LOCAL_DATE = "The date played must be the local date of the time played."
+_RATING_FORMAT_FITS = "The rating format must fit the format."
 
 # played_at shifted to local time where the match was played, as a date. Postgres keeps a
 # timestamptz in UTC and drops its offset, so the offset is stored apart.
@@ -306,11 +308,43 @@ class MatchFormat(models.TextChoices):
 
     The values are the two base values of ``open_engine.RatingFormat``. The
     engine's doubles categories (mixed, men's, women's) are not stored here:
-    #44 derives them from the players.
+    the engine adapter (``apps.ratings.engine_adapter``) derives them from
+    the players.
     """
 
     SINGLES = "singles", "Singles"
     DOUBLES = "doubles", "Doubles"
+
+
+class RatingFormat(models.TextChoices):
+    """The rating pool a Match counts in (ADR 0024).
+
+    The values are ``open_engine.RatingFormat``'s. ``record_match`` stores
+    one per Match from the players' gender divisions when the match is
+    recorded (``apps.matches.services.derive_rating_format``), and it never
+    changes afterward. A singles match is ``singles``; a doubles match is
+    one of the four doubles values.
+    """
+
+    SINGLES = "singles", "Singles"
+    DOUBLES = "doubles", "Doubles"
+    MIXED_DOUBLES = "mixed_doubles", "Mixed doubles"
+    DOUBLES_MEN = "doubles_men", "Men's doubles"
+    DOUBLES_WOMEN = "doubles_women", "Women's doubles"
+
+
+# The rating formats each format allows.
+RATING_FORMATS_BY_FORMAT: dict[str, frozenset[str]] = {
+    MatchFormat.SINGLES: frozenset({RatingFormat.SINGLES}),
+    MatchFormat.DOUBLES: frozenset(
+        {
+            RatingFormat.DOUBLES,
+            RatingFormat.MIXED_DOUBLES,
+            RatingFormat.DOUBLES_MEN,
+            RatingFormat.DOUBLES_WOMEN,
+        }
+    ),
+}
 
 
 class MatchStatus(models.TextChoices):
@@ -384,6 +418,15 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
 
     format = models.CharField(
         max_length=10, choices=MatchFormat, error_messages=CHOICE_MESSAGES
+    )
+    # Set once at creation from the players' gender divisions (ADR 0024).
+    # The default is the only value a singles match allows; a doubles match
+    # left at it fails the check constraint below.
+    rating_format = models.CharField(
+        max_length=16,
+        choices=RatingFormat,
+        default=RatingFormat.SINGLES,
+        error_messages=CHOICE_MESSAGES,
     )
     event = models.ForeignKey(
         "events.Event",
@@ -507,6 +550,19 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
                 name="matches_match_format_valid",
             ),
             models.CheckConstraint(
+                condition=Q(
+                    format=MatchFormat.SINGLES, rating_format=RatingFormat.SINGLES
+                )
+                | Q(
+                    format=MatchFormat.DOUBLES,
+                    rating_format__in=sorted(
+                        RATING_FORMATS_BY_FORMAT[MatchFormat.DOUBLES]
+                    ),
+                ),
+                name="matches_match_rating_format_fits_format",
+                violation_error_message=_RATING_FORMAT_FITS,
+            ),
+            models.CheckConstraint(
                 condition=Q(status__in=MatchStatus.values),
                 name="matches_match_status_valid",
             ),
@@ -608,6 +664,18 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
             errors["submitted_by_application"] = _ONE_SUBMITTER
         if self.external_id and not has_application:
             errors["external_id"] = _EXTERNAL_ID_NEEDS_APPLICATION
+        allowed = (
+            RATING_FORMATS_BY_FORMAT.get(self.format)
+            if isinstance(self.format, str)
+            else None
+        )
+        if (
+            allowed is not None
+            and isinstance(self.rating_format, str)
+            and self.rating_format in RatingFormat.values
+            and self.rating_format not in allowed
+        ):
+            errors["rating_format"] = _RATING_FORMAT_FITS
 
         played_at, offset = self.played_at, self.played_at_utc_offset
         if played_at is not None and offset is None:
@@ -785,8 +853,8 @@ class MatchFlag(_LinkMessagesModel):
     ``duplicate_of`` from counting until a moderator resolves it (#40),
     whatever the new Match's status or submitter (ADR 0011). The one
     refinement (``MatchQuerySet.counted``): a voided match, expired or
-    corrected, no longer holds the other one. #44 must count only
-    ``counted()`` matches. #40 adds the review actions and any resolution
+    corrected, no longer holds the other one. The engine adapter counts
+    only ``counted()`` matches (``counted_engine_matches``). #40 adds the review actions and any resolution
     fields.
     """
 

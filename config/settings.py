@@ -551,6 +551,14 @@ CELERY_BEAT_SCHEDULE = {
 MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS")
 
 
+# Ratings
+
+# The engine's published parameter set that ratings use (#44). Fixed here,
+# never read from the environment: changing it needs a check of the engine
+# release and a full replay, so it is a reviewed code change.
+OPEN_ENGINE_PARAMETER_SET = "v1"
+
+
 # Accounts (django-allauth)
 # https://docs.allauth.org/en/latest/account/configuration.html
 

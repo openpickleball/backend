@@ -71,7 +71,7 @@ _Avoid_: OPEN ID, player ID, row id.
 ## Matches and results
 
 **Match**:
-One completed contest between two teams, with one or more game scores. Singles teams have one player; doubles teams have two. The engine needs a `match_id` unique to its source, used for duplicate protection; #44 decides which backend field supplies it. A Partner Application's own identifier for a Match is the Match's `external_id`, unique per application among Matches that are not voided (a Correction keeps it); a Match an Account submitted has none. Engine: `Match`. Backend: `matches.Match`, with its players in `matches.MatchParticipant`.
+One completed contest between two teams, with one or more game scores. Singles teams have one player; doubles teams have two. The engine needs a `match_id` unique to its source, used for duplicate protection; the backend sends the Match's OPEN Code, so a Correction gets a new one (ADR 0024). A Partner Application's own identifier for a Match is the Match's `external_id`, unique per application among Matches that are not voided (a Correction keeps it); a Match an Account submitted has none. Engine: `Match`. Backend: `matches.Match`, with its players in `matches.MatchParticipant`.
 _Avoid_: game (a game is one scored unit inside a Match), result.
 
 **Game**:
@@ -81,10 +81,10 @@ One scored unit inside a Match, such as 11-8. Must be valid for the Match's Game
 How each game is scored: side-out or rally scoring, points to win, win-by margin, and an optional cap. Recorded on every Match. The backend stores the scoring type (`scoring_type`, side-out by default) and points to win (`game_target`: 11, 15, or 21); every game in a Match uses the same ones (decision F15). Engine: `GameFormat`.
 
 **Match Type**:
-Where the result came from, which affects its weight: `tournament`, `league`, `rec_verified`, or `self_reported`. Engine: `MatchType`.
+Where the result came from, which affects its weight: `tournament`, `league`, `rec_verified`, or `self_reported`. Not stored: an Event match has its Event's kind, a Club match with no Event is `rec_verified`, and a match with neither is `self_reported` (ADR 0024). Engine: `MatchType`.
 
 **Confirmation**:
-Agreement that a reported score is correct. A self-reported Match stays pending until at least one player from each team confirms it (a player's own submission counts as their team's confirmation), or an Organizer, Club, or Partner Application with permission submits the same Match (same teams, date, and scores). A Match that an Organizer, Club, or Partner Application with permission submits is confirmed when it is created (decision F4). Only a confirmed Match can count. Engine: `Match.confirmed_by`. Backend: `matches.MatchConfirmation`, one row per player's decision, and `Match.status` (ADR 0013).
+Agreement that a reported score is correct. A self-reported Match stays pending until at least one player from each team confirms it (a player's own submission counts as their team's confirmation), or an Organizer, Club, or Partner Application with permission submits the same Match (same teams, date, and scores). A Match that an Organizer, Club, or Partner Application with permission submits is confirmed when it is created (decision F4). Only a confirmed Match can count. Engine: `Match.confirmed_by`. Backend: `matches.MatchConfirmation`, one row per player's decision, and `Match.status` (ADR 0013). For a self-reported Match a moderator confirmed, the engine gets every participant as confirmed, since the moderator's decision stands in for the teams (ADR 0024).
 
 **Dispute**:
 A participant's statement that a Match's score is wrong. A disputed Match stops counting until a moderator resolves it as confirmed or voided. Each player disputes a Match at most once. Backend: `matches.MatchConfirmation` with decision `dispute`.
