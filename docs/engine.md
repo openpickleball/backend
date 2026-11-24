@@ -28,7 +28,29 @@ Installing the engine from its git tag needs git wherever `uv sync` runs: the
 host, the compose containers, and any deploy build.
 
 `apps/ratings/engine_adapter.py` is the only application module that imports
-`open_engine` (tests aside). Other code goes through that module.
+`open_engine` (tests aside, and a test checks it). Other code goes through that
+module.
+
+## The adapter
+
+The adapter converts backend records to engine inputs and engine results to
+plain data. It does no rating math.
+
+- `to_engine_match(match)` converts one saved Match. `counted_engine_matches()`
+  converts every Match that counts (`Match.objects.counted()`) in a fixed
+  number of queries.
+- The `match_id` is the Match's OPEN Code, and each player id is the Player's
+  OPEN Code.
+- The match type, `confirmed_by`, and the stored rating format follow ADR 0024.
+- Every stored value goes through an explicit table. A value the table does not
+  know raises `EngineMappingError`, which names the field.
+- `load_config()` loads the published parameter set that
+  `OPEN_ENGINE_PARAMETER_SET` in `config/settings.py` names (`v1`). It is a
+  fixed value in code, not an environment variable, because a new set needs a
+  full replay.
+- `rating_update()` and `replay_provenance()` turn an engine `MatchResult` and
+  `ReplayInfo` into plain dataclasses. `replay_provenance()` adds the installed
+  engine version (hard rule 4).
 
 ## The engine version
 
@@ -48,7 +70,8 @@ not match `pyproject.toml`, and so does `uv lock --check`.
 
 1. Read the engine's `CHANGELOG.md` for every version between the current tag
    and the new one. Note each breaking change, each changed default, and each
-   new or changed parameter set.
+   new or changed parameter set. If the release publishes a new set,
+   decide whether `OPEN_ENGINE_PARAMETER_SET` moves to it (a full replay follows).
 2. Bump the tag with uv. Never edit `pyproject.toml` or `uv.lock` by hand:
 
    ```bash
