@@ -2501,7 +2501,7 @@
     },
     "/api/v1/players/{code}/ratings": {
       "get": {
-        "description": "A player's current Ratings, one per rating format the player has.\n\nNo sign-in needed. Each rating comes with its reliability: the OPEN\nstandard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package. An unknown code, a player whose\nAccount is inactive, and a player aged 13 to 17 get the same 404.\nLimited per client IP; past the limit the answer is 429 with a\nRetry-After header.",
+        "description": "A player's current Ratings, one per rating format the player has.\n\nNo sign-in needed. Each rating comes with its reliability: the OPEN\nstandard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package. An unknown or malformed code, a\nplayer whose Account is inactive, and any player not shown to be 18 or\nolder get the same 404.\nLimited per client IP; past the limit the answer is 429 with a\nRetry-After header.",
         "operationId": "get_player_ratings",
         "parameters": [
           {

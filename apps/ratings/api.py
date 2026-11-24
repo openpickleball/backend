@@ -83,8 +83,9 @@ def get_player_ratings(request: HttpRequest, code: PlayerCode) -> PlayerRatingsO
     No sign-in needed. Each rating comes with its reliability: the OPEN
     standard requires any app that shows an OPEN rating to show its
     reliability next to it. Every rating is a demonstration rating while
-    the engine is a demonstration package. An unknown code, a player whose
-    Account is inactive, and a player aged 13 to 17 get the same 404.
+    the engine is a demonstration package. An unknown or malformed code, a
+    player whose Account is inactive, and any player not shown to be 18 or
+    older get the same 404.
     Limited per client IP; past the limit the answer is 429 with a
     Retry-After header.
     """

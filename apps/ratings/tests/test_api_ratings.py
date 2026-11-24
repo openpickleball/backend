@@ -1,10 +1,10 @@
 """The public rating lookup at /api/v1/players/{code}/ratings (issue #53).
 
 No sign-in: anyone may read the current Ratings of a player whose Account
-is active and who is not aged 13 to 17 today (``is_minor``, ADR 0017).
-Anyone else, and an unknown or malformed code, gets the same 404. The
-view ignores any cookie or token, so a signed-in request gets the same
-answer, and it never sets a cookie. Every rating comes with its
+is active and who is 18 or older on the age limit date (``is_adult``,
+ADR 0017). Anyone else, and an unknown or malformed code, gets the same
+404. The view ignores any cookie or token, so a signed-in request gets
+the same answer, and it never sets a cookie. Every rating comes with its
 reliability and is labeled a demonstration rating. Its only throttle is
 per client IP. Made-up data only.
 """
