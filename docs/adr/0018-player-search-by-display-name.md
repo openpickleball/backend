@@ -25,10 +25,10 @@ ADR 0002 makes a Player's display name visible to every signed-in Account, playe
 - A player whose whole display name is shorter than 3 characters cannot be found. A word shorter than 3 characters is found only by a query that runs on into the next word.
 - A word that follows something other than a space or hyphen (an apostrophe, a no-break space) is not a word start, so a query that starts there does not match. "Bri" does not find "O'Brien".
 - Display names are stored as typed, without Unicode normalization, so a name typed in one form (NFC or NFD) is not found by a query in the other.
-- Once the day limit is reached, further requests still count toward the minute limit, so a refusal can carry a minute-long `Retry-After` while the day stays used up.
+- Once the day limit is reached, further requests still count toward the minute limit. Since ADR 0030, a minute refusal while the day is used up carries a `Retry-After` until the day ends.
 - The counters live in Valkey. If Valkey is down, search fails. Clearing the cache resets them.
 - The search reads the whole Player table with `UPPER(display_name) LIKE`. That is fine at today's size; an index is a later change if it is needed.
-- Search has its own throttle, with its rates in code, and stays out of #34's plan for first-party operations (`AuthRateThrottle`, rates from settings). Adding a second throttle to search would bring back the cross-counting described under Alternatives considered. #34 should weigh those problems for the other operations. No per-IP limit on search is planned.
+- Search has its own throttle, with its rates in code, and stays out of #34's plan for first-party operations (`AuthRateThrottle`, rates from settings). Adding a second throttle to search would bring back the cross-counting described under Alternatives considered. #34 should weigh those problems for the other operations. No per-IP limit on search is planned. (ADR 0030 settles #34: the other first-party operations share a per-Account fixed-window throttle with rates from settings, built on the same counters, and search keeps only its own throttle.)
 
 ## Alternatives considered
 

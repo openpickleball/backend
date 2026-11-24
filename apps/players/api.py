@@ -45,15 +45,11 @@ once, when the Player is created (ADR 0023).
 """
 
 import contextlib
-import threading
-import time
 import unicodedata
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, ClassVar, TypedDict
 
 from allauth.account.models import EmailAddress
 from django.contrib.sessions.backends.base import SessionBase, UpdateError
-from django.core.cache import cache as default_cache
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -64,7 +60,6 @@ from ninja import Field, Query, Router, Schema, Status
 from ninja.errors import HttpError
 from ninja.errors import ValidationError as NinjaValidationError
 from ninja.pagination import paginate
-from ninja.throttling import BaseThrottle
 from pydantic import BeforeValidator
 from pydantic_core import PydanticCustomError
 
@@ -106,13 +101,21 @@ from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
 from config.api_errors import ErrorResponse
 from config.auth import account_auth, auth_session
+from config.throttling import (
+    DAY,
+    MINUTE,
+    FixedWindowThrottle,
+    Windows,
+    account_bucket,
+    account_throttle,
+)
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
-router = Router(tags=["players"], auth=account_auth)
+router = Router(tags=["players"], auth=account_auth, throttle=account_throttle)
 # The signed-in Account's own Player, mounted at /api/v1/me/.
-me_router = Router(tags=["players"], auth=account_auth)
+me_router = Router(tags=["players"], auth=account_auth, throttle=account_throttle)
 
 PlayerCode = Annotated[str, PublicCodePath(CodeType.PLAYER)]
 
@@ -122,11 +125,6 @@ SEARCH_DEFAULT_LIMIT = 10
 SEARCH_MAX_LIMIT = 20
 SEARCH_MINUTE_LIMIT = 30
 SEARCH_DAY_LIMIT = 300
-MINUTE = 60
-DAY = 24 * 60 * 60
-# Extra seconds a counter outlives its window, so it is never dropped
-# while its window is still open.
-THROTTLE_TIMEOUT_MARGIN = 60
 # Fixed text, never a submitted value.
 EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email address before creating your player."
 ALREADY_HAS_PLAYER_MESSAGE = "This account already has a player."
@@ -166,15 +164,15 @@ def list_player_matches(request: HttpRequest, code: PlayerCode) -> QuerySet[Matc
     return with_match_details(matches).order_by("-played_on", "-created_at", "-pk")
 
 
-class SearchThrottle(BaseThrottle):
+class SearchThrottle(FixedWindowThrottle):
     """Per-Account limits on player search: a minute window and a day window.
 
-    Each window is a fixed window: one counter per scope, Account primary
-    key, and window index (``int(now // period)``), counted with
-    ``cache.add`` then ``cache.incr``, which are atomic on the Redis and
-    local memory caches, so requests from one Account on several workers
-    never lose a count. The key never holds ``str(request.auth)``, which is
-    the Account's email.
+    Fixed limits, not settings (ADR 0018). Counted as every API throttle
+    is (``config.throttling.FixedWindowThrottle``): one counter per scope,
+    window, and Account primary key, with ``cache.add`` then
+    ``cache.incr``, so requests from one Account on several workers never
+    lose a count. The key never holds ``str(request.auth)``, which is the
+    Account's email.
 
     The minute window is checked first, and the day counter grows only
     when the minute window allows the request, so a burst the minute limit
@@ -182,58 +180,21 @@ class SearchThrottle(BaseThrottle):
     window edge (about 60 searches within seconds across a minute edge,
     about 600 across the UTC day edge). Accepted.
 
-    ninja builds one instance per operation and shares it across requests
-    and threads, so nothing about a request is stored on ``self``. What
-    ``wait()`` needs (when the refusing window ends) is kept in a
-    ``threading.local``: ninja calls ``wait()``, with no request, right
-    after ``allow_request`` returns False, on the same thread.
+    Search's operation passes this throttle itself, which replaces the
+    router's per-Account throttle, so a search never counts against the
+    Account's budget for other operations.
     """
 
-    cache = default_cache
-    # A plain function, so tests can replace the clock.
-    timer: Callable[[], float] = staticmethod(time.time)
-    windows: ClassVar[tuple[tuple[str, int, int], ...]] = (
+    windows: ClassVar[Windows] = (
         ("minute", SEARCH_MINUTE_LIMIT, MINUTE),
         ("day", SEARCH_DAY_LIMIT, DAY),
     )
 
-    def __init__(self, scope: str) -> None:
-        self.scope = scope
-        self._refused = threading.local()
+    def bucket(self, request: HttpRequest) -> str | None:
+        return account_bucket(request)
 
-    def _count(self, key: str, period: int) -> int:
-        """Add one to a window's counter and return the new count.
-
-        If the counter expires or is evicted between ``add`` and ``incr``
-        (``incr`` raises ``ValueError``), try once more, then allow the
-        request (count 0) rather than fail it.
-        """
-        timeout = period + THROTTLE_TIMEOUT_MARGIN
-        for _ in range(2):
-            self.cache.add(key, 0, timeout)
-            try:
-                return int(self.cache.incr(key))
-            except ValueError:
-                continue
-        return 0
-
-    def allow_request(self, request: HttpRequest) -> bool:
-        self._refused.retry_after = None
-        account_pk = getattr(getattr(request, "auth", None), "pk", None)
-        if account_pk is None:
-            return True
-        now = self.timer()
-        for name, limit, period in self.windows:
-            window = int(now // period)
-            key = f"throttle:{self.scope}:{name}:{account_pk}:{window}"
-            if self._count(key, period) > limit:
-                self._refused.retry_after = max(1.0, (window + 1) * period - now)
-                return False
-        return True
-
-    def wait(self) -> float | None:
-        retry_after: float | None = getattr(self._refused, "retry_after", None)
-        return retry_after
+    def limits(self) -> Windows:
+        return self.windows
 
 
 def _search_text(value: object) -> object:

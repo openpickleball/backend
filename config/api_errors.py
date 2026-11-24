@@ -44,6 +44,10 @@ A request that an operation's `auth` does not authenticate (ninja's
 `AuthenticationError`, see `config/auth.py`) returns 401 with code
 "unauthorized", fixed text, and no items.
 
+A request a throttle refuses (ninja's `Throttled`, an `HttpError`, see
+`config/throttling.py`) returns 429 with code "throttled", ninja's fixed
+text, and no items. ninja sets the `Retry-After` header.
+
 These handlers do not see a wrong method on a known path (ninja answers with
 a plain-text 405) or a path that matches no operation (Django's 404 page).
 Unexpected exceptions keep ninja's default handler, which re-raises when
@@ -67,6 +71,7 @@ from apps.matches.workflow import MatchStateError
 
 VALIDATION_ERROR_STATUS = 422
 UNAUTHORIZED_STATUS = 401
+THROTTLED_STATUS = 429
 UNAUTHORIZED_MESSAGE = "Authentication required."
 DUPLICATE_MATCH_STATUS = 409
 FORBIDDEN_STATUS = 403

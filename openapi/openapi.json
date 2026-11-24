@@ -952,6 +952,25 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1087,6 +1106,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1168,6 +1206,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1269,6 +1326,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1370,6 +1446,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1446,6 +1541,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1497,6 +1611,25 @@
               }
             },
             "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1566,6 +1699,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1645,6 +1797,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1731,7 +1902,16 @@
                 }
               }
             },
-            "description": "Too Many Requests"
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1813,6 +1993,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1918,6 +2117,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [

@@ -103,6 +103,48 @@ def _version(name: str, default: int) -> int:
     return int(value)
 
 
+def _rate(name: str, default: int) -> int:
+    """A throttle rate: a whole number of requests from 1 to 1,000,000, or
+    ``default`` when unset or empty. Same rule and error as ``_version``."""
+    return _version(name, default)
+
+
+# Header names CLIENT_IP_HEADER refuses: X-Forwarded-For and Forwarded,
+# which a client can fill with any value, and Content-Type and
+# Content-Length, which WSGI passes without the HTTP_ prefix, so the
+# throttle would never find them.
+_REFUSED_IP_HEADERS = frozenset(
+    {"x-forwarded-for", "forwarded", "content-type", "content-length"}
+)
+
+
+def _client_ip_header(name: str, default: str) -> str:
+    """The name of the request header that holds the client IP.
+
+    Stripped and lowercased, or ``default`` when unset or empty. Letters
+    and digits in groups joined by hyphens, at most 64, so no leading or
+    trailing hyphen: an underscore is refused because WSGI servers fold
+    underscores and hyphens into the same ``HTTP_`` key. The names in
+    ``_REFUSED_IP_HEADERS`` are refused too. The error never echoes the
+    value.
+    """
+    value = _raw(name).strip().lower()
+    if not value:
+        return default
+    if (
+        len(value) > 64
+        or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value)
+        or value in _REFUSED_IP_HEADERS
+    ):
+        raise ImproperlyConfigured(
+            f"Set {name} to the name of the header your proxy sets to the "
+            "client IP: letters, digits, and inner hyphens, at most 64, never "
+            "X-Forwarded-For, Forwarded, Content-Type, or Content-Length. "
+            "Leave it empty for the default (see .env.example)."
+        )
+    return value
+
+
 def _database(url: str) -> dict[str, object]:
     """Parse DATABASE_URL, failing fast without echoing the value.
 
@@ -315,6 +357,9 @@ CORS_ALLOW_HEADERS = (
     "x-email-verification-key",
     "x-password-reset-key",
 )
+# Response headers a script on an allowed origin may read beyond the
+# safelisted ones: Retry-After on a throttled 429 (ADR 0030).
+CORS_EXPOSE_HEADERS = ["Retry-After"]
 
 # Valkey URL (redis:// or rediss://). The cache and Celery (issue #9)
 # read it from here.
@@ -578,6 +623,21 @@ CELERY_BEAT_SCHEDULE = {
 # Days a pending (unconfirmed) match waits before the daily task voids it
 # (#26). Unset or empty means pending matches never expire.
 MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS")
+
+
+# API throttling (#34, ADR 0030)
+
+# Requests per Account to every first-party operation that needs sign-in,
+# except player search, which has its own fixed limits (ADR 0018).
+API_ACCOUNT_THROTTLE_PER_MINUTE = _rate("API_ACCOUNT_THROTTLE_PER_MINUTE", 120)
+API_ACCOUNT_THROTTLE_PER_DAY = _rate("API_ACCOUNT_THROTTLE_PER_DAY", 10_000)
+# Requests per client IP to public operations (none is mounted yet; #53).
+API_CLIENT_IP_THROTTLE_PER_MINUTE = _rate("API_CLIENT_IP_THROTTLE_PER_MINUTE", 60)
+API_CLIENT_IP_THROTTLE_PER_DAY = _rate("API_CLIENT_IP_THROTTLE_PER_DAY", 3_000)
+# The request header the proxy in front of the app sets to the client IP.
+# DigitalOcean App Platform sets do-connecting-ip. X-Forwarded-For is never
+# read: a client can forge it.
+CLIENT_IP_HEADER = _client_ip_header("CLIENT_IP_HEADER", "do-connecting-ip")
 
 
 # Ratings

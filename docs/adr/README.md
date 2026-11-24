@@ -76,3 +76,4 @@ Add each record here when it merges.
 - [0027. Live rating updates and the engine snapshot](0027-live-rating-updates-and-engine-snapshot.md) (issue #46)
 - [0028. Rating replays after match changes](0028-rating-replays-after-match-changes.md) (issue #47)
 - [0029. Moderator review in the admin](0029-moderator-review-in-the-admin.md) (issue #40)
+- [0030. API throttling per Account and per client IP](0030-api-throttling.md) (issue #34)
