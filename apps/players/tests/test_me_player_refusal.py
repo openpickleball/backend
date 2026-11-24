@@ -176,7 +176,15 @@ def test_a_flagged_session_loses_its_held_details(base: str) -> None:
     store = session.store()
     store[SIGNUP_REFUSED_SESSION_KEY] = True
     account = get_user_model()._default_manager.get_by_natural_key(ACCOUNT_EMAIL)
-    hold_signup_details(store, account, SignupDetails(*ADULT_BIRTH.values(), "mens"))
+    hold_signup_details(
+        store,
+        account,
+        SignupDetails(
+            birth_year=ADULT_BIRTH["birth_year"],
+            birth_month=ADULT_BIRTH["birth_month"],
+            gender_division="mens",
+        ),
+    )
     store.save()
 
     response = call(session, "POST", {"display_name": "Robin Q."})
