@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-14
-- See also: [ADR 0031](0031-rating-lookup-and-history.md) (#53's rating lookups need sign-in)
+- Amended by: [ADR 0031](0031-rating-lookup-and-history.md) (current Ratings follow a privacy setting: a player created aged 13 to 17 starts hidden and cannot widen it before 18; nobody can narrow it)
 
 ## Context
 

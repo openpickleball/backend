@@ -77,4 +77,4 @@ Add each record here when it merges.
 - [0028. Rating replays after match changes](0028-rating-replays-after-match-changes.md) (issue #47)
 - [0029. Moderator review in the admin](0029-moderator-review-in-the-admin.md) (issue #40)
 - [0030. API throttling per Account and per client IP](0030-api-throttling.md) (issue #34)
-- [0031. Rating lookup and rating history behind sign-in](0031-rating-lookup-and-history.md) (issue #53)
+- [0031. Rating lookup, rating history, and a setting for current ratings](0031-rating-lookup-and-history.md) (issue #53)
