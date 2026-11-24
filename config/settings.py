@@ -558,6 +558,12 @@ MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS"
 # release and a full replay, so it is a reviewed code change.
 OPEN_ENGINE_PARAMETER_SET = "v1"
 
+# The rating spec version stored with every rating change (#45, decision Q7
+# in #1). The rating-spec repository has published no version yet. When the
+# governing board publishes one, set this to the published version's label,
+# then run the recompute (#48).
+OPEN_RATING_SPEC_VERSION = "unpublished"
+
 
 # Accounts (django-allauth)
 # https://docs.allauth.org/en/latest/account/configuration.html
