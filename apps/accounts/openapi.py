@@ -19,7 +19,8 @@ AGE_CHECK_PATH = "{client}/v1/auth/signup/age-check"
 
 _DESCRIPTION = """\
 Checks only a birth year and month, with the signup age screen's rules,
-before the app asks for anything else. It reads no email address.
+before the app asks for any other personal detail (a name or a location).
+It reads no email address.
 
 13 or older gets a success answer and the session keeps nothing: the
 signup request still sends and checks the age itself. Under 13 gets the
