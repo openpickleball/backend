@@ -330,6 +330,10 @@ class MatchAdmin(admin.ModelAdmin[Match]):
             self.message_user(request, BLANK_REASON, level=messages.WARNING)
             return
         count = 0
+        # Which selected matches needed review before any change, so a
+        # match an earlier one in this run released (both sides of one
+        # flag) reads as reviewed, not as a failure.
+        needed = set(needs_review(queryset).values_list("pk", flat=True))
         for match in queryset.order_by("pk"):
             # Each change in its own transaction: the workflow's advisory
             # locks last until the outermost transaction ends.
@@ -344,6 +348,11 @@ class MatchAdmin(admin.ModelAdmin[Match]):
                 continue
             if changed:
                 count += 1
+            elif (
+                match.pk in needed
+                and not needs_review(Match.objects.filter(pk=match.pk)).exists()
+            ):
+                self.message_user(request, f"{match.public_code} was already reviewed.")
             else:
                 self.message_user(
                     request,
