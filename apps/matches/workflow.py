@@ -49,7 +49,11 @@ Each service checks permission first and raises ``MatchActionDenied``
 the match row and checks its state, raising ``MatchStateError`` (fixed
 text) for a change the state does not allow. Every transition writes one
 Audit Event in its transaction; a repeated action that changes nothing
-writes none. Signals (``apps.matches.signals``) are sent inside the
+writes none. The exception is the bulk services (``void_submission_batch``,
+``void_submitter_matches``), which record one ``match.bulk_void`` every
+run, even a rerun that voids nothing. They void each match in its own
+transaction, so never call them inside an outer ``transaction.atomic()``:
+that would hold every match's lineup lock until it ends. Signals (``apps.matches.signals``) are sent inside the
 transaction, after the rows and the Audit Event.
 
 Lock order: every service takes advisory locks before the row lock, as
@@ -787,7 +791,9 @@ class BulkVoidResult:
     one voided by someone else while the run went on. ``refused``: the
     actor may not void it as moderator (``void_match`` raised
     ``MatchActionDenied`` or ``ReasonRefused``), which happens when the
-    moderator's own Player is in the match's correction chain.
+    moderator's own Player is in the match's correction chain. It also
+    counts every remaining match when the actor stops being a moderator
+    partway through a run (``void_match`` checks again for each match).
     """
 
     voided: int

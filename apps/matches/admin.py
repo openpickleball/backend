@@ -3,7 +3,7 @@
 Matches are read-only here: nothing is added, changed, or deleted through
 a form. The default list is the matches that need review: disputed ones,
 and ones an open flag links to a match that is not voided. Moderators
-(``apps.matches.permissions.is_moderator``) get four actions, each through
+(``apps.matches.permissions.is_moderator``) get six actions, each through
 ``apps.matches.workflow``:
 
 - approve: the result stands. A disputed match is resolved as confirmed,
@@ -20,8 +20,8 @@ and ones an open flag links to a match that is not voided. Moderators
 
 The two bulk actions first show a confirmation page with how many matches
 the run would void and how many are already voided, and change nothing
-until the moderator confirms. Every action needs a typed reason (``ReasonActionForm``), which goes into
-its Audit Event. Pages and messages show matches and players by OPEN Code
+until the moderator confirms. Every action needs a typed reason
+(``ReasonActionForm``), which goes into its Audit Event. Pages and messages show matches and players by OPEN Code
 only, never a name or an email.
 """
 
@@ -305,7 +305,10 @@ class MatchAdmin(admin.ModelAdmin[Match]):
 
     @admin.action(
         permissions=["moderate"],
-        description="Void every match its submitter recorded since the selected match",
+        description=(
+            "Void every match its submitter recorded on or after the selected "
+            "match's day (UTC)"
+        ),
     )
     def void_submitter_selected(
         self, request: HttpRequest, queryset: QuerySet[Match]

@@ -191,8 +191,8 @@ class MatchImmutable(RuntimeError):
     """
 
     message: ClassVar[str] = (
-        "The match ledger is append-only: a match, its players, its games, and "
-        "its confirmations cannot be changed or deleted."
+        "The match ledger is append-only: a match, its players, its games, "
+        "its confirmations, and submission batches cannot be changed or deleted."
     )
 
     def __init__(self) -> None:
