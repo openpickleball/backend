@@ -1,4 +1,4 @@
-"""The signup details held in the session (issues #114, #215, and #221).
+"""The signup details held in the session (issues #114, #215, #221, #222).
 
 Signup asks for the birth year and month, the gender division, the first
 and last name, and optionally the city and region, before an Account
@@ -9,7 +9,9 @@ the Player exists (``take_signup_details``). The session never holds a
 day of birth or a raw gender (ADR 0009). The names are held as one legal
 name, "First Last", with the first name, so the Player create endpoint
 can start a player aged 13 to 17 with the display name "First L."
-(ADR 0022).
+(ADR 0022). The hold also carries the version of each legal agreement the
+signup accepted (ADR 0026), which the signup view records for the new
+Account.
 
 An under-13 age, at signup, at the signup age check (#223), or at the
 Player create endpoint, refuses the session (``refuse_signup``): it drops
@@ -25,6 +27,8 @@ from typing import TYPE_CHECKING
 from apps.players.models import GenderDivision
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from django.contrib.auth.base_user import AbstractBaseUser
     from django.contrib.sessions.backends.base import SessionBase
 
@@ -73,14 +77,17 @@ def hold_signup_details(
     session: "SessionBase",
     account: "AbstractBaseUser | None",
     details: SignupDetails,
+    agreements: "Mapping[str, int] | None" = None,
 ) -> None:
     """Keep a signup's details in the session.
 
     Bound to ``account`` (None when signup created no Account), so a later
     login to another Account in the same session never receives them. The
-    value holds the Account's pk, which stays on the server.
+    value holds the Account's pk, which stays on the server. ``agreements``
+    is the version of each legal agreement the signup accepted (#222,
+    ADR 0026), held as given; the Player create endpoint never reads it.
     """
-    session[SIGNUP_DETAILS_SESSION_KEY] = {
+    held: dict[str, object] = {
         "account": account.pk if account is not None else None,
         "year": details.birth_year,
         "month": details.birth_month,
@@ -90,6 +97,9 @@ def hold_signup_details(
         "region": details.region,
         "first_name": details.first_name,
     }
+    if agreements is not None:
+        held["agreements"] = dict(agreements)
+    session[SIGNUP_DETAILS_SESSION_KEY] = held
 
 
 def peek_signup_details(

@@ -63,6 +63,7 @@ def _list(name: str) -> list[str]:
 
 
 _MAX_DAYS = 36500
+_MAX_VERSION = 1_000_000
 
 
 def _positive_days(name: str) -> int | None:
@@ -80,6 +81,24 @@ def _positive_days(name: str) -> int | None:
         raise ImproperlyConfigured(
             f"Set {name} to a whole number of days from 1 to {_MAX_DAYS}, or "
             "leave it empty (see .env.example)."
+        )
+    return int(value)
+
+
+def _version(name: str, default: int) -> int:
+    """A whole number from 1 to 1,000,000, or ``default`` when unset or empty.
+
+    Only ASCII digits are accepted, at most 7 of them, checked before the
+    conversion. The error names the variable and the range and never
+    echoes the value.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return default
+    if not re.fullmatch(r"[0-9]{1,7}", value) or not 1 <= int(value) <= _MAX_VERSION:
+        raise ImproperlyConfigured(
+            f"Set {name} to a whole number from 1 to {_MAX_VERSION}, or leave "
+            "it empty (see .env.example)."
         )
     return int(value)
 
@@ -594,6 +613,11 @@ ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*"]
 # gender division, and OPEN's sign-up view refuses anyone under 13
 # (issues #114 and #215, ADR 0017).
 ACCOUNT_SIGNUP_FORM_CLASS = "apps.accounts.forms.SignupAgeForm"
+# The current versions of the legal agreements on openpb.org, which
+# sign-up requires accepting and records per Account (#222, ADR 0026).
+# Empty means the version in code, the one published when it was set.
+TERMS_OF_SERVICE_VERSION = _version("TERMS_OF_SERVICE_VERSION", 1)
+PRIVACY_POLICY_VERSION = _version("PRIVACY_POLICY_VERSION", 2)
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_UNIQUE_EMAIL = True
 # Changing the address replaces it instead of adding a second one.

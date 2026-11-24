@@ -19,7 +19,9 @@ allauth's URLconf (`config/urls.py`).
   gets the same refusal. Thirteen and older signs up as before, and the
   details are held in the session, bound to the new
   Account (or to none, for a taken address, so both answers stay alike),
-  for the Player create endpoint (#124).
+  for the Player create endpoint (#124). The accepted legal agreements
+  (#222, ADR 0026) are checked with them, held with them, and recorded
+  for a new Account.
 - Sign-up age check (issue #223, ADR 0020): the birth year and month
   alone (`SignupBirthForm`), before the app asks for a name or a location,
   with the age screen's rules, order, rate limit, and refusal. A pass keeps
@@ -60,10 +62,13 @@ from allauth.headless.spec.views import OpenAPIYAMLView as BaseOpenAPIYAMLView
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import HttpResponse
 from django.urls import URLPattern, path
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 
+from apps.accounts.agreements import current_versions, record_acceptance
 from apps.accounts.forms import SignupAgeForm, SignupBirthForm, signup_full_name
 from apps.accounts.openapi import open_schema
 from apps.accounts.validators import is_canonical_email
@@ -153,8 +158,16 @@ class SignupInput(BaseSignupInput):
         exception: when the session already holds details bound to the
         Account whose login is this address (a repeated signup), that hold
         is written back unchanged, so the Account keeps its details.
+
+        The accepted version of each legal agreement is held with the
+        details, and recorded for a new Account in the transaction that
+        creates it (#222, ADR 0026). A taken address records nothing.
         """
-        user, response = super().try_save(request)
+        versions = current_versions()
+        with transaction.atomic():
+            user, response = super().try_save(request)
+            if user is not None:
+                record_acceptance(user, versions, timezone.now())
         session = request.session
         held = session.get(SIGNUP_DETAILS_SESSION_KEY)
         if user is None and _is_held_for_login(held, self.cleaned_data.get("email")):
@@ -174,7 +187,7 @@ class SignupInput(BaseSignupInput):
                 region=cleaned["region"],
                 first_name=cleaned["first_name"],
             )
-            hold_signup_details(session, user, details)
+            hold_signup_details(session, user, details, versions)
         return user, response
 
     def save(self, request: "HttpRequest") -> "AbstractBaseUser":
