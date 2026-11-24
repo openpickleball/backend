@@ -138,7 +138,7 @@ class SignupAgeForm(SignupBirthForm):
     and month only, never a day, a gender division (``mens`` or
     ``womens``), never a raw gender (ADR 0009, ADR 0017), the first and
     last name, and the chosen city and region, never a street address
-    (ADR 0021). OPEN's signup view
+    (ADR 0022). OPEN's signup view
     (``apps/accounts/headless_views.py``) checks them first and refuses
     anyone under 13.
 
@@ -150,7 +150,7 @@ class SignupAgeForm(SignupBirthForm):
         choices=GenderDivision.choices, error_messages=_GENDER_DIVISION_MESSAGES
     )
     # The first and last name, required, and the city and region, optional
-    # (issue #221, ADR 0021). "First Last" becomes the Player's legal name
+    # (issue #221, ADR 0022). "First Last" becomes the Player's legal name
     # and starting display name.
     first_name = SignupNameField(error_messages=_FIRST_NAME_MESSAGES)
     last_name = SignupNameField(error_messages=_LAST_NAME_MESSAGES)

@@ -28,7 +28,7 @@ class PlayerCreateIn(Schema):
     refuses them.
 
     The body is read only when the session holds no details from signup
-    (ADR 0017, ADR 0019, ADR 0021): ``display_name``, ``birth_year``,
+    (ADR 0017, ADR 0019, ADR 0022): ``display_name``, ``birth_year``,
     ``birth_month``, and ``gender_division`` are then required. Held
     details are used instead of every field here: the held name ("First
     Last") becomes both the display name and the legal name, with the held

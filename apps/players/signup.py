@@ -2,7 +2,7 @@
 
 Signup asks for the birth year and month, the gender division, the first
 and last name, and optionally the city and region, before an Account
-exists (ADR 0017, ADR 0019, ADR 0021). The signup view holds them in the session,
+exists (ADR 0017, ADR 0019, ADR 0022). The signup view holds them in the session,
 bound to the new Account (``hold_signup_details``), and the Player create
 endpoint (#124) reads them (``peek_signup_details``) and takes them once
 the Player exists (``take_signup_details``). The session never holds a

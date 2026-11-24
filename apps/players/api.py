@@ -31,7 +31,7 @@ The signed-in Account's own Player is at /api/v1/me/player (``me_router``,
 issue #124). POST creates it, once per Account, only for an Account whose
 own login address is verified. The birth year and month, the gender
 division, the name, and the city and region come from the details the
-signup held in the session (ADR 0017, ADR 0019, ADR 0021, ``auth_session``
+signup held in the session (ADR 0017, ADR 0019, ADR 0022, ``auth_session``
 for either headless client): the held name ("First Last") is both the
 legal name and the starting display name. The body is read only when
 the session holds none, where the display name, birth year and month,
@@ -534,7 +534,7 @@ def create_my_player(
     The Account's own email address must be verified (403 otherwise), and
     an Account has one Player (409 for a second). Every value comes from
     the details held at signup in this session (ADR 0017, ADR 0019, ADR
-    0021), the held name as both the legal name and the display name; the
+    0022), the held name as both the legal name and the display name; the
     body is used only when the session holds none, and its display name,
     birth year and month, and gender division are then required. The held details are
     removed once the Player exists (on a 409 too), so a create refused for
