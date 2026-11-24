@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.django_db
 
+REASON = "Made-up verification reason."
+
 
 @pytest.fixture
 def superuser() -> "_User":
@@ -32,7 +34,11 @@ def superuser_client(client: Client, superuser: "_User") -> Client:
 def _run(client: Client, action: str, organizers: list[Organizer]) -> list[str]:
     response = client.post(
         reverse("admin:clubs_organizer_changelist"),
-        {"action": action, "_selected_action": [str(o.pk) for o in organizers]},
+        {
+            "action": action,
+            "_selected_action": [str(o.pk) for o in organizers],
+            "reason": REASON,
+        },
         follow=True,
     )
     return [str(message) for message in get_messages(response.wsgi_request)]

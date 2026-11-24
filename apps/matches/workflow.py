@@ -24,6 +24,12 @@ States and transitions:
   duplicate checks, and flags. Only a moderator edits a disputed match.
 - ``expire_unconfirmed_matches``: with ``MATCH_CONFIRMATION_EXPIRY_DAYS``
   set, voids pending matches older than that.
+- ``resolve_flags``: a moderator closes every open flag that involves a
+  match, as approved or dismissed, with a reason. It changes no Match:
+  a resolved flag stops holding its matches from counting.
+- ``approve_match``: a moderator says the result stands: a disputed match
+  is resolved as confirmed and its open flags as approved, in one
+  transaction, with the status read under the match's locks.
 
 Each service checks permission first and raises ``MatchActionDenied``
 (fixed text) before it reveals anything about the match. It then locks
@@ -57,8 +63,10 @@ from apps.audit.services import record_event, snapshot
 from apps.matches.models import (
     ConfirmationDecision,
     FlagReason,
+    FlagResolution,
     Match,
     MatchConfirmation,
+    MatchFlag,
     MatchParticipant,
     MatchStatus,
     Team,
@@ -132,16 +140,22 @@ def _lock(match: Match) -> Match:
 
 
 def _linked(match: Match) -> list[Match]:
-    """Other matches a possible duplicate flag links to ``match``."""
+    """Other matches an open possible duplicate flag links to ``match``.
+
+    Each Q names one flag row, so the reason and the open check apply to
+    the same flag. A resolved flag holds nothing (``counted()``).
+    """
     return list(
         Match.objects.filter(
             Q(
                 flags__duplicate_of=match,
                 flags__reason=FlagReason.POSSIBLE_DUPLICATE,
+                flags__resolved_at__isnull=True,
             )
             | Q(
                 duplicate_flags__match=match,
                 duplicate_flags__reason=FlagReason.POSSIBLE_DUPLICATE,
+                duplicate_flags__resolved_at__isnull=True,
             )
         )
         .exclude(pk=match.pk)
@@ -554,6 +568,93 @@ def edit_match(
             match_confirmed.send(sender=Match, match=corrected)
         _send_count_changes(counting)
         return corrected
+
+
+_FLAG_RESOLUTIONS = frozenset(FlagResolution.values)
+
+
+def resolve_flags(match: Match, *, actor: Actor, outcome: str, reason: str) -> int:
+    """A moderator resolves every open flag that involves ``match``.
+
+    That is each open flag with ``match`` as its ``match`` or its
+    ``duplicate_of``. ``outcome`` is ``approved`` or ``dismissed`` and
+    ``reason`` is required (``ValueError``, fixed text); anyone but a
+    moderator gets ``MatchActionDenied`` first. No Match changes. Records
+    one ``match.flag_resolve`` Audit Event per flag, with the reason, and
+    sends ``release`` for each match that counts again. Returns how many
+    flags it resolved: 0, with no event or signal, when none were open.
+    """
+    _saved(match)
+    if not is_moderator(actor):
+        raise MatchActionDenied
+    if outcome not in _FLAG_RESOLUTIONS:
+        raise ValueError("Resolve a flag as approved or dismissed.")
+    if not reason.strip():
+        raise ValueError("Give a reason for the flag resolution.")
+    with transaction.atomic():
+        # Flags link only matches with the same lineup and date, so the
+        # match's lineup lock covers every match whose counting changes.
+        locked = _lock(match)
+        flags = list(
+            MatchFlag.objects.select_for_update()
+            .filter(Q(match=locked) | Q(duplicate_of=locked), resolved_at__isnull=True)
+            .order_by("pk")
+        )
+        if not flags:
+            return 0
+        counting = _counting([locked, *_linked(locked)])
+        now = timezone.now()
+        for flag in flags:
+            before = snapshot(flag, ["resolution", "resolved_at"])
+            flag.resolution = FlagResolution(outcome)
+            flag.resolved_at = now
+            flag.save(update_fields=["resolution", "resolved_at"])
+            record_event(
+                action=AuditAction.MATCH_FLAG_RESOLVE,
+                target=flag,
+                before=before,
+                after=snapshot(flag, ["resolution", "resolved_at"]),
+                reason=reason,
+                **audit_actor(actor),
+            )
+        _send_count_changes(counting)
+        return len(flags)
+
+
+def approve_match(match: Match, *, actor: Actor, reason: str) -> bool:
+    """A moderator approves ``match``: its result stands.
+
+    Anyone but a moderator gets ``MatchActionDenied`` first, and a blank
+    ``reason`` raises ``ValueError``. Under the match's lineup and row
+    locks, a voided match raises ``MatchStateError``, a disputed one is
+    resolved as confirmed (``resolve_dispute``), and every open flag that
+    involves it is resolved as approved (``resolve_flags``), all in one
+    transaction with each step's Audit Event and signals. Returns True
+    when anything changed, False when there was nothing to approve.
+    """
+    _saved(match)
+    if not is_moderator(actor):
+        raise MatchActionDenied
+    if not reason.strip():
+        raise ValueError("Give a reason for the approval.")
+    with transaction.atomic():
+        # Read the status only under the locks, so a dispute that commits
+        # first is seen and resolved. The services below take the same
+        # locks again, which the transaction already holds.
+        locked = _lock(match)
+        if locked.status == MatchStatus.VOIDED:
+            raise MatchStateError
+        changed = False
+        if locked.status == MatchStatus.DISPUTED:
+            resolve_dispute(
+                locked, actor=actor, outcome=MatchStatus.CONFIRMED, reason=reason
+            )
+            changed = True
+        if resolve_flags(
+            locked, actor=actor, outcome=FlagResolution.APPROVED, reason=reason
+        ):
+            changed = True
+        return changed
 
 
 def expire_unconfirmed_matches(now: datetime | None = None) -> int:

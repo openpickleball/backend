@@ -49,8 +49,8 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   submitter of a match with an Event or a Club, a Club's included, whose
   exact duplicate matches a pending match confirms it (user decision).
 - ``is_moderator``: an active Account with the ``matches.moderate_match``
-  permission. A moderator may void and edit any match and resolve
-  disputes.
+  permission. A moderator may void and edit any match, resolve disputes,
+  resolve flags, and approve matches.
 
 A refused workflow action raises ``MatchActionDenied``, with fixed text
 that never says which rule failed or what state the match is in.
@@ -116,7 +116,9 @@ def _account(actor: object) -> "_User | None":
     """
     if not isinstance(actor, get_user_model()) or actor.pk is None:
         return None
-    if not type(actor).objects.filter(pk=actor.pk, is_active=True).exists():
+    # The model, not type(actor): the admin passes request.user, a lazy
+    # proxy whose type is not the Account model.
+    if not get_user_model().objects.filter(pk=actor.pk, is_active=True).exists():
         return None
     return actor
 
@@ -253,6 +255,18 @@ def can_change_match(actor: Actor, match: Match) -> bool:
 
 MODERATE_PERMISSION = "matches.moderate_match"
 
+# The auth Group a data migration creates for moderators (#40), and its
+# exact permissions. The migration copies these literals; it never imports
+# them, since a migration must not change when this module does.
+MODERATOR_GROUP = "Moderator"
+MODERATOR_PERMISSIONS: tuple[str, ...] = (
+    "matches.moderate_match",
+    "matches.view_match",
+    "matches.view_matchflag",
+    "clubs.verify_organizer",
+    "clubs.view_organizer",
+)
+
 
 class MatchActionDenied(PermissionError):
     """The actor may not confirm, dispute, or change this match.
@@ -311,5 +325,5 @@ def is_moderator(actor: Actor) -> bool:
     account = _account(actor)
     if account is None:
         return False
-    fresh = type(account).objects.get(pk=account.pk)
+    fresh = get_user_model().objects.get(pk=account.pk)
     return fresh.has_perm(MODERATE_PERMISSION)

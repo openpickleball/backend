@@ -98,7 +98,7 @@ A request to add a Match through the Results API. A Submission becomes a Match i
 _Avoid_: upload (an upload is a batch of Submissions).
 
 **Flagged Match**:
-A Match held for review because it looks like an outlier, a possible duplicate, or otherwise suspicious. A possible duplicate flag holds both Matches from counting, the flagged one and the earlier one it may repeat, until moderator review resolves the flag or one of the two is voided. Backend: `matches.MatchFlag`, one row per flag, so review never edits the Match.
+A Match held for review because it looks like an outlier, a possible duplicate, or otherwise suspicious. A possible duplicate flag holds both Matches from counting, the flagged one and the earlier one it may repeat, until moderator review resolves the flag or one of the two is voided. A moderator resolves a flag as approved (the result stands) or dismissed; a resolved flag holds nothing and stays on record. Backend: `matches.MatchFlag`, one row per flag, so review never edits the Match.
 
 **Ledger**:
 The append-only, ordered record of every counted Match. Order is date, time, sequence, then `match_id`. The Ledger is the source of truth for ratings. Engine: `ledger_order`. Backend: `played_on`, `played_at` with `played_at_utc_offset`, and `sequence` on `matches.Match`.

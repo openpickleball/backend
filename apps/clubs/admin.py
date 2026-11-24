@@ -2,7 +2,8 @@
 
 Verification is read-only on the change form. It changes only through the
 verify and unverify actions, which call ``apps.clubs.services`` and are
-shown only to Accounts with ``clubs.verify_organizer``.
+shown only to Accounts with ``clubs.verify_organizer``. Both need a typed
+reason (``ReasonActionForm``), which goes into the Audit Event.
 """
 
 from collections.abc import Callable, Sequence
@@ -15,6 +16,11 @@ from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
+from apps.audit.admin_actions import (
+    ReasonActionForm,
+    action_reason,
+    reason_problem,
+)
 from apps.clubs.models import (
     Club,
     ClubRole,
@@ -29,7 +35,7 @@ from apps.clubs.services import (
     verify_organizer,
 )
 
-ADMIN_REASON = "Changed through the admin."
+BLANK_REASON = "Give a reason to verify or unverify organizers."
 
 
 class OrganizerMemberInline(admin.TabularInline[OrganizerMember, Organizer]):
@@ -59,6 +65,7 @@ class OrganizerAdmin(admin.ModelAdmin[Organizer]):
     search_fields = ("public_code", "name")
     inlines = (OrganizerMemberInline,)
     actions = ("verify_selected", "unverify_selected", "delete_selected")
+    action_form = ReasonActionForm
 
     def get_deleted_objects(
         self, objs: Sequence[Organizer] | QuerySet[Organizer], request: HttpRequest
@@ -181,10 +188,15 @@ class OrganizerAdmin(admin.ModelAdmin[Organizer]):
         change: Callable[..., Organizer],
         done: str,
     ) -> None:
+        reason = action_reason(request)
+        problem = reason_problem(reason, BLANK_REASON)
+        if problem is not None:
+            self.message_user(request, problem, level=messages.WARNING)
+            return
         count = 0
         for organizer in queryset.order_by("pk"):
             try:
-                result = change(organizer, actor=request.user, reason=ADMIN_REASON)
+                result = change(organizer, actor=request.user, reason=reason)
             except NotAllowedToVerify:
                 # The OPEN Code only: the name may be a person's.
                 self.message_user(
