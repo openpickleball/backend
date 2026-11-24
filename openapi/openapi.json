@@ -1611,7 +1611,7 @@
         ]
       },
       "post": {
-        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). The birth year and month\nand the gender division come from the details held at signup in this\nsession (ADR 0017, issue #215); the body's are used only when the\nsession holds none, and are then required. The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13 is refused with a\nfixed message.",
+        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). The birth year and month\nand the gender division come from the details held at signup in this\nsession (ADR 0017, issue #215); the body's are used only when the\nsession holds none, and are then required. The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13 is refused with a\nfixed 422, and the refusal holds for the session, as at signup: every\nlater create in it gets the same 422, and so does a signup after\nlogout (ADR 0017).",
         "operationId": "create_my_player",
         "parameters": [],
         "requestBody": {
