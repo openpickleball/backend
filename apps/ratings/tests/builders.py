@@ -22,6 +22,7 @@ from apps.matches.models import (
     ScoringType,
     Team,
 )
+from apps.matches.services import derive_rating_format
 from apps.matches.tests.factories import MatchFactory, raw_update
 from apps.players.models import GenderDivision, Player
 from apps.players.tests.factories import PlayerFactory
@@ -71,11 +72,20 @@ def saved_match(
     ``divisions`` gives each team's players' gender divisions ("" for a
     removed one); by default each team is one men's and one women's player
     in doubles, and a men's player in singles. ``confirm`` and ``dispute``
-    name players as (team, index) for MatchConfirmation rows.
+    name players as (team, index) for MatchConfirmation rows. The rating
+    format is derived from the divisions, as ``record_match`` does, unless
+    ``rating_format`` is passed.
     """
     if divisions is None:
         size = 2 if match_format == MatchFormat.DOUBLES else 1
         divisions = {team: MIXED[team][:size] for team in Team}
+    players = {team: [_player(d) for d in divisions[team]] for team in Team}
+    if "rating_format" not in extra:
+        extra["rating_format"] = derive_rating_format(
+            match_format,
+            [p.gender_division for p in players[Team.A]],
+            [p.gender_division for p in players[Team.B]],
+        )
     made: Match = MatchFactory.create(
         format=match_format,
         best_of=best_of,
@@ -90,7 +100,6 @@ def saved_match(
         games=False,
         **extra,
     )
-    players = {team: [_player(d) for d in divisions[team]] for team in Team}
     for team, members in players.items():
         for player in members:
             MatchParticipant.objects.create(match=made, player=player, team=team)

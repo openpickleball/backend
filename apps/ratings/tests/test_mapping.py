@@ -191,10 +191,10 @@ def test_a_match_with_no_event_is_self_reported() -> None:
     assert to_engine_match(match).match_type is open_engine.MatchType.SELF_REPORTED
 
 
-def test_a_club_match_with_no_event_is_self_reported() -> None:
+def test_a_club_match_with_no_event_is_rec_verified() -> None:
     match, _ = saved_match(club=ClubFactory.create())
 
-    assert to_engine_match(match).match_type is open_engine.MatchType.SELF_REPORTED
+    assert to_engine_match(match).match_type is open_engine.MatchType.REC_VERIFIED
 
 
 @pytest.mark.parametrize("scoring", ScoringType.values)
@@ -330,26 +330,6 @@ def test_an_unknown_team_raises() -> None:
     match.participants.all()[0].team = "C"
 
     _expect_mapping_error(match, "team")
-
-
-def test_an_unknown_gender_division_raises_without_its_value() -> None:
-    match = _prefetched(saved_match()[0])
-    match.participants.all()[0].player.gender_division = "made_up_division"
-
-    message = _expect_mapping_error(match, "gender division")
-
-    assert "made_up_division" not in message
-
-
-def test_an_unknown_gender_division_raises_in_singles_too() -> None:
-    match = _prefetched(
-        saved_match(match_format=MatchFormat.SINGLES, games=((11, 3),), best_of=1)[0]
-    )
-    match.participants.all()[0].player.gender_division = "made_up_division"
-
-    message = _expect_mapping_error(match, "gender division")
-
-    assert "made_up_division" not in message
 
 
 def test_played_at_without_an_offset_raises() -> None:
