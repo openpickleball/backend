@@ -68,6 +68,7 @@ Add each record here when it merges.
 - [0018. Player search by display name](0018-player-search-by-display-name.md) (issue #191)
 - [0019. Gender division required at signup](0019-gender-division-required-at-signup.md) (issue #215)
 - [0020. An age check before the rest of signup](0020-signup-age-check.md) (issue #223)
+- [0021. Organizers are the only trusted submitters](0021-organizers-are-the-trusted-submitters.md) (issue #227)
 - [0022. First and last name and a place at signup](0022-name-and-place-at-signup.md) (issue #221)
 - [0023. Birth year and month and gender division are set once](0023-birth-and-division-set-once.md) (issue #225)
 - [0024. Engine match type, confirmers, and a stored rating format](0024-engine-match-type-confirmers-and-rating-format.md) (issue #44)
