@@ -98,7 +98,7 @@ def test_each_missing_acceptance_is_reported(base: str) -> None:
     response = HeadlessSession(base).signup(accepted_terms=..., accepted_privacy=False)
 
     assert response.status_code == 400
-    assert sorted(map(str, _params(response))) == FIELDS
+    assert sorted(map(str, _params(response))) == sorted(FIELDS)
 
 
 @pytest.mark.parametrize("base", CLIENTS)
