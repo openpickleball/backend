@@ -28,8 +28,11 @@ def queue_rating_update(sender: type[Match], match: Match, **kwargs: Any) -> Non
     already committed. Instead a replay request (``replay_needed``, from
     the Match's date) is stored in its own transaction, so the next
     replay, or the beat entry if the broker is still down, rates the
-    Match. Any other error propagates, so an eager task's failure in
-    tests is not hidden.
+    Match. If storing that request fails too, it is logged by Match id
+    and error class only and not raised, so the committed confirmation
+    and the commit's other callbacks are unaffected. Any other error from
+    queuing propagates, so an eager task's failure in tests is not
+    hidden.
     """
     from apps.ratings.tasks import update_ratings_for_match
 
@@ -45,9 +48,17 @@ def queue_rating_update(sender: type[Match], match: Match, **kwargs: Any) -> Non
                 match_id,
                 type(exc).__name__,
             )
-            # After commit: the request needs its own transaction.
-            with transaction.atomic():
-                request_replay(played_on, ReplayReason.REPLAY_NEEDED)
+            # After commit: the request needs its own transaction. The
+            # confirmation already committed, so no error may escape here.
+            try:
+                with transaction.atomic():
+                    request_replay(played_on, ReplayReason.REPLAY_NEEDED)
+            except Exception as request_exc:
+                logger.error(
+                    "Could not request a replay for match %s (%s).",
+                    match_id,
+                    type(request_exc).__name__,
+                )
 
     # Not robust: a robust callback would swallow any other error and log
     # its text.
