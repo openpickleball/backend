@@ -26,6 +26,9 @@ from apps.public_ids.models import PublicCodeModel
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
+# The under-13 refusal: fixed, with no age in it (issue #114). The Player
+# create endpoint matches it to refuse the session (issue #220).
+UNDER_MINIMUM_AGE_MESSAGE = "This birth year and month can't be used."
 # Messages never include the submitted value (CLAUDE.md, API). Django's
 # defaults for these keys do.
 _CHOICE_MESSAGES = {"invalid_choice": "Choose one of the listed options."}
@@ -242,7 +245,7 @@ class Player(PublicCodeModel):
             errors["birth_month"] = "The birth year and month cannot be in the future."
         elif birth_changed and self._is_under_minimum_age():
             # A fixed message, with no age in it (issue #114).
-            errors["birth_month"] = "This birth year and month can't be used."
+            errors["birth_month"] = UNDER_MINIMUM_AGE_MESSAGE
         if errors:
             raise ValidationError(errors)
 
