@@ -12,12 +12,22 @@ actor (the system). Applying the values already stored, or a live update
 a Match already made, changes nothing, so a repeated live update task is
 harmless. A redelivered replay change is not caught that way: ordering
 replay changes against live updates, a redelivered replay task included,
-is the replay caller's job (#47).
+is the replay caller's job, ``replay_ratings()``.
 
 ``update_ratings_for_match()`` is the live update (#46, ADR 0027): it
 records one confirmed Match on the stored engine snapshot and applies the
 changes through ``apply_rating()``. ``schedule_replay()`` is where a late
-match goes; #47 fills it in.
+match, or one the snapshot cannot continue, goes: it stores a replay
+request through ``request_replay()``, as a change to what counts does
+(``match_changed``, #47).
+
+``replay_ratings()`` is the replay (#47): a full replay of the counted
+ledger that applies every rating through ``apply_rating()`` and removes
+the ratings it no longer produces (``_remove_rating()``, the only path
+that deletes a ``RatingState``). It orders replay changes against live
+updates: both lock the engine snapshot row first, so they serialize, and
+it runs only while a request is pending, so a redelivered or repeated
+replay task writes nothing.
 """
 
 import logging
@@ -30,6 +40,7 @@ from django.conf import settings
 from django.db import connection, models, transaction
 from django.db.models import Max
 from django.utils import timezone
+from kombu.exceptions import OperationalError
 
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
@@ -59,9 +70,14 @@ from apps.ratings.models import (
     RatingReplay,
     RatingReplayRequest,
     RatingState,
+    ReplayReason,
 )
 
 logger = logging.getLogger(__name__)
+
+# What publishing a task raises when the broker cannot take it: kombu's
+# connection error, or a socket error (ConnectionError is one).
+_BROKER_ERRORS = (OperationalError, OSError)
 
 # The stored summary fields and the versions that produced them. They
 # decide whether an apply changes anything, and they are what the Audit
@@ -382,11 +398,64 @@ class LiveUpdateOutcome(StrEnum):
     REPLAY_NEEDED = "replay_needed"
 
 
-def schedule_replay(players: Iterable[Player], earliest_date: date) -> None:
-    """Hand a late match's players to a replay from ``earliest_date``.
+class ReplayFailed(Exception):
+    """A replay task failed in a worker, without the error's text.
 
-    A stub until #47 replaces it: it only logs the players' OPEN Codes and
-    the date, never a name or other personal data.
+    Holds only the error's class, so Celery's worker log never prints the
+    original text, which can quote values.
+    """
+
+    def __init__(self, error_class: str) -> None:
+        super().__init__(f"Replay failed ({error_class}).")
+        self.error_class = error_class
+
+
+def request_replay(earliest_date: date, reason: ReplayReason) -> RatingReplayRequest:
+    """Store a replay request and queue the replay task once the transaction commits.
+
+    The request row is inserted in the caller's transaction, so a change
+    that rolls back leaves no request and queues nothing. After commit,
+    ``apps.ratings.tasks.replay_ratings`` is queued with no arguments and
+    a countdown of ``settings.RATING_REPLAY_DELAY_SECONDS``, so quick
+    successive changes share one replay. It locks nothing: the workflow
+    calls it through ``match_changed`` while it holds Match locks. A
+    broker error (an outage) is logged by error class only and does not
+    fail the change: the request stays, and the beat entry runs it. Any
+    other error propagates, so an eager task's failure in tests is not
+    hidden.
+    """
+    from apps.ratings.tasks import replay_ratings as replay_task
+
+    request = RatingReplayRequest(earliest_date=earliest_date, reason=reason)
+    request.full_clean()
+    request.save()
+
+    def enqueue() -> None:
+        try:
+            replay_task.apply_async(countdown=settings.RATING_REPLAY_DELAY_SECONDS)
+        except _BROKER_ERRORS as exc:
+            logger.error("Could not queue the replay (%s).", type(exc).__name__)
+
+    # Not robust: a robust callback would swallow any other error and log
+    # its text.
+    transaction.on_commit(enqueue)
+    return request
+
+
+def schedule_replay(
+    players: Iterable[Player],
+    earliest_date: date,
+    *,
+    reason: ReplayReason = ReplayReason.LATE,
+) -> None:
+    """Hand a match's players to a replay from ``earliest_date``.
+
+    Where a live update sends a late match or one the stored snapshot
+    cannot continue. Logs the players' OPEN Codes and the date, never a
+    name or other personal data, then stores a replay request through
+    ``request_replay()`` with ``reason``. The live update passes no
+    reason, so its requests carry ``late``. Every replay is a full
+    replay; the players and date are for the log only.
     """
     codes = sorted(str(player.public_code) for player in players)
     logger.info(
@@ -394,6 +463,7 @@ def schedule_replay(players: Iterable[Player], earliest_date: date) -> None:
         earliest_date.isoformat(),
         ", ".join(codes),
     )
+    request_replay(earliest_date, reason)
 
 
 def _snapshot_row(labels: LiveConfig) -> EngineSnapshot:
