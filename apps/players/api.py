@@ -71,6 +71,7 @@ from apps.matches.pagination import (
     MatchHistoryPagination,
 )
 from apps.matches.schemas import MatchOut, with_match_details
+from apps.players.age import is_minor
 from apps.players.models import UNDER_MINIMUM_AGE_MESSAGE, Player
 from apps.players.schemas import (
     MyPlayerOut,
@@ -429,10 +430,16 @@ def _profile_from_hold(details: SignupDetails) -> _NewProfile:
     """``create_player``'s values from the details held at signup.
 
     The held legal name ("First Last") is also the starting display name
-    (ADR 0021).
+    (ADR 0022), except for a player aged 13 to 17, who starts with "First
+    L.": the first name, a space, the last name's first character, and a
+    period. Either can change it later.
     """
+    if is_minor(details.birth_year, details.birth_month):
+        display_name = f"{details.first_name} {details.last_name[0]}."
+    else:
+        display_name = details.legal_name
     return {
-        "display_name": details.legal_name,
+        "display_name": display_name,
         "legal_name": details.legal_name,
         "birth_year": details.birth_year,
         "birth_month": details.birth_month,

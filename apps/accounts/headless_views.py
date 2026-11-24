@@ -172,6 +172,7 @@ class SignupInput(BaseSignupInput):
                 ),
                 city=cleaned["city"],
                 region=cleaned["region"],
+                first_name=cleaned["first_name"],
             )
             hold_signup_details(session, user, details)
         return user, response

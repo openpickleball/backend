@@ -126,6 +126,7 @@ def test_signup_session_holds_no_birthdate_or_raw_gender() -> None:
         "legal_name",
         "city",
         "region",
+        "first_name",
     }
     assert all(isinstance(held[key], int) for key in ("year", "month"))
     assert held["gender_division"] in {"mens", "womens"}

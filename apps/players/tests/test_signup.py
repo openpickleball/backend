@@ -34,6 +34,7 @@ DETAILS = SignupDetails(
     legal_name="Sam Quillfeather",
     city="Lakeview",
     region="",
+    first_name="Sam",
 )
 # A well-formed hold for Account 7, which the malformed cases change.
 HELD = {
@@ -44,6 +45,7 @@ HELD = {
     "legal_name": "Sam Quillfeather",
     "city": "Lakeview",
     "region": "",
+    "first_name": "Sam",
 }
 
 
@@ -132,6 +134,11 @@ def test_peek_hands_nothing_to_another_account_or_nobody() -> None:
         {k: v for k, v in HELD.items() if k != "city"},
         {**HELD, "city": None},
         {**HELD, "region": 5},
+        {k: v for k, v in HELD.items() if k != "first_name"},
+        {**HELD, "first_name": ""},
+        {**HELD, "first_name": None},
+        {**HELD, "first_name": "Samuel"},
+        {**HELD, "first_name": "Sam Quillfeather"},
     ],
 )
 def test_peek_ignores_a_malformed_value(held: dict[str, object]) -> None:

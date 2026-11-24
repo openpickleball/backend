@@ -236,7 +236,9 @@ def test_details_held_for_another_account_are_not_used() -> None:
     client = signed_in(account)
     session = client.session
     hold_signup_details(
-        session, other, SignupDetails(1970, 2, "mens", "Sam Quillfeather", "", "")
+        session,
+        other,
+        SignupDetails(1970, 2, "mens", "Sam Quillfeather", "", "", "Sam"),
     )
     session.save()
 
@@ -503,7 +505,9 @@ def test_an_unverified_address_gets_403_and_keeps_the_hold() -> None:
     client = signed_in(account)
     session = client.session
     hold_signup_details(
-        session, account, SignupDetails(*HELD, "womens", "Sam Quillfeather", "", "")
+        session,
+        account,
+        SignupDetails(*HELD, "womens", "Sam Quillfeather", "", "", "Sam"),
     )
     session.save()
 

@@ -25,6 +25,7 @@ from apps.accounts.tests.headless import (
     SIGNUP_FULL_NAME,
     SIGNUP_GENDER_DIVISION,
     SIGNUP_LOCATION,
+    SIGNUP_NAMES,
     VERIFY_PREFIX,
     HeadlessSession,
     app_headers,
@@ -370,6 +371,7 @@ def test_13_or_older_signs_up_and_holds_the_details(base: str) -> None:
         "gender_division": "mens",
         "legal_name": SIGNUP_FULL_NAME,
         **SIGNUP_LOCATION,
+        "first_name": SIGNUP_NAMES["first_name"],
     }
     assert SIGNUP_REFUSED_SESSION_KEY not in stored
 
@@ -390,6 +392,7 @@ def test_taken_address_holds_the_details_with_no_account(base: str) -> None:
         "gender_division": SIGNUP_GENDER_DIVISION,
         "legal_name": SIGNUP_FULL_NAME,
         **SIGNUP_LOCATION,
+        "first_name": SIGNUP_NAMES["first_name"],
     }
     assert _accounts() == 1
 
@@ -457,6 +460,7 @@ def test_the_details_are_taken_once_after_verify_and_login(base: str) -> None:
         legal_name=SIGNUP_FULL_NAME,
         city=SIGNUP_LOCATION["city"],
         region=SIGNUP_LOCATION["region"],
+        first_name=SIGNUP_NAMES["first_name"],
     )
     assert take_signup_details(stored, account) is None
     stored.save()

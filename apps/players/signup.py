@@ -7,7 +7,9 @@ bound to the new Account (``hold_signup_details``), and the Player create
 endpoint (#124) reads them (``peek_signup_details``) and takes them once
 the Player exists (``take_signup_details``). The session never holds a
 day of birth or a raw gender (ADR 0009). The names are held as one legal
-name, "First Last", which is also the Player's starting display name.
+name, "First Last", with the first name, so the Player create endpoint
+can start a player aged 13 to 17 with the display name "First L."
+(ADR 0022).
 
 An under-13 age, at signup, at the signup age check (#223), or at the
 Player create endpoint, refuses the session (``refuse_signup``): it drops
@@ -50,7 +52,8 @@ def refuse_signup(session: "SessionBase") -> None:
 @dataclass(frozen=True)
 class SignupDetails:
     """A signup's birth year and month, gender division, legal name
-    ("First Last"), and city and region (empty when not given)."""
+    ("First Last"), city and region (empty when not given), and first
+    name (the start of the legal name)."""
 
     birth_year: int
     birth_month: int
@@ -58,6 +61,12 @@ class SignupDetails:
     legal_name: str
     city: str
     region: str
+    first_name: str
+
+    @property
+    def last_name(self) -> str:
+        """The legal name after the first name and its space."""
+        return self.legal_name[len(self.first_name) + 1 :]
 
 
 def hold_signup_details(
@@ -79,6 +88,7 @@ def hold_signup_details(
         "legal_name": details.legal_name,
         "city": details.city,
         "region": details.region,
+        "first_name": details.first_name,
     }
 
 
@@ -110,6 +120,15 @@ def peek_signup_details(
         return None
     if not isinstance(city, str) or not isinstance(region, str):
         return None
+    first_name = held.get("first_name")
+    if not isinstance(first_name, str) or not first_name:
+        return None
+    # The legal name is "First Last": the first name, a space, and more.
+    if (
+        not legal_name.startswith(f"{first_name} ")
+        or len(legal_name) <= len(first_name) + 1
+    ):
+        return None
     return SignupDetails(
         birth_year=year,
         birth_month=month,
@@ -117,6 +136,7 @@ def peek_signup_details(
         legal_name=legal_name,
         city=city,
         region=region,
+        first_name=first_name,
     )
 
 

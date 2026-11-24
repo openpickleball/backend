@@ -64,6 +64,12 @@ _LAST_NAME_MESSAGES = {"required": "Enter your last name."}
 _LOCATION_MESSAGES = {
     "max_length": f"Enter at most {_LOCATION_MAX_LENGTH} characters.",
 }
+# A player aged 13 to 17 starts with "First L." (ADR 0022), so the first
+# name leaves room for a space, an initial, and a period.
+SIGNUP_FIRST_NAME_MAX_LENGTH = SIGNUP_NAME_MAX_LENGTH - 3
+_FIRST_NAME_TOO_LONG = (
+    f"Your first name can be at most {SIGNUP_FIRST_NAME_MAX_LENGTH} characters."
+)
 _NAME_TOO_LONG = (
     f"Your first and last name together can be at most "
     f"{SIGNUP_NAME_MAX_LENGTH - 1} characters."
@@ -163,7 +169,12 @@ class SignupAgeForm(SignupBirthForm):
         """allauth's signup form calls this through its own ``clean()``."""
         cleaned: dict[str, Any] = super().clean() or {}
         first, last = cleaned.get("first_name"), cleaned.get("last_name")
-        if (
+        if first and len(first) > SIGNUP_FIRST_NAME_MAX_LENGTH:
+            self.add_error(
+                "first_name",
+                forms.ValidationError(_FIRST_NAME_TOO_LONG, code="max_length"),
+            )
+        elif (
             first
             and last
             and len(signup_full_name(first, last)) > (SIGNUP_NAME_MAX_LENGTH)

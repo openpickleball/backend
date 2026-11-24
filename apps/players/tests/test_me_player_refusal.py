@@ -186,6 +186,7 @@ def test_a_flagged_session_loses_its_held_details(base: str) -> None:
             legal_name="Sam Quillfeather",
             city="",
             region="",
+            first_name="Sam",
         ),
     )
     store.save()
