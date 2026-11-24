@@ -31,8 +31,9 @@ class PlayerCreateIn(Schema):
     (ADR 0017, ADR 0019, ADR 0022): ``display_name``, ``birth_year``,
     ``birth_month``, and ``gender_division`` are then required. Held
     details are used instead of every field here: the held name ("First
-    Last") becomes both the display name and the legal name, with the held
-    city and region. ``gender_division`` is ``mens`` or ``womens``.
+    Last") becomes the legal name and, for an adult, the display name (a
+    player aged 13 to 17 starts with "First L."), with the held city and
+    region. ``gender_division`` is ``mens`` or ``womens``.
     Optional text fields left out or null are empty. Unknown keys are
     refused.
     """

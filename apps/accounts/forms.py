@@ -55,7 +55,7 @@ _GENDER_DIVISION_MESSAGES = {
 }
 
 
-# "First Last" is the starting display name, so together they fit it.
+# "First Last" is an adult's starting display name, so together they fit it.
 SIGNUP_NAME_MAX_LENGTH = Player._meta.get_field("display_name").max_length or 0
 _LOCATION_MAX_LENGTH = Player._meta.get_field("city").max_length or 0
 _NOT_TEXT = "Enter text."
@@ -125,7 +125,8 @@ class SignupBirthForm(forms.Form):
 
 
 def signup_full_name(first_name: str, last_name: str) -> str:
-    """The legal name and starting display name a signup's names give."""
+    """The legal name (and an adult's starting display name) a signup's
+    names give."""
     return f"{first_name} {last_name}"
 
 
@@ -151,7 +152,7 @@ class SignupAgeForm(SignupBirthForm):
     )
     # The first and last name, required, and the city and region, optional
     # (issue #221, ADR 0022). "First Last" becomes the Player's legal name
-    # and starting display name.
+    # and an adult's starting display name.
     first_name = SignupNameField(error_messages=_FIRST_NAME_MESSAGES)
     last_name = SignupNameField(error_messages=_LAST_NAME_MESSAGES)
     city = SignupTextField(
