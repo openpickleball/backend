@@ -27,7 +27,7 @@ from enum import StrEnum
 from typing import Any
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
@@ -367,6 +367,21 @@ def _rating_formats(match: Match) -> list[str]:
     return formats
 
 
+def _share_lock_match(match_id: int) -> None:
+    """Lock the Match row ``FOR SHARE`` until the transaction ends.
+
+    Django's ``select_for_update`` has no share mode, so this is raw SQL
+    on the model's table, with the id as a parameter.
+    """
+    # The table name is the model's own, never input.
+    table = connection.ops.quote_name(Match._meta.db_table)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT 1 FROM {table} WHERE id = %s FOR SHARE",
+            [match_id],
+        )
+
+
 def _corrected_matches(match: Match) -> list[Match]:
     """The Matches ``match`` corrects, directly or through earlier corrections."""
     chain: list[Match] = []
@@ -422,7 +437,9 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
 
     In one transaction: lock the engine snapshot row for the loaded config
     (every live update serializes on it), then the Match's Players in row
-    id order, then record the Match on the engine the snapshot holds,
+    id order, then the Match row ``FOR SHARE`` (so a void, dispute, or
+    edit waits until this update commits), check again that it counts,
+    then record the Match on the engine the snapshot holds,
     apply each changed rating through ``apply_rating()``, and save the new
     snapshot. A failure anywhere rolls back the ratings and the snapshot
     together, so the task can run again.
@@ -462,6 +479,9 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
             )
             .order_by("pk")
         )
+        # Hold the Match row until commit: the workflow's void, dispute,
+        # and edit lock it FOR UPDATE, so they wait for this update.
+        _share_lock_match(match.pk)
         # Again under the locks: the Match may have been voided or held
         # while this update waited for the snapshot row.
         if not Match.objects.counted().filter(pk=match.pk).exists():
