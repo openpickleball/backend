@@ -168,7 +168,9 @@ class SignupAgeForm(SignupBirthForm):
             and last
             and len(signup_full_name(first, last)) > (SIGNUP_NAME_MAX_LENGTH)
         ):
-            self.add_error("last_name", _NAME_TOO_LONG)
+            self.add_error(
+                "last_name", forms.ValidationError(_NAME_TOO_LONG, code="max_length")
+            )
         return cleaned
 
     def signup(self, request: "HttpRequest", user: "AbstractBaseUser") -> None:
