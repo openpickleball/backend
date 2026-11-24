@@ -62,6 +62,7 @@ from apps.ratings.engine_adapter import (
     live_config,
     record_live,
     run_replay,
+    snapshot_holds_match,
 )
 from apps.ratings.models import (
     EngineSnapshot,
@@ -630,13 +631,20 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
         # while this update waited for the snapshot row.
         if not Match.objects.counted().filter(pk=match.pk).exists():
             return LiveUpdateOutcome.NOT_COUNTED
-        # A counted live update always writes history rows in the same
-        # transaction as the snapshot, so a Match with one is a
-        # redelivery, even after a later match moved last_played.
+        # A Match the stored snapshot already holds is in the ratings: a
+        # redelivery, or a Match a replay counted. Checked before the
+        # history, correction, and late checks, so neither asks for
+        # another replay.
+        if snapshot_holds_match(row.snapshot, match):
+            return LiveUpdateOutcome.UNCHANGED
+        # A Match rated live that the snapshot no longer holds: a replay
+        # dropped it (a dispute, or a hold) and it counts again. Only a
+        # replay can put it back.
         if RatingHistory.objects.filter(
             match=match, kind=RatingChangeKind.LIVE_UPDATE
         ).exists():
-            return LiveUpdateOutcome.UNCHANGED
+            schedule_replay(players, earliest_date=match.played_on)
+            return LiveUpdateOutcome.REPLAY_NEEDED
         # A correction of a Match that was rated live: the old Match's
         # effect is still in the ratings and the snapshot, so only a replay
         # can put the correction in its place.

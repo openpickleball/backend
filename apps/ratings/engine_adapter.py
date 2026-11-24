@@ -589,6 +589,23 @@ def _summaries(
     return tuple(found)
 
 
+def snapshot_holds_match(snapshot: Mapping[str, object] | None, match: Match) -> bool:
+    """True when the engine ``snapshot`` holds has already processed ``match``.
+
+    Looks for the Match's OPEN Code in the engine's processed match ids.
+    False for an empty snapshot, and False, not an error, when the
+    snapshot cannot be loaded under the loaded config (another config or
+    snapshot schema): such a snapshot holds nothing a live update can use.
+    """
+    if not snapshot:
+        return False
+    try:
+        engine = open_engine.RatingEngine.from_snapshot(snapshot, load_config())
+    except (open_engine.SnapshotError, open_engine.ConfigError):
+        return False
+    return str(match.public_code) in engine.processed_match_ids
+
+
 def record_live(snapshot: Mapping[str, object] | None, match: Match) -> LiveUpdate:
     """Record ``match`` live on the engine ``snapshot`` holds, and return the result.
 
