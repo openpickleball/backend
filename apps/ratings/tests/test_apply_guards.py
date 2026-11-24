@@ -204,12 +204,12 @@ def test_apply_locks_the_player_row_before_reading_the_state(
     player_locks = [
         index
         for index, text in enumerate(sql)
-        if "FOR UPDATE" in text and 'FROM "players_player"' in text
+        if "FOR NO KEY UPDATE" in text and 'FROM "players_player"' in text
     ]
     state_reads = [
         index for index, text in enumerate(sql) if 'FROM "ratings_ratingstate"' in text
     ]
-    assert player_locks, "no FOR UPDATE on the player row"
+    assert player_locks, "no FOR NO KEY UPDATE on the player row"
     assert state_reads
     assert player_locks[0] < state_reads[0]
 
@@ -266,7 +266,7 @@ def test_a_redelivered_live_update_after_a_version_change_writes_nothing(
 
     assert again is None
     assert RatingHistory.objects.count() == 1
-    assert RatingState.objects.get(player=player).spec_version == "unpublished"
+    assert RatingState.objects.get(player=player).spec_version == "1.0.0rc1"
 
 
 def test_the_database_refuses_a_second_live_update_row_for_one_match(
