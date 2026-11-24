@@ -604,6 +604,46 @@
         "title": "PlayerProfileOut",
         "type": "object"
       },
+      "PlayerRatingsOut": {
+        "description": "A player's current ratings, one per rating format the player has.\n\nThe OPEN standard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package.",
+        "properties": {
+          "code": {
+            "description": "The player's OPEN Code.",
+            "title": "Code",
+            "type": "string"
+          },
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "profile_url": {
+            "description": "The player's public profile page.",
+            "title": "Profile Url",
+            "type": "string"
+          },
+          "ratings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RatingOut"
+            },
+            "description": "The player's ratings keyed by rating format. Only the formats the player has a rating in appear; empty when none.",
+            "propertyNames": {
+              "$ref": "#/components/schemas/RatingFormat"
+            },
+            "title": "Ratings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "code",
+          "profile_url",
+          "demonstration",
+          "ratings"
+        ],
+        "title": "PlayerRatingsOut",
+        "type": "object"
+      },
       "PlayerSearchOut": {
         "description": "The players found, best match first. No count and no paging.",
         "properties": {
@@ -811,6 +851,84 @@
           "home_club_visibility"
         ],
         "title": "PrivacyOut",
+        "type": "object"
+      },
+      "RatingFormat": {
+        "description": "The rating pool a Match counts in (ADR 0024).\n\nThe values are ``open_engine.RatingFormat``'s. ``record_match`` stores\none per Match from the players' gender divisions when the match is\nrecorded (``apps.matches.services.derive_rating_format``), and it never\nchanges afterward. A singles match is ``singles``; a doubles match is\none of the four doubles values.",
+        "enum": [
+          "singles",
+          "doubles",
+          "mixed_doubles",
+          "doubles_men",
+          "doubles_women"
+        ],
+        "title": "RatingFormat",
+        "type": "string"
+      },
+      "RatingOut": {
+        "description": "A player's current rating in one rating format, with its reliability.\n\nThe OPEN standard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package.",
+        "properties": {
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "established": {
+            "description": "True once the rating rests on enough matches to be established.",
+            "title": "Established",
+            "type": "boolean"
+          },
+          "imported_reliability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reliability carried from an external rating, 0 to 100, shown apart from the OPEN-earned reliability. Null when there is none.",
+            "title": "Imported Reliability"
+          },
+          "provisional": {
+            "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "rating": {
+            "description": "The rating, as the engine gave it.",
+            "title": "Rating",
+            "type": "number"
+          },
+          "reliability": {
+            "description": "OPEN-earned reliability, 0 to 100. The OPEN standard requires any app that shows an OPEN rating to show its reliability next to it.",
+            "title": "Reliability",
+            "type": "number"
+          },
+          "spec_version": {
+            "description": "The OPEN rating spec version the rating follows.",
+            "title": "Spec Version",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the rating last changed.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rating",
+          "reliability",
+          "imported_reliability",
+          "provisional",
+          "established",
+          "spec_version",
+          "demonstration",
+          "updated_at"
+        ],
+        "title": "RatingOut",
         "type": "object"
       },
       "ReadyChecks": {
@@ -2149,6 +2267,88 @@
         "summary": "List Player Matches",
         "tags": [
           "players"
+        ]
+      }
+    },
+    "/api/v1/players/{code}/ratings": {
+      "get": {
+        "description": "A player's current Ratings, one per rating format the player has.\n\nNo sign-in needed. Each rating comes with its reliability: the OPEN\nstandard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package. An unknown code, a player whose\nAccount is inactive, and a player aged 13 to 17 get the same 404.\nLimited per client IP; past the limit the answer is 429 with a\nRetry-After header.",
+        "operationId": "get_player_ratings",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "P-7K3M-QX9H"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "P-7K3M-QX9H"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerRatingsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Player Ratings",
+        "tags": [
+          "ratings"
         ]
       }
     }
