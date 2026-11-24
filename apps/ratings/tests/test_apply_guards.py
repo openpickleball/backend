@@ -113,7 +113,7 @@ def test_a_replay_change_that_disagrees_with_its_replay_is_refused(
     player: Player, overrides: dict[str, Any]
 ) -> None:
     replay = record_replay(replay_provenance(as_of=REPLAY_DATE))
-    summary = _singles(player, calculated_as_of=REPLAY_DATE, **overrides)
+    summary = _singles(player, **{"calculated_as_of": REPLAY_DATE, **overrides})
 
     with pytest.raises(RatingApplyError) as caught:
         apply_rating(
