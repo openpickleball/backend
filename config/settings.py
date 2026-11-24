@@ -109,28 +109,38 @@ def _rate(name: str, default: int) -> int:
     return _version(name, default)
 
 
-# Headers a client can set itself, which the proxy passes on or extends.
-_FORGEABLE_IP_HEADERS = frozenset({"x-forwarded-for", "forwarded"})
+# Header names CLIENT_IP_HEADER refuses: X-Forwarded-For and Forwarded,
+# which a client can fill with any value, and Content-Type and
+# Content-Length, which WSGI passes without the HTTP_ prefix, so the
+# throttle would never find them.
+_REFUSED_IP_HEADERS = frozenset(
+    {"x-forwarded-for", "forwarded", "content-type", "content-length"}
+)
 
 
 def _client_ip_header(name: str, default: str) -> str:
     """The name of the request header that holds the client IP.
 
-    Stripped and lowercased, or ``default`` when unset or empty. Only
-    letters, digits, and hyphens, at most 64: an underscore is refused
-    because WSGI servers fold underscores and hyphens into the same
-    ``HTTP_`` key. ``X-Forwarded-For`` and ``Forwarded`` are refused, since
-    a client can put any value in them. The error never echoes the value.
+    Stripped and lowercased, or ``default`` when unset or empty. Letters
+    and digits in groups joined by hyphens, at most 64, so no leading or
+    trailing hyphen: an underscore is refused because WSGI servers fold
+    underscores and hyphens into the same ``HTTP_`` key. The names in
+    ``_REFUSED_IP_HEADERS`` are refused too. The error never echoes the
+    value.
     """
     value = _raw(name).strip().lower()
     if not value:
         return default
-    if not re.fullmatch(r"[a-z0-9-]{1,64}", value) or value in _FORGEABLE_IP_HEADERS:
+    if (
+        len(value) > 64
+        or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value)
+        or value in _REFUSED_IP_HEADERS
+    ):
         raise ImproperlyConfigured(
             f"Set {name} to the name of the header your proxy sets to the "
-            "client IP: letters, digits, and hyphens, at most 64, never "
-            "X-Forwarded-For or Forwarded. Leave it empty for the default "
-            "(see .env.example)."
+            "client IP: letters, digits, and inner hyphens, at most 64, never "
+            "X-Forwarded-For, Forwarded, Content-Type, or Content-Length. "
+            "Leave it empty for the default (see .env.example)."
         )
     return value
 
