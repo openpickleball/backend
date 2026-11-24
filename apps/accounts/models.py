@@ -201,7 +201,7 @@ class AgreementAcceptance(models.Model):
             models.UniqueConstraint(
                 fields=["account", "agreement", "version"],
                 name="accounts_agreement_acceptance_once",
-                violation_error_message=("This account already accepted this version."),
+                violation_error_message="This account already accepted this version.",
             ),
             models.CheckConstraint(
                 condition=Q(agreement__in=Agreement.values),

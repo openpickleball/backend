@@ -1,7 +1,7 @@
 # 0009. Personal data: what OPEN collects and how it is protected
 
 - Status: Accepted
-- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (gender division required for every new Player), [ADR 0020](0020-signup-age-check.md) (the app asks for the email and password before the age, and checks the age before it takes a name or a location), [ADR 0022](0022-name-and-place-at-signup.md) (signup takes the first and last name, stored as the legal name and starting display name, and an optional city and region), [ADR 0023](0023-birth-and-division-set-once.md) (the birth year and month and the gender division are set once, when the Player is created)
+- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (gender division required for every new Player), [ADR 0020](0020-signup-age-check.md) (the app asks for the email and password before the age, and checks the age before it takes a name or a location), [ADR 0022](0022-name-and-place-at-signup.md) (signup takes the first and last name, stored as the legal name and starting display name, and an optional city and region), [ADR 0023](0023-birth-and-division-set-once.md) (the birth year and month and the gender division are set once, when the Player is created), [ADR 0026](0026-legal-agreements-at-signup.md) (signup records the version of each legal agreement an Account accepted, and when)
 - Date: 2026-11-14
 
 ## Context
