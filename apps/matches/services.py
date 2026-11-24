@@ -1146,12 +1146,14 @@ def check_batch(
 ) -> None:
     """Refuse a batch that does not fit the submission, with fixed text.
 
-    Raises ``ValueError`` (``BATCH_REFUSED``) for an unsaved batch, a batch
-    whose submitter is not exactly this submission's (the same Account,
-    or the same application, and no other), a batch with an Event other
-    than the match's, or a batch with a Club other than the match's. A
-    batch with no Event or no Club accepts any value there. Reads only the
-    given instances' ids: the batch row never changes.
+    Raises ``ValueError`` (``BATCH_REFUSED``) for a batch with no stored
+    row, a batch whose stored submitter is not exactly this submission's
+    (the same Account, or the same application, and no other), a batch
+    whose stored Event is set and is not the match's, or one whose stored
+    Club is set and is not the match's. A batch with no Event or no Club
+    accepts any value there. The batch's values are read from the
+    database by its id, never from the instance, so a batch changed in
+    memory cannot link a match into another submitter's batch.
     """
     user_id = submitted_by_user.pk if submitted_by_user is not None else None
     application_id = (
@@ -1159,13 +1161,24 @@ def check_batch(
     )
     event_id = event.pk if event is not None else None
     club_id = club.pk if club is not None else None
+    stored = (
+        SubmissionBatch.objects.filter(pk=batch.pk)
+        .values(
+            "submitted_by_user_id",
+            "submitted_by_application_id",
+            "event_id",
+            "club_id",
+        )
+        .first()
+        if batch.pk is not None
+        else None
+    )
     fits = (
-        batch.pk is not None
-        and not batch._state.adding
-        and batch.submitted_by_user_id == user_id
-        and batch.submitted_by_application_id == application_id
-        and (batch.event_id is None or batch.event_id == event_id)
-        and (batch.club_id is None or batch.club_id == club_id)
+        stored is not None
+        and stored["submitted_by_user_id"] == user_id
+        and stored["submitted_by_application_id"] == application_id
+        and stored["event_id"] in (None, event_id)
+        and stored["club_id"] in (None, club_id)
     )
     if not fits:
         raise ValueError(BATCH_REFUSED)

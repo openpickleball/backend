@@ -807,13 +807,16 @@ def submitter_matches(
 
     ``submitter`` is an Account or a Partner Application. The date is
     the recording time (``created_at``) in UTC, not ``played_on``, which
-    the submitter controls. In row order. Read only.
+    the submitter controls. In row order. Read only. Anything else raises
+    ``ValueError`` (fixed text).
     """
     start = datetime.combine(recorded_since, time.min, tzinfo=UTC)
     matches = Match.objects.filter(created_at__gte=start).order_by("pk")
     if isinstance(submitter, get_user_model()):
         return matches.filter(submitted_by_user_id=submitter.pk)
-    return matches.filter(submitted_by_application_id=submitter.pk)
+    if isinstance(submitter, get_application_model()):
+        return matches.filter(submitted_by_application_id=submitter.pk)
+    raise ValueError(_UNKNOWN_SUBMITTER)
 
 
 def _check_bulk(actor: Actor, reason: str) -> None:
@@ -831,13 +834,13 @@ def void_submission_batch(
 
     Anyone but a moderator (``is_moderator``: an active Account with
     ``matches.moderate_match``) gets ``MatchActionDenied`` before anything
-    is read or written. Then a blank ``reason`` and an unsaved batch raise
-    ``ValueError`` (fixed text). The matches are found by the batch link
+    is read or written. Then a blank ``reason`` and a batch with no stored
+    row raise ``ValueError`` (fixed text). The matches are found by the batch link
     (``submission_batch_matches``), never by time. See ``_bulk_void`` for
     how each is voided and what is recorded.
     """
     _check_bulk(actor, reason)
-    if batch.pk is None or batch._state.adding:
+    if batch.pk is None or not SubmissionBatch.objects.filter(pk=batch.pk).exists():
         raise ValueError(_UNSAVED_BATCH)
     return _bulk_void(
         submission_batch_matches(batch),
@@ -861,14 +864,14 @@ def void_submitter_matches(
     ``submitter`` is an Account or a Partner Application, and the scope
     is ``submitter_matches``: recorded (``created_at``, UTC) on or after
     ``recorded_since``. The same checks as ``void_submission_batch``, in
-    the same order; an unsaved submitter, or one that is neither an
-    Account nor a Partner Application, raises ``ValueError``.
+    the same order; a submitter with no stored row, or one that is
+    neither an Account nor a Partner Application, raises ``ValueError``.
     """
     _check_bulk(actor, reason)
     if (
         not isinstance(submitter, (get_user_model(), get_application_model()))
         or submitter.pk is None
-        or submitter._state.adding
+        or not type(submitter)._default_manager.filter(pk=submitter.pk).exists()
     ):
         raise ValueError(_UNKNOWN_SUBMITTER)
     return _bulk_void(
