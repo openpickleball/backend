@@ -20,14 +20,23 @@ allauth's URLconf (`config/urls.py`).
   age and gender division are held in the session, bound to the new
   Account (or to none, for a taken address, so both answers stay alike),
   for the Player create endpoint (#124).
+- Sign-up age check (issue #223, ADR 0020): the birth year and month
+  alone (`SignupBirthForm`), before the app asks for a name or a location,
+  with the age screen's rules, order, rate limit, and refusal. A pass keeps
+  nothing in the session; under 13 flags it as a refused sign-up does.
+  It is OPEN's own view, at a new path under allauth's sign-up.
+- allauth's OpenAPI document: served with the age check added
+  (`apps/accounts/openapi.py`).
 - Email verification: an address that is another Account's login cannot
   be verified (allauth's `email_taken`, a 400). allauth checks only other
   verified EmailAddress rows, so verifying would set the address as this
   Account's `User.email` and break the unique constraint with a 500.
 """
 
-from typing import TYPE_CHECKING, ClassVar
+import json
+from typing import TYPE_CHECKING, Any, ClassVar
 
+import yaml
 from allauth.account.adapter import get_adapter
 from allauth.account.models import EmailAddress
 from allauth.account.utils import user_email
@@ -43,15 +52,20 @@ from allauth.headless.account.views import (
 from allauth.headless.account.views import SignupView as BaseSignupView
 from allauth.headless.account.views import VerifyEmailView as BaseVerifyEmailView
 from allauth.headless.base.response import ConflictResponse, ForbiddenResponse
+from allauth.headless.base.views import APIView
 from allauth.headless.constants import Client
-from allauth.headless.internal.restkit.response import ErrorResponse
+from allauth.headless.internal.restkit.response import APIResponse, ErrorResponse
+from allauth.headless.spec.views import OpenAPIJSONView as BaseOpenAPIJSONView
+from allauth.headless.spec.views import OpenAPIYAMLView as BaseOpenAPIYAMLView
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.http import HttpResponse
 from django.urls import URLPattern, path
 from django.utils.decorators import method_decorator
 
-from apps.accounts.forms import SignupAgeForm
+from apps.accounts.forms import SignupAgeForm, SignupBirthForm
+from apps.accounts.openapi import open_schema
 from apps.accounts.validators import is_canonical_email
 from apps.players.age import is_old_enough
 from apps.players.signup import (
@@ -63,6 +77,8 @@ from apps.players.signup import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from django.contrib.auth.base_user import AbstractBaseUser
     from django.http import HttpRequest, HttpResponseBase
 
@@ -201,13 +217,7 @@ class SignupView(BaseSignupView):
         self, request: "HttpRequest", *args: object, **kwargs: object
     ) -> "HttpResponseBase":
         if request.method == "POST":
-            early: HttpResponseBase | None = None
-            if request.user.is_authenticated:
-                early = ConflictResponse(request)
-            elif not get_adapter().is_open_for_signup(request):
-                early = ForbiddenResponse(request)
-            else:
-                early = self._screen_age(request)
+            early = _signup_not_allowed(request) or self._screen_age(request)
             if early is not None:
                 return early
         # Past allauth's SignupView, whose handle carries the same rate
@@ -219,20 +229,75 @@ class SignupView(BaseSignupView):
 
     def _screen_age(self, request: "HttpRequest") -> "HttpResponseBase | None":
         """A response that ends the sign-up, or None to go on."""
-        if is_signup_refused(request.session):
-            # Never reads the body: the answer depends on nothing sent.
-            return _refusal(request)
-        age = SignupAgeForm(data=self._parse_json(request) or {})
-        if not age.is_valid():
-            # allauth's 400, with only the signup details' errors.
-            invalid: HttpResponseBase = ErrorResponse(request, input=age)
-            return invalid
-        if not is_old_enough(
-            age.cleaned_data["birth_year"], age.cleaned_data["birth_month"]
-        ):
-            refuse_signup(request.session)
-            return _refusal(request)
-        return None
+        return _screen_birth(request, SignupAgeForm, self._parse_json)
+
+
+def _signup_not_allowed(request: "HttpRequest") -> "HttpResponseBase | None":
+    """allauth's sign-up answers for a signed-in session (409) and for
+    closed sign-up (403), made as allauth makes them, or None."""
+    answer: HttpResponseBase | None = None
+    if request.user.is_authenticated:
+        answer = ConflictResponse(request)
+    elif not get_adapter().is_open_for_signup(request):
+        answer = ForbiddenResponse(request)
+    return answer
+
+
+def _screen_birth(
+    request: "HttpRequest",
+    form_class: type[SignupBirthForm],
+    parse_json: "Callable[[HttpRequest], dict[str, Any] | None]",
+) -> "HttpResponseBase | None":
+    """The age screen: a response that ends the request, or None to go on.
+
+    A flagged session gets the refusal without its body being read, so
+    the answer depends on nothing sent: ``parse_json`` (allauth's, which
+    answers a body that is not a JSON object with a bare 400) runs only
+    after the flag check. Otherwise a missing or malformed field gets
+    allauth's 400 with only the form's errors, and under 13 flags the
+    session and gets the refusal.
+    """
+    if is_signup_refused(request.session):
+        return _refusal(request)
+    form = form_class(data=parse_json(request) or {})
+    if not form.is_valid():
+        invalid: HttpResponseBase = ErrorResponse(request, input=form)
+        return invalid
+    if not is_old_enough(
+        form.cleaned_data["birth_year"], form.cleaned_data["birth_month"]
+    ):
+        refuse_signup(request.session)
+        return _refusal(request)
+    return None
+
+
+# allauth's own signup limit, on the same counter as sign-up, so the check
+# gives no attempts that sign-up would not, and a 429 comes first.
+@method_decorator(rate_limit(action="signup"), name="handle")
+class SignupAgeCheckView(APIView):
+    """The sign-up age check (issue #223, ADR 0020).
+
+    The birth year and month alone, with the age screen's rules and order:
+    allauth's rate limit, its 409 and 403, the flag, the input, the age.
+    It reads no email address, so its answer says nothing about one. A
+    pass writes nothing to the session: the sign-up request sends and
+    checks the age itself. Under 13 flags the session (``refuse_signup``)
+    as a refused sign-up does.
+    """
+
+    # The body is parsed only after allauth's 409 and 403, as at sign-up.
+    handle_json_input = False
+
+    def post(
+        self, request: "HttpRequest", *args: object, **kwargs: object
+    ) -> "HttpResponseBase":
+        answer = _signup_not_allowed(request) or _screen_birth(
+            request, SignupBirthForm, self._parse_json
+        )
+        if answer is not None:
+            return answer
+        passed: HttpResponseBase = APIResponse(request)
+        return passed
 
 
 # One fixed answer, whatever was sent: no field, no age, no detail.
@@ -284,15 +349,47 @@ class VerifyEmailView(BaseVerifyEmailView):
     input_class = VerifyEmailInput
 
 
+class OpenAPIJSONView(BaseOpenAPIJSONView):
+    """allauth's OpenAPI document as JSON, with OPEN's age check."""
+
+    def get(self, request: "HttpRequest") -> HttpResponse:
+        return HttpResponse(
+            json.dumps(open_schema()),
+            content_type="application/vnd.oai.openapi+json",
+            headers={"Content-Disposition": "inline; filename=allauth-openapi.json"},
+        )
+
+
+class OpenAPIYAMLView(BaseOpenAPIYAMLView):
+    """allauth's OpenAPI document as YAML, with OPEN's age check."""
+
+    def get(self, request: "HttpRequest") -> HttpResponse:
+        return HttpResponse(
+            yaml.dump(open_schema(), Dumper=yaml.Dumper),
+            content_type="application/vnd.oai.openapi",
+            headers={"Content-Disposition": "inline; filename=allauth-openapi.yaml"},
+        )
+
+
 def headless_urlpatterns() -> list[URLPattern]:
-    """OPEN's views at allauth's paths, for each enabled headless client."""
+    """OPEN's views at allauth's paths, for each enabled headless client,
+    and its own age check under allauth's sign-up."""
     patterns = []
+    if settings.HEADLESS_SERVE_SPECIFICATION:
+        patterns += [
+            path("openapi.yaml", OpenAPIYAMLView.as_view()),
+            path("openapi.json", OpenAPIJSONView.as_view()),
+        ]
     for client in (Client.BROWSER, Client.APP):
         if client.value not in settings.HEADLESS_CLIENTS:
             continue
         prefix = f"{client.value}/v1/auth/"
         patterns += [
             path(f"{prefix}signup", SignupView.as_api_view(client=client)),
+            path(
+                f"{prefix}signup/age-check",
+                SignupAgeCheckView.as_api_view(client=client),
+            ),
             path(
                 f"{prefix}password/request",
                 RequestPasswordResetView.as_api_view(client=client),
