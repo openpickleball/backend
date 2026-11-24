@@ -74,3 +74,4 @@ Add each record here when it merges.
 - [0025. Rating state, rating history, and replay provenance](0025-rating-state-history-and-replay-provenance.md) (issue #45)
 - [0026. Accepting the legal agreements at signup](0026-legal-agreements-at-signup.md) (issue #222)
 - [0027. Live rating updates and the engine snapshot](0027-live-rating-updates-and-engine-snapshot.md) (issue #46)
+- [0028. Rating replays after match changes](0028-rating-replays-after-match-changes.md) (issue #47)

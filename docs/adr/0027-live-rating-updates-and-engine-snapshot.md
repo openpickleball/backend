@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-24
+- Amended by: [ADR 0028](0028-rating-replays-after-match-changes.md) (the replay is a second writer of the snapshot row; `schedule_replay()` stores a replay request; the live update returns `unchanged` first when the snapshot already holds the Match, and `replay_needed` for a live-rated Match the snapshot no longer holds; a lost or failed live update stores a replay request)
 
 ## Context
 
