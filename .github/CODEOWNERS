@@ -35,5 +35,8 @@
 # The match ledger, append-only (hard rule 3).
 /apps/matches/ @openpickleball/maintainers
 
+# Ratings and the engine adapter: rating changes (hard rule 8).
+/apps/ratings/ @openpickleball/maintainers
+
 # CI, the DCO check, and this file.
 /.github/ @openpickleball/maintainers

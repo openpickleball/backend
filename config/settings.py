@@ -341,6 +341,8 @@ INSTALLED_APPS = [
     # Application admin that oauth2_provider registers.
     "apps.partners",
     "apps.matches",
+    # The rating engine adapter (apps/ratings/engine_adapter.py). No models yet.
+    "apps.ratings",
     # The email outbox: messages wait here for the email queue (ADR 0016).
     "apps.emails",
     # Development only: the seed_dev_data command. No models.
