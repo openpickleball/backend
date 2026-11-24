@@ -11,13 +11,13 @@ allauth's URLconf (`config/urls.py`).
 - Sign-up: an address is taken only when it is some Account's `User.email`
   (ADR 0003). allauth also counts every other EmailAddress row, so an
   address another Account had only added, unverified, blocked sign-up.
-- Sign-up age screen (issues #114 and #215, ADR 0017): the birth year
-  and month and the gender division (`SignupAgeForm`) are checked before
-  anything else. Under 13 gets one fixed refusal, whatever the email and
+- Sign-up age screen (issues #114, #215, and #221, ADR 0017): the birth
+  year and month, the gender division, the first and last name, and the
+  city and region (`SignupAgeForm`) are checked before anything else. Under 13 gets one fixed refusal, whatever the email and
   password, before allauth reads them, so no lookup, Account, or mail
   results. The session is then flagged, and every later sign-up in it
   gets the same refusal. Thirteen and older signs up as before, and the
-  age and gender division are held in the session, bound to the new
+  details are held in the session, bound to the new
   Account (or to none, for a taken address, so both answers stay alike),
   for the Player create endpoint (#124).
 - Sign-up age check (issue #223, ADR 0020): the birth year and month
@@ -64,7 +64,7 @@ from django.http import HttpResponse
 from django.urls import URLPattern, path
 from django.utils.decorators import method_decorator
 
-from apps.accounts.forms import SignupAgeForm, SignupBirthForm
+from apps.accounts.forms import SignupAgeForm, SignupBirthForm, signup_full_name
 from apps.accounts.openapi import open_schema
 from apps.accounts.validators import is_canonical_email
 from apps.players.age import is_old_enough
@@ -162,10 +162,17 @@ class SignupInput(BaseSignupInput):
             # other paths.
             session[SIGNUP_DETAILS_SESSION_KEY] = held
         else:
+            cleaned = self.cleaned_data
             details = SignupDetails(
-                birth_year=self.cleaned_data["birth_year"],
-                birth_month=self.cleaned_data["birth_month"],
-                gender_division=self.cleaned_data["gender_division"],
+                birth_year=cleaned["birth_year"],
+                birth_month=cleaned["birth_month"],
+                gender_division=cleaned["gender_division"],
+                legal_name=signup_full_name(
+                    cleaned["first_name"], cleaned["last_name"]
+                ),
+                city=cleaned["city"],
+                region=cleaned["region"],
+                first_name=cleaned["first_name"],
             )
             hold_signup_details(session, user, details)
         return user, response
@@ -200,13 +207,13 @@ def _is_held_for_login(held: object, email: object) -> bool:
 # counts once, age screen answers included, and a 429 comes first.
 @method_decorator(rate_limit(action="signup"), name="handle")
 class SignupView(BaseSignupView):
-    """allauth's sign-up, behind the age screen (issues #114 and #215).
+    """allauth's sign-up, behind the age screen (issues #114, #215, #221).
 
     Order: allauth's rate limit, then its signed-in (409) and closed
     signup (403) answers, made as allauth makes them, then the age screen
-    (the age and the gender division), then allauth's input (and so its
-    email lookup). allauth itself answers invalid input before its 409 and
-    403; here a malformed age or gender division comes after them too,
+    (every signup detail besides the email and password), then allauth's
+    input (and so its email lookup). allauth itself answers invalid input
+    before its 409 and 403; here a missing or malformed signup detail comes after them too,
     so the screen only ever answers, or flags, a session that allauth
     would let sign up.
     """

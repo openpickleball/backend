@@ -68,3 +68,4 @@ Add each record here when it merges.
 - [0018. Player search by display name](0018-player-search-by-display-name.md) (issue #191)
 - [0019. Gender division required at signup](0019-gender-division-required-at-signup.md) (issue #215)
 - [0020. An age check before the rest of signup](0020-signup-age-check.md) (issue #223)
+- [0022. First and last name and a place at signup](0022-name-and-place-at-signup.md) (issue #221)

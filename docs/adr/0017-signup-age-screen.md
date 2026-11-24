@@ -1,7 +1,7 @@
 # 0017. The signup age screen and the 13-and-older rule
 
 - Status: Proposed
-- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (signup also takes the gender division, held with the age as `open_signup_details`), [ADR 0020](0020-signup-age-check.md) (the app asks for the email and password first, then checks the age with `POST /_allauth/{client}/v1/auth/signup/age-check` before the rest of signup)
+- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (signup also takes the gender division, held with the age as `open_signup_details`), [ADR 0020](0020-signup-age-check.md) (the app asks for the email and password first, then checks the age with `POST /_allauth/{client}/v1/auth/signup/age-check` before the rest of signup), [ADR 0022](0022-name-and-place-at-signup.md) (signup also takes the name and place, held with the age)
 - Date: 2026-11-17
 
 ## Context

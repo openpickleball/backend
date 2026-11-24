@@ -1,11 +1,11 @@
 """The signup age check, for both headless clients (issue #223, ADR 0020).
 
-The app asks for the birth year and month first and checks them before it
-asks for anything else. The check uses the signup age screen's rules: 13
-or older passes and the session keeps nothing; under 13 gets the same
-fixed refusal and flags the session, so the check and every later signup
-in it are refused. It reads no email address. Made-up addresses on
-example.org only.
+The app asks for the birth year and month after the email and password,
+and checks them before it asks for a name or a location. The check uses
+the signup age screen's rules: 13 or older passes and the session keeps
+nothing; under 13 gets the same fixed refusal and flags the session, so
+the check and every later signup in it are refused. It reads no email
+address. Made-up addresses on example.org only.
 """
 
 from datetime import UTC, datetime

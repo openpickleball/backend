@@ -40,7 +40,7 @@ _GENDER_DIVISION_MESSAGES = {
 }
 _WHOLE_NUMBER = "Enter a whole number."
 _INTEGER_MESSAGES = {"invalid": _WHOLE_NUMBER}
-_CONTROL_CHARACTER = "Remove control or invalid characters."
+CONTROL_CHARACTER_MESSAGE = "Remove control or invalid characters."
 # Control characters (Postgres cannot store NUL) and lone surrogates
 # (not encodable as UTF-8).
 _REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
@@ -181,8 +181,8 @@ class Player(PublicCodeModel):
                 continue
             value = value.strip()
             setattr(self, name, value)
-            if any(unicodedata.category(char) in _REFUSED_CATEGORIES for char in value):
-                errors[name] = [ValidationError(_CONTROL_CHARACTER)]
+            if has_refused_character(value):
+                errors[name] = [ValidationError(CONTROL_CHARACTER_MESSAGE)]
         for name in BIRTH_FIELDS:
             value = getattr(self, name)
             if name in skip or value is None:
@@ -238,7 +238,7 @@ class Player(PublicCodeModel):
         """The model-level rules, for ``fields`` only, or all when None."""
         errors: dict[str, str] = {}
         name_changed = fields is None or "display_name" in fields
-        if name_changed and not _has_visible_character(self.display_name):
+        if name_changed and not has_visible_character(self.display_name):
             errors["display_name"] = "Enter a display name."
         birth_changed = fields is None or not set(BIRTH_FIELDS).isdisjoint(fields)
         if birth_changed and self._birth_month_is_in_the_future():
@@ -284,7 +284,15 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _has_visible_character(value: object) -> bool:
+def has_refused_character(value: str) -> bool:
+    """True when ``value`` holds a control character or a lone surrogate.
+
+    Postgres cannot store NUL, and a surrogate cannot be encoded as UTF-8.
+    """
+    return any(unicodedata.category(char) in _REFUSED_CATEGORIES for char in value)
+
+
+def has_visible_character(value: object) -> bool:
     """True when ``value`` has at least one character that renders.
 
     That is a letter, number, punctuation mark, or symbol (L*, N*, P*,

@@ -183,6 +183,10 @@ def test_a_flagged_session_loses_its_held_details(base: str) -> None:
             birth_year=ADULT_BIRTH["birth_year"],
             birth_month=ADULT_BIRTH["birth_month"],
             gender_division="mens",
+            legal_name="Sam Quillfeather",
+            city="",
+            region="",
+            first_name="Sam",
         ),
     )
     store.save()
