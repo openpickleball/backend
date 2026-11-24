@@ -1,8 +1,8 @@
 # 0025. Rating state, rating history, and replay provenance
 
 - Status: Proposed
-- Date: 2026-11-24
 - Amended by: [ADR 0028](0028-rating-replays-after-match-changes.md) (a replay deletes a `RatingState` it no longer produces, with a `removed` history row naming the replay and an Audit Event with no `after`; the replay orders its changes against live updates through the snapshot row lock)
+- Date: 2026-11-24
 
 ## Context
 

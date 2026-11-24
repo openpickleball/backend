@@ -138,7 +138,7 @@ The provenance stored with every Replay: as-of date, config version, config fing
 A rating change applied when a Match arrives, between Replays. Live Updates are provisional and labeled with how many have occurred since the last Replay. Engine: `RatingEngine.record`, `RatingState.live_updates_since_replay`, `PlayerSummary.live_updates_since_recalculation`. Backend: `live_updates_since_recalculation` and the `provisional` property on `ratings.RatingState`; the `apps.ratings.tasks.update_ratings_for_match` task applies one when a Match is confirmed (ADR 0027). A Match played before a player's last match is late: it is not applied live and waits for a Replay.
 
 **Engine Snapshot**:
-The rating engine's whole state, saved after each Live Update and each Replay so the next Live Update continues from it: every rated Player's state by OPEN Code, the processed match ids, and the history the engine's own rules need. One per parameter set. Engine: `RatingEngine.to_snapshot`, `RatingEngine.from_snapshot`. Backend: `ratings.EngineSnapshot` (ADR 0027).
+The rating engine's whole state, saved after each Live Update that changes a Rating and after each Replay, so the next Live Update continues from it: every rated Player's state by OPEN Code, the processed match ids, and the history the engine's own rules need. One per parameter set. Engine: `RatingEngine.to_snapshot`, `RatingEngine.from_snapshot`. Backend: `ratings.EngineSnapshot` (ADR 0027).
 _Avoid_: checkpoint (a Replay's saved state may use the same row, but the term is Engine Snapshot), cache.
 
 **Rating History**:

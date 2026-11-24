@@ -58,7 +58,7 @@ These were checked and hold no personal data on their own:
 
 - `public_ids.IssuedCode` (`code`, `issued_at`): the registry of issued OPEN Codes. It has no link to the record (ADR 0008).
 - `ratings.RatingReplay`: one replay's provenance (as-of date, config and engine versions, fingerprints, match counts, net rating created per format). It names no Player (ADR 0025).
-- `ratings.RatingReplayRequest`: a pending request for a replay (an earliest match date and a reason), deleted by the replay that takes it. It names no Player (ADR 0028).
+- `ratings.RatingReplayRequest`: a pending request for a replay (an earliest match date, a reason, and when it was made), deleted by the replay that takes it. It names no Player (ADR 0028).
 - django-celery-beat's tables (`PeriodicTask`, the schedule tables): periodic task definitions. Task arguments must never carry personal data (`CLAUDE.md`, Settings).
 - `clubs.Club` (`name`, `city`, `region`, `public_code`): a Club is a place or group, not a person.
 - Django's `auth.Permission`, `auth.Group` (`name`), and `contenttypes.ContentType`.
