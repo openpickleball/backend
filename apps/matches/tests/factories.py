@@ -7,7 +7,7 @@ from datetime import date
 from typing import Any
 
 from django.db.models import QuerySet
-from factory.declarations import LazyAttribute, LazyFunction, SubFactory, Trait
+from factory.declarations import LazyFunction, SubFactory, Trait
 from factory.django import DjangoModelFactory
 from factory.helpers import post_generation
 from faker import Faker
@@ -33,6 +33,8 @@ _faker = Faker()
 # Where the hooks keep the rows they chose until insert_rows saves them.
 _PLANNED_PARTICIPANTS = "_factory_planned_participants"
 _PLANNED_GAMES = "_factory_planned_games"
+# Set when no rating format was passed, so insert_rows derives one.
+_DERIVE_RATING_FORMAT = "_factory_derive_rating_format"
 
 PLAYERS_PER_TEAM = {MatchFormat.SINGLES: 1, MatchFormat.DOUBLES: 2}
 
@@ -122,9 +124,9 @@ class MatchFactory(DjangoModelFactory[Match]):
         )
 
     format = MatchFormat.SINGLES
-    # The base value of the format; insert_rows derives the category from
-    # the players' divisions, as record_match does, unless one was passed.
-    rating_format = LazyAttribute(lambda match: str(match.format))  # type: ignore[no-untyped-call]
+    # Unless one is passed, insert_rows derives it from the players'
+    # divisions, as record_match does, or uses the format's base value.
+    rating_format = None
     played_on = LazyFunction(_played_on)  # type: ignore[no-untyped-call]
     best_of = BestOf.ONE
     game_target = GameTarget.ELEVEN
@@ -132,9 +134,18 @@ class MatchFactory(DjangoModelFactory[Match]):
     submitted_by_user = SubFactory(UserFactory)  # type: ignore[no-untyped-call]
 
     @classmethod
+    def _build(cls, model_class: type[Match], *args: Any, **kwargs: Any) -> Match:
+        if kwargs.get("rating_format") is None:
+            kwargs["rating_format"] = str(kwargs.get("format", MatchFormat.SINGLES))
+        return model_class(*args, **kwargs)
+
+    @classmethod
     def _create(cls, model_class: type[Match], *args: Any, **kwargs: Any) -> Match:
         # Built, not saved: the insert_rows hook saves it once.
-        return model_class(*args, **kwargs)
+        derive = kwargs.get("rating_format") is None
+        match = cls._build(model_class, *args, **kwargs)
+        setattr(match, _DERIVE_RATING_FORMAT, derive)
+        return match
 
     @post_generation  # type: ignore[untyped-decorator]
     def participants(self: Match, create: bool, extracted: Any, **kwargs: Any) -> None:
@@ -172,7 +183,7 @@ class MatchFactory(DjangoModelFactory[Match]):
             return
         participants: list[tuple[Player, Team]] = getattr(self, _PLANNED_PARTICIPANTS)
         games: list[tuple[int, int]] = getattr(self, _PLANNED_GAMES)
-        if participants and self.rating_format == self.format:
+        if participants and getattr(self, _DERIVE_RATING_FORMAT, False):
             self.rating_format = derive_rating_format(
                 self.format,
                 [p.gender_division for p, side in participants if side == Team.A],

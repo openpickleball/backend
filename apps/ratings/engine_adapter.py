@@ -12,29 +12,39 @@ Converting a Match (``to_engine_match``):
   Player's OPEN Code. A correction is a new Match with a new code.
 - Team A and team B come from each participant's team, each sorted by
   code, so the output is deterministic.
-- The rating format is singles for a singles match. For doubles it comes
-  from the players' gender divisions: four men's players are men's
-  doubles, four women's players are women's doubles, one of each on each
-  team is mixed doubles, and any other mix, or a player whose division was
-  removed, is overall doubles. The engine feeds the category matches into
-  overall doubles itself.
-- The match type is the Event's kind. A Match with no Event is
-  self-reported (decision F1 in #1), whatever a submitter sent and whether
-  or not it has a Club.
+- The rating format is the one stored on the Match when it was recorded
+  (``Match.rating_format``, ADR 0024), never the players' current gender
+  divisions, so a division removed later does not move a past match. The
+  engine feeds the category matches into overall doubles itself.
+- The match type is the Event's kind. A Match with a Club and no Event is
+  ``rec_verified`` (the Club stands behind it), and one with neither is
+  self-reported (decision F1 in #1, ADR 0024). Submitted input never
+  chooses it.
 - The game format is the scoring type and game target, win by 2, no cap
   (``validate_match``'s rules). Games are ordered by game number.
 - ``played_at`` keeps its instant, in a ``datetime.timezone`` of the stored
   UTC offset.
-- ``confirmed_by`` holds the Players who confirmed the Match.
+- ``confirmed_by`` holds the Players who confirmed the Match. For a
+  self-reported Match a moderator confirmed, it holds every participant,
+  since the moderator's decision stands in for the teams (ADR 0024). That
+  is read from the audit log, never guessed: a ``dispute.outcome`` Audit
+  Event on the Match whose ``after`` status is confirmed, or, for a
+  correction, the ``match.edit`` Audit Event on the Match it corrects
+  that names it in ``after.corrected_by`` with a ``before`` status of
+  confirmed or disputed (the correction was created confirmed; only a
+  moderator can edit a match with no Event and no Club). A self-reported
+  Match a Club or Event submitter's duplicate confirmed is not a
+  moderator's: it keeps only its confirmers.
 - The status is always completed: the backend stores only completed
   matches. The backend's own status is confirmation state, and which
   matches count is ``Match.objects.counted()``, not this conversion.
 
 Every value goes through an explicit table. A value a table does not know
-raises ``EngineMappingError``, whose message names the field and never a
-gender division value (personal data, ADR 0009). The engine refuses
-subclasses, so every value passed is a plain ``str``, ``int``, ``date``,
-``tuple``, or ``frozenset``.
+raises ``EngineMappingError``, whose message names the field. A table
+takes only a ``str`` (or a ``str`` choice) for a text value and an
+``int`` (or an ``int`` choice) for a number, never a bool or a float. The
+engine refuses subclasses, so every value passed is a plain ``str``,
+``int``, ``date``, ``tuple``, or ``frozenset``.
 """
 
 from collections.abc import Mapping
@@ -43,20 +53,25 @@ from datetime import date, datetime, timedelta, timezone
 
 import open_engine
 from django.conf import settings
-from django.db.models import Prefetch
+from django.db.models import CharField, Exists, OuterRef, Prefetch, QuerySet
+from django.db.models.fields.json import KT
+from django.db.models.functions import Cast
 
+from apps.audit.models import AuditAction, AuditEvent
 from apps.events.models import EventKind
 from apps.matches.models import (
+    RATING_FORMATS_BY_FORMAT,
     BestOf,
     ConfirmationDecision,
     GameTarget,
     Match,
     MatchFormat,
     MatchParticipant,
+    MatchStatus,
+    RatingFormat,
     ScoringType,
     Team,
 )
-from apps.players.models import GenderDivision
 
 
 class EngineMappingError(ValueError):
@@ -68,6 +83,14 @@ class EngineMappingError(ValueError):
 _MATCH_FORMATS: Mapping[str, open_engine.RatingFormat] = {
     str(MatchFormat.SINGLES.value): open_engine.RatingFormat.SINGLES,
     str(MatchFormat.DOUBLES.value): open_engine.RatingFormat.DOUBLES,
+}
+
+_RATING_FORMATS: Mapping[str, open_engine.RatingFormat] = {
+    str(RatingFormat.SINGLES.value): open_engine.RatingFormat.SINGLES,
+    str(RatingFormat.DOUBLES.value): open_engine.RatingFormat.DOUBLES,
+    str(RatingFormat.MIXED_DOUBLES.value): open_engine.RatingFormat.MIXED_DOUBLES,
+    str(RatingFormat.DOUBLES_MEN.value): open_engine.RatingFormat.DOUBLES_MEN,
+    str(RatingFormat.DOUBLES_WOMEN.value): open_engine.RatingFormat.DOUBLES_WOMEN,
 }
 
 _MATCH_TYPES: Mapping[str, open_engine.MatchType] = {
@@ -95,25 +118,26 @@ _BEST_OF: Mapping[int, int] = {
 
 _TEAMS: Mapping[str, Team] = {str(team.value): team for team in Team}
 
-# A removed division (#190, #116) is empty, and counts as no division.
-_MENS = str(GenderDivision.MENS.value)
-_WOMENS = str(GenderDivision.WOMENS.value)
-_DIVISIONS: frozenset[str] = frozenset({_MENS, _WOMENS, ""})
-
 # The game rules validate_match applies: win by 2, no cap.
 _WIN_BY = 2
 
 _CONFIRM = str(ConfirmationDecision.CONFIRM.value)
 
 
-def _look_up[K, V](table: Mapping[K, V], value: object, what: str, code: str) -> V:
-    """The table's value for ``value``, or EngineMappingError naming ``what``."""
-    try:
-        return table[value]  # type: ignore[index]
-    except (KeyError, TypeError):
-        raise EngineMappingError(
-            f"Match {code}: the {what} {value!r} has no engine value."
-        ) from None
+def _look_up[V](table: Mapping[str, V], value: object, what: str, code: str) -> V:
+    """The table's value for a text ``value``, or EngineMappingError naming ``what``."""
+    if isinstance(value, str) and value in table:
+        return table[value]
+    raise EngineMappingError(f"Match {code}: the {what} {value!r} has no engine value.")
+
+
+def _look_up_number(
+    table: Mapping[int, int], value: object, what: str, code: str
+) -> int:
+    """The table's value for a whole-number ``value``; never a bool or a float."""
+    if isinstance(value, int) and not isinstance(value, bool) and value in table:
+        return table[value]
+    raise EngineMappingError(f"Match {code}: the {what} {value!r} has no engine value.")
 
 
 def engine_version() -> str:
@@ -130,26 +154,70 @@ def load_config() -> open_engine.Config:
     return open_engine.Config.published(settings.OPEN_ENGINE_PARAMETER_SET)
 
 
-def _rating_format(
-    code: str, base: open_engine.RatingFormat, divisions: Mapping[Team, list[str]]
-) -> open_engine.RatingFormat:
-    for members in divisions.values():
-        for division in members:
-            if division not in _DIVISIONS:
-                # Never the value: a gender division is personal data.
-                raise EngineMappingError(
-                    f"Match {code}: a player's gender division has no engine value."
-                )
-    if base is not open_engine.RatingFormat.DOUBLES:
-        return base
-    every = [d for members in divisions.values() for d in members]
-    if every and all(d == _MENS for d in every):
-        return open_engine.RatingFormat.DOUBLES_MEN
-    if every and all(d == _WOMENS for d in every):
-        return open_engine.RatingFormat.DOUBLES_WOMEN
-    if all(sorted(members) == [_MENS, _WOMENS] for members in divisions.values()):
-        return open_engine.RatingFormat.MIXED_DOUBLES
-    return open_engine.RatingFormat.DOUBLES
+def _rating_format(match: Match, code: str) -> open_engine.RatingFormat:
+    """The stored rating format, checked against the format."""
+    _look_up(_MATCH_FORMATS, match.format, "format", code)
+    rating_format = _look_up(
+        _RATING_FORMATS, match.rating_format, "rating format", code
+    )
+    if match.rating_format not in RATING_FORMATS_BY_FORMAT[match.format]:
+        raise EngineMappingError(
+            f"Match {code}: the rating format does not fit the format."
+        )
+    return rating_format
+
+
+_MODERATOR_RULED = "_engine_moderator_ruled"
+_MODERATOR_CORRECTION = "_engine_moderator_correction"
+
+
+def _with_moderator_actions(matches: QuerySet[Match]) -> QuerySet[Match]:
+    """``matches`` annotated with whether a moderator confirmed each one.
+
+    Two subqueries on the audit log, so a list of matches still takes one
+    query. ``_engine_moderator_ruled``: a ``dispute.outcome`` Audit Event
+    on the match whose ``after`` status is confirmed.
+    ``_engine_moderator_correction``: the ``match.edit`` Audit Event on the
+    match this one corrects, naming this one in ``after.corrected_by``,
+    whose ``before`` status was confirmed or disputed, so this correction
+    was created confirmed.
+    """
+    on_matches = AuditEvent.objects.filter(
+        target_content_type__app_label=Match._meta.app_label,
+        target_content_type__model=Match._meta.model_name,
+    )
+    ruled = on_matches.annotate(outcome=KT("after__status")).filter(
+        action=AuditAction.DISPUTE_OUTCOME,
+        target_object_id=Cast(OuterRef("pk"), output_field=CharField()),
+        outcome=MatchStatus.CONFIRMED,
+    )
+    corrected = on_matches.annotate(
+        old_status=KT("before__status"), corrected_by=KT("after__corrected_by")
+    ).filter(
+        action=AuditAction.MATCH_EDIT,
+        target_object_id=Cast(OuterRef("corrects_id"), output_field=CharField()),
+        corrected_by=OuterRef("public_code"),
+        old_status__in=[MatchStatus.CONFIRMED, MatchStatus.DISPUTED],
+    )
+    return matches.annotate(
+        **{_MODERATOR_RULED: Exists(ruled), _MODERATOR_CORRECTION: Exists(corrected)}
+    )
+
+
+def _moderator_confirmed(match: Match) -> bool:
+    """True when a moderator's action confirmed ``match`` (see the module docstring)."""
+    if hasattr(match, _MODERATOR_RULED) and hasattr(match, _MODERATOR_CORRECTION):
+        flags = (
+            getattr(match, _MODERATOR_RULED),
+            getattr(match, _MODERATOR_CORRECTION),
+        )
+    else:
+        flags = (
+            _with_moderator_actions(Match.objects.filter(pk=match.pk))
+            .values_list(_MODERATOR_RULED, _MODERATOR_CORRECTION)
+            .get()
+        )
+    return any(flag is True for flag in flags)
 
 
 def _played_at(match: Match, code: str) -> datetime | None:
@@ -188,32 +256,37 @@ def to_engine_match(match: Match) -> open_engine.Match:
     confirmations, and Event, through any prefetched rows (see
     ``counted_engine_matches``). It does not choose which matches count:
     pass only ``Match.objects.counted()`` rows. Raises
-    ``EngineMappingError`` for a value with no engine value.
+    ``EngineMappingError`` for a value with no engine value, and for a
+    Match that is not saved.
     """
+    if match._state.adding or match.pk is None:
+        raise EngineMappingError("Only a saved Match can be converted.")
     code = str(match.public_code)
-    base = _look_up(_MATCH_FORMATS, match.format, "format", code)
+    rating_format = _rating_format(match, code)
 
     teams: dict[Team, list[str]] = {team: [] for team in Team}
-    divisions: dict[Team, list[str]] = {team: [] for team in Team}
     codes_by_player: dict[int, str] = {}
     for participant in match.participants.all():
         team = _look_up(_TEAMS, participant.team, "team", code)
-        player = participant.player
-        player_code = str(player.public_code)
+        player_code = str(participant.player.public_code)
         teams[team].append(player_code)
-        divisions[team].append(str(player.gender_division))
         codes_by_player[participant.player_id] = player_code
 
-    # Only the Event decides the match type, never submitted input.
+    # Only the Event, then the Club, decide the match type, never
+    # submitted input (ADR 0024).
     event = match.event
-    if event is None:
-        match_type = open_engine.MatchType.SELF_REPORTED
-    else:
+    if event is not None:
         match_type = _look_up(_MATCH_TYPES, event.kind, "event kind", code)
+    elif match.club_id is not None:
+        match_type = open_engine.MatchType.REC_VERIFIED
+    else:
+        match_type = open_engine.MatchType.SELF_REPORTED
 
     game_format = open_engine.GameFormat(
         scoring=_look_up(_SCORING_TYPES, match.scoring_type, "scoring type", code),
-        points_to=_look_up(_GAME_TARGETS, match.game_target, "game target", code),
+        points_to=_look_up_number(
+            _GAME_TARGETS, match.game_target, "game target", code
+        ),
         win_by=_WIN_BY,
         cap=None,
     )
@@ -223,6 +296,11 @@ def to_engine_match(match: Match) -> open_engine.Match:
     )
 
     confirmed_by: set[str] = set()
+    if match_type is open_engine.MatchType.SELF_REPORTED and _moderator_confirmed(
+        match
+    ):
+        # The moderator's decision stands in for both teams (ADR 0024).
+        confirmed_by.update(codes_by_player.values())
     for confirmation in match.confirmations.all():
         if confirmation.decision != _CONFIRM:
             continue
@@ -240,9 +318,9 @@ def to_engine_match(match: Match) -> open_engine.Match:
         team_b=tuple(sorted(teams[Team.B])),
         games=games,
         played_on=date(played_on.year, played_on.month, played_on.day),
-        rating_format=_rating_format(code, base, divisions),
+        rating_format=rating_format,
         match_type=match_type,
-        best_of=_look_up(_BEST_OF, match.best_of, "best of", code),
+        best_of=_look_up_number(_BEST_OF, match.best_of, "best of", code),
         game_format=game_format,
         played_at=_played_at(match, code),
         sequence=int(match.sequence),
@@ -255,12 +333,12 @@ def counted_engine_matches() -> list[open_engine.Match]:
     """Every match that counts (``Match.objects.counted()``), converted.
 
     Four queries whatever the number of matches: the matches with their
-    Events, the participants with their Players, the games, and the
-    confirmations. Ordered by date played, then by row, for a stable list;
+    Events and the audit log checks for moderator actions, the
+    participants with their Players, the games, and the confirmations. Ordered by date played, then by row, for a stable list;
     the engine orders its ledger itself.
     """
     matches = (
-        Match.objects.counted()
+        _with_moderator_actions(Match.objects.counted())
         .select_related("event")
         .prefetch_related(
             Prefetch(
