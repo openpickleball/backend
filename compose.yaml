@@ -51,10 +51,12 @@ services:
   # Optional. Runs the app with uv, on http://127.0.0.1:8000, with the
   # Celery worker and beat services below. The container runs as root and
   # mounts the repository, so files it writes (a generated migration, for
-  # example) are owned by root on the host.
+  # example) are owned by root on the host. All three services use the
+  # non-slim uv image, because uv needs git to install the engine from its
+  # git tag.
   web:
     profiles: [web]
-    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+    image: ghcr.io/astral-sh/uv:python3.13-bookworm
     working_dir: /app
     volumes:
       - .:/app
@@ -98,7 +100,7 @@ services:
   # `uv sync --locked` has finished and --no-sync never races it.
   worker:
     profiles: [web]
-    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+    image: ghcr.io/astral-sh/uv:python3.13-bookworm
     working_dir: /app
     volumes:
       - .:/app
@@ -121,7 +123,7 @@ services:
   # tasks are sent twice.
   beat:
     profiles: [web]
-    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+    image: ghcr.io/astral-sh/uv:python3.13-bookworm
     working_dir: /app
     volumes:
       - .:/app

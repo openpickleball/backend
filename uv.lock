@@ -1207,6 +1207,7 @@ dependencies = [
     { name = "django-oauth-toolkit" },
     { name = "django-stubs-ext" },
     { name = "gunicorn" },
+    { name = "openpickleball-engine" },
     { name = "psycopg", extra = ["binary"] },
     { name = "redis" },
     { name = "whitenoise" },
@@ -1244,6 +1245,7 @@ requires-dist = [
     { name = "django-oauth-toolkit", specifier = ">=3.4.1" },
     { name = "django-stubs-ext", specifier = ">=6.1.2" },
     { name = "gunicorn", specifier = ">=27.0.1" },
+    { name = "openpickleball-engine", git = "https://github.com/openpickleball/engine?rev=v1.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.8" },
     { name = "redis", specifier = ">=8.1.0" },
     { name = "whitenoise", specifier = ">=6.12.0" },
@@ -1301,6 +1303,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/8f/d2/640b5149cd5688bc0
 wheels = [
     { url = "https://files.pythonhosted.org/packages/95/d8/321ff889330acca2e3097f3d4f80a40bcc41b6d34d302978ab32c449520b/openapi_spec_validator-0.9.0-py3-none-any.whl", hash = "sha256:222fecffc7714f6d0a6ad62c0e4b66cc2b7dbfafb7b93acfc6c308abbdb51af8", size = 50328, upload-time = "2026-05-20T09:23:17.017Z" },
 ]
+
+[[package]]
+name = "openpickleball-engine"
+version = "1.0.0"
+source = { git = "https://github.com/openpickleball/engine?rev=v1.0.0#be2a0ff59065f7273b5dc13e395e5ec25ee01d3c" }
 
 [[package]]
 name = "packaging"
