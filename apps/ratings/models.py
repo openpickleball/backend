@@ -668,7 +668,7 @@ class ReplayReason(models.TextChoices):
 
     The ``MatchChange`` values (``apps.matches.signals``), plus ``late``
     (a match played before a player's last match) and ``replay_needed``
-    (a live update the stored snapshot cannot continue).
+    (a live update that could not be queued or failed in a worker).
     """
 
     VOID = "void", "Void"

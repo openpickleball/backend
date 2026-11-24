@@ -8,8 +8,12 @@ them.
 import logging
 
 from celery import Task, shared_task
+from django.db import transaction
+from django.utils import timezone
 
+from apps.matches.models import Match
 from apps.ratings import services
+from apps.ratings.models import ReplayReason
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +25,15 @@ def _update_ratings_for_match(self: "Task[..., str]", match_id: int) -> str:
     so no personal data passes through the broker or the worker log. Safe
     to run twice: a Match already recorded changes nothing.
 
-    In a worker, any error is logged once with the Match id and the error
-    class, and replaced by a fixed-text ``LiveUpdateFailed`` with no
-    context, so the worker log never holds the original text, which can
-    quote values. In eager mode (tests, local development) the original
-    error propagates. The task is not retried: the Match waits for the
-    next replay.
+    In a worker, any error (a time limit included) is logged once with the
+    Match id and the error class, and replaced by a fixed-text
+    ``LiveUpdateFailed`` with no context, so the worker log never holds
+    the original text, which can quote values. Before that, a replay
+    request (``replay_needed``, from the Match's date, or today's UTC
+    date when the Match is gone) is stored in its own transaction, so the
+    next replay or the beat entry rates the Match; if storing it fails
+    too, that is logged by class only. In eager mode (tests, local
+    development) the original error propagates. The task is not retried.
     """
     try:
         return str(services.update_ratings_for_match(match_id))
@@ -37,7 +44,33 @@ def _update_ratings_for_match(self: "Task[..., str]", match_id: int) -> str:
         logger.error(
             "Live update task failed for match %s (%s).", match_id, error_class
         )
+        _request_replay_after_failure(match_id)
         raise services.LiveUpdateFailed(match_id, error_class) from None
+
+
+def _request_replay_after_failure(match_id: int) -> None:
+    """Store a replay request for a Match whose live update failed.
+
+    Its own transaction, after the failed one rolled back. Any error is
+    logged with the Match id and error class only.
+    """
+    try:
+        with transaction.atomic():
+            played_on = (
+                Match.objects.filter(pk=match_id)
+                .values_list("played_on", flat=True)
+                .first()
+            )
+            services.request_replay(
+                timezone.now().date() if played_on is None else played_on,
+                ReplayReason.REPLAY_NEEDED,
+            )
+    except Exception as exc:
+        logger.error(
+            "Could not request a replay for match %s (%s).",
+            match_id,
+            type(exc).__name__,
+        )
 
 
 # Named explicitly: queued messages carry the name, so a rename or move

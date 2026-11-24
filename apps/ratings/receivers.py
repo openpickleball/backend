@@ -9,17 +9,13 @@ from typing import Any
 
 from django.db import transaction
 from django.dispatch import receiver
-from kombu.exceptions import OperationalError
 
 from apps.matches.models import Match
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
 from apps.ratings.models import ReplayReason
+from apps.ratings.services import _BROKER_ERRORS, request_replay
 
 logger = logging.getLogger(__name__)
-
-# What publishing a task raises when the broker cannot take it: kombu's
-# connection error, or a socket error (ConnectionError is one).
-_BROKER_ERRORS = (OperationalError, OSError)
 
 
 @receiver(match_confirmed, sender=Match, dispatch_uid="ratings.queue_rating_update")
@@ -29,12 +25,16 @@ def queue_rating_update(sender: type[Match], match: Match, **kwargs: Any) -> Non
     Only the row id goes to the broker. Nothing is queued if the
     transaction rolls back. A broker error (an outage) is logged by Match
     id and error class only, and does not fail the confirmation, which has
-    already committed: the next replay rates the Match. Any other
-    error propagates, so an eager task's failure in tests is not hidden.
+    already committed. Instead a replay request (``replay_needed``, from
+    the Match's date) is stored in its own transaction, so the next
+    replay, or the beat entry if the broker is still down, rates the
+    Match. Any other error propagates, so an eager task's failure in
+    tests is not hidden.
     """
     from apps.ratings.tasks import update_ratings_for_match
 
     match_id = match.pk
+    played_on = match.played_on
 
     def enqueue() -> None:
         try:
@@ -45,6 +45,9 @@ def queue_rating_update(sender: type[Match], match: Match, **kwargs: Any) -> Non
                 match_id,
                 type(exc).__name__,
             )
+            # After commit: the request needs its own transaction.
+            with transaction.atomic():
+                request_replay(played_on, ReplayReason.REPLAY_NEEDED)
 
     # Not robust: a robust callback would swallow any other error and log
     # its text.
@@ -67,6 +70,4 @@ def request_rating_replay(
     Match locks here, and the live update takes the engine snapshot row
     before a Match, so locking the snapshot row here could deadlock.
     """
-    from apps.ratings.services import request_replay
-
     request_replay(earliest_date, ReplayReason(change))
