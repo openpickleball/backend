@@ -450,6 +450,27 @@
         "title": "PagedMatchOut",
         "type": "object"
       },
+      "PagedRatingHistoryItemOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RatingHistoryItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "PagedRatingHistoryItemOut",
+        "type": "object"
+      },
       "ParticipantOut": {
         "description": "A player in a match. ``code`` is null for a Private player.",
         "properties": {
@@ -853,6 +874,16 @@
         "title": "PrivacyOut",
         "type": "object"
       },
+      "RatingChangeKind": {
+        "description": "What caused a change to a player's rating.",
+        "enum": [
+          "live_update",
+          "replay",
+          "removed"
+        ],
+        "title": "RatingChangeKind",
+        "type": "string"
+      },
       "RatingFormat": {
         "description": "The rating pool a Match counts in (ADR 0024).\n\nThe values are ``open_engine.RatingFormat``'s. ``record_match`` stores\none per Match from the players' gender divisions when the match is\nrecorded (``apps.matches.services.derive_rating_format``), and it never\nchanges afterward. A singles match is ``singles``; a doubles match is\none of the four doubles values.",
         "enum": [
@@ -864,6 +895,80 @@
         ],
         "title": "RatingFormat",
         "type": "string"
+      },
+      "RatingHistoryItemOut": {
+        "description": "One change to a player's rating in one rating format.\n\n``kind`` says what caused it: a live update from one match, a replay of\nthe ledger, or its removal by a replay that no longer produces it (the\nvalues are then the ones removed). The OPEN standard requires any app\nthat shows an OPEN rating to show its reliability next to it. Every\nrating is a demonstration rating while the engine is a demonstration\npackage.",
+        "properties": {
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "established": {
+            "description": "True once the rating rests on enough matches to be established.",
+            "title": "Established",
+            "type": "boolean"
+          },
+          "imported_reliability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reliability carried from an external rating, 0 to 100, shown apart from the OPEN-earned reliability. Null when there is none.",
+            "title": "Imported Reliability"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RatingChangeKind"
+          },
+          "provisional": {
+            "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "rating": {
+            "description": "The rating after the change.",
+            "title": "Rating",
+            "type": "number"
+          },
+          "rating_format": {
+            "$ref": "#/components/schemas/RatingFormat"
+          },
+          "recorded_at": {
+            "description": "When the change was recorded.",
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "reliability": {
+            "description": "OPEN-earned reliability, 0 to 100. The OPEN standard requires any app that shows an OPEN rating to show its reliability next to it.",
+            "title": "Reliability",
+            "type": "number"
+          },
+          "spec_version": {
+            "description": "The OPEN rating spec version the rating follows.",
+            "title": "Spec Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rating_format",
+          "kind",
+          "rating",
+          "reliability",
+          "imported_reliability",
+          "provisional",
+          "established",
+          "spec_version",
+          "demonstration",
+          "recorded_at"
+        ],
+        "title": "RatingHistoryItemOut",
+        "type": "object"
       },
       "RatingOut": {
         "description": "A player's current rating in one rating format, with its reliability.\n\nThe OPEN standard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package.",
@@ -2267,6 +2372,130 @@
         "summary": "List Player Matches",
         "tags": [
           "players"
+        ]
+      }
+    },
+    "/api/v1/players/{code}/rating-history": {
+      "get": {
+        "description": "Every change to a player's ratings, in every rating format, newest\nfirst.\n\nEach change comes with its reliability: the OPEN standard requires any\napp that shows an OPEN rating to show its reliability next to it.\nEvery rating is a demonstration rating while the engine is a\ndemonstration package. The player always sees their own history.\nAnyone else signed in sees it only when the player's rating history\nsetting is signed-in players, and gets 404, as for an unknown code,\nwhen it is private or the player's Account is inactive.",
+        "operationId": "list_player_rating_history",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "P-7K3M-QX9H"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "P-7K3M-QX9H"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedRatingHistoryItemOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Player Rating History",
+        "tags": [
+          "ratings"
         ]
       }
     },
