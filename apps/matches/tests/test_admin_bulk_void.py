@@ -8,12 +8,12 @@ or any Account's email. Made-up data only.
 """
 
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
 from django.contrib.auth.models import Group
 from django.contrib.messages import get_messages
 from django.contrib.messages.storage.base import Message
-from django.http import HttpResponse
 from django.test import Client
 from django.urls import reverse
 
@@ -37,6 +37,9 @@ from apps.partners.models import PartnerApplication
 from apps.partners.tests.factories import approved_application
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
+
+if TYPE_CHECKING:
+    from django.test.client import _MonkeyPatchedWSGIResponse
 
 pytestmark = pytest.mark.django_db
 
@@ -118,7 +121,7 @@ def _post(
     reason: str | None = REASON,
     *,
     confirm: bool = False,
-) -> tuple[HttpResponse, list[Message]]:
+) -> tuple["_MonkeyPatchedWSGIResponse", list[Message]]:
     data: dict[str, object] = {
         "action": action,
         "_selected_action": [str(m.pk) for m in matches],
@@ -139,7 +142,7 @@ def _statuses(matches: list[Match]) -> set[str]:
     )
 
 
-def _templates(response: HttpResponse) -> list[str]:
+def _templates(response: "_MonkeyPatchedWSGIResponse") -> list[str]:
     return [t.name for t in getattr(response, "templates", []) if t.name]
 
 
