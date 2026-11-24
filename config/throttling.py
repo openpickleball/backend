@@ -119,13 +119,18 @@ class FixedWindowThrottle(BaseThrottle):
         return retry_after
 
 
+def account_bucket(request: HttpRequest) -> str | None:
+    """The signed-in Account's primary key, or None when there is none."""
+    account_pk = getattr(getattr(request, "auth", None), "pk", None)
+    return None if account_pk is None else str(account_pk)
+
+
 class AccountThrottle(FixedWindowThrottle):
     """Per-Account limits from ``API_ACCOUNT_THROTTLE_PER_MINUTE`` and
     ``API_ACCOUNT_THROTTLE_PER_DAY``."""
 
     def bucket(self, request: HttpRequest) -> str | None:
-        account_pk = getattr(getattr(request, "auth", None), "pk", None)
-        return None if account_pk is None else str(account_pk)
+        return account_bucket(request)
 
     def limits(self) -> Windows:
         return (
