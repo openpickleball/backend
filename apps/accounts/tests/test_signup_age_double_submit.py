@@ -15,7 +15,9 @@ from apps.accounts.tests.headless import (
     APP,
     BROWSER,
     SESSION_EMAIL,
+    SIGNUP_FULL_NAME,
     SIGNUP_GENDER_DIVISION,
+    SIGNUP_LOCATION,
     HeadlessSession,
 )
 from apps.players.signup import (
@@ -31,6 +33,9 @@ DETAILS = SignupDetails(
     birth_year=ADULT_BIRTH["birth_year"],
     birth_month=ADULT_BIRTH["birth_month"],
     gender_division=SIGNUP_GENDER_DIVISION,
+    legal_name=SIGNUP_FULL_NAME,
+    city=SIGNUP_LOCATION["city"],
+    region=SIGNUP_LOCATION["region"],
 )
 
 
@@ -64,4 +69,6 @@ def test_another_accounts_address_replaces_the_hold(base: str) -> None:
         "year": 1980,
         "month": ADULT_BIRTH["birth_month"],
         "gender_division": "mens",
+        "legal_name": SIGNUP_FULL_NAME,
+        **SIGNUP_LOCATION,
     }

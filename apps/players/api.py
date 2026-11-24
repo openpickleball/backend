@@ -29,10 +29,13 @@ malformed code (ADR 0008, ADR 0015).
 
 The signed-in Account's own Player is at /api/v1/me/player (``me_router``,
 issue #124). POST creates it, once per Account, only for an Account whose
-own login address is verified. The birth year and month and the gender
-division come from the details the signup held in the session (ADR 0017,
-issue #215, ``auth_session`` for either headless client), and from the
-body only when the session holds none, where all three are required.
+own login address is verified. The birth year and month, the gender
+division, the name, and the city and region come from the details the
+signup held in the session (ADR 0017, ADR 0019, ADR 0021, ``auth_session``
+for either headless client): the held name ("First Last") is both the
+legal name and the starting display name. The body is read only when
+the session holds none, where the display name, birth year and month,
+and gender division are required.
 An under-13 age refuses the session as signup does (issue #220): the
 create sets the signup refusal flag, and every later create in that
 session gets the same fixed 422, whatever its body.
@@ -43,7 +46,7 @@ import threading
 import time
 import unicodedata
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, ClassVar
+from typing import TYPE_CHECKING, Annotated, ClassVar, TypedDict
 
 from allauth.account.models import EmailAddress
 from django.contrib.sessions.backends.base import SessionBase, UpdateError
@@ -119,6 +122,7 @@ THROTTLE_TIMEOUT_MARGIN = 60
 EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email address before creating your player."
 ALREADY_HAS_PLAYER_MESSAGE = "This account already has a player."
 _MISSING_DETAIL_MESSAGES = {
+    "display_name": "Enter a display name.",
     "birth_year": "Enter your birth year.",
     "birth_month": "Enter your birth month.",
     "gender_division": "Choose a gender division.",
@@ -409,22 +413,59 @@ def _body_errors(
     return NinjaValidationError(items)
 
 
-def _details_from_body(payload: PlayerCreateIn) -> SignupDetails:
-    """The body's birth year and month and gender division.
+class _NewProfile(TypedDict):
+    """``create_player``'s values besides the Account."""
 
-    A 422 names each one missing (left out or null). ``create_player``
-    checks the values.
+    display_name: str
+    legal_name: str | None
+    birth_year: int
+    birth_month: int
+    gender_division: str
+    city: str | None
+    region: str | None
+
+
+def _profile_from_hold(details: SignupDetails) -> _NewProfile:
+    """``create_player``'s values from the details held at signup.
+
+    The held legal name ("First Last") is also the starting display name
+    (ADR 0021).
+    """
+    return {
+        "display_name": details.legal_name,
+        "legal_name": details.legal_name,
+        "birth_year": details.birth_year,
+        "birth_month": details.birth_month,
+        "gender_division": details.gender_division,
+        "city": details.city,
+        "region": details.region,
+    }
+
+
+def _profile_from_body(payload: PlayerCreateIn) -> _NewProfile:
+    """``create_player``'s values from the body, when nothing is held.
+
+    A 422 names each required value missing (left out or null).
+    ``create_player`` checks the values.
     """
     missing = [
         {"loc": ("body", name), "type": "missing", "msg": message}
         for name, message in _MISSING_DETAIL_MESSAGES.items()
         if getattr(payload, name) is None
     ]
-    year, month = payload.birth_year, payload.birth_month
+    name, year, month = payload.display_name, payload.birth_year, payload.birth_month
     division = payload.gender_division
-    if missing or year is None or month is None or division is None:
+    if missing or name is None or year is None or month is None or division is None:
         raise NinjaValidationError(missing)
-    return SignupDetails(birth_year=year, birth_month=month, gender_division=division)
+    return {
+        "display_name": name,
+        "legal_name": payload.legal_name,
+        "birth_year": year,
+        "birth_month": month,
+        "gender_division": division,
+        "city": payload.city,
+        "region": payload.region,
+    }
 
 
 def _save_token_session(request: HttpRequest, session: SessionBase) -> None:
@@ -484,10 +525,11 @@ def create_my_player(
     """Create the signed-in Account's Player.
 
     The Account's own email address must be verified (403 otherwise), and
-    an Account has one Player (409 for a second). The birth year and month
-    and the gender division come from the details held at signup in this
-    session (ADR 0017, issue #215); the body's are used only when the
-    session holds none, and are then required. The held details are
+    an Account has one Player (409 for a second). Every value comes from
+    the details held at signup in this session (ADR 0017, ADR 0019, ADR
+    0021), the held name as both the legal name and the display name; the
+    body is used only when the session holds none, and its display name,
+    birth year and month, and gender division are then required. The held details are
     removed once the Player exists (on a 409 too), so a create refused for
     any other reason can be retried. A player under 13 is refused with a
     fixed 422, and the refusal holds for the session, as at signup: every
@@ -505,18 +547,10 @@ def create_my_player(
     if is_signup_refused(session):
         # Never reads the body's age: the answer depends on nothing sent.
         raise _refuse(request, session)
-    details = peek_signup_details(session, account) or _details_from_body(payload)
+    held = peek_signup_details(session, account)
+    profile = _profile_from_hold(held) if held else _profile_from_body(payload)
     try:
-        player = create_player(
-            account=account,
-            display_name=payload.display_name,
-            birth_year=details.birth_year,
-            birth_month=details.birth_month,
-            legal_name=payload.legal_name,
-            gender_division=details.gender_division,
-            city=payload.city,
-            region=payload.region,
-        )
+        player = create_player(account=account, **profile)
     except DjangoValidationError as error:
         # create_player locks the Account, so a concurrent second create
         # lands here.

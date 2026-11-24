@@ -116,7 +116,9 @@ def test_a_409_keeps_an_age_held_for_another_account() -> None:
     client = Client()
     client.force_login(account)
     store = client.session
-    hold_signup_details(store, other, SignupDetails(1970, 2, "mens"))
+    hold_signup_details(
+        store, other, SignupDetails(1970, 2, "mens", "Sam Quillfeather", "", "")
+    )
     store.save()
 
     response = client.post(

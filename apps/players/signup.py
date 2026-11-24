@@ -1,11 +1,13 @@
-"""The signup details held in the session (issues #114 and #215).
+"""The signup details held in the session (issues #114, #215, and #221).
 
-Signup asks for the birth year and month and the gender division before
-an Account exists (ADR 0017). The signup view holds them in the session,
+Signup asks for the birth year and month, the gender division, the first
+and last name, and optionally the city and region, before an Account
+exists (ADR 0017, ADR 0019, ADR 0021). The signup view holds them in the session,
 bound to the new Account (``hold_signup_details``), and the Player create
 endpoint (#124) reads them (``peek_signup_details``) and takes them once
 the Player exists (``take_signup_details``). The session never holds a
-day of birth or a raw gender (ADR 0009).
+day of birth or a raw gender (ADR 0009). The names are held as one legal
+name, "First Last", which is also the Player's starting display name.
 
 An under-13 age, at signup, at the signup age check (#223), or at the
 Player create endpoint, refuses the session (``refuse_signup``): it drops
@@ -47,11 +49,15 @@ def refuse_signup(session: "SessionBase") -> None:
 
 @dataclass(frozen=True)
 class SignupDetails:
-    """A signup's birth year and month and gender division."""
+    """A signup's birth year and month, gender division, legal name
+    ("First Last"), and city and region (empty when not given)."""
 
     birth_year: int
     birth_month: int
     gender_division: str
+    legal_name: str
+    city: str
+    region: str
 
 
 def hold_signup_details(
@@ -70,6 +76,9 @@ def hold_signup_details(
         "year": details.birth_year,
         "month": details.birth_month,
         "gender_division": details.gender_division,
+        "legal_name": details.legal_name,
+        "city": details.city,
+        "region": details.region,
     }
 
 
@@ -96,7 +105,19 @@ def peek_signup_details(
         return None
     if not isinstance(division, str) or division not in GenderDivision.values:
         return None
-    return SignupDetails(birth_year=year, birth_month=month, gender_division=division)
+    legal_name, city, region = (held.get(k) for k in ("legal_name", "city", "region"))
+    if not isinstance(legal_name, str) or not legal_name:
+        return None
+    if not isinstance(city, str) or not isinstance(region, str):
+        return None
+    return SignupDetails(
+        birth_year=year,
+        birth_month=month,
+        gender_division=division,
+        legal_name=legal_name,
+        city=city,
+        region=region,
+    )
 
 
 def take_signup_details(

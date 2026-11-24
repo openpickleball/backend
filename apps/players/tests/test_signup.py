@@ -1,7 +1,8 @@
-"""The signup details held in the session (issues #114 and #215).
+"""The signup details held in the session (issues #114, #215, #221).
 
-Signup holds the birth year and month and the gender division, bound to
-the new Account, until the Player create endpoint takes them.
+Signup holds the birth year and month, the gender division, the legal
+name, and the city and region, bound to the new Account, until the Player
+create endpoint takes them. Made-up names only.
 """
 
 from pathlib import Path
@@ -26,7 +27,24 @@ from apps.players.signup import (
 if TYPE_CHECKING:
     from django.contrib.auth.base_user import AbstractBaseUser
 
-DETAILS = SignupDetails(birth_year=2000, birth_month=4, gender_division="mens")
+DETAILS = SignupDetails(
+    birth_year=2000,
+    birth_month=4,
+    gender_division="mens",
+    legal_name="Sam Quillfeather",
+    city="Lakeview",
+    region="",
+)
+# A well-formed hold for Account 7, which the malformed cases change.
+HELD = {
+    "account": 7,
+    "year": 2000,
+    "month": 4,
+    "gender_division": "mens",
+    "legal_name": "Sam Quillfeather",
+    "city": "Lakeview",
+    "region": "",
+}
 
 
 def _account(pk: int) -> "AbstractBaseUser":
@@ -44,12 +62,7 @@ def test_held_details_are_handed_once_to_their_account() -> None:
     session = SessionStore()
     hold_signup_details(session, _account(7), DETAILS)
 
-    assert session[SIGNUP_DETAILS_SESSION_KEY] == {
-        "account": 7,
-        "year": 2000,
-        "month": 4,
-        "gender_division": "mens",
-    }
+    assert session[SIGNUP_DETAILS_SESSION_KEY] == HELD
     assert take_signup_details(session, _account(7)) == DETAILS
     assert SIGNUP_DETAILS_SESSION_KEY not in session
     assert take_signup_details(session, _account(7)) is None
@@ -105,12 +118,20 @@ def test_peek_hands_nothing_to_another_account_or_nobody() -> None:
 @pytest.mark.parametrize(
     "held",
     [
-        {"account": 7, "year": "2000", "month": 4, "gender_division": "mens"},
-        {"account": 7, "year": 2000, "month": True, "gender_division": "mens"},
-        {"account": 7, "year": 2000, "month": 4},
-        {"account": 7, "year": 2000, "month": 4, "gender_division": ""},
-        {"account": 7, "year": 2000, "month": 4, "gender_division": "other"},
-        {"account": 7, "year": 2000, "month": 4, "gender_division": None},
+        {**HELD, "year": "2000"},
+        {**HELD, "month": True},
+        {k: v for k, v in HELD.items() if k != "gender_division"},
+        {**HELD, "gender_division": ""},
+        {**HELD, "gender_division": "other"},
+        {**HELD, "gender_division": None},
+        # A hold from before #221, with no name or place.
+        {"account": 7, "year": 2000, "month": 4, "gender_division": "mens"},
+        {**HELD, "legal_name": ""},
+        {**HELD, "legal_name": None},
+        {**HELD, "legal_name": 5},
+        {k: v for k, v in HELD.items() if k != "city"},
+        {**HELD, "city": None},
+        {**HELD, "region": 5},
     ],
 )
 def test_peek_ignores_a_malformed_value(held: dict[str, object]) -> None:

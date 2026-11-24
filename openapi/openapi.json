@@ -478,7 +478,7 @@
       },
       "PlayerCreateIn": {
         "additionalProperties": false,
-        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` take JSON integers only: a boolean,\na numeric string, or a float is refused, as ``Player.clean_fields``\nrefuses them.\n\n``birth_year``, ``birth_month``, and ``gender_division`` are read only\nwhen the session holds no details from signup (ADR 0017, issue #215),\nand are then required; held details are used instead. ``gender_division``\nis ``mens`` or ``womens``. Optional text fields left out or null are\nempty. Unknown keys are refused.",
+        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` take JSON integers only: a boolean,\na numeric string, or a float is refused, as ``Player.clean_fields``\nrefuses them.\n\nThe body is read only when the session holds no details from signup\n(ADR 0017, ADR 0019, ADR 0021): ``display_name``, ``birth_year``,\n``birth_month``, and ``gender_division`` are then required. Held\ndetails are used instead of every field here: the held name (\"First\nLast\") becomes both the display name and the legal name, with the held\ncity and region. ``gender_division`` is ``mens`` or ``womens``.\nOptional text fields left out or null are empty. Unknown keys are\nrefused.",
         "properties": {
           "birth_month": {
             "anyOf": [
@@ -514,8 +514,15 @@
             "title": "City"
           },
           "display_name": {
-            "title": "Display Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
           },
           "gender_division": {
             "anyOf": [
@@ -551,9 +558,6 @@
             "title": "Region"
           }
         },
-        "required": [
-          "display_name"
-        ],
         "title": "PlayerCreateIn",
         "type": "object"
       },
@@ -1611,7 +1615,7 @@
         ]
       },
       "post": {
-        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). The birth year and month\nand the gender division come from the details held at signup in this\nsession (ADR 0017, issue #215); the body's are used only when the\nsession holds none, and are then required. The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13 is refused with a\nfixed 422, and the refusal holds for the session, as at signup: every\nlater create in it gets the same 422, and so does a signup after\nlogout (ADR 0017).",
+        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). Every value comes from\nthe details held at signup in this session (ADR 0017, ADR 0019, ADR\n0021), the held name as both the legal name and the display name; the\nbody is used only when the session holds none, and its display name,\nbirth year and month, and gender division are then required. The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13 is refused with a\nfixed 422, and the refusal holds for the session, as at signup: every\nlater create in it gets the same 422, and so does a signup after\nlogout (ADR 0017).",
         "operationId": "create_my_player",
         "parameters": [],
         "requestBody": {

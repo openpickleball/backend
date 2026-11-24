@@ -27,16 +27,19 @@ class PlayerCreateIn(Schema):
     a numeric string, or a float is refused, as ``Player.clean_fields``
     refuses them.
 
-    ``birth_year``, ``birth_month``, and ``gender_division`` are read only
-    when the session holds no details from signup (ADR 0017, issue #215),
-    and are then required; held details are used instead. ``gender_division``
-    is ``mens`` or ``womens``. Optional text fields left out or null are
-    empty. Unknown keys are refused.
+    The body is read only when the session holds no details from signup
+    (ADR 0017, ADR 0019, ADR 0021): ``display_name``, ``birth_year``,
+    ``birth_month``, and ``gender_division`` are then required. Held
+    details are used instead of every field here: the held name ("First
+    Last") becomes both the display name and the legal name, with the held
+    city and region. ``gender_division`` is ``mens`` or ``womens``.
+    Optional text fields left out or null are empty. Unknown keys are
+    refused.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    display_name: str
+    display_name: str | None = None
     birth_year: StrictInt | None = None
     birth_month: StrictInt | None = None
     legal_name: str | None = None
