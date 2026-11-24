@@ -2,7 +2,7 @@
 
 The held legal name ("First Last") becomes both the Player's legal name
 and its starting display name, with the held city and region, and the
-body's values are not used (ADR 0021). With nothing held, the body's
+body's values are not used (ADR 0022). With nothing held, the body's
 display name is required. The legal name never reaches an Audit Event or
 a log. Made-up names only.
 """
