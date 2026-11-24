@@ -1,8 +1,7 @@
 """The rating operations in the OpenAPI document (issue #53).
 
-Both operations have explicit operation ids and document their 200,
-404, 422, and 429 answers; the history operation documents its 401 too,
-and the public lookup needs no sign-in. Every rating schema requires a
+Both operations have explicit operation ids, need sign-in, and document
+their 200, 401, 404, 422, and 429 answers. Every rating schema requires a
 non-null reliability next to the rating and a ``demonstration`` that is
 always true, and the descriptions say why. Made-up data only.
 """
@@ -38,13 +37,14 @@ def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
-def test_the_lookup_is_documented_without_sign_in(document: dict[str, Any]) -> None:
+def test_the_lookup_is_documented_with_sign_in(document: dict[str, Any]) -> None:
     operation = document["paths"][LOOKUP]["get"]
 
     assert operation["operationId"] == "get_player_ratings"
-    assert _statuses(operation) == {"200", "404", "422", "429"}
-    assert not operation.get("security")
-    for status in ("404", "422", "429"):
+    assert _statuses(operation) == {"200", "401", "404", "422", "429"}
+    assert operation.get("security")
+    assert operation["security"] == document["paths"][HISTORY]["get"]["security"]
+    for status in ("401", "404", "422", "429"):
         content = operation["responses"][status]["content"]["application/json"]
         assert content["schema"] == ERROR_REF, status
     assert "Retry-After" in operation["responses"]["429"]["headers"]

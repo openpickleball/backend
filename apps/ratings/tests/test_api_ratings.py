@@ -1,29 +1,30 @@
-"""The public rating lookup at /api/v1/players/{code}/ratings (issue #53).
+"""The rating lookup at /api/v1/players/{code}/ratings (issue #53).
 
-No sign-in: anyone may read the current Ratings of a player whose Account
-is active and who is 18 or older on the age limit date (``is_adult``,
-ADR 0017). Anyone else, and an unknown or malformed code, gets the same
-404. The view ignores any cookie or token, so a signed-in request gets
-the same answer, and it never sets a cookie. Every rating comes with its
-reliability and is labeled a demonstration rating. Its only throttle is
-per client IP. Made-up data only.
+Sign-in is required. Any signed-in Account sees the current Ratings of
+every player whose Account is active, players aged 13 to 17 included:
+current Ratings have no privacy setting (ADR 0002, ADR 0009), so the
+answer never changes when a player turns 18 and nothing reveals an age.
+A player whose Account is inactive gets the same 404 as an unknown or
+malformed code. Every rating comes with its reliability and is labeled a
+demonstration rating. The lookup shares the per-Account throttle of every
+signed-in operation. Made-up data only.
 """
 
 import json
 from collections.abc import Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
 from django.test import Client, override_settings
+from django.utils import timezone
 
 from apps.accounts.tests.factories import UserFactory
 from apps.matches.models import RatingFormat
-from apps.players.age import age_limit_date, is_minor
-from apps.players.models import Player, PlayerPrivacy, Visibility
-from apps.players.services import update_privacy
+from apps.players.age import age_limit_date
+from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 from apps.public_ids.codes import CodeType, generate
 from apps.ratings.models import RatingState
@@ -41,7 +42,7 @@ PINNED_NOW = float(20_833 * 86_400 + 8 * 3_600 + 30)
 
 @pytest.fixture(autouse=True)
 def _clear_cache() -> Iterator[None]:
-    # The client IP throttle's counters live in the cache.
+    # The throttles' counters live in the cache.
     cache.clear()
     yield
     cache.clear()
@@ -80,14 +81,15 @@ def rating_json(state: RatingState) -> dict[str, Any]:
     }
 
 
-def assert_no_cookie(response: Any) -> None:
-    assert "Set-Cookie" not in response.headers
-    assert not response.cookies
-
-
 @pytest.fixture
 def player() -> Player:
     return PlayerFactory.create()
+
+
+@pytest.fixture
+def viewer() -> Client:
+    """Another Account, signed in."""
+    return signed_in(UserFactory.create())
 
 
 @pytest.fixture
@@ -111,14 +113,31 @@ def singles(player: Player) -> RatingState:
     )
 
 
+# Sign-in
+
+
+def test_a_signed_out_request_gets_401(player: Player, doubles: RatingState) -> None:
+    response = lookup(Client(), player.public_code)
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "unauthorized"
+
+
+def test_an_unknown_code_signed_out_also_gets_401() -> None:
+    response = lookup(Client(), generate(CodeType.PLAYER))
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "unauthorized"
+
+
 # The answer
 
 
 @override_settings(OPEN_PUBLIC_PROFILE_URL=PROFILE_BASE)
-def test_anonymous_lookup_returns_every_rating_with_reliability(
-    player: Player, doubles: RatingState, singles: RatingState
+def test_another_account_sees_every_rating_with_reliability(
+    player: Player, viewer: Client, doubles: RatingState, singles: RatingState
 ) -> None:
-    response = lookup(Client(), player.public_code)
+    response = lookup(viewer, player.public_code)
 
     assert response.status_code == 200
     assert response.json() == {
@@ -132,8 +151,19 @@ def test_anonymous_lookup_returns_every_rating_with_reliability(
     }
 
 
-def test_values_are_returned_as_stored(player: Player, singles: RatingState) -> None:
-    body = lookup(Client(), player.public_code).json()
+def test_the_player_sees_their_own_ratings(
+    player: Player, viewer: Client, doubles: RatingState
+) -> None:
+    own = lookup(signed_in(player.account), player.public_code)
+
+    assert own.status_code == 200
+    assert own.json() == lookup(viewer, player.public_code).json()
+
+
+def test_values_are_returned_as_stored(
+    player: Player, viewer: Client, singles: RatingState
+) -> None:
+    body = lookup(viewer, player.public_code).json()
 
     entry = body["ratings"]["singles"]
     assert entry["rating"] == 4.123456789
@@ -145,7 +175,7 @@ def test_values_are_returned_as_stored(player: Player, singles: RatingState) -> 
 
 
 def test_a_rating_with_live_updates_since_the_replay_is_provisional(
-    player: Player,
+    player: Player, viewer: Client
 ) -> None:
     make_state(
         player,
@@ -153,23 +183,25 @@ def test_a_rating_with_live_updates_since_the_replay_is_provisional(
         live_updates_since_recalculation=2,
     )
 
-    body = lookup(Client(), player.public_code).json()
+    body = lookup(viewer, player.public_code).json()
 
     assert body["ratings"]["doubles"]["provisional"] is True
 
 
-def test_the_profile_url_follows_the_setting(player: Player) -> None:
+def test_the_profile_url_follows_the_setting(player: Player, viewer: Client) -> None:
     with override_settings(OPEN_PUBLIC_PROFILE_URL="https://other.example.org/x/"):
-        body = lookup(Client(), player.public_code).json()
+        body = lookup(viewer, player.public_code).json()
 
     assert body["profile_url"] == "https://other.example.org/x/" + player.public_code
 
 
-def test_every_rating_format_is_keyed_by_its_value(player: Player) -> None:
+def test_every_rating_format_is_keyed_by_its_value(
+    player: Player, viewer: Client
+) -> None:
     for rating_format in RatingFormat.values:
         make_state(player, rating_format=rating_format)
 
-    body = lookup(Client(), player.public_code).json()
+    body = lookup(viewer, player.public_code).json()
 
     assert set(body["ratings"]) == set(RatingFormat.values)
     for entry in body["ratings"].values():
@@ -177,8 +209,10 @@ def test_every_rating_format_is_keyed_by_its_value(player: Player) -> None:
         assert isinstance(entry["reliability"], float)
 
 
-def test_a_player_with_no_rating_gets_an_empty_object(player: Player) -> None:
-    response = lookup(Client(), player.public_code)
+def test_a_player_with_no_rating_gets_an_empty_object(
+    player: Player, viewer: Client
+) -> None:
+    response = lookup(viewer, player.public_code)
 
     assert response.status_code == 200
     assert response.json()["ratings"] == {}
@@ -186,20 +220,20 @@ def test_a_player_with_no_rating_gets_an_empty_object(player: Player) -> None:
 
 
 def test_another_players_rating_is_not_shown(
-    player: Player, doubles: RatingState
+    player: Player, viewer: Client, doubles: RatingState
 ) -> None:
     other = PlayerFactory.create()
     make_state(other, rating_format=RatingFormat.SINGLES)
 
-    body = lookup(Client(), player.public_code).json()
+    body = lookup(viewer, player.public_code).json()
 
     assert set(body["ratings"]) == {"doubles"}
 
 
 def test_the_answer_holds_no_personal_or_internal_field(
-    player: Player, doubles: RatingState, singles: RatingState
+    player: Player, viewer: Client, doubles: RatingState, singles: RatingState
 ) -> None:
-    body = lookup(Client(), player.public_code).json()
+    body = lookup(viewer, player.public_code).json()
 
     assert set(body) == {"code", "profile_url", "demonstration", "ratings"}
     for entry in body["ratings"].values():
@@ -217,137 +251,73 @@ def test_the_answer_holds_no_personal_or_internal_field(
 
 
 def test_a_lowercase_code_finds_the_player(
-    player: Player, doubles: RatingState
+    player: Player, viewer: Client, doubles: RatingState
 ) -> None:
-    response = lookup(Client(), player.public_code.lower())
+    response = lookup(viewer, player.public_code.lower())
 
     assert response.status_code == 200
     assert response.json()["code"] == player.public_code
 
 
-# Cookies and sign-in
+# Players aged 13 to 17: shown, so no answer reveals an age
 
 
-def test_an_anonymous_lookup_sets_no_cookie(
-    player: Player, doubles: RatingState
+def test_a_minor_with_private_settings_is_shown_to_another_account(
+    viewer: Client,
 ) -> None:
-    response = lookup(Client(), player.public_code)
+    minor = PlayerFactory.create(minor=True)
+    state = make_state(minor)
+
+    response = lookup(viewer, minor.public_code)
 
     assert response.status_code == 200
-    assert_no_cookie(response)
+    assert response.json()["ratings"] == {"doubles": rating_json(state)}
 
 
-def test_a_signed_in_lookup_gets_the_same_answer_and_no_cookie(
-    player: Player, doubles: RatingState
+def _at(monkeypatch: pytest.MonkeyPatch, moment: datetime) -> None:
+    monkeypatch.setattr(timezone, "now", lambda: moment)
+
+
+def test_the_answer_does_not_change_when_a_player_turns_18(
+    monkeypatch: pytest.MonkeyPatch, viewer: Client
 ) -> None:
-    anonymous = lookup(Client(), player.public_code)
-    other = lookup(signed_in(UserFactory.create()), player.public_code)
-    own = lookup(signed_in(player.account), player.public_code)
+    # Born June 2008: 18 from 2026-06-30 at UTC-12, that is 12:00 UTC.
+    player = PlayerFactory.create(birth_year=2008, birth_month=6)
+    make_state(player)
 
-    for response in (other, own):
-        assert response.status_code == 200
-        assert response.json() == anonymous.json()
-        assert_no_cookie(response)
+    _at(monkeypatch, datetime(2026, 6, 30, 11, 59, tzinfo=UTC))
+    assert age_limit_date() == date(2026, 6, 29)
+    before = lookup(viewer, player.public_code)
+    _at(monkeypatch, datetime(2026, 6, 30, 12, 0, tzinfo=UTC))
+    assert age_limit_date() == date(2026, 6, 30)
+    after = lookup(viewer, player.public_code)
 
-
-def test_an_app_session_token_is_ignored(player: Player, doubles: RatingState) -> None:
-    anonymous = lookup(Client(), player.public_code)
-
-    response = lookup(
-        Client(), player.public_code, HTTP_X_SESSION_TOKEN="made-up-not-a-token"
-    )
-
-    assert response.status_code == 200
-    assert response.json() == anonymous.json()
-    assert_no_cookie(response)
+    assert before.status_code == after.status_code == 200
+    assert before.json() == after.json()
 
 
-# Who is hidden: always the same 404
+# Who gets the 404
 
 
-def _deactivate(player: Player) -> None:
+def test_inactive_unknown_and_malformed_codes_get_the_same_404(
+    player: Player, viewer: Client, doubles: RatingState
+) -> None:
     account = player.account
     account.is_active = False
     account.save(update_fields=["is_active"])
 
-
-def _open_every_setting(player: Player) -> None:
-    update_privacy(
-        player=player,
-        actor=player.account,
-        changes=dict.fromkeys(PlayerPrivacy.SETTINGS, Visibility.SIGNED_IN),
-    )
-
-
-def _birth_turning_18(months_from_now: int) -> tuple[int, int]:
-    """The birth year and month of a player whose 18th birthday month is
-    ``months_from_now`` months from this month (negative: in the past)."""
-    today = age_limit_date()
-    index = today.year * 12 + today.month - 1 + months_from_now
-    return index // 12 - 18, index % 12 + 1
-
-
-def test_unknown_malformed_inactive_and_minor_players_get_the_same_404(
-    player: Player, doubles: RatingState
-) -> None:
-    _deactivate(player)
-    minor = PlayerFactory.create(minor=True)
-    make_state(minor)
-    opened_minor = PlayerFactory.create(minor=True)
-    make_state(opened_minor)
-    _open_every_setting(opened_minor)
-
-    unknown = lookup(Client(), generate(CodeType.PLAYER))
+    unknown = lookup(viewer, generate(CodeType.PLAYER))
     answers = [
-        lookup(Client(), player.public_code),
-        lookup(Client(), minor.public_code),
-        lookup(Client(), opened_minor.public_code),
-        lookup(Client(), "not-a-code"),
-        lookup(Client(), generate(CodeType.MATCH)),
+        lookup(viewer, player.public_code),
+        lookup(viewer, "not-a-code"),
+        lookup(viewer, generate(CodeType.MATCH)),
     ]
 
     assert unknown.status_code == 404
     assert unknown.json() == NOT_FOUND
     for response in answers:
-        assert response.status_code == unknown.status_code
+        assert response.status_code == 404
         assert response.json() == unknown.json()
-        assert_no_cookie(response)
-
-
-def test_a_minor_is_hidden_even_from_their_own_account() -> None:
-    minor = PlayerFactory.create(minor=True)
-    make_state(minor)
-    _open_every_setting(minor)
-
-    response = lookup(signed_in(minor.account), minor.public_code)
-
-    assert response.status_code == 404
-    assert response.json() == NOT_FOUND
-
-
-def test_a_player_who_turned_18_is_shown() -> None:
-    year, month = _birth_turning_18(-1)
-    assert not is_minor(year, month)
-    player = PlayerFactory.create(birth_year=year, birth_month=month)
-    make_state(player)
-
-    response = lookup(Client(), player.public_code)
-
-    assert response.status_code == 200
-    assert set(response.json()["ratings"]) == {"doubles"}
-
-
-def test_a_player_turning_18_next_month_is_hidden() -> None:
-    year, month = _birth_turning_18(1)
-    assert is_minor(year, month)
-    player = PlayerFactory.create(birth_year=year, birth_month=month)
-    make_state(player)
-    _open_every_setting(player)
-
-    response = lookup(Client(), player.public_code)
-
-    assert response.status_code == 404
-    assert response.json() == NOT_FOUND
 
 
 # Other operations under /players/ still answer
@@ -362,7 +332,7 @@ def test_search_profile_and_match_history_still_route(player: Player) -> None:
     assert matches.status_code == 200
 
 
-# The client IP throttle
+# The per-Account throttle
 
 
 @pytest.fixture
@@ -371,55 +341,38 @@ def _pinned_clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("_pinned_clock")
-@override_settings(
-    API_CLIENT_IP_THROTTLE_PER_MINUTE=2, API_CLIENT_IP_THROTTLE_PER_DAY=100
-)
-def test_past_the_client_ip_limit_is_429_with_retry_after(
-    player: Player, doubles: RatingState
+@override_settings(API_ACCOUNT_THROTTLE_PER_MINUTE=2, API_ACCOUNT_THROTTLE_PER_DAY=100)
+def test_the_lookup_shares_the_account_budget(
+    player: Player, viewer: Client, doubles: RatingState
 ) -> None:
-    client = Client()
-    first_ip = {"HTTP_DO_CONNECTING_IP": "203.0.113.7"}
-    statuses = [
-        lookup(client, player.public_code, **first_ip).status_code for _ in range(2)
-    ]
-    assert statuses == [200, 200]
+    assert lookup(viewer, player.public_code).status_code == 200
+    assert viewer.get("/api/v1/accounts/me").status_code == 200
 
-    refused = lookup(client, player.public_code, **first_ip)
+    refused = lookup(viewer, player.public_code)
 
     assert refused.status_code == 429
     assert refused.json() == THROTTLED
     assert refused["Retry-After"] == "30"
-    assert_no_cookie(refused)
-    other_ip = {"HTTP_DO_CONNECTING_IP": "203.0.113.8"}
-    assert lookup(client, player.public_code, **other_ip).status_code == 200
+    assert (
+        signed_in(UserFactory.create())
+        .get(ratings_path(player.public_code))
+        .status_code
+        == 200
+    )
 
 
 @pytest.mark.usefixtures("_pinned_clock")
 @override_settings(
     API_CLIENT_IP_THROTTLE_PER_MINUTE=1,
-    API_CLIENT_IP_THROTTLE_PER_DAY=100,
-    API_ACCOUNT_THROTTLE_PER_MINUTE=1,
-    API_ACCOUNT_THROTTLE_PER_DAY=1,
+    API_CLIENT_IP_THROTTLE_PER_DAY=1,
+    API_ACCOUNT_THROTTLE_PER_MINUTE=100,
+    API_ACCOUNT_THROTTLE_PER_DAY=1_000,
 )
-def test_a_signed_in_lookup_does_not_use_the_account_budget(
-    player: Player, doubles: RatingState
+def test_the_client_ip_throttle_does_not_count_the_lookup(
+    player: Player, viewer: Client, doubles: RatingState
 ) -> None:
-    client = signed_in(player.account)
-    ip = {"HTTP_DO_CONNECTING_IP": "198.51.100.4"}
-    assert lookup(client, player.public_code, **ip).status_code == 200
+    ip = {"HTTP_DO_CONNECTING_IP": "203.0.113.7"}
 
-    assert client.get("/api/v1/accounts/me").status_code == 200
+    statuses = [lookup(viewer, player.public_code, **ip).status_code for _ in range(3)]
 
-
-@pytest.mark.usefixtures("_pinned_clock")
-@override_settings(
-    API_CLIENT_IP_THROTTLE_PER_MINUTE=1, API_CLIENT_IP_THROTTLE_PER_DAY=100
-)
-def test_refused_codes_count_against_the_client_ip_limit() -> None:
-    ip = {"HTTP_DO_CONNECTING_IP": "198.51.100.9"}
-    assert lookup(Client(), generate(CodeType.PLAYER), **ip).status_code == 404
-
-    response = lookup(Client(), "not-a-code", **ip)
-
-    assert response.status_code == 429
-    assert response.json() == THROTTLED
+    assert statuses == [200, 200, 200]

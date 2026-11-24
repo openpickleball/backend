@@ -2,10 +2,10 @@
 
 Every operation that needs sign-in shares one per-Account throttle,
 except player search, which keeps only its own ``SearchThrottle`` (ADR
-0018). The public rating lookup needs no sign-in and has only a client
-IP throttle (issue #53). The health checks are never throttled. A
-refused request gets a 429 ``ErrorResponse`` with code ``throttled`` and
-a ``Retry-After`` header, and the OpenAPI document says so on every
+0018). No public operation is mounted yet; one would need no sign-in and
+have only a client IP throttle. The health checks are never throttled.
+A refused request gets a 429 ``ErrorResponse`` with code ``throttled``
+and a ``Retry-After`` header, and the OpenAPI document says so on every
 throttled operation.
 Made-up data only.
 """
@@ -36,7 +36,8 @@ LIVE = "/api/v1/health/live"
 ERROR_REF = "#/components/schemas/ErrorResponse"
 HEALTH_OPERATIONS = {"health_live", "health_ready"}
 # Operations anyone may call without sign-in, throttled per client IP.
-PUBLIC_OPERATIONS = {"get_player_ratings"}
+# None is mounted yet; the client IP throttle is kept for a later one.
+PUBLIC_OPERATIONS: set[str] = set()
 THROTTLED = {"code": "throttled", "message": "Too many requests.", "errors": []}
 
 
@@ -116,7 +117,7 @@ def test_health_checks_are_never_throttled() -> None:
         assert operations[operation_id].throttle_objects == [], operation_id
 
 
-# Name kept from #34: it now also expects the public operations.
+# Name kept from #34: it also expects any public operation (none yet).
 def test_every_operation_without_sign_in_is_a_health_check() -> None:
     unauthenticated = {
         operation_id
