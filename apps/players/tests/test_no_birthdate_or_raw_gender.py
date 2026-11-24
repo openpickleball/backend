@@ -78,6 +78,8 @@ def test_no_fixtures_under_apps() -> None:
 
 
 def test_signup_age_form_asks_for_year_month_division_name_and_place_only() -> None:
+    # Besides the acceptance of the legal agreements (#222), which holds
+    # no personal detail.
     assert set(SignupAgeForm.base_fields) == {
         "birth_year",
         "birth_month",
@@ -86,6 +88,8 @@ def test_signup_age_form_asks_for_year_month_division_name_and_place_only() -> N
         "last_name",
         "city",
         "region",
+        "accepted_terms",
+        "accepted_privacy",
     }
 
 
@@ -127,6 +131,7 @@ def test_signup_session_holds_no_birthdate_or_raw_gender() -> None:
         "city",
         "region",
         "first_name",
+        "agreements",
     }
     assert all(isinstance(held[key], int) for key in ("year", "month"))
     assert held["gender_division"] in {"mens", "womens"}
