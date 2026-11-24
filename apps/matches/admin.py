@@ -23,7 +23,6 @@ from typing import Any
 from django.contrib import admin, messages
 from django.contrib.admin.utils import unquote
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
 from django.template.response import TemplateResponse
@@ -47,6 +46,7 @@ from apps.matches.permissions import MatchActionDenied, is_moderator
 from apps.matches.services import DuplicateMatchError, MatchValidationError
 from apps.matches.workflow import (
     MatchStateError,
+    approve_match,
     edit_match,
     resolve_dispute,
     resolve_flags,
@@ -275,28 +275,7 @@ class MatchAdmin(admin.ModelAdmin[Match]):
 
     @staticmethod
     def _approve(match: Match, request: HttpRequest, reason: str) -> bool:
-        changed = False
-        with transaction.atomic():
-            status = Match.objects.filter(pk=match.pk).values_list("status", flat=True)
-            current = status.first()
-            if current == MatchStatus.VOIDED:
-                raise MatchStateError
-            if current == MatchStatus.DISPUTED:
-                resolve_dispute(
-                    match,
-                    actor=request.user,
-                    outcome=MatchStatus.CONFIRMED,
-                    reason=reason,
-                )
-                changed = True
-            if resolve_flags(
-                match,
-                actor=request.user,
-                outcome=FlagResolution.APPROVED,
-                reason=reason,
-            ):
-                changed = True
-        return changed
+        return approve_match(match, actor=request.user, reason=reason)
 
     @staticmethod
     def _void(match: Match, request: HttpRequest, reason: str) -> bool:

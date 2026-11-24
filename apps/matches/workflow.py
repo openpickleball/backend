@@ -27,6 +27,9 @@ States and transitions:
 - ``resolve_flags``: a moderator closes every open flag that involves a
   match, as approved or dismissed, with a reason. It changes no Match:
   a resolved flag stops holding its matches from counting.
+- ``approve_match``: a moderator says the result stands: a disputed match
+  is resolved as confirmed and its open flags as approved, in one
+  transaction, with the status read under the match's locks.
 
 Each service checks permission first and raises ``MatchActionDenied``
 (fixed text) before it reveals anything about the match. It then locks
@@ -616,6 +619,42 @@ def resolve_flags(match: Match, *, actor: Actor, outcome: str, reason: str) -> i
             )
         _send_count_changes(counting)
         return len(flags)
+
+
+def approve_match(match: Match, *, actor: Actor, reason: str) -> bool:
+    """A moderator approves ``match``: its result stands.
+
+    Anyone but a moderator gets ``MatchActionDenied`` first, and a blank
+    ``reason`` raises ``ValueError``. Under the match's lineup and row
+    locks, a voided match raises ``MatchStateError``, a disputed one is
+    resolved as confirmed (``resolve_dispute``), and every open flag that
+    involves it is resolved as approved (``resolve_flags``), all in one
+    transaction with each step's Audit Event and signals. Returns True
+    when anything changed, False when there was nothing to approve.
+    """
+    _saved(match)
+    if not is_moderator(actor):
+        raise MatchActionDenied
+    if not reason.strip():
+        raise ValueError("Give a reason for the approval.")
+    with transaction.atomic():
+        # Read the status only under the locks, so a dispute that commits
+        # first is seen and resolved. The services below take the same
+        # locks again, which the transaction already holds.
+        locked = _lock(match)
+        if locked.status == MatchStatus.VOIDED:
+            raise MatchStateError
+        changed = False
+        if locked.status == MatchStatus.DISPUTED:
+            resolve_dispute(
+                locked, actor=actor, outcome=MatchStatus.CONFIRMED, reason=reason
+            )
+            changed = True
+        if resolve_flags(
+            locked, actor=actor, outcome=FlagResolution.APPROVED, reason=reason
+        ):
+            changed = True
+        return changed
 
 
 def expire_unconfirmed_matches(now: datetime | None = None) -> int:
