@@ -1,0 +1,40 @@
+# 0027. Live rating updates and the engine snapshot
+
+- Status: Proposed
+- Date: 2026-11-24
+
+## Context
+
+Issue #46 updates ratings when a Match is confirmed, between replays (CONTEXT.md, Live Update). The engine records one match at a time on a `RatingEngine` that holds every player's state, every processed match id, and the self-reported history it uses for its own rules. Live results apply in arrival order and are provisional until the next replay (hard rule 3). The backend never computes a rating (hard rule 2), and rating changes are a security-sensitive area (hard rule 8).
+
+A worker process has no engine in memory between tasks, and several workers may run at once. Rebuilding the engine from the stored `RatingState` rows would lose engine state that no row holds (processed and reserved match ids, content keys, the self-reported log). A full replay for every confirmation would be too slow.
+
+A match that arrives late (played before a player's last match) cannot be applied live in order. The replay (#47) puts it in its place.
+
+The project owner settled the design in a comment on #46 (2026-11-24).
+
+## Decision
+
+- **Store the engine's own snapshot.** A new model, `ratings.EngineSnapshot`, holds `RatingEngine.to_snapshot()` JSON, one row per parameter fingerprint (the published parameter set's values), with the config fingerprint, config version, parameter set label, and engine version. Each live update rebuilds the engine with `RatingEngine.from_snapshot()`, records the match, and saves `to_snapshot()` again. The replay (#47) may keep its post-replay checkpoint in the same row.
+- **One writer, guarded.** Only `apps.ratings.services.update_ratings_for_match()` writes the row (through its private `_save_engine_snapshot()`). Like `RatingState`, the ORM refuses (`EngineSnapshotWriteRefused`) to delete a row, insert rows in bulk, change them in bulk, or upsert them.
+- **One transaction, one lock order.** The service fetches the Match and stops if it is missing or no longer counts (`Match.objects.counted()`). It then locks the snapshot row (`SELECT ... FOR UPDATE`, created first with `get_or_create` when new), then the Match's Players in row id order (`FOR NO KEY UPDATE`, the lock `apply_rating()` takes). It records the Match, applies each changed rating through `apply_rating()` (kind `live_update`, with the engine's delta), and saves the new snapshot, all in one transaction. A failure anywhere rolls back the ratings and the snapshot together. Every live update for one config serializes on the snapshot row. The replay (#47) must take the snapshot row first too.
+- **Late matches go to a replay.** Before recording, the service compares the Match's `played_on` with each participant's stored `last_played` in the formats the Match updates (its own format, and overall `doubles` for a doubles Match). If any is later, it writes nothing and calls `schedule_replay(players, earliest_date=played_on)`. The same happens when the engine itself reports the match late (`late`, or `parent.late` for the overall doubles update): the recorded engine is discarded. `schedule_replay` only logs the players' OPEN Codes and the date until #47 replaces it.
+- **Idempotent.** A Match with a live update history row is a redelivery and changes nothing, even after a later match moved `last_played`. A Match the stored snapshot already holds changes nothing either. A Match the engine does not count (a `reason`, such as `self_reported_unconfirmed`) writes nothing, and its snapshot is not saved, so the engine does not reserve its id and a later replay can count it.
+- **Queued after commit.** A receiver on `match_confirmed` queues `apps.ratings.tasks.update_ratings_for_match` on the `ratings` queue with the Match's row id only, through `transaction.on_commit(..., robust=True)`. A rolled back confirm queues nothing. A failure to queue is logged by Match id and error class only, and does not fail the confirmation, which has already committed.
+- **Engine calls stay in the adapter.** `engine_adapter.record_live()` rebuilds the engine, records the match without `as_of`, and returns plain data (`LiveUpdate`). It passes `as_of` to `player_summary()` explicitly (the later of the last replay date and the player's last match, the engine's own default), since the engine refuses no `as_of` before any replay.
+
+## Consequences
+
+- Every live update reads and writes the whole snapshot, which grows with the player pool. Accepted for now. A later issue can split it if it becomes slow.
+- Live updates serialize on one row per config. Accepted: confirmations are not frequent enough for this to matter yet, and serial order is what the engine needs.
+- An engine upgrade that changes the snapshot schema or the config version makes `from_snapshot()` raise, and the task fails visibly. The recompute (#48) rebuilds the snapshot. Not handled here.
+- A self-reported Match confirmed by one team only (ADR 0024) is rejected live and stays unrated until the replay counts it.
+- `match_changed` (void, edit, dispute, hold, release) does not trigger a live update: those changes need a replay (#47).
+- The snapshot holds Player OPEN Codes, their rating states, and their match dates. It is personal data linked to Players, listed in the personal data inventory. It holds no name.
+
+## Alternatives considered
+
+- Rebuild the engine from `RatingState` rows each time. Rejected: the rows do not hold the engine's processed ids, reservations, or self-reported history, so results would drift from a replay.
+- Replay the whole Ledger for every confirmation. Rejected: too slow as the Ledger grows, and #47 already owns the replay.
+- Keep one engine in a long-lived worker's memory. Rejected: workers restart and run in parallel, and acknowledged-late tasks are redelivered.
+- Apply a late match live anyway. Rejected: live results must apply in order, and the engine marks a late match for a replay.
