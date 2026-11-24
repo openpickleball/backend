@@ -151,6 +151,14 @@ class HeadlessSession:
         data.update(fields)
         return self.post("auth/signup", {k: v for k, v in data.items() if v is not ...})
 
+    def age_check(self, **fields: object) -> Any:
+        """The signup age check (#223), with a made-up adult age unless
+        ``fields`` replace it. A field set to ``...`` is left out."""
+        data: dict[str, object] = {**ADULT_BIRTH, **fields}
+        return self.post(
+            "auth/signup/age-check", {k: v for k, v in data.items() if v is not ...}
+        )
+
     def store(self) -> SessionBase:
         if self.base == BROWSER:
             return self.client.session
