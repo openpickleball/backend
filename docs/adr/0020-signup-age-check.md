@@ -11,7 +11,7 @@ The project owner decided on 2026-11-23 (issue #223) that the app's signup becom
 
 ## Decision
 
-This amends ADR 0017 (the app's screen order changes, and an age check comes before the rest of signup) and ADR 0009 ("signup asks for birth year and month first"). The age still comes before any personal detail other than the login email and password: the app asks for no name, location, or gender division until the check has passed. The signup request's own age screen is unchanged.
+This amends ADR 0017 (the app's screen order changes, and an age check comes before the rest of signup) and ADR 0009 ("signup asks for birth year and month first"). The age still comes before the other personal details that need it: the app lets no one type a name or a location until the check has passed. The signup request's own age screen is unchanged.
 
 - `POST /_allauth/{client}/v1/auth/signup/age-check`, for both headless clients (`browser` with its session cookie and CSRF token, `app` with `X-Session-Token`), takes only `birth_year` and `birth_month` (`SignupBirthForm`, the same fields and messages as signup's). `SignupAgeCheckView` (`apps/accounts/headless_views.py`) checks, in signup's order:
   1. allauth's signup rate limit;

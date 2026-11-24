@@ -21,7 +21,7 @@ Signup creates an Account (allauth's headless API, ADR 0014), but the Player com
 
 ### The age screen at signup
 
-- Signup on both headless clients takes two more required fields, `birth_year` and `birth_month` (`ACCOUNT_SIGNUP_FORM_CLASS`, so allauth's OpenAPI document lists them). ADR 0019 adds a third, `gender_division`, checked with them. The web and Expo apps ask for them on the first screen, before the email address. ADR 0020 changes the app's order: the email and password come first, and the app checks the age with a separate request before it asks for anything else personal.
+- Signup on both headless clients takes two more required fields, `birth_year` and `birth_month` (`ACCOUNT_SIGNUP_FORM_CLASS`, so allauth's OpenAPI document lists them). ADR 0019 adds a third, `gender_division`, checked with them. The web and Expo apps ask for them on the first screen, before the email address. ADR 0020 changes the app's order: the email and password come first, and the app checks the age with a separate request before it takes a name or a location.
 - OPEN's signup view checks, in this order:
   1. allauth's signup rate limit;
   2. allauth's own answers for a signed-in session (409) and for closed signup (403);
