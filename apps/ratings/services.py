@@ -423,6 +423,10 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
             )
             .order_by("pk")
         )
+        # Again under the locks: the Match may have been voided or held
+        # while this update waited for the snapshot row.
+        if not Match.objects.counted().filter(pk=match.pk).exists():
+            return LiveUpdateOutcome.NOT_COUNTED
         # A counted live update always writes history rows in the same
         # transaction as the snapshot, so a Match with one is a
         # redelivery, even after a later match moved last_played.
