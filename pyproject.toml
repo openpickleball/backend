@@ -15,6 +15,7 @@ dependencies = [
     "django-oauth-toolkit>=3.4.1",
     "django-stubs-ext>=6.1.2",
     "gunicorn>=27.0.1",
+    "openpickleball-engine @ git+https://github.com/openpickleball/engine@v1.0.0",
     "psycopg[binary]>=3.3.8",
     "redis>=8.1.0",
     "whitenoise>=6.12.0",
