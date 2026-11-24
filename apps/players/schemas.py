@@ -11,7 +11,7 @@ division (ADR 0009).
 
 from typing import TYPE_CHECKING, Annotated
 
-from ninja import Schema
+from ninja import Field, Schema
 from pydantic import BeforeValidator, ConfigDict, StrictInt
 from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import PydanticCustomError
@@ -57,6 +57,15 @@ class PlayerCreateIn(Schema):
     region: str | None = None
 
 
+_RATING_VISIBILITY = (
+    "Who may see the player's current ratings. A player who joined at 13 to "
+    "17 starts with private and keeps it at 18 until they change it; only "
+    "the player can change it to signed_in, and only from age 18. An adult's "
+    "is always signed_in: current ratings cannot be hidden. Sending the "
+    "stored value is always accepted."
+)
+
+
 class PrivacyIn(Schema):
     """Privacy settings to change. Only the settings sent change."""
 
@@ -67,6 +76,7 @@ class PrivacyIn(Schema):
     rating_history_visibility: Visibility | None = None
     stats_visibility: Visibility | None = None
     home_club_visibility: Visibility | None = None
+    rating_visibility: Visibility | None = Field(None, description=_RATING_VISIBILITY)
 
 
 def _refuse_set_once(name: str) -> BeforeValidator:
@@ -120,6 +130,7 @@ class PrivacyOut(Schema):
     rating_history_visibility: Visibility
     stats_visibility: Visibility
     home_club_visibility: Visibility
+    rating_visibility: Visibility = Field(description=_RATING_VISIBILITY)
 
 
 class MyPlayerOut(Schema):

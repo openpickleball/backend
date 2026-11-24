@@ -3,12 +3,14 @@
 Both operations need sign-in (``account_auth``) and share the per-Account
 throttle of every signed-in operation (``account_throttle``, ADR 0030).
 
-The rating lookup (``get_player_ratings``): any signed-in Account sees the
-current Ratings of every player whose Account is active, players aged 13
-to 17 included. Current Ratings have no privacy setting (ADR 0002, ADR
-0009), so none is read, and the answer never changes when a player turns
-18, so it reveals no age. A player whose Account is inactive gets the
-same 404 as an unknown or malformed code, so the answer never reveals
+The rating lookup (``get_player_ratings``) follows the player's
+``rating_visibility`` (``PlayerPrivacy.visible_to``): the player's own
+Account always sees their current Ratings; another Account sees them only
+at ``signed_in`` and only while the player's Account is active. An adult's
+is always ``signed_in``; a player created at 13 to 17 starts private and
+stays private at 18 until the player widens it, so the answer never
+changes on a birthday and reveals no age. A viewer it is hidden from gets
+the same 404 as an unknown or malformed code, so the answer never reveals
 that such a player exists (ADR 0008).
 
 A player's rating history (``list_player_rating_history``) follows the
@@ -60,16 +62,20 @@ PlayerCode = Annotated[str, PublicCodePath(CodeType.PLAYER)]
 def get_player_ratings(request: HttpRequest, code: PlayerCode) -> PlayerRatingsOut:
     """A player's current Ratings, one per rating format the player has.
 
-    Any signed-in Account sees them for every player whose Account is
-    active, players aged 13 to 17 included: current Ratings have no
-    privacy setting. Each rating comes with its reliability: the OPEN
+    The player always sees their own. Anyone else signed in sees them only
+    when the player's rating visibility is signed-in players: always for
+    an adult; a player who joined at 13 to 17 stays hidden, at 18 too,
+    until they change it. Each rating comes with its reliability: the OPEN
     standard requires any app that shows an OPEN rating to show its
     reliability next to it. Every rating is a demonstration rating while
-    the engine is a demonstration package. An unknown or malformed code and
-    a player whose Account is inactive get the same 404.
+    the engine is a demonstration package. An unknown or malformed code, a
+    hidden player, and a player whose Account is inactive get the same 404.
     """
-    player = get_by_public_code(Player.objects.select_related("account"), code)
-    if not player.account.is_active:
+    viewer = request_account(request)
+    player = get_by_public_code(
+        Player.objects.select_related("account", "privacy"), code
+    )
+    if not player.privacy.visible_to("rating_visibility", viewer):
         raise Http404
     states = RatingState.objects.filter(player=player).order_by("rating_format")
     return PlayerRatingsOut(

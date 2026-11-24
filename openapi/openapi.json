@@ -831,6 +831,17 @@
               }
             ]
           },
+          "rating_visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who may see the player's current ratings. A player who joined at 13 to 17 starts with private and keeps it at 18 until they change it; only the player can change it to signed_in, and only from age 18. An adult's is always signed_in: current ratings cannot be hidden. Sending the stored value is always accepted."
+          },
           "stats_visibility": {
             "anyOf": [
               {
@@ -860,6 +871,10 @@
           "rating_history_visibility": {
             "$ref": "#/components/schemas/Visibility"
           },
+          "rating_visibility": {
+            "$ref": "#/components/schemas/Visibility",
+            "description": "Who may see the player's current ratings. A player who joined at 13 to 17 starts with private and keeps it at 18 until they change it; only the player can change it to signed_in, and only from age 18. An adult's is always signed_in: current ratings cannot be hidden. Sending the stored value is always accepted."
+          },
           "stats_visibility": {
             "$ref": "#/components/schemas/Visibility"
           }
@@ -869,7 +884,8 @@
           "match_history_visibility",
           "rating_history_visibility",
           "stats_visibility",
-          "home_club_visibility"
+          "home_club_visibility",
+          "rating_visibility"
         ],
         "title": "PrivacyOut",
         "type": "object"
@@ -2501,7 +2517,7 @@
     },
     "/api/v1/players/{code}/ratings": {
       "get": {
-        "description": "A player's current Ratings, one per rating format the player has.\n\nAny signed-in Account sees them for every player whose Account is\nactive, players aged 13 to 17 included: current Ratings have no\nprivacy setting. Each rating comes with its reliability: the OPEN\nstandard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package. An unknown or malformed code and\na player whose Account is inactive get the same 404.",
+        "description": "A player's current Ratings, one per rating format the player has.\n\nThe player always sees their own. Anyone else signed in sees them only\nwhen the player's rating visibility is signed-in players: always for\nan adult; a player who joined at 13 to 17 stays hidden, at 18 too,\nuntil they change it. Each rating comes with its reliability: the OPEN\nstandard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package. An unknown or malformed code, a\nhidden player, and a player whose Account is inactive get the same 404.",
         "operationId": "get_player_ratings",
         "parameters": [
           {
