@@ -49,8 +49,8 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   submitter of a match with an Event or a Club, a Club's included, whose
   exact duplicate matches a pending match confirms it (user decision).
 - ``is_moderator``: an active Account with the ``matches.moderate_match``
-  permission. A moderator may void and edit any match and resolve
-  disputes.
+  permission. A moderator may void and edit any match, resolve disputes,
+  resolve flags, and approve matches.
 
 A refused workflow action raises ``MatchActionDenied``, with fixed text
 that never says which rule failed or what state the match is in.
