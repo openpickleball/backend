@@ -25,6 +25,7 @@ from apps.accounts.tests.factories import UserFactory
 from apps.clubs.models import Club, Organizer
 from apps.clubs.tests.factories import (
     ClubFactory,
+    ClubOrganizerGrantFactory,
     ClubRoleFactory,
     OrganizerMemberFactory,
     verified_organizer,
@@ -68,7 +69,7 @@ class SeedSummary:
 
 @dataclass(frozen=True)
 class _Source:
-    """Where a match comes from: an Event or a Club, and who submits it."""
+    """Where a match comes from: an Event, maybe at a Club, and who submits it."""
 
     submitter: "_User"
     first_day: date
@@ -163,6 +164,7 @@ def seed(*, players: int) -> SeedSummary:
 
     kinds = list(EventKind)
     sources: list[_Source] = []
+    hosts: list[tuple[_User, Event]] = []
     for index in range(ORGANIZERS):
         organizer: Organizer = verified_organizer()
         member = OrganizerMemberFactory.create(organizer=organizer)
@@ -173,20 +175,27 @@ def seed(*, players: int) -> SeedSummary:
             start_date=start,
             end_date=end,
         )
+        hosts.append((member.account, event))
         sources.append(
             _Source(
                 submitter=member.account, event=event, first_day=start, last_day=end
             )
         )
-    for _index in range(CLUBS):
+    # A match that names a Club needs an Event, and the Club's grant to the
+    # Event's Organizer (ADR 0021). Each Club has an admin, who would make
+    # the grant, and grants one of the seeded Organizers.
+    for index in range(CLUBS):
         club: Club = ClubFactory.create()
-        role = ClubRoleFactory.create(club=club)
+        ClubRoleFactory.create(club=club)
+        submitter, host = hosts[index % len(hosts)]
+        ClubOrganizerGrantFactory.create(club=club, organizer=host.organizer)
         sources.append(
             _Source(
-                submitter=role.account,
+                submitter=submitter,
+                event=host,
                 club=club,
-                first_day=today - timedelta(days=365),
-                last_day=today,
+                first_day=host.start_date,
+                last_day=host.end_date,
             )
         )
 

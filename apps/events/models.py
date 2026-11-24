@@ -1,7 +1,8 @@
 """Events: tournaments, leagues, and verified rec sessions an Organizer runs.
 
 An Event groups the matches played under one Organizer, optionally at a
-Club, over a span of dates. Its ``kind`` is the match type its matches
+Club that granted that Organizer a Club Organizer Grant (ADR 0021), over a
+span of dates. Its ``kind`` is the match type its matches
 count as. Self-reported matches have no Event (decision F1 in #1).
 
 An Event has no weight of its own. The engine weights a match only by its
@@ -19,7 +20,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
 
-from apps.clubs.models import _CleanedTextModel
+from apps.clubs.models import ClubOrganizerGrant, _CleanedTextModel
 from apps.public_ids.codes import CodeType
 
 # Messages never include the submitted value (CLAUDE.md, API). Django's
@@ -31,6 +32,7 @@ _DATES_ORDER = "The end date cannot be before the start date."
 # Django's default names the submitted row id.
 _ORGANIZER_MESSAGES = {"invalid": "Choose an existing organizer."}
 _CLUB_MESSAGES = {"invalid": "Choose an existing club."}
+_CLUB_NOT_GRANTED = "This club has not allowed the organizer to name it."
 
 
 class EventKind(models.TextChoices):
@@ -105,3 +107,30 @@ class Event(_CleanedTextModel):
             and end < start
         ):
             raise ValidationError({"end_date": _DATES_ORDER})
+        if self._club_needs_grant():
+            raise ValidationError({"club": _CLUB_NOT_GRANTED})
+
+    def _club_needs_grant(self) -> bool:
+        """True when the Club has not granted the Organizer (ADR 0021).
+
+        A Club decides who files under its name, so a new Event, or a
+        change of its Club or Organizer, needs a Club Organizer Grant from
+        the Club to the Organizer. An existing Event whose stored Club and
+        Organizer are unchanged is not checked again, so a Club that
+        removes its grant later does not block an unrelated edit. The
+        stored values and the grant are read from the database.
+        """
+        if not isinstance(self.club_id, int) or not isinstance(self.organizer_id, int):
+            # No Club, or field validation reports a missing or invalid link.
+            return False
+        if self.pk is not None:
+            stored = (
+                Event.objects.filter(pk=self.pk)
+                .values("club_id", "organizer_id")
+                .first()
+            )
+            if stored == {"club_id": self.club_id, "organizer_id": self.organizer_id}:
+                return False
+        return not ClubOrganizerGrant.objects.filter(
+            club_id=self.club_id, organizer_id=self.organizer_id
+        ).exists()

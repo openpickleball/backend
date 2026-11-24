@@ -17,9 +17,10 @@ Converting a Match (``to_engine_match``):
   divisions, so a division removed later does not move a past match. The
   engine feeds the category matches into overall doubles itself.
 - The match type is the Event's kind. A Match with a Club and no Event is
-  ``rec_verified`` (the Club stands behind it), and one with neither is
-  self-reported (decision F1 in #1, ADR 0024). Submitted input never
-  chooses it.
+  ``rec_verified``, and one with neither is self-reported (decision F1 in
+  #1, ADR 0024). Submitted input never chooses it. Since ADR 0021 no new
+  Match with a Club and no Event can be recorded, so that mapping covers
+  only matches already in the Ledger.
 - The game format is the scoring type and game target, win by 2, no cap
   (``validate_match``'s rules). Games are ordered by game number.
 - ``played_at`` keeps its instant, in a ``datetime.timezone`` of the stored
@@ -33,8 +34,8 @@ Converting a Match (``to_engine_match``):
   that names it in ``after.corrected_by`` with a ``before`` status of
   confirmed or disputed (the correction was created confirmed; only a
   moderator can edit a match with no Event and no Club). A self-reported
-  Match a Club or Event submitter's duplicate confirmed is not a
-  moderator's: it keeps only its confirmers.
+  Match an Event submitter's duplicate confirmed is not a moderator's: it
+  keeps only its confirmers.
 - The status is always completed: the backend stores only completed
   matches. The backend's own status is confirmation state, and which
   matches count is ``Match.objects.counted()``, not this conversion.
@@ -273,7 +274,8 @@ def to_engine_match(match: Match) -> open_engine.Match:
         codes_by_player[participant.player_id] = player_code
 
     # Only the Event, then the Club, decide the match type, never
-    # submitted input (ADR 0024).
+    # submitted input (ADR 0024). A Club with no Event is only a match
+    # already in the Ledger: none can be recorded since ADR 0021.
     event = match.event
     if event is not None:
         match_type = _look_up(_MATCH_TYPES, event.kind, "event kind", code)
