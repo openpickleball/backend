@@ -282,6 +282,7 @@ uv run pre-commit run --all-files
 - `docs/privacy/personal-data-inventory.md`: every personal data field, with purpose, visibility, retention, and encryption (ADR 0009).
 - `docs/engine.md`: the engine pin, how to read the installed engine version, and the upgrade procedure.
 - `docs/email.md`: the sending domain `mail.openpb.org`, its Resend setup and DNS records (SPF, DKIM, DMARC), and the DMARC rollout.
+- `docs/csv-format.md`: the CSV results format organizers upload (#70, #71), with its column-to-field map and common errors. `docs/csv-results-template.csv` is its template, with made-up players.
 - GitHub issue #1: the backend plan's decisions (Q1 to Q16, F1 to F11) and checked package versions.
 - Organization-wide policy lives in the `openpickleball/.github` repository: charter, governance, roadmap, contributing guide, security policy, licensing. A local checkout may exist at `../OPEN-pickleball`.
 - The reference engine may be checked out at `../OPEN-engine`. Its module docstring in `src/open_engine/engine.py` lists production requirements the backend must meet.
