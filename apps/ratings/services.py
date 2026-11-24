@@ -782,16 +782,22 @@ def replay_ratings(*, as_of: date | None = None) -> ReplayOutcome:
     change whose request was taken is in the ledger read. A request
     stored while this runs stays, with its own task.
 
-    With no request pending it writes nothing (``nothing_requested``),
-    so quick successive changes and a redelivered task share one replay.
+    With no request pending it writes nothing and takes no lock
+    (``nothing_requested``), so quick successive changes, a redelivered
+    task, and the beat entry share one replay.
     Any error is logged by class only (never its text), then propagates:
     everything rolls back and the requests stay pending.
     """
+    # A plain check first, so a run with nothing to do (most beat runs)
+    # takes no lock and creates no snapshot row.
+    if not RatingReplayRequest.objects.exists():
+        return ReplayOutcome.NOTHING_REQUESTED
     with transaction.atomic():
         labels = live_config()
         row = _snapshot_row(labels)
         requests = list(RatingReplayRequest.objects.order_by("pk"))
         if not requests:
+            # Another run took them while this one waited for the lock.
             # Undo the empty snapshot row _snapshot_row may have created.
             transaction.set_rollback(True)
             return ReplayOutcome.NOTHING_REQUESTED
