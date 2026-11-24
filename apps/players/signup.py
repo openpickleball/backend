@@ -25,7 +25,8 @@ if TYPE_CHECKING:
 
 # The details a signup gave, until the Player create endpoint takes them.
 SIGNUP_DETAILS_SESSION_KEY = "open_signup_details"
-# Set when a signup was refused for age: the session cannot retry.
+# Set when a signup or a Player create was refused for age: the session
+# cannot retry either.
 SIGNUP_REFUSED_SESSION_KEY = "open_signup_refused"
 
 
