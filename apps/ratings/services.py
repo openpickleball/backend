@@ -299,6 +299,19 @@ def apply_rating(
     return history
 
 
+class LiveUpdateFailed(Exception):
+    """A live update task failed in a worker, without the error's text.
+
+    Holds only the Match's row id and the error's class, so Celery's
+    worker log never prints the original text, which can quote values.
+    """
+
+    def __init__(self, match_id: int, error_class: str) -> None:
+        super().__init__(f"Live update failed for match {match_id} ({error_class}).")
+        self.match_id = match_id
+        self.error_class = error_class
+
+
 class LiveUpdateOutcome(StrEnum):
     """What ``update_ratings_for_match()`` did."""
 
