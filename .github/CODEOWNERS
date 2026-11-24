@@ -25,11 +25,12 @@
 /apps/players/ @openpickleball/maintainers
 
 # Organizer verification (a verified Organizer's submissions count as
-# confirmed) and the club and organizer roles.
+# confirmed), the club and organizer roles, and Club Organizer Grants,
+# which decide which Organizers may name a club.
 /apps/clubs/ @openpickleball/maintainers
 
-# Partner Applications (OAuth clients), their approval, and Club
-# Application Grants, which decide who may submit a club's matches.
+# Partner Applications (OAuth clients), their approval, and Organizer
+# Application Grants, which decide which applications act for an Organizer.
 /apps/partners/ @openpickleball/maintainers
 
 # The match ledger, append-only (hard rule 3).

@@ -1,6 +1,6 @@
 # 0021. Organizers are the only trusted submitters
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-23
 
 ## Context

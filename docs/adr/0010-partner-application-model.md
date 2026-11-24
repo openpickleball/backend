@@ -1,6 +1,7 @@
 # 0010. Partner applications: a swapped OAuth Application model
 
 - Status: Proposed
+- Amended by: [ADR 0021](0021-organizers-are-the-trusted-submitters.md) (the Organizer Application Grant, an Organizer's permission for one application, replaces the Club Application Grant)
 - Date: 2026-11-15
 
 ## Context

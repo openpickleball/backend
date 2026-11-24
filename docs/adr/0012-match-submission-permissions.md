@@ -1,6 +1,7 @@
 # 0012. Match submission permissions
 
 - Status: Proposed
+- Amended by: [ADR 0021](0021-organizers-are-the-trusted-submitters.md) (the verified Organizer is the only trusted submitter: club authority and the Club Application Grant are gone, an application also acts for an Organizer that granted it an Organizer Application Grant, a match with a Club needs an Event and the Club's Club Organizer Grant to its Organizer, and a Club admin no longer changes matches)
 - Date: 2026-11-15
 
 ## Context

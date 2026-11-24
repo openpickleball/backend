@@ -33,20 +33,20 @@ The gender division a Player enters for divisions and gender-specific Rating For
 _Avoid_: gender, sex.
 
 **Organizer**:
-A person or body that runs events and submits results on behalf of an event, Club, league, or tournament. An Organizer is unverified until an Account with permission to verify organizers verifies it. A verified Organizer's submission counts as confirmed. A person who organizes alone is an Organizer with one Organizer Member. Backend: `clubs.Organizer`.
+A person or body that runs events and submits their results. The verified Organizer is OPEN's only trusted submitter (ADR 0021): an Organizer is unverified until an Account with permission to verify organizers verifies it, and a verified Organizer's submission counts as confirmed. A club that runs its own leagues or ladders becomes, or works through, an Organizer. A person who organizes alone is an Organizer with one Organizer Member. Backend: `clubs.Organizer`.
 
 **Organizer Member**:
-An Account that acts for an Organizer, with a role: admin or match manager. While the Organizer is verified, a member with either role may submit matches for its Events (a match that also names a Club needs a Club Role there too) and change them. While an Organizer is verified, the Account that verified it cannot be its member. Backend: `clubs.OrganizerMember`.
+An Account that acts for an Organizer, with a role: admin or match manager. While the Organizer is verified, a member with either role may submit matches for its Events and change them; a match or Event that names a Club also needs that Club's Club Organizer Grant to the Organizer. This is the only way an Account submits matches other than its own (ADR 0021). An admin member makes and removes the Organizer's Organizer Application Grants. While an Organizer is verified, the Account that verified it cannot be its member. Backend: `clubs.OrganizerMember`.
 
 **Club**:
-A place or group where players play, with a name and an optional city and region. Backend: `clubs.Club`.
+A place or group where players play, with a name and an optional city and region. A Club is never verified and is not a trusted submitter: it decides only which Organizers may name it, through Club Organizer Grants (ADR 0021). Backend: `clubs.Club`.
 _Avoid_: venue, team.
 
 **Club Role**:
-An Account's role at a Club: admin or match manager. Either role may submit the Club's matches (a match that also names an Event needs authority for that Event too). Of the Club Roles, only admin may change them. Backend: `clubs.ClubRole`.
+An Account's role at a Club. The only Club Role is admin (ADR 0021). A Club admin manages the Club's profile and its Club Organizer Grants. A Club Role gives no authority to submit, confirm, or change a match. Backend: `clubs.ClubRole`.
 
 **Event**:
-A tournament, league, or verified rec play that an Organizer runs, optionally at a Club, from a start date to an end date. Its kind is the Match Type its matches count as: `tournament`, `league`, or `rec_verified`. Self-reported matches have no Event. An Event has no weight of its own: a match's weight comes from its Match Type alone. Backend: `events.Event`.
+A tournament, league, or verified rec play that an Organizer runs, optionally at a Club, from a start date to an end date. An Event names a Club only when that Club granted its Organizer a Club Organizer Grant (ADR 0021). Every trusted match has an Event. Its kind is the Match Type its matches count as: `tournament`, `league`, or `rec_verified`. Self-reported matches have no Event. An Event has no weight of its own: a match's weight comes from its Match Type alone. Backend: `events.Event`.
 _Avoid_: competition.
 
 **Partner**:
@@ -54,12 +54,16 @@ An app, league platform, club, or tournament that integrates with OPEN through t
 _Avoid_: customer, client, vendor.
 
 **Partner Application**:
-What a Partner registers to reach OPEN's APIs through OAuth. It starts unapproved; a moderator approves production access (#29). It may belong to an Organizer. Once approved, it may submit matches for the Events of the verified Organizer it belongs to and for each Club that granted it. A match that names both an Event and a Club needs both. It never submits a match with no Event and no Club, and it may change only the matches it submitted. Backend: `partners.PartnerApplication`.
+What a Partner registers to reach OPEN's APIs through OAuth. It starts unapproved; a moderator approves production access (#29). It may belong to an Organizer. Once approved, it may submit matches for the Events of each verified Organizer that owns it or granted it an Organizer Application Grant (ADR 0021). A match that also names a Club needs that Club's Club Organizer Grant to the Event's Organizer. It never submits a match with no Event, and it may change only the matches it submitted. Backend: `partners.PartnerApplication`.
 _Avoid_: client, app (alone), integration.
 
-**Club Application Grant**:
-A Club's permission for one Partner Application to submit that Club's matches, once the application is approved. Backend: `partners.ClubApplicationGrant`.
-_Avoid_: authorization, consent (that is a player's approval of a linked app, #76).
+**Organizer Application Grant**:
+An Organizer's permission for one Partner Application to act for it: once the application is approved and while the Organizer is verified, the application may submit and confirm matches for the Organizer's Events, as an application the Organizer owns may. A platform that serves many Organizers holds one grant from each. It replaced the Club Application Grant (ADR 0021). Backend: `partners.OrganizerApplicationGrant`.
+_Avoid_: authorization, Club Application Grant (removed), consent (that is a player's approval of a linked app, #76).
+
+**Club Organizer Grant**:
+A Club's consent for one Organizer to name it on its Events and matches (ADR 0021). It gives consent, not trust: the Organizer must still be verified. A Club that removes a grant stops new matches and Events under its name; matches already recorded stay in the Ledger. Backend: `clubs.ClubOrganizerGrant`.
+_Avoid_: club authority.
 
 **External ID**:
 A Player's identifier in another system, keyed by source. Used for identity matching, never as the OPEN primary key. Not the same as a Match's `external_id` (see Match). Engine: `Player.external_ids`.
@@ -81,10 +85,10 @@ One scored unit inside a Match, such as 11-8. Must be valid for the Match's Game
 How each game is scored: side-out or rally scoring, points to win, win-by margin, and an optional cap. Recorded on every Match. The backend stores the scoring type (`scoring_type`, side-out by default) and points to win (`game_target`: 11, 15, or 21); every game in a Match uses the same ones (decision F15). Engine: `GameFormat`.
 
 **Match Type**:
-Where the result came from, which affects its weight: `tournament`, `league`, `rec_verified`, or `self_reported`. Not stored: an Event match has its Event's kind, a Club match with no Event is `rec_verified`, and a match with neither is `self_reported` (ADR 0024). Engine: `MatchType`.
+Where the result came from, which affects its weight: `tournament`, `league`, `rec_verified`, or `self_reported`. Not stored: an Event match has its Event's kind, a Club match with no Event is `rec_verified` (only one already in the Ledger: none can be recorded since ADR 0021), and a match with neither is `self_reported` (ADR 0024). Engine: `MatchType`.
 
 **Confirmation**:
-Agreement that a reported score is correct. A self-reported Match stays pending until at least one player from each team confirms it (a player's own submission counts as their team's confirmation), or an Organizer, Club, or Partner Application with permission submits the same Match (same teams, date, and scores). A Match that an Organizer, Club, or Partner Application with permission submits is confirmed when it is created (decision F4). Only a confirmed Match can count. Engine: `Match.confirmed_by`. Backend: `matches.MatchConfirmation`, one row per player's decision, and `Match.status` (ADR 0013). For a self-reported Match a moderator confirmed, the engine gets every participant as confirmed, since the moderator's decision stands in for the teams (ADR 0024).
+Agreement that a reported score is correct. A self-reported Match stays pending until at least one player from each team confirms it (a player's own submission counts as their team's confirmation), or a submitter with event authority (a member of a verified Organizer, or a Partner Application acting for one) submits the same Match (same teams, date, and scores). A Match such a submitter submits, always with an Event, is confirmed when it is created (decision F4, ADR 0021). A Club gives no confirmation. Only a confirmed Match can count. Engine: `Match.confirmed_by`. Backend: `matches.MatchConfirmation`, one row per player's decision, and `Match.status` (ADR 0013). For a self-reported Match a moderator confirmed, the engine gets every participant as confirmed, since the moderator's decision stands in for the teams (ADR 0024).
 
 **Dispute**:
 A participant's statement that a Match's score is wrong. A disputed Match stops counting until a moderator resolves it as confirmed or voided. Each player disputes a Match at most once. Backend: `matches.MatchConfirmation` with decision `dispute`.
