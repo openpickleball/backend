@@ -2,7 +2,7 @@
 
 The public rating lookup (``get_player_ratings``) needs no sign-in: anyone
 may read the current Ratings of a player whose Account is active and who
-is not aged 13 to 17 today (``is_publicly_rated``, the ADR 0017 rule).
+is 18 or older today (``is_publicly_rated``, the ADR 0017 rule).
 Current Ratings have no privacy setting (ADR 0002), so none is read.
 Anyone else gets the same 404 as an unknown or malformed code, so the
 answer never reveals that a player exists (ADR 0008). The view never
@@ -33,7 +33,7 @@ from ninja.pagination import paginate
 
 from apps.matches.api import request_account
 from apps.matches.models import RatingFormat
-from apps.players.age import is_minor
+from apps.players.age import is_adult
 from apps.players.models import Player
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
@@ -57,12 +57,17 @@ PlayerCode = Annotated[str, PublicCodePath(CodeType.PLAYER)]
 def is_publicly_rated(player: Player) -> bool:
     """Whether anyone may read ``player``'s current Ratings.
 
-    Only while the player's Account is active and the player is not aged
-    13 to 17 today, judged by ``is_minor`` at the time of the request.
+    Only while the player's Account is active and the player is 18 or
+    older on the age limit date at the time of the request (``is_adult``,
+    ADR 0017). Fails closed: a missing birth year or month, or one that
+    makes the player under 13 or born in the future (a row written past
+    the model's checks), is never public.
     """
-    return bool(player.account.is_active) and not is_minor(
-        player.birth_year, player.birth_month
-    )
+    year: int | None = player.birth_year
+    month: int | None = player.birth_month
+    if year is None or month is None:
+        return False
+    return bool(player.account.is_active) and is_adult(year, month)
 
 
 @router.get(
