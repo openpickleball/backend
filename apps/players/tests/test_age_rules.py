@@ -97,21 +97,6 @@ def test_a_future_month_keeps_its_own_message() -> None:
     assert _nothing_written()
 
 
-def test_profile_change_to_under_13_is_refused() -> None:
-    player = PlayerFactory.create()
-    owner = player.account
-    stored = (player.birth_year, player.birth_month)
-    year = age_limit_date().year - 5
-
-    with pytest.raises(ValidationError) as caught:
-        update_profile(player=player, actor=owner, changes={"birth_year": year})
-
-    assert caught.value.message_dict == {"birth_month": [REFUSED]}
-    player.refresh_from_db()
-    assert (player.birth_year, player.birth_month) == stored
-    assert not AuditEvent.objects.exists()
-
-
 def test_stored_player_is_not_rechecked_when_another_field_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

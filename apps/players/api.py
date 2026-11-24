@@ -29,25 +29,27 @@ malformed code (ADR 0008, ADR 0015).
 
 The signed-in Account's own Player is at /api/v1/me/player (``me_router``,
 issue #124). POST creates it, once per Account, only for an Account whose
-own login address is verified. The birth year and month and the gender
-division come from the details the signup held in the session (ADR 0017,
-issue #215, ``auth_session`` for either headless client), and from the
-body only when the session holds none, where all three are required.
-An under-13 age refuses the session as signup does (issue #220): the
-create sets the signup refusal flag, and every later create in that
-session gets the same fixed 422, whatever its body.
+own login address is verified. The birth year and month, the gender
+division, the name, and the city and region come from the details the
+signup held in the session (ADR 0017, ADR 0019, ADR 0022, ``auth_session``
+for either headless client): the held name ("First Last") is the legal
+name and, for an adult, the starting display name; a player aged 13 to
+17 starts with "First L.". The body is read only when
+the session holds none, where the display name, birth year and month,
+and gender division are required.
+An under-13 or future age refuses the session as signup does (issues
+#220 and #225): the create sets the signup refusal flag, and every later
+create in that session gets the same fixed 422, whatever its body. PATCH
+refuses the birth year and month and the gender division: they are set
+once, when the Player is created (ADR 0023).
 """
 
 import contextlib
-import threading
-import time
 import unicodedata
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, ClassVar
+from typing import TYPE_CHECKING, Annotated, ClassVar, TypedDict
 
 from allauth.account.models import EmailAddress
 from django.contrib.sessions.backends.base import SessionBase, UpdateError
-from django.core.cache import cache as default_cache
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -58,7 +60,6 @@ from ninja import Field, Query, Router, Schema, Status
 from ninja.errors import HttpError
 from ninja.errors import ValidationError as NinjaValidationError
 from ninja.pagination import paginate
-from ninja.throttling import BaseThrottle
 from pydantic import BeforeValidator
 from pydantic_core import PydanticCustomError
 
@@ -68,7 +69,13 @@ from apps.matches.pagination import (
     MatchHistoryPagination,
 )
 from apps.matches.schemas import MatchOut, with_match_details
-from apps.players.models import UNDER_MINIMUM_AGE_MESSAGE, Player
+from apps.players.age import is_minor
+from apps.players.models import (
+    FUTURE_BIRTH_MONTH_MESSAGE,
+    UNDER_MINIMUM_AGE_MESSAGE,
+    Player,
+    has_visible_character,
+)
 from apps.players.schemas import (
     MyPlayerOut,
     PlayerCreateIn,
@@ -94,13 +101,21 @@ from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
 from config.api_errors import ErrorResponse
 from config.auth import account_auth, auth_session
+from config.throttling import (
+    DAY,
+    MINUTE,
+    FixedWindowThrottle,
+    Windows,
+    account_bucket,
+    account_throttle,
+)
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
-router = Router(tags=["players"], auth=account_auth)
+router = Router(tags=["players"], auth=account_auth, throttle=account_throttle)
 # The signed-in Account's own Player, mounted at /api/v1/me/.
-me_router = Router(tags=["players"], auth=account_auth)
+me_router = Router(tags=["players"], auth=account_auth, throttle=account_throttle)
 
 PlayerCode = Annotated[str, PublicCodePath(CodeType.PLAYER)]
 
@@ -110,15 +125,11 @@ SEARCH_DEFAULT_LIMIT = 10
 SEARCH_MAX_LIMIT = 20
 SEARCH_MINUTE_LIMIT = 30
 SEARCH_DAY_LIMIT = 300
-MINUTE = 60
-DAY = 24 * 60 * 60
-# Extra seconds a counter outlives its window, so it is never dropped
-# while its window is still open.
-THROTTLE_TIMEOUT_MARGIN = 60
 # Fixed text, never a submitted value.
 EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email address before creating your player."
 ALREADY_HAS_PLAYER_MESSAGE = "This account already has a player."
 _MISSING_DETAIL_MESSAGES = {
+    "display_name": "Enter a display name.",
     "birth_year": "Enter your birth year.",
     "birth_month": "Enter your birth month.",
     "gender_division": "Choose a gender division.",
@@ -153,15 +164,15 @@ def list_player_matches(request: HttpRequest, code: PlayerCode) -> QuerySet[Matc
     return with_match_details(matches).order_by("-played_on", "-created_at", "-pk")
 
 
-class SearchThrottle(BaseThrottle):
+class SearchThrottle(FixedWindowThrottle):
     """Per-Account limits on player search: a minute window and a day window.
 
-    Each window is a fixed window: one counter per scope, Account primary
-    key, and window index (``int(now // period)``), counted with
-    ``cache.add`` then ``cache.incr``, which are atomic on the Redis and
-    local memory caches, so requests from one Account on several workers
-    never lose a count. The key never holds ``str(request.auth)``, which is
-    the Account's email.
+    Fixed limits, not settings (ADR 0018). Counted as every API throttle
+    is (``config.throttling.FixedWindowThrottle``): one counter per scope,
+    window, and Account primary key, with ``cache.add`` then
+    ``cache.incr``, so requests from one Account on several workers never
+    lose a count. The key never holds ``str(request.auth)``, which is the
+    Account's email.
 
     The minute window is checked first, and the day counter grows only
     when the minute window allows the request, so a burst the minute limit
@@ -169,58 +180,21 @@ class SearchThrottle(BaseThrottle):
     window edge (about 60 searches within seconds across a minute edge,
     about 600 across the UTC day edge). Accepted.
 
-    ninja builds one instance per operation and shares it across requests
-    and threads, so nothing about a request is stored on ``self``. What
-    ``wait()`` needs (when the refusing window ends) is kept in a
-    ``threading.local``: ninja calls ``wait()``, with no request, right
-    after ``allow_request`` returns False, on the same thread.
+    Search's operation passes this throttle itself, which replaces the
+    router's per-Account throttle, so a search never counts against the
+    Account's budget for other operations.
     """
 
-    cache = default_cache
-    # A plain function, so tests can replace the clock.
-    timer: Callable[[], float] = staticmethod(time.time)
-    windows: ClassVar[tuple[tuple[str, int, int], ...]] = (
+    windows: ClassVar[Windows] = (
         ("minute", SEARCH_MINUTE_LIMIT, MINUTE),
         ("day", SEARCH_DAY_LIMIT, DAY),
     )
 
-    def __init__(self, scope: str) -> None:
-        self.scope = scope
-        self._refused = threading.local()
+    def bucket(self, request: HttpRequest) -> str | None:
+        return account_bucket(request)
 
-    def _count(self, key: str, period: int) -> int:
-        """Add one to a window's counter and return the new count.
-
-        If the counter expires or is evicted between ``add`` and ``incr``
-        (``incr`` raises ``ValueError``), try once more, then allow the
-        request (count 0) rather than fail it.
-        """
-        timeout = period + THROTTLE_TIMEOUT_MARGIN
-        for _ in range(2):
-            self.cache.add(key, 0, timeout)
-            try:
-                return int(self.cache.incr(key))
-            except ValueError:
-                continue
-        return 0
-
-    def allow_request(self, request: HttpRequest) -> bool:
-        self._refused.retry_after = None
-        account_pk = getattr(getattr(request, "auth", None), "pk", None)
-        if account_pk is None:
-            return True
-        now = self.timer()
-        for name, limit, period in self.windows:
-            window = int(now // period)
-            key = f"throttle:{self.scope}:{name}:{account_pk}:{window}"
-            if self._count(key, period) > limit:
-                self._refused.retry_after = max(1.0, (window + 1) * period - now)
-                return False
-        return True
-
-    def wait(self) -> float | None:
-        retry_after: float | None = getattr(self._refused, "retry_after", None)
-        return retry_after
+    def limits(self) -> Windows:
+        return self.windows
 
 
 def _search_text(value: object) -> object:
@@ -409,22 +383,81 @@ def _body_errors(
     return NinjaValidationError(items)
 
 
-def _details_from_body(payload: PlayerCreateIn) -> SignupDetails:
-    """The body's birth year and month and gender division.
+class _NewProfile(TypedDict):
+    """``create_player``'s values besides the Account."""
 
-    A 422 names each one missing (left out or null). ``create_player``
-    checks the values.
+    display_name: str
+    legal_name: str | None
+    birth_year: int
+    birth_month: int
+    gender_division: str
+    city: str | None
+    region: str | None
+
+
+def starting_display_name(details: SignupDetails, *, minor: bool) -> str:
+    """The display name a Player made from ``details`` starts with.
+
+    The legal name ("First Last") for an adult. For a player aged 13 to
+    17, "First L.": the first name, a space, the last name's first
+    character that renders, with the combining marks after it, and a
+    period (ADR 0022). The signup form makes sure the last name has a
+    character that renders.
+    """
+    if not minor:
+        return details.legal_name
+    last = details.last_name
+    start = next((i for i, char in enumerate(last) if has_visible_character(char)), 0)
+    end = start + 1
+    while end < len(last) and unicodedata.category(last[end]).startswith("M"):
+        end += 1
+    return f"{details.first_name} {last[start:end]}."
+
+
+def _profile_from_hold(details: SignupDetails) -> _NewProfile:
+    """``create_player``'s values from the details held at signup.
+
+    The held legal name ("First Last") is also the starting display name
+    (ADR 0022), except for a player aged 13 to 17, who starts with "First
+    L.": the first name, a space, the last name's first character, and a
+    period. Either can change it later.
+    """
+    minor = is_minor(details.birth_year, details.birth_month)
+    return {
+        "display_name": starting_display_name(details, minor=minor),
+        "legal_name": details.legal_name,
+        "birth_year": details.birth_year,
+        "birth_month": details.birth_month,
+        "gender_division": details.gender_division,
+        "city": details.city,
+        "region": details.region,
+    }
+
+
+def _profile_from_body(payload: PlayerCreateIn) -> _NewProfile:
+    """``create_player``'s values from the body, when nothing is held.
+
+    A 422 names each required value missing (left out or null).
+    ``create_player`` checks the values.
     """
     missing = [
         {"loc": ("body", name), "type": "missing", "msg": message}
         for name, message in _MISSING_DETAIL_MESSAGES.items()
         if getattr(payload, name) is None
     ]
-    year, month = payload.birth_year, payload.birth_month
+    name, year, month = payload.display_name, payload.birth_year, payload.birth_month
     division = payload.gender_division
-    if missing or year is None or month is None or division is None:
+    if missing or name is None or year is None or month is None or division is None:
         raise NinjaValidationError(missing)
-    return SignupDetails(birth_year=year, birth_month=month, gender_division=division)
+    return {
+        "display_name": name,
+        "legal_name": payload.legal_name,
+        "birth_year": year,
+        "birth_month": month,
+        "gender_division": division,
+        "city": payload.city,
+        "region": payload.region,
+    }
 
 
 def _save_token_session(request: HttpRequest, session: SessionBase) -> None:
@@ -448,17 +481,25 @@ def _take_hold(request: HttpRequest, session: SessionBase, account: "_User") -> 
         _save_token_session(request, session)
 
 
-def _is_under_minimum_age(error: DjangoValidationError) -> bool:
-    """Whether ``create_player`` refused the age as under 13."""
+# The age refusals that refuse the session, as signup does: under 13, and
+# a future birth year and month (issue #225).
+_REFUSED_AGE_MESSAGES = (UNDER_MINIMUM_AGE_MESSAGE, FUTURE_BIRTH_MONTH_MESSAGE)
+
+
+def _is_refused_age(error: DjangoValidationError) -> bool:
+    """Whether ``create_player`` refused the age as under 13 or future."""
     found = getattr(error, "error_dict", {}).get("birth_month", [])
-    return any(UNDER_MINIMUM_AGE_MESSAGE in item.messages for item in found)
+    return any(
+        message in item.messages for item in found for message in _REFUSED_AGE_MESSAGES
+    )
 
 
 def _refuse(request: HttpRequest, session: SessionBase) -> NinjaValidationError:
     """Refuse the session for age, and the fixed 422 to raise.
 
-    The same answer for the first under-13 create and every later one in
-    the session, so nothing in it depends on the body (issue #220).
+    The same answer for the first create refused for age and every later
+    one in the session, so nothing in it depends on the body (issues #220
+    and #225).
     """
     refuse_signup(session)
     _save_token_session(request, session)
@@ -484,15 +525,17 @@ def create_my_player(
     """Create the signed-in Account's Player.
 
     The Account's own email address must be verified (403 otherwise), and
-    an Account has one Player (409 for a second). The birth year and month
-    and the gender division come from the details held at signup in this
-    session (ADR 0017, issue #215); the body's are used only when the
-    session holds none, and are then required. The held details are
+    an Account has one Player (409 for a second). Every value comes from
+    the details held at signup in this session (ADR 0017, ADR 0019, ADR
+    0022), the held name as the legal name and, for an adult, the display
+    name (a player aged 13 to 17 starts with "First L."); the body is used
+    only when the session holds none, and its display name, birth year and
+    month, and gender division are then required. The held details are
     removed once the Player exists (on a 409 too), so a create refused for
-    any other reason can be retried. A player under 13 is refused with a
-    fixed 422, and the refusal holds for the session, as at signup: every
-    later create in it gets the same 422, and so does a signup after
-    logout (ADR 0017).
+    any other reason can be retried. A player under 13, or a birth year
+    and month in the future, is refused with a fixed 422, and the refusal
+    holds for the session, as at signup: every later create in it gets the
+    same 422, and so does a signup after logout (ADR 0017).
     """
     account = request_account(request)
     if not _has_verified_email(account):
@@ -505,25 +548,17 @@ def create_my_player(
     if is_signup_refused(session):
         # Never reads the body's age: the answer depends on nothing sent.
         raise _refuse(request, session)
-    details = peek_signup_details(session, account) or _details_from_body(payload)
+    held = peek_signup_details(session, account)
+    profile = _profile_from_hold(held) if held else _profile_from_body(payload)
     try:
-        player = create_player(
-            account=account,
-            display_name=payload.display_name,
-            birth_year=details.birth_year,
-            birth_month=details.birth_month,
-            legal_name=payload.legal_name,
-            gender_division=details.gender_division,
-            city=payload.city,
-            region=payload.region,
-        )
+        player = create_player(account=account, **profile)
     except DjangoValidationError as error:
         # create_player locks the Account, so a concurrent second create
         # lands here.
         if _is_duplicate_player(error):
             _take_hold(request, session, account)
             raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE) from None
-        if _is_under_minimum_age(error):
+        if _is_refused_age(error):
             raise _refuse(request, session) from None
         raise _body_errors(error) from None
     _take_hold(request, session, account)
@@ -558,9 +593,10 @@ def get_my_player(request: HttpRequest) -> MyPlayerOut:
 def update_my_player(request: HttpRequest, payload: PlayerUpdateIn) -> MyPlayerOut:
     """Change the signed-in Account's own profile fields and privacy settings.
 
-    Only the fields sent change. The gender division can change between
-    divisions but cannot be cleared (422). Both kinds of change apply
-    together or not at all: a 422 on either changes nothing. Each kind
+    Only the fields sent change. The birth year and month and the gender
+    division are set once, when the Player is created: sending any of
+    them gets a 422, whatever the value (ADR 0023). Both kinds of change
+    apply together or not at all: a 422 on either changes nothing. Each kind
     that changes records one Audit Event (profile changes by field name
     only). 404 when the Account has no Player.
     """

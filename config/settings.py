@@ -63,6 +63,7 @@ def _list(name: str) -> list[str]:
 
 
 _MAX_DAYS = 36500
+_MAX_VERSION = 1_000_000
 
 
 def _positive_days(name: str) -> int | None:
@@ -82,6 +83,66 @@ def _positive_days(name: str) -> int | None:
             "leave it empty (see .env.example)."
         )
     return int(value)
+
+
+def _version(name: str, default: int) -> int:
+    """A whole number from 1 to 1,000,000, or ``default`` when unset or empty.
+
+    Only ASCII digits are accepted, at most 7 of them, checked before the
+    conversion. The error names the variable and the range and never
+    echoes the value.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return default
+    if not re.fullmatch(r"[0-9]{1,7}", value) or not 1 <= int(value) <= _MAX_VERSION:
+        raise ImproperlyConfigured(
+            f"Set {name} to a whole number from 1 to {_MAX_VERSION}, or leave "
+            "it empty (see .env.example)."
+        )
+    return int(value)
+
+
+def _rate(name: str, default: int) -> int:
+    """A throttle rate: a whole number of requests from 1 to 1,000,000, or
+    ``default`` when unset or empty. Same rule and error as ``_version``."""
+    return _version(name, default)
+
+
+# Header names CLIENT_IP_HEADER refuses: X-Forwarded-For and Forwarded,
+# which a client can fill with any value, and Content-Type and
+# Content-Length, which WSGI passes without the HTTP_ prefix, so the
+# throttle would never find them.
+_REFUSED_IP_HEADERS = frozenset(
+    {"x-forwarded-for", "forwarded", "content-type", "content-length"}
+)
+
+
+def _client_ip_header(name: str, default: str) -> str:
+    """The name of the request header that holds the client IP.
+
+    Stripped and lowercased, or ``default`` when unset or empty. Letters
+    and digits in groups joined by hyphens, at most 64, so no leading or
+    trailing hyphen: an underscore is refused because WSGI servers fold
+    underscores and hyphens into the same ``HTTP_`` key. The names in
+    ``_REFUSED_IP_HEADERS`` are refused too. The error never echoes the
+    value.
+    """
+    value = _raw(name).strip().lower()
+    if not value:
+        return default
+    if (
+        len(value) > 64
+        or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value)
+        or value in _REFUSED_IP_HEADERS
+    ):
+        raise ImproperlyConfigured(
+            f"Set {name} to the name of the header your proxy sets to the "
+            "client IP: letters, digits, and inner hyphens, at most 64, never "
+            "X-Forwarded-For, Forwarded, Content-Type, or Content-Length. "
+            "Leave it empty for the default (see .env.example)."
+        )
+    return value
 
 
 def _database(url: str) -> dict[str, object]:
@@ -215,6 +276,41 @@ def _frontend_url(name: str, *, require_https: bool) -> str:
     return value
 
 
+# A base URL that a code is appended to: a lowercase http or https scheme,
+# a host as in _ORIGIN, an optional port, and a path that ends in "/", made
+# of unreserved characters, percent escapes, and the sub-delimiters, ":"
+# and "@". No query, fragment, user info, space, or control character.
+_BASE_URL = re.compile(
+    r"(?P<scheme>https?)://"
+    r"(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])"
+    r"(?::(?P<port>[1-9][0-9]{0,4}))?"
+    r"(?:/(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})*)*/"
+)
+
+
+def _base_url(name: str, default: str, *, require_https: bool) -> str:
+    """Read an optional base URL, failing fast without echoing it.
+
+    Unset or empty gives ``default``. With require_https (DEBUG off), only
+    an https URL is accepted.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return default
+    match = _BASE_URL.fullmatch(value)
+    if match is None or int(match.group("port") or 1) > 65535:
+        raise ImproperlyConfigured(
+            f"{name} is not a base URL. Use an absolute http or https URL with "
+            "a host and a path that ends in /, with no query, fragment, or "
+            "user info (see .env.example)."
+        )
+    if require_https and match.group("scheme") != "https":
+        raise ImproperlyConfigured(
+            f"{name} must use https when DJANGO_DEBUG is off (see .env.example)."
+        )
+    return value
+
+
 def _celery_broker_url(url: str) -> str:
     """Return a checked REDIS_URL in the form kombu reads as one broker.
 
@@ -296,6 +392,9 @@ CORS_ALLOW_HEADERS = (
     "x-email-verification-key",
     "x-password-reset-key",
 )
+# Response headers a script on an allowed origin may read beyond the
+# safelisted ones: Retry-After on a throttled 429 (ADR 0030).
+CORS_EXPOSE_HEADERS = ["Retry-After"]
 
 # Valkey URL (redis:// or rediss://). The cache and Celery (issue #9)
 # read it from here.
@@ -341,6 +440,10 @@ INSTALLED_APPS = [
     # Application admin that oauth2_provider registers.
     "apps.partners",
     "apps.matches",
+    # Ratings: the engine adapter (apps/ratings/engine_adapter.py), rating
+    # state, history, replays, replay requests, the engine snapshot, the
+    # live update task, and the replay task.
+    "apps.ratings",
     # The email outbox: messages wait here for the email queue (ADR 0016).
     "apps.emails",
     # Development only: the seed_dev_data command. No models.
@@ -539,6 +642,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
         "options": {"expire_seconds": 900},
     },
+    # Runs pending rating replay requests whose queued task was lost (#47).
+    # Does nothing when no request is pending. A run missed for 15 minutes
+    # is dropped.
+    "replay-ratings": {
+        "task": "apps.ratings.tasks.replay_ratings",
+        "schedule": crontab(minute="*/15"),
+        "options": {"expire_seconds": 900},
+    },
 }
 
 
@@ -547,6 +658,47 @@ CELERY_BEAT_SCHEDULE = {
 # Days a pending (unconfirmed) match waits before the daily task voids it
 # (#26). Unset or empty means pending matches never expire.
 MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS")
+
+
+# API throttling (#34, ADR 0030)
+
+# Requests per Account to every first-party operation that needs sign-in,
+# except player search, which has its own fixed limits (ADR 0018).
+API_ACCOUNT_THROTTLE_PER_MINUTE = _rate("API_ACCOUNT_THROTTLE_PER_MINUTE", 120)
+API_ACCOUNT_THROTTLE_PER_DAY = _rate("API_ACCOUNT_THROTTLE_PER_DAY", 10_000)
+# Requests per client IP to public operations (none is mounted yet).
+API_CLIENT_IP_THROTTLE_PER_MINUTE = _rate("API_CLIENT_IP_THROTTLE_PER_MINUTE", 60)
+API_CLIENT_IP_THROTTLE_PER_DAY = _rate("API_CLIENT_IP_THROTTLE_PER_DAY", 3_000)
+# The request header the proxy in front of the app sets to the client IP.
+# DigitalOcean App Platform sets do-connecting-ip. X-Forwarded-For is never
+# read: a client can forge it.
+CLIENT_IP_HEADER = _client_ip_header("CLIENT_IP_HEADER", "do-connecting-ip")
+
+
+# Ratings
+
+# The engine's published parameter set that ratings use (#44). Fixed here,
+# never read from the environment: changing it needs a check of the engine
+# release and a full replay, so it is a reviewed code change.
+OPEN_ENGINE_PARAMETER_SET = "v1"
+
+# Seconds a queued replay waits before it runs (#47): the debounce that
+# lets quick successive changes share one replay. Keep it well below the
+# broker's one-hour visibility timeout.
+RATING_REPLAY_DELAY_SECONDS = 60
+
+# The rating spec version stored with every rating change (#45, decision Q7
+# in #1): the openpickleball/rating-spec tag the ratings follow. The project
+# owner chose its release candidate tag, v1.0.0rc1, stored as 1.0.0rc1. Bump
+# it when rating-spec tags v1.0.0, then run the recompute (#48).
+OPEN_RATING_SPEC_VERSION = "1.0.0rc1"
+
+# Where a player's public profile lives (#53): the rating lookup's
+# profile_url is this followed by the player's OPEN Code. An absolute URL
+# whose path ends in /, https when DEBUG is off.
+OPEN_PUBLIC_PROFILE_URL = _base_url(
+    "OPEN_PUBLIC_PROFILE_URL", "https://openpb.org/players/", require_https=not DEBUG
+)
 
 
 # Accounts (django-allauth)
@@ -577,6 +729,11 @@ ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*"]
 # gender division, and OPEN's sign-up view refuses anyone under 13
 # (issues #114 and #215, ADR 0017).
 ACCOUNT_SIGNUP_FORM_CLASS = "apps.accounts.forms.SignupAgeForm"
+# The current versions of the legal agreements on openpb.org, which
+# sign-up requires accepting and records per Account (#222, ADR 0026).
+# Empty means the version in code, the one published when it was set.
+TERMS_OF_SERVICE_VERSION = _version("TERMS_OF_SERVICE_VERSION", 1)
+PRIVACY_POLICY_VERSION = _version("PRIVACY_POLICY_VERSION", 2)
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_UNIQUE_EMAIL = True
 # Changing the address replaces it instead of adding a second one.

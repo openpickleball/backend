@@ -25,10 +25,22 @@ PASSWORD = "made-up-Passw0rd-for-tests"
 NEW_PASSWORD = "another-made-up-Passw0rd-2"
 # The age screen's fields for a made-up adult (issue #114).
 ADULT_BIRTH = {"birth_year": 1990, "birth_month": 6}
-# Every signup detail besides the email and password: the age and the
-# gender division (issue #215).
+# Every signup detail besides the email and password: the age, the
+# gender division (issue #215), a made-up name and a place (#221), and
+# the acceptance of the legal agreements (#222).
 SIGNUP_GENDER_DIVISION = "womens"
-SIGNUP_DETAILS = {**ADULT_BIRTH, "gender_division": SIGNUP_GENDER_DIVISION}
+SIGNUP_NAMES = {"first_name": "Robin", "last_name": "Quillfeather"}
+SIGNUP_LOCATION = {"city": "Lakeview", "region": "Oregon"}
+# The legal name and starting display name SIGNUP_NAMES give.
+SIGNUP_FULL_NAME = "Robin Quillfeather"
+SIGNUP_DETAILS = {
+    **ADULT_BIRTH,
+    "gender_division": SIGNUP_GENDER_DIVISION,
+    **SIGNUP_NAMES,
+    **SIGNUP_LOCATION,
+    "accepted_terms": True,
+    "accepted_privacy": True,
+}
 
 VERIFY_PREFIX = f"{FRONTEND_URL}/account/verify-email/"
 RESET_PREFIX = f"{FRONTEND_URL}/account/password/reset/key/"
@@ -51,7 +63,8 @@ def signup(
     password: str = PASSWORD,
     **headers: str,
 ) -> Any:
-    """Sign up with a made-up adult age and a gender division (#114, #215)."""
+    """Sign up with a made-up adult age, a gender division, a name, and a
+    place (#114, #215, #221)."""
     data = {"email": email, "password": password, **SIGNUP_DETAILS}
     return post(client, f"{base}/auth/signup", data, **headers)
 

@@ -1,6 +1,8 @@
 """Create Players and change their profile fields and privacy settings.
 
-Only the player changes their own Player (ADR 0009). ``update_profile`` and
+Only the player changes their own Player (ADR 0009). The birth year and
+month and the gender division are set once, when the Player is created:
+``update_profile`` refuses them (ADR 0023). ``update_profile`` and
 ``update_privacy`` refuse any other actor before writing anything. Each
 change records one Audit Event in the same transaction. A profile change
 records only the changed field names, never a value, because these are
@@ -13,16 +15,27 @@ from typing import TYPE_CHECKING
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
 from apps.players.age import is_minor
-from apps.players.models import Player, PlayerPrivacy, Visibility, normalize_input
+from apps.players.models import (
+    SET_ONCE_CODE,
+    SET_ONCE_FIELDS,
+    SET_ONCE_MESSAGES,
+    Player,
+    PlayerPrivacy,
+    Visibility,
+    normalize_input,
+)
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
+# Every profile field. ``update_profile`` refuses the set-once ones among
+# them (``SET_ONCE_FIELDS``) before anything else (ADR 0023).
 PROFILE_FIELDS: tuple[str, ...] = (
     "display_name",
     "legal_name",
@@ -56,8 +69,9 @@ def create_player(
     the Account already has a Player. ``gender_division`` is required,
     ``mens`` or ``womens`` (issue #215). None for an optional text field
     means empty. A player aged 13 to 17 starts with every privacy setting
-    ``PRIVATE``; an older one gets the model defaults. Turning 18 later
-    changes no setting. Records no Audit Event: creating a Player changes
+    ``PRIVATE``; an older one starts with every setting ``SIGNED_IN``,
+    ``rating_visibility`` included (its model default is ``PRIVATE``).
+    Turning 18 later changes no setting. Records no Audit Event: creating a Player changes
     no privacy setting.
     """
     with transaction.atomic():
@@ -80,11 +94,19 @@ def create_player(
             private = dict.fromkeys(PlayerPrivacy.SETTINGS, Visibility.PRIVATE)
             PlayerPrivacy.objects.create(player=player, **private)
         else:
-            PlayerPrivacy.objects.create(player=player)
+            shown = dict.fromkeys(PlayerPrivacy.SETTINGS, Visibility.SIGNED_IN)
+            PlayerPrivacy.objects.create(player=player, **shown)
     return player
 
 
 _NOT_OWN_PLAYER = "Only the player can change their own Player."
+# Fixed text, never the submitted value (CLAUDE.md, API).
+RATINGS_ALWAYS_SHOWN_MESSAGE = (
+    "Current ratings are always shown to signed-in players and can't be hidden."
+)
+RATINGS_SHOWN_FROM_18_MESSAGE = (
+    "Current ratings can be shown to other players only from age 18."
+)
 
 
 def _refuse_unless_owner(player: Player, actor: "_User | AnonymousUser | None") -> None:
@@ -121,6 +143,20 @@ def _refuse_unknown(keys: Iterable[object], allowed: tuple[str, ...]) -> None:
         raise ValueError("Not a field that can be changed.")
 
 
+def _refuse_set_once(keys: Iterable[str]) -> None:
+    """Refuse every set-once field among ``keys``, whatever its value.
+
+    Fixed messages, never the value (ADR 0023).
+    """
+    errors = {
+        name: [ValidationError(SET_ONCE_MESSAGES[name], code=SET_ONCE_CODE)]
+        for name in SET_ONCE_FIELDS
+        if name in keys
+    }
+    if errors:
+        raise ValidationError(errors)
+
+
 def _is_unchanged(name: str, value: object, stored: object) -> bool:
     """True when a submitted profile value matches the stored one.
 
@@ -142,19 +178,23 @@ def update_profile(
 
     Raises ``NotOwnPlayer`` unless ``actor`` is the Player's own active
     Account, ``ValueError`` for a key outside ``PROFILE_FIELDS``, and
-    ``ValidationError`` for an invalid value. Nothing is saved or recorded
-    when any of these is raised, or when no value changed.
+    ``ValidationError`` for an invalid value or for any set-once field
+    (``SET_ONCE_FIELDS``: the birth year and month and the gender
+    division), even one sent with its stored value (ADR 0023). Nothing is
+    saved or recorded when any of these is raised, or when no value
+    changed.
     """
     _refuse_unless_owner(player, actor)
     _refuse_unknown(changes, PROFILE_FIELDS)
+    _refuse_set_once(changes)
     with transaction.atomic():
         locked = _lock_own_player(player, actor)
         old = {name: getattr(locked, name) for name in PROFILE_FIELDS}
         # A submitted value equal to the stored one (as is, or both
         # normalized) is unchanged: not validated, saved, or listed. So a
-        # client that resends the whole profile is not blocked by a stored
-        # value a later rule refuses, and an equal value of another type
-        # (1990.0) is never written.
+        # client that resends a field is not blocked by a stored value a
+        # later rule refuses, and an equal value of another type is never
+        # written.
         submitted = {
             name: value
             for name, value in changes.items()
@@ -179,6 +219,36 @@ def update_profile(
     return player
 
 
+def _refuse_rating_visibility(player: Player, stored: str, value: object) -> None:
+    """Refuse a change to ``rating_visibility`` (#53).
+
+    The stored value is always accepted. Hiding current Ratings is refused
+    for everyone: an adult's are always shown (ADR 0002), and a minor's are
+    already private. Showing them is refused while the player is 13 to 17
+    on the age limit date. Fixed messages, never the value.
+    """
+    if value == stored:
+        return
+    if value == Visibility.PRIVATE:
+        raise ValidationError(
+            {
+                "rating_visibility": ValidationError(
+                    RATINGS_ALWAYS_SHOWN_MESSAGE, code="invalid"
+                )
+            }
+        )
+    if value == Visibility.SIGNED_IN and is_minor(
+        player.birth_year, player.birth_month
+    ):
+        raise ValidationError(
+            {
+                "rating_visibility": ValidationError(
+                    RATINGS_SHOWN_FROM_18_MESSAGE, code="invalid"
+                )
+            }
+        )
+
+
 def update_privacy(
     *,
     player: Player,
@@ -188,8 +258,10 @@ def update_privacy(
     """Apply ``changes`` to the player's privacy settings and return them.
 
     Raises like ``update_profile``, with keys checked against
-    ``PlayerPrivacy.SETTINGS``. The Audit Event targets the Player, so it
-    is one of the events about that player (#39).
+    ``PlayerPrivacy.SETTINGS``. A change to ``rating_visibility`` follows
+    ``_refuse_rating_visibility``, checked before anything is written. The
+    Audit Event targets the Player, so it is one of the events about that
+    player (#39).
     """
     _refuse_unless_owner(player, actor)
     _refuse_unknown(changes, PlayerPrivacy.SETTINGS)
@@ -197,6 +269,10 @@ def update_privacy(
         locked = _lock_own_player(player, actor)
         privacy = PlayerPrivacy.objects.select_for_update().get(player=locked)
         old = snapshot(privacy, PlayerPrivacy.SETTINGS)
+        if "rating_visibility" in changes:
+            _refuse_rating_visibility(
+                locked, old["rating_visibility"], changes["rating_visibility"]
+            )
         for name, value in changes.items():
             setattr(privacy, name, value)
         privacy.full_clean()

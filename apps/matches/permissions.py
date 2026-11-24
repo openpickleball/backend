@@ -49,8 +49,13 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   submitter of a match with an Event or a Club, a Club's included, whose
   exact duplicate matches a pending match confirms it (user decision).
 - ``is_moderator``: an active Account with the ``matches.moderate_match``
-  permission. A moderator may void and edit any match and resolve
-  disputes.
+  permission. A moderator may void and edit any match, resolve disputes,
+  resolve flags, and approve matches, except a match they played in.
+- ``moderates``: the check every moderator path in
+  ``apps.matches.workflow`` uses. A moderator whose Account has a Player
+  in any match of the match's correction chain (the match, the matches it
+  corrects, and the matches that correct it) does not moderate it, so no
+  one changes their own result as moderator (hard rule 8).
 
 A refused workflow action raises ``MatchActionDenied``, with fixed text
 that never says which rule failed or what state the match is in.
@@ -65,6 +70,7 @@ can let that one submission through. Locking role rows would serialize
 unrelated submissions, so this is accepted.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, cast
 
@@ -74,7 +80,7 @@ from oauth2_provider.models import get_application_model
 
 from apps.clubs.models import Club, ClubRole, MemberRole, Organizer, OrganizerMember
 from apps.events.models import Event
-from apps.matches.models import Match
+from apps.matches.models import Match, MatchParticipant
 from apps.players.models import Player
 
 if TYPE_CHECKING:
@@ -116,7 +122,9 @@ def _account(actor: object) -> "_User | None":
     """
     if not isinstance(actor, get_user_model()) or actor.pk is None:
         return None
-    if not type(actor).objects.filter(pk=actor.pk, is_active=True).exists():
+    # The model, not type(actor): the admin passes request.user, a lazy
+    # proxy whose type is not the Account model.
+    if not get_user_model().objects.filter(pk=actor.pk, is_active=True).exists():
         return None
     return actor
 
@@ -253,6 +261,18 @@ def can_change_match(actor: Actor, match: Match) -> bool:
 
 MODERATE_PERMISSION = "matches.moderate_match"
 
+# The auth Group a data migration creates for moderators (#40), and its
+# exact permissions. The migration copies these literals; it never imports
+# them, since a migration must not change when this module does.
+MODERATOR_GROUP = "Moderator"
+MODERATOR_PERMISSIONS: tuple[str, ...] = (
+    "matches.moderate_match",
+    "matches.view_match",
+    "matches.view_matchflag",
+    "clubs.verify_organizer",
+    "clubs.view_organizer",
+)
+
 
 class MatchActionDenied(PermissionError):
     """The actor may not confirm, dispute, or change this match.
@@ -311,5 +331,50 @@ def is_moderator(actor: Actor) -> bool:
     account = _account(actor)
     if account is None:
         return False
-    fresh = type(account).objects.get(pk=account.pk)
+    fresh = get_user_model().objects.get(pk=account.pk)
     return fresh.has_perm(MODERATE_PERMISSION)
+
+
+def _correction_chain(match_pk: int) -> set[int]:
+    """The ids of ``match_pk``'s correction chain, read from the database.
+
+    The match, every match it corrects going back through ``corrects``,
+    and every match that corrects it going forward.
+    """
+    chain = {match_pk}
+    frontier = {match_pk}
+    while frontier:
+        back = Match.objects.filter(
+            pk__in=frontier, corrects_id__isnull=False
+        ).values_list("corrects_id", flat=True)
+        forward = Match.objects.filter(corrects_id__in=frontier).values_list(
+            "pk", flat=True
+        )
+        frontier = {pk for pk in (*back, *forward) if pk is not None} - chain
+        chain |= frontier
+    return chain
+
+
+def moderates(
+    actor: Actor, match: Match, *, new_player_ids: Collection[int] = ()
+) -> bool:
+    """True when ``actor`` may act as moderator on the saved ``match``.
+
+    That is a moderator (``is_moderator``) whose Account has no Player in
+    any match of ``match``'s correction chain and, for an edit, none among
+    ``new_player_ids`` (the corrected teams). Participation is read from
+    the database by ids, never from cached relations. An unsaved actor or
+    match is refused.
+    """
+    if match.pk is None or not is_moderator(actor):
+        return False
+    account = _account(actor)
+    if account is None:
+        return False
+    if MatchParticipant.objects.filter(
+        match_id__in=_correction_chain(match.pk), player__account_id=account.pk
+    ).exists():
+        return False
+    return not Player.objects.filter(
+        pk__in=list(new_player_ids), account_id=account.pk
+    ).exists()

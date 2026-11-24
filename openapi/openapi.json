@@ -251,7 +251,7 @@
         "type": "object"
       },
       "MatchFormat": {
-        "description": "Singles or doubles.\n\nThe values are the two base values of ``open_engine.RatingFormat``. The\nengine's doubles categories (mixed, men's, women's) are not stored here:\n#44 derives them from the players.",
+        "description": "Singles or doubles.\n\nThe values are the two base values of ``open_engine.RatingFormat``. The\nengine's doubles categories (mixed, men's, women's) are not stored here:\nthe engine adapter (``apps.ratings.engine_adapter``) derives them from\nthe players.",
         "enum": [
           "singles",
           "doubles"
@@ -450,6 +450,27 @@
         "title": "PagedMatchOut",
         "type": "object"
       },
+      "PagedRatingHistoryItemOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RatingHistoryItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "PagedRatingHistoryItemOut",
+        "type": "object"
+      },
       "ParticipantOut": {
         "description": "A player in a match. ``code`` is null for a Private player.",
         "properties": {
@@ -478,7 +499,7 @@
       },
       "PlayerCreateIn": {
         "additionalProperties": false,
-        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` take JSON integers only: a boolean,\na numeric string, or a float is refused, as ``Player.clean_fields``\nrefuses them.\n\n``birth_year``, ``birth_month``, and ``gender_division`` are read only\nwhen the session holds no details from signup (ADR 0017, issue #215),\nand are then required; held details are used instead. ``gender_division``\nis ``mens`` or ``womens``. Optional text fields left out or null are\nempty. Unknown keys are refused.",
+        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` take JSON integers only: a boolean,\na numeric string, or a float is refused, as ``Player.clean_fields``\nrefuses them.\n\nThe body is read only when the session holds no details from signup\n(ADR 0017, ADR 0019, ADR 0022): ``display_name``, ``birth_year``,\n``birth_month``, and ``gender_division`` are then required. Held\ndetails are used instead of every field here: the held name (\"First\nLast\") becomes the legal name and, for an adult, the display name (a\nplayer aged 13 to 17 starts with \"First L.\"), with the held city and\nregion. ``gender_division`` is ``mens`` or ``womens``.\nOptional text fields left out or null are empty. Unknown keys are\nrefused.",
         "properties": {
           "birth_month": {
             "anyOf": [
@@ -514,8 +535,15 @@
             "title": "City"
           },
           "display_name": {
-            "title": "Display Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
           },
           "gender_division": {
             "anyOf": [
@@ -551,9 +579,6 @@
             "title": "Region"
           }
         },
-        "required": [
-          "display_name"
-        ],
         "title": "PlayerCreateIn",
         "type": "object"
       },
@@ -598,6 +623,46 @@
           "region"
         ],
         "title": "PlayerProfileOut",
+        "type": "object"
+      },
+      "PlayerRatingsOut": {
+        "description": "A player's current ratings, one per rating format the player has.\n\nThe OPEN standard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package.",
+        "properties": {
+          "code": {
+            "description": "The player's OPEN Code.",
+            "title": "Code",
+            "type": "string"
+          },
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "profile_url": {
+            "description": "The player's public profile page.",
+            "title": "Profile Url",
+            "type": "string"
+          },
+          "ratings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RatingOut"
+            },
+            "description": "The player's ratings keyed by rating format. Only the formats the player has a rating in appear; empty when none.",
+            "propertyNames": {
+              "$ref": "#/components/schemas/RatingFormat"
+            },
+            "title": "Ratings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "code",
+          "profile_url",
+          "demonstration",
+          "ratings"
+        ],
+        "title": "PlayerRatingsOut",
         "type": "object"
       },
       "PlayerSearchOut": {
@@ -662,30 +727,8 @@
       },
       "PlayerUpdateIn": {
         "additionalProperties": false,
-        "description": "Changes to the signed-in Account's own Player.\n\nOnly the fields sent change. Null clears an optional text field\n(``legal_name``, ``city``, ``region``); the display name, birth year,\nbirth month, and gender division cannot be cleared. ``gender_division``\nis ``mens`` or ``womens``.\n``privacy`` changes the settings it names. Unknown keys are refused.",
+        "description": "Changes to the signed-in Account's own Player.\n\nOnly the fields sent change. Null clears an optional text field\n(``legal_name``, ``city``, ``region``); the display name cannot be\ncleared. The birth year and month and the gender division are set\nonce, when the Player is created, and cannot be sent here (ADR 0023).\n``privacy`` changes the settings it names. Unknown keys are refused.",
         "properties": {
-          "birth_month": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Birth Month"
-          },
-          "birth_year": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Birth Year"
-          },
           "city": {
             "anyOf": [
               {
@@ -707,17 +750,6 @@
               }
             ],
             "title": "Display Name"
-          },
-          "gender_division": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gender Division"
           },
           "legal_name": {
             "anyOf": [
@@ -799,6 +831,17 @@
               }
             ]
           },
+          "rating_visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who may see the player's current ratings. A player who joined at 13 to 17 starts with private and keeps it at 18 until they change it; only the player can change it to signed_in, and only from age 18. An adult's is always signed_in: current ratings cannot be hidden. Sending the stored value is always accepted."
+          },
           "stats_visibility": {
             "anyOf": [
               {
@@ -828,6 +871,10 @@
           "rating_history_visibility": {
             "$ref": "#/components/schemas/Visibility"
           },
+          "rating_visibility": {
+            "$ref": "#/components/schemas/Visibility",
+            "description": "Who may see the player's current ratings. A player who joined at 13 to 17 starts with private and keeps it at 18 until they change it; only the player can change it to signed_in, and only from age 18. An adult's is always signed_in: current ratings cannot be hidden. Sending the stored value is always accepted."
+          },
           "stats_visibility": {
             "$ref": "#/components/schemas/Visibility"
           }
@@ -837,9 +884,172 @@
           "match_history_visibility",
           "rating_history_visibility",
           "stats_visibility",
-          "home_club_visibility"
+          "home_club_visibility",
+          "rating_visibility"
         ],
         "title": "PrivacyOut",
+        "type": "object"
+      },
+      "RatingChangeKind": {
+        "description": "What caused a change to a player's rating.",
+        "enum": [
+          "live_update",
+          "replay",
+          "removed"
+        ],
+        "title": "RatingChangeKind",
+        "type": "string"
+      },
+      "RatingFormat": {
+        "description": "The rating pool a Match counts in (ADR 0024).\n\nThe values are ``open_engine.RatingFormat``'s. ``record_match`` stores\none per Match from the players' gender divisions when the match is\nrecorded (``apps.matches.services.derive_rating_format``), and it never\nchanges afterward. A singles match is ``singles``; a doubles match is\none of the four doubles values.",
+        "enum": [
+          "singles",
+          "doubles",
+          "mixed_doubles",
+          "doubles_men",
+          "doubles_women"
+        ],
+        "title": "RatingFormat",
+        "type": "string"
+      },
+      "RatingHistoryItemOut": {
+        "description": "One change to a player's rating in one rating format.\n\n``kind`` says what caused it: a live update from one match, a replay of\nthe ledger, or its removal by a replay that no longer produces it (the\nvalues are then the ones removed). The OPEN standard requires any app\nthat shows an OPEN rating to show its reliability next to it. Every\nrating is a demonstration rating while the engine is a demonstration\npackage.",
+        "properties": {
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "established": {
+            "description": "True once the rating rests on enough matches to be established.",
+            "title": "Established",
+            "type": "boolean"
+          },
+          "imported_reliability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reliability carried from an external rating, 0 to 100, shown apart from the OPEN-earned reliability. Null when there is none.",
+            "title": "Imported Reliability"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RatingChangeKind"
+          },
+          "provisional": {
+            "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "rating": {
+            "description": "The rating after the change.",
+            "title": "Rating",
+            "type": "number"
+          },
+          "rating_format": {
+            "$ref": "#/components/schemas/RatingFormat"
+          },
+          "recorded_at": {
+            "description": "When the change was recorded.",
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "reliability": {
+            "description": "OPEN-earned reliability, 0 to 100. The OPEN standard requires any app that shows an OPEN rating to show its reliability next to it.",
+            "title": "Reliability",
+            "type": "number"
+          },
+          "spec_version": {
+            "description": "The OPEN rating spec version the rating follows.",
+            "title": "Spec Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rating_format",
+          "kind",
+          "rating",
+          "reliability",
+          "imported_reliability",
+          "provisional",
+          "established",
+          "spec_version",
+          "demonstration",
+          "recorded_at"
+        ],
+        "title": "RatingHistoryItemOut",
+        "type": "object"
+      },
+      "RatingOut": {
+        "description": "A player's current rating in one rating format, with its reliability.\n\nThe OPEN standard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package.",
+        "properties": {
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "established": {
+            "description": "True once the rating rests on enough matches to be established.",
+            "title": "Established",
+            "type": "boolean"
+          },
+          "imported_reliability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reliability carried from an external rating, 0 to 100, shown apart from the OPEN-earned reliability. Null when there is none.",
+            "title": "Imported Reliability"
+          },
+          "provisional": {
+            "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "rating": {
+            "description": "The rating, as the engine gave it.",
+            "title": "Rating",
+            "type": "number"
+          },
+          "reliability": {
+            "description": "OPEN-earned reliability, 0 to 100. The OPEN standard requires any app that shows an OPEN rating to show its reliability next to it.",
+            "title": "Reliability",
+            "type": "number"
+          },
+          "spec_version": {
+            "description": "The OPEN rating spec version the rating follows.",
+            "title": "Spec Version",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the rating last changed.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rating",
+          "reliability",
+          "imported_reliability",
+          "provisional",
+          "established",
+          "spec_version",
+          "demonstration",
+          "updated_at"
+        ],
+        "title": "RatingOut",
         "type": "object"
       },
       "ReadyChecks": {
@@ -981,6 +1191,25 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1116,6 +1345,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1197,6 +1445,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1298,6 +1565,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1399,6 +1685,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1475,6 +1780,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1526,6 +1850,25 @@
               }
             },
             "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1542,7 +1885,7 @@
         ]
       },
       "patch": {
-        "description": "Change the signed-in Account's own profile fields and privacy settings.\n\nOnly the fields sent change. The gender division can change between\ndivisions but cannot be cleared (422). Both kinds of change apply\ntogether or not at all: a 422 on either changes nothing. Each kind\nthat changes records one Audit Event (profile changes by field name\nonly). 404 when the Account has no Player.",
+        "description": "Change the signed-in Account's own profile fields and privacy settings.\n\nOnly the fields sent change. The birth year and month and the gender\ndivision are set once, when the Player is created: sending any of\nthem gets a 422, whatever the value (ADR 0023). Both kinds of change\napply together or not at all: a 422 on either changes nothing. Each kind\nthat changes records one Audit Event (profile changes by field name\nonly). 404 when the Account has no Player.",
         "operationId": "update_my_player",
         "parameters": [],
         "requestBody": {
@@ -1595,6 +1938,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1611,7 +1973,7 @@
         ]
       },
       "post": {
-        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). The birth year and month\nand the gender division come from the details held at signup in this\nsession (ADR 0017, issue #215); the body's are used only when the\nsession holds none, and are then required. The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13 is refused with a\nfixed 422, and the refusal holds for the session, as at signup: every\nlater create in it gets the same 422, and so does a signup after\nlogout (ADR 0017).",
+        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). Every value comes from\nthe details held at signup in this session (ADR 0017, ADR 0019, ADR\n0022), the held name as the legal name and, for an adult, the display\nname (a player aged 13 to 17 starts with \"First L.\"); the body is used\nonly when the session holds none, and its display name, birth year and\nmonth, and gender division are then required. The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13, or a birth year\nand month in the future, is refused with a fixed 422, and the refusal\nholds for the session, as at signup: every later create in it gets the\nsame 422, and so does a signup after logout (ADR 0017).",
         "operationId": "create_my_player",
         "parameters": [],
         "requestBody": {
@@ -1674,6 +2036,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1760,7 +2141,16 @@
                 }
               }
             },
-            "description": "Too Many Requests"
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1842,6 +2232,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1947,6 +2356,25 @@
               }
             },
             "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1960,6 +2388,230 @@
         "summary": "List Player Matches",
         "tags": [
           "players"
+        ]
+      }
+    },
+    "/api/v1/players/{code}/rating-history": {
+      "get": {
+        "description": "Every change to a player's ratings, in every rating format, newest\nfirst.\n\nEach change comes with its reliability: the OPEN standard requires any\napp that shows an OPEN rating to show its reliability next to it.\nEvery rating is a demonstration rating while the engine is a\ndemonstration package. The player always sees their own history.\nAnyone else signed in sees it only when the player's rating history\nsetting is signed-in players, and gets 404, as for an unknown code,\nwhen it is private or the player's Account is inactive.",
+        "operationId": "list_player_rating_history",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "P-7K3M-QX9H"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "P-7K3M-QX9H"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedRatingHistoryItemOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Player Rating History",
+        "tags": [
+          "ratings"
+        ]
+      }
+    },
+    "/api/v1/players/{code}/ratings": {
+      "get": {
+        "description": "A player's current Ratings, one per rating format the player has.\n\nThe player always sees their own. Anyone else signed in sees them only\nwhen the player's rating visibility is signed-in players: always for\nan adult; a player who joined at 13 to 17 stays hidden, at 18 too,\nuntil they change it. Each rating comes with its reliability: the OPEN\nstandard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package. An unknown or malformed code, a\nhidden player, and a player whose Account is inactive get the same 404.",
+        "operationId": "get_player_ratings",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "P-7K3M-QX9H"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "P-7K3M-QX9H"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerRatingsOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Player Ratings",
+        "tags": [
+          "ratings"
         ]
       }
     }

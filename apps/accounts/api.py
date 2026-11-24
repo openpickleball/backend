@@ -4,8 +4,9 @@ from django.http import HttpRequest
 from ninja import Router, Schema
 
 from config.auth import account_auth
+from config.throttling import account_throttle
 
-router = Router(tags=["accounts"], auth=account_auth)
+router = Router(tags=["accounts"], auth=account_auth, throttle=account_throttle)
 
 
 class CurrentAccount(Schema):

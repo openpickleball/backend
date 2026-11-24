@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.django_db
 
+REASON = "Made-up verification reason."
+
 
 def test_organizer_deleted_mid_action_is_warned_by_code(
     client: Client, monkeypatch: pytest.MonkeyPatch
@@ -36,7 +38,11 @@ def test_organizer_deleted_mid_action_is_warned_by_code(
 
     response = client.post(
         reverse("admin:clubs_organizer_changelist"),
-        {"action": "verify_selected", "_selected_action": [str(gone.pk), str(kept.pk)]},
+        {
+            "action": "verify_selected",
+            "_selected_action": [str(gone.pk), str(kept.pk)],
+            "reason": REASON,
+        },
         follow=True,
     )
 

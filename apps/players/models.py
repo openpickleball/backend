@@ -29,6 +29,18 @@ if TYPE_CHECKING:
 # The under-13 refusal: fixed, with no age in it (issue #114). The Player
 # create endpoint matches it to refuse the session (issue #220).
 UNDER_MINIMUM_AGE_MESSAGE = "This birth year and month can't be used."
+# A future birth year and month. The Player create endpoint refuses the
+# session for it too, as signup does (issue #225).
+FUTURE_BIRTH_MONTH_MESSAGE = "The birth year and month cannot be in the future."
+# Set once, when the Player is created, and never changed by the player
+# after that (issue #225). Fixed messages, never the submitted value.
+SET_ONCE_MESSAGES = {
+    "birth_year": "Your birth year and month can't be changed.",
+    "birth_month": "Your birth year and month can't be changed.",
+    "gender_division": "Your gender division can't be changed.",
+}
+SET_ONCE_FIELDS: tuple[str, ...] = tuple(SET_ONCE_MESSAGES)
+SET_ONCE_CODE = "set_once"
 # Messages never include the submitted value (CLAUDE.md, API). Django's
 # defaults for these keys do.
 _CHOICE_MESSAGES = {"invalid_choice": "Choose one of the listed options."}
@@ -40,7 +52,7 @@ _GENDER_DIVISION_MESSAGES = {
 }
 _WHOLE_NUMBER = "Enter a whole number."
 _INTEGER_MESSAGES = {"invalid": _WHOLE_NUMBER}
-_CONTROL_CHARACTER = "Remove control or invalid characters."
+CONTROL_CHARACTER_MESSAGE = "Remove control or invalid characters."
 # Control characters (Postgres cannot store NUL) and lone surrogates
 # (not encodable as UTF-8).
 _REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
@@ -65,14 +77,16 @@ BIRTH_FIELDS = ("birth_year", "birth_month")
 
 EARLIEST_BIRTH_YEAR = 1900
 
-# One setting per profile detail other than the display name and current
-# Ratings, which have none (ADR 0002).
+# One setting per profile detail other than the display name, which has
+# none (ADR 0002). ``rating_visibility`` covers current Ratings (#53): it
+# is last so the earlier order is kept.
 PRIVACY_SETTINGS = (
     "city_region_visibility",
     "match_history_visibility",
     "rating_history_visibility",
     "stats_visibility",
     "home_club_visibility",
+    "rating_visibility",
 )
 
 
@@ -181,8 +195,8 @@ class Player(PublicCodeModel):
                 continue
             value = value.strip()
             setattr(self, name, value)
-            if any(unicodedata.category(char) in _REFUSED_CATEGORIES for char in value):
-                errors[name] = [ValidationError(_CONTROL_CHARACTER)]
+            if has_refused_character(value):
+                errors[name] = [ValidationError(CONTROL_CHARACTER_MESSAGE)]
         for name in BIRTH_FIELDS:
             value = getattr(self, name)
             if name in skip or value is None:
@@ -238,11 +252,11 @@ class Player(PublicCodeModel):
         """The model-level rules, for ``fields`` only, or all when None."""
         errors: dict[str, str] = {}
         name_changed = fields is None or "display_name" in fields
-        if name_changed and not _has_visible_character(self.display_name):
+        if name_changed and not has_visible_character(self.display_name):
             errors["display_name"] = "Enter a display name."
         birth_changed = fields is None or not set(BIRTH_FIELDS).isdisjoint(fields)
         if birth_changed and self._birth_month_is_in_the_future():
-            errors["birth_month"] = "The birth year and month cannot be in the future."
+            errors["birth_month"] = FUTURE_BIRTH_MONTH_MESSAGE
         elif birth_changed and self._is_under_minimum_age():
             # A fixed message, with no age in it (issue #114).
             errors["birth_month"] = UNDER_MINIMUM_AGE_MESSAGE
@@ -251,8 +265,10 @@ class Player(PublicCodeModel):
 
     def _birth_month_is_in_the_future(self) -> bool:
         year, month = self.birth_year, self.birth_month
-        if not _is_int(year) or not _is_int(month):
-            # Field validation reports a missing or malformed value.
+        if not _is_int(year) or not _is_int(month) or not 1 <= month <= 12:
+            # Field validation reports a missing or malformed value, so a
+            # month out of range never gets the future message, which the
+            # Player create endpoint treats as a refusal (issue #225).
             return False
         today = timezone.localdate()
         return (year, month) > (today.year, today.month)
@@ -284,7 +300,15 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _has_visible_character(value: object) -> bool:
+def has_refused_character(value: str) -> bool:
+    """True when ``value`` holds a control character or a lone surrogate.
+
+    Postgres cannot store NUL, and a surrogate cannot be encoded as UTF-8.
+    """
+    return any(unicodedata.category(char) in _REFUSED_CATEGORIES for char in value)
+
+
+def has_visible_character(value: object) -> bool:
     """True when ``value`` has at least one character that renders.
 
     That is a letter, number, punctuation mark, or symbol (L*, N*, P*,
@@ -306,8 +330,14 @@ def _has_visible_character(value: object) -> bool:
 class PlayerPrivacy(models.Model):
     """Who may see each of a Player's other profile details.
 
-    There is no setting for the display name or current Ratings: once
-    Ratings are published, every signed-in Account sees them (ADR 0002).
+    There is no setting for the display name: once Ratings are published,
+    every signed-in Account sees it (ADR 0002). ``rating_visibility``
+    covers current Ratings (#53): a player created at 13 to 17 starts
+    private and stays private at 18 until the player widens it, and an
+    adult's is always signed-in (``apps.players.services.update_privacy``
+    enforces both). Its model default is private, so a row made outside
+    ``create_player()`` fails closed; ``create_player()`` sets it for an
+    adult.
     """
 
     SETTINGS: ClassVar[tuple[str, ...]] = PRIVACY_SETTINGS
@@ -343,6 +373,12 @@ class PlayerPrivacy(models.Model):
         max_length=16,
         choices=Visibility,
         default=Visibility.SIGNED_IN,
+        error_messages=_CHOICE_MESSAGES,
+    )
+    rating_visibility = models.CharField(
+        max_length=16,
+        choices=Visibility,
+        default=Visibility.PRIVATE,
         error_messages=_CHOICE_MESSAGES,
     )
 

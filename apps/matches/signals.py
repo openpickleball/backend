@@ -16,8 +16,9 @@ affect), and ``change``, a ``MatchChange``:
   the old and new dates), or disputed;
 - ``hold``: a match that was counting is now held by a new possible
   duplicate flag;
-- ``release``: a match held by a possible duplicate flag counts again
-  because the match that held it was voided.
+- ``release``: a match held by a possible duplicate flag counts again,
+  because the match that held it was voided or because a moderator
+  resolved the flag (``resolve_flags``, also through ``approve_match``).
 
 The workflow sends at most one ``match_changed`` per match per call.
 

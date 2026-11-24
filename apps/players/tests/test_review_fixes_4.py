@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 from django.core.exceptions import ValidationError
-from django.utils import timezone
 
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditEvent
@@ -86,24 +85,6 @@ def test_c14_changed_text_field_still_gets_field_validation(
         update_profile(player=player, actor=owner, changes={"city": "x" * 101})
 
     assert "city" in caught.value.message_dict
-    assert not AuditEvent.objects.exists()
-
-
-def test_c14_changed_birth_month_still_gets_the_future_rule(
-    player: Player, owner: "_User"
-) -> None:
-    today = timezone.localdate()
-    Player.objects.filter(pk=player.pk).update(birth_year=today.year)
-    player.refresh_from_db()
-    if today.month == 12:
-        pytest.skip("No later month in the current year.")
-
-    with pytest.raises(ValidationError) as caught:
-        update_profile(
-            player=player, actor=owner, changes={"birth_month": today.month + 1}
-        )
-
-    assert "birth_month" in caught.value.message_dict
     assert not AuditEvent.objects.exists()
 
 

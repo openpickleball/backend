@@ -18,11 +18,17 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.django_db
 
+REASON = "Made-up verification reason."
+
 
 def _run(client: Client, action: str, organizer: Organizer) -> list[str]:
     response = client.post(
         reverse("admin:clubs_organizer_changelist"),
-        {"action": action, "_selected_action": [str(organizer.pk)]},
+        {
+            "action": action,
+            "_selected_action": [str(organizer.pk)],
+            "reason": REASON,
+        },
         follow=True,
     )
     assert response.status_code == 200

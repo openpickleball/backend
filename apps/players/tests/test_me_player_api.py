@@ -1,9 +1,10 @@
 """The signed-in Account's own Player at /api/v1/me/player (issue #124).
 
 POST creates it, once per Account, for an Account whose own address is
-verified. The birth year and month and the gender division come from the
-details the signup held in the session (ADR 0017, issue #215), on either
-headless client, and from the body only when the session holds none. GET returns it and PATCH changes its
+verified. The birth year and month, the gender division, and the name
+and place come from the details the signup held in the session (ADR 0017,
+issue #215, issue #221), on either headless client, and from the body
+only when the session holds none. GET returns it and PATCH changes its
 profile fields and privacy settings through the services. Made-up data
 only.
 """
@@ -25,7 +26,9 @@ from apps.accounts.tests.headless import (
     BROWSER,
     PASSWORD,
     SESSION_EMAIL,
+    SIGNUP_FULL_NAME,
     SIGNUP_GENDER_DIVISION,
+    SIGNUP_LOCATION,
     VERIFY_PREFIX,
     HeadlessSession,
     csrf_header,
@@ -171,29 +174,37 @@ def test_the_held_details_win_over_the_body(base: str) -> None:
         "POST",
         {
             "display_name": "Robin Q.",
+            "legal_name": "Robin Other",
             "birth_year": 1980,
             "birth_month": 1,
             "gender_division": "mens",
+            "city": "Elsewhere",
+            "region": "Nowhere",
         },
     )
 
     assert response.status_code == 201
-    assert (response.json()["birth_year"], response.json()["birth_month"]) == HELD
-    assert response.json()["gender_division"] == SIGNUP_GENDER_DIVISION
+    body = response.json()
+    assert (body["birth_year"], body["birth_month"]) == HELD
+    assert body["gender_division"] == SIGNUP_GENDER_DIVISION
+    assert body["display_name"] == body["legal_name"] == SIGNUP_FULL_NAME
+    assert (body["city"], body["region"]) == (
+        SIGNUP_LOCATION["city"],
+        SIGNUP_LOCATION["region"],
+    )
 
 
 @pytest.mark.parametrize("base", CLIENTS)
 def test_a_failed_create_keeps_the_held_details_for_a_retry(base: str) -> None:
     session = verified_session(base)
 
-    refused = call(session, "POST", {"display_name": "   "})
+    refused = call(session, "POST", {"nickname": "Robin Q."})
 
     assert refused.status_code == 422
-    assert "body.display_name" in fields(refused)
     assert not Player.objects.exists()
     assert session.store()[SIGNUP_DETAILS_SESSION_KEY]["year"] == HELD[0]
 
-    retried = call(session, "POST", {"display_name": "Robin Q."})
+    retried = call(session, "POST", {})
 
     assert retried.status_code == 201
     assert (retried.json()["birth_year"], retried.json()["birth_month"]) == HELD
@@ -224,7 +235,11 @@ def test_details_held_for_another_account_are_not_used() -> None:
     other = UserFactory.create()
     client = signed_in(account)
     session = client.session
-    hold_signup_details(session, other, SignupDetails(1970, 2, "mens"))
+    hold_signup_details(
+        session,
+        other,
+        SignupDetails(1970, 2, "mens", "Sam Quillfeather", "", "", "Sam"),
+    )
     session.save()
 
     response = post(
@@ -369,6 +384,7 @@ def test_create_takes_the_optional_profile_fields() -> None:
         "rating_history_visibility": "signed_in",
         "stats_visibility": "signed_in",
         "home_club_visibility": "signed_in",
+        "rating_visibility": "signed_in",
     }
 
 
@@ -489,7 +505,11 @@ def test_an_unverified_address_gets_403_and_keeps_the_hold() -> None:
     )
     client = signed_in(account)
     session = client.session
-    hold_signup_details(session, account, SignupDetails(*HELD, "womens"))
+    hold_signup_details(
+        session,
+        account,
+        SignupDetails(*HELD, "womens", "Sam Quillfeather", "", "", "Sam"),
+    )
     session.save()
 
     response = post(client, {"display_name": "Robin Q."})
@@ -600,6 +620,7 @@ def test_get_returns_the_own_profile(mine: Player) -> None:
             "rating_history_visibility": "signed_in",
             "stats_visibility": "signed_in",
             "home_club_visibility": "signed_in",
+            "rating_visibility": "signed_in",
         },
     }
 
@@ -620,12 +641,12 @@ def test_get_signed_out_gets_401() -> None:
 @pytest.mark.parametrize("base", CLIENTS)
 def test_get_works_on_both_clients(base: str) -> None:
     session = verified_session(base)
-    call(session, "POST", {"display_name": "Robin Q."})
+    call(session, "POST", {})
 
     response = call(session, "GET")
 
     assert response.status_code == 200
-    assert response.json()["display_name"] == "Robin Q."
+    assert response.json()["display_name"] == SIGNUP_FULL_NAME
 
 
 def test_patch_changes_only_the_profile_fields_sent(mine: Player) -> None:
@@ -658,31 +679,6 @@ def test_a_profile_change_records_field_names_only(mine: Player) -> None:
     assert events(AuditAction.PRIVACY_CHANGE) == []
 
 
-@pytest.mark.parametrize("value", [None, ""])
-def test_patch_cannot_clear_the_gender_division(mine: Player, value: object) -> None:
-    response = patch(signed_in(mine.account), {"gender_division": value})
-
-    assert response.status_code == 422
-    assert fields(response) == {
-        "body.gender_division": (
-            "blank" if value == "" else "null",
-            "Choose a gender division.",
-        ),
-    }
-    mine.refresh_from_db()
-    assert mine.gender_division == "womens"
-    assert AuditEvent.objects.count() == 0
-
-
-def test_patch_changes_the_gender_division(mine: Player) -> None:
-    response = patch(signed_in(mine.account), {"gender_division": "mens"})
-
-    assert response.status_code == 200
-    assert response.json()["gender_division"] == "mens"
-    [event] = events(AuditAction.PLAYER_PROFILE_CHANGE)
-    assert event.after == {"changed_fields": ["gender_division"]}
-
-
 def test_a_stored_empty_gender_division_can_change_another_field(
     mine: Player,
 ) -> None:
@@ -694,35 +690,6 @@ def test_a_stored_empty_gender_division_can_change_another_field(
     assert response.status_code == 200
     assert response.json()["city"] == "Shelbyville"
     assert response.json()["gender_division"] == ""
-
-
-def test_a_stored_empty_gender_division_resent_empty_is_unchanged(
-    mine: Player,
-) -> None:
-    # Resending the stored value changes nothing, so it is not checked.
-    Player.objects.filter(pk=mine.pk).update(gender_division="")
-
-    response = patch(signed_in(mine.account), {"gender_division": ""})
-
-    assert response.status_code == 200
-    assert response.json()["gender_division"] == ""
-    mine.refresh_from_db()
-    assert mine.gender_division == ""
-    assert AuditEvent.objects.count() == 0
-
-
-def test_a_stored_empty_gender_division_cannot_be_sent_null(mine: Player) -> None:
-    Player.objects.filter(pk=mine.pk).update(gender_division="")
-
-    response = patch(signed_in(mine.account), {"gender_division": None})
-
-    assert response.status_code == 422
-    assert fields(response) == {
-        "body.gender_division": ("null", "Choose a gender division."),
-    }
-    mine.refresh_from_db()
-    assert mine.gender_division == ""
-    assert AuditEvent.objects.count() == 0
 
 
 def test_null_clears_an_optional_text_field(mine: Player) -> None:
@@ -786,22 +753,6 @@ def test_an_invalid_privacy_level_gets_422_without_the_value(mine: Player) -> No
     assert "body.privacy.city_region_visibility" in fields(response)
     assert "made-up-level" not in response.content.decode()
     assert AuditEvent.objects.count() == 0
-
-
-def test_an_under_13_birth_change_gets_a_fixed_422(mine: Player) -> None:
-    this_year = age_limit_date().year
-
-    response = patch(
-        signed_in(mine.account), {"birth_year": this_year - 5, "birth_month": 1}
-    )
-
-    assert response.status_code == 422
-    assert fields(response)["body.birth_month"][1] == (
-        "This birth year and month can't be used."
-    )
-    assert str(this_year - 5) not in response.content.decode()
-    mine.refresh_from_db()
-    assert mine.birth_year == 1985
 
 
 def test_a_null_display_name_gets_422(mine: Player) -> None:
