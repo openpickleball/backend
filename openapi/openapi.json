@@ -251,7 +251,7 @@
         "type": "object"
       },
       "MatchFormat": {
-        "description": "Singles or doubles.\n\nThe values are the two base values of ``open_engine.RatingFormat``. The\nengine's doubles categories (mixed, men's, women's) are not stored here:\n#44 derives them from the players.",
+        "description": "Singles or doubles.\n\nThe values are the two base values of ``open_engine.RatingFormat``. The\nengine's doubles categories (mixed, men's, women's) are not stored here:\nthe engine adapter (``apps.ratings.engine_adapter``) derives them from\nthe players.",
         "enum": [
           "singles",
           "doubles"
