@@ -27,7 +27,7 @@ from enum import StrEnum
 from typing import Any
 
 from django.conf import settings
-from django.db import connection, transaction
+from django.db import connection, models, transaction
 
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
@@ -123,6 +123,8 @@ def _check(
             or summary.live_updates_since_recalculation != 0
         ):
             raise RatingApplyError("The summary does not come from this replay.")
+    elif kind == RatingChangeKind.REMOVED:
+        raise RatingApplyError("A removal goes through the replay.")
     else:
         raise RatingApplyError("The kind of change is not known.")
     if match is None:
@@ -296,6 +298,56 @@ def apply_rating(
                 "replay": None if replay is None else replay.pk,
             },
         )
+    return history
+
+
+def _remove_rating(
+    *, player: Player, state: RatingState, replay: RatingReplay
+) -> RatingHistory:
+    """Delete ``player``'s ``state``, which ``replay`` no longer produces.
+
+    Private to the replay (``replay_ratings()``): the only path that
+    deletes a ``RatingState``. Within the caller's transaction it locks
+    the Player row (``FOR NO KEY UPDATE``) and then the state row, appends
+    a ``removed`` history row naming ``replay`` with the values removed,
+    records one ``rating.change`` Audit Event (``after`` is None) before
+    the delete, and then deletes the row through ``Model.delete``, which
+    bypasses ``RatingState.delete()``; that and every queryset delete
+    keep refusing. Raises ``RatingApplyError`` (fixed text) before any
+    write for a state of another player or an unsaved record.
+    """
+    if not _is_saved(player) or not _is_saved(replay):
+        raise RatingApplyError("The player and the replay must be saved.")
+    if state.pk is None or state.player_id != player.pk:
+        raise RatingApplyError("The rating is for another player.")
+    with transaction.atomic():
+        list(
+            Player.objects.select_for_update(no_key=True)
+            .filter(pk=player.pk)
+            .values_list("pk", flat=True)
+        )
+        locked = RatingState.objects.select_for_update().get(pk=state.pk)
+        values = {name: getattr(locked, name) for name in VALUE_FIELDS}
+        history = RatingHistory(
+            player=player,
+            rating_format=locked.rating_format,
+            kind=RatingChangeKind.REMOVED,
+            match=None,
+            replay=replay,
+            delta=None,
+            **values,
+        )
+        history.full_clean()
+        history.save()
+        record_event(
+            action=AuditAction.RATING_CHANGE,
+            target=locked,
+            before=snapshot(locked, VALUE_FIELDS),
+            after=None,
+        )
+        # RatingState.delete() refuses; the base Model.delete is this
+        # function's own path.
+        models.Model.delete(locked)
     return history
 
 
