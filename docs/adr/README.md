@@ -67,3 +67,4 @@ Add each record here when it merges.
 - [0017. The signup age screen and the 13-and-older rule](0017-signup-age-screen.md) (issue #114)
 - [0018. Player search by display name](0018-player-search-by-display-name.md) (issue #191)
 - [0019. Gender division required at signup](0019-gender-division-required-at-signup.md) (issue #215)
+- [0020. An age check before the rest of signup](0020-signup-age-check.md) (issue #223)
