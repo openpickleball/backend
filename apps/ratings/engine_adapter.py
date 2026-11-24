@@ -589,6 +589,23 @@ def _summaries(
     return tuple(found)
 
 
+def snapshot_holds_match(snapshot: Mapping[str, object] | None, match: Match) -> bool:
+    """True when the engine ``snapshot`` holds has already processed ``match``.
+
+    Looks for the Match's OPEN Code in the engine's processed match ids.
+    False for an empty snapshot, and False, not an error, when the
+    snapshot cannot be loaded under the loaded config (another config or
+    snapshot schema): such a snapshot holds nothing a live update can use.
+    """
+    if not snapshot:
+        return False
+    try:
+        engine = open_engine.RatingEngine.from_snapshot(snapshot, load_config())
+    except (open_engine.SnapshotError, open_engine.ConfigError):
+        return False
+    return str(match.public_code) in engine.processed_match_ids
+
+
 def record_live(snapshot: Mapping[str, object] | None, match: Match) -> LiveUpdate:
     """Record ``match`` live on the engine ``snapshot`` holds, and return the result.
 
@@ -628,5 +645,64 @@ def record_live(snapshot: Mapping[str, object] | None, match: Match) -> LiveUpda
         already_recorded=False,
         summaries=_summaries(engine, result) if counted else (),
         snapshot=engine.to_snapshot(),
+        **vars(labels),
+    )
+
+
+# Full replays (#47).
+
+
+@dataclass(frozen=True)
+class ReplayRun:
+    """What one full replay of the ledger produced, as plain data.
+
+    ``provenance`` is the replay's (hard rule 4). ``summaries`` holds a
+    summary for every player and format the replayed engine holds a state
+    in, ordered by format, then player code. ``snapshot`` is the engine's
+    ``to_snapshot()`` taken right after the replay, so it can be resumed
+    from. The labels are the loaded config's.
+    """
+
+    provenance: ReplayProvenance
+    summaries: tuple[RatingSummary, ...]
+    snapshot: dict[str, object]
+    parameter_fingerprint: str
+    config_fingerprint: str
+    config_version: str
+    params_version: str | None
+
+
+def run_replay(matches: list[open_engine.Match], as_of: date) -> ReplayRun:
+    """Replay ``matches`` through the engine as of ``as_of`` and return the result.
+
+    Pass every match that counts (``counted_engine_matches()``): the
+    engine rebuilds every rating from them, and skips a row dated after
+    ``as_of``. The snapshot is taken first, before any summary is read,
+    so it is exactly what the replay produced. The players and formats
+    come from the engine's public ``players`` and each player's
+    ``ratings``. Each summary takes the engine's default reference date
+    (no ``as_of``), which after a replay is the replay date or the
+    player's last match, whichever is later. Raises the engine's own
+    errors.
+    """
+    cfg = load_config()
+    labels = _live_config(cfg)
+    engine = open_engine.replay(matches, cfg=cfg, as_of=_plain_date(as_of))
+    snapshot = engine.to_snapshot()
+    info = engine.replay_info
+    if info is None:  # pragma: no cover (replay always sets it)
+        raise RuntimeError("The engine returned no replay provenance.")
+    summaries = sorted(
+        (
+            rating_summary(engine.player_summary(player_id, rating_format))
+            for player_id, player in engine.players.items()
+            for rating_format in player.ratings
+        ),
+        key=lambda summary: (summary.rating_format, summary.player_id),
+    )
+    return ReplayRun(
+        provenance=replay_provenance(info),
+        summaries=tuple(summaries),
+        snapshot=snapshot,
         **vars(labels),
     )

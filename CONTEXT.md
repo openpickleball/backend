@@ -129,7 +129,7 @@ _Avoid_: naming the external system.
 The external system's reliability, shown separately and clearly labeled until OPEN-earned Reliability exceeds it. Engine: `PlayerSummary.imported_reliability`. Backend: `imported_reliability`, stored apart from `reliability`.
 
 **Replay**:
-Rebuilding all Ratings from Seeds plus the full Ledger as of a date. Same Ledger, Seeds, config, and date always give the same result. Replays run on a published schedule and produce the authoritative Ratings. Engine: `replay()`.
+Rebuilding all Ratings from Seeds plus the full Ledger as of a date. Same Ledger, Seeds, config, and date always give the same result. Replays run on a published schedule and produce the authoritative Ratings. The backend replays the whole Ledger when what counts changes (a void, correction, dispute, hold, or release of a Match, or a Match a Live Update cannot apply), and quick successive changes share one Replay. A Player left with no counted Match in a Rating Format loses that Rating. Engine: `replay()`. Backend: `apps.ratings.services.replay_ratings`, asked for through `ratings.RatingReplayRequest` (ADR 0028).
 
 **Replay Info**:
 The provenance stored with every Replay: as-of date, config version, config fingerprint, and match counts. Engine: `ReplayInfo`. Backend: `ratings.RatingReplay`, with the engine and spec versions.
@@ -138,11 +138,11 @@ The provenance stored with every Replay: as-of date, config version, config fing
 A rating change applied when a Match arrives, between Replays. Live Updates are provisional and labeled with how many have occurred since the last Replay. Engine: `RatingEngine.record`, `RatingState.live_updates_since_replay`, `PlayerSummary.live_updates_since_recalculation`. Backend: `live_updates_since_recalculation` and the `provisional` property on `ratings.RatingState`; the `apps.ratings.tasks.update_ratings_for_match` task applies one when a Match is confirmed (ADR 0027). A Match played before a player's last match is late: it is not applied live and waits for a Replay.
 
 **Engine Snapshot**:
-The rating engine's whole state, saved after each Live Update so the next one continues from it: every rated Player's state by OPEN Code, the processed match ids, and the history the engine's own rules need. One per parameter set. Engine: `RatingEngine.to_snapshot`, `RatingEngine.from_snapshot`. Backend: `ratings.EngineSnapshot` (ADR 0027).
+The rating engine's whole state, saved after each Live Update that changes a Rating and after each Replay, so the next Live Update continues from it: every rated Player's state by OPEN Code, the processed match ids, and the history the engine's own rules need. One per parameter set. Engine: `RatingEngine.to_snapshot`, `RatingEngine.from_snapshot`. Backend: `ratings.EngineSnapshot` (ADR 0027).
 _Avoid_: checkpoint (a Replay's saved state may use the same row, but the term is Engine Snapshot), cache.
 
 **Rating History**:
-The append-only record of every change to a Player's Rating in one Rating Format, with what caused it: a Live Update from one Match, or a Replay. Each row holds the Rating's values after the change and the engine and spec versions that produced them. Backend: `ratings.RatingHistory`.
+The append-only record of every change to a Player's Rating in one Rating Format, with what caused it: a Live Update from one Match, or a Replay. A Replay that no longer produces a Rating removes it, with a `removed` row that keeps the removed values. Each other row holds the Rating's values after the change and the engine and spec versions that produced them. Backend: `ratings.RatingHistory`.
 _Avoid_: audit log (each change also records an Audit Event, a different thing).
 
 **Frozen**:

@@ -361,7 +361,8 @@ INSTALLED_APPS = [
     "apps.partners",
     "apps.matches",
     # Ratings: the engine adapter (apps/ratings/engine_adapter.py), rating
-    # state, history, replays, the engine snapshot, and the live update task.
+    # state, history, replays, replay requests, the engine snapshot, the
+    # live update task, and the replay task.
     "apps.ratings",
     # The email outbox: messages wait here for the email queue (ADR 0016).
     "apps.emails",
@@ -561,6 +562,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
         "options": {"expire_seconds": 900},
     },
+    # Runs pending rating replay requests whose queued task was lost (#47).
+    # Does nothing when no request is pending. A run missed for 15 minutes
+    # is dropped.
+    "replay-ratings": {
+        "task": "apps.ratings.tasks.replay_ratings",
+        "schedule": crontab(minute="*/15"),
+        "options": {"expire_seconds": 900},
+    },
 }
 
 
@@ -577,6 +586,11 @@ MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS"
 # never read from the environment: changing it needs a check of the engine
 # release and a full replay, so it is a reviewed code change.
 OPEN_ENGINE_PARAMETER_SET = "v1"
+
+# Seconds a queued replay waits before it runs (#47): the debounce that
+# lets quick successive changes share one replay. Keep it well below the
+# broker's one-hour visibility timeout.
+RATING_REPLAY_DELAY_SECONDS = 60
 
 # The rating spec version stored with every rating change (#45, decision Q7
 # in #1): the openpickleball/rating-spec tag the ratings follow. The project

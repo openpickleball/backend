@@ -3,8 +3,11 @@
 ``RatingState`` is a Player's current Rating in one rating format, one row
 per Player and format. ``RatingHistory`` is one row per change to it, with
 what caused the change: a live update from one Match, or a replay of the
-Ledger (``RatingReplay``). ``RatingReplay`` holds one replay's provenance
-(hard rule 4). ADR 0025 records these decisions.
+Ledger (``RatingReplay``), or its removal by a replay that no longer
+produces it. ``RatingReplay`` holds one replay's provenance (hard rule 4).
+``RatingReplayRequest`` asks for a replay (#47): a change to what counts,
+or a match a live update could not take, stores one, and the replay
+deletes the requests it took. ADR 0025 records these decisions.
 
 The values are what the engine returned (``engine_adapter.RatingSummary``,
 hard rule 2): the backend stores them and never computes or rounds a
@@ -14,11 +17,14 @@ rating is a demonstration rating while the engine is a demonstration
 package.
 
 Write these rows only through ``apps.ratings.services``
-(``apply_rating()``, ``record_replay()``). The ORM guards them:
+(``apply_rating()``, ``record_replay()``, and the replay's removal path).
+The ORM guards them:
 ``RatingHistory`` and ``RatingReplay`` rows are inserted once and never
 saved again or deleted (``RatingHistoryImmutable``), and a ``RatingState``
-is never deleted, bulk inserted, or bulk changed
-(``RatingStateWriteRefused``). ``QuerySet.update``, ``delete``,
+is never bulk inserted or bulk changed, and deleted only by the replay's
+private removal path (``services._remove_rating()``): its ``delete()``
+and every queryset delete refuse (``RatingStateWriteRefused``).
+``QuerySet.update``, ``delete``,
 ``bulk_update``, and an upsert raise on all three, through the default and
 the base manager. ``bulk_create`` still inserts history and replay rows,
 skipping the service's checks and Audit Event. Raw SQL and raw saves
@@ -60,7 +66,8 @@ _PARAMS_VERSION_BLANK = (
 )
 _ONE_STATE = "This player already has a rating in this format."
 _KIND_LINKS = (
-    "A live update names its match and no replay; a replay row names its replay."
+    "A live update names its match and no replay; a replay row names its "
+    "replay; a removed row names its replay and no match."
 )
 _DELTA_LIVE_ONLY = "Only a live update has a delta."
 _COUNTED_WITHIN_CONSIDERED = "A replay cannot count more matches than it considered."
@@ -107,6 +114,7 @@ class RatingChangeKind(models.TextChoices):
 
     LIVE_UPDATE = "live_update", "Live update"
     REPLAY = "replay", "Replay"
+    REMOVED = "removed", "Removed by a replay"
 
 
 class RatingHistoryImmutable(RuntimeError):
@@ -436,7 +444,10 @@ class RatingState(_RatingValues):
 
     One row per Player and format. Change it only through
     ``apps.ratings.services.apply_rating()``, which records its history row
-    and Audit Event. It is never deleted or bulk changed.
+    and Audit Event. It is never bulk changed, and deleted only by the
+    replay's private removal path (``services._remove_rating()``), when a
+    replay no longer produces it; ``delete()`` and ``QuerySet.delete()``
+    refuse.
     """
 
     player = models.ForeignKey(
@@ -473,7 +484,8 @@ class RatingHistory(_RatingValues, _InsertOnlyModel):
 
     A live update names its ``match`` and the engine's change for the
     player (``delta``). A replay row names its ``replay``. The values are
-    the rating after the change. Append-only.
+    the rating after the change. A removed row names the replay that no
+    longer produced the rating, and holds the values removed. Append-only.
     """
 
     created_at = models.DateTimeField(default=timezone.now, editable=False)
@@ -534,7 +546,12 @@ class RatingHistory(_RatingValues, _InsertOnlyModel):
                     match__isnull=False,
                     replay__isnull=True,
                 )
-                | Q(kind=RatingChangeKind.REPLAY, replay__isnull=False),
+                | Q(kind=RatingChangeKind.REPLAY, replay__isnull=False)
+                | Q(
+                    kind=RatingChangeKind.REMOVED,
+                    replay__isnull=False,
+                    match__isnull=True,
+                ),
                 name="ratings_ratinghistory_kind_links",
                 violation_error_message=_KIND_LINKS,
             ),
@@ -569,7 +586,7 @@ class EngineSnapshotWriteRefused(RuntimeError):
     """
 
     message: ClassVar[str] = (
-        "An engine snapshot changes only through the live update service: it "
+        "An engine snapshot changes only through the live update and the replay: it "
         "cannot be bulk inserted, bulk changed, or deleted."
     )
 
@@ -594,10 +611,12 @@ class EngineSnapshot(models.Model):
 
     One row per parameter fingerprint, the published parameter set's
     values. ``snapshot`` is ``RatingEngine.to_snapshot()`` output, empty
-    until the first live update. It holds Player OPEN Codes and their
-    rating states, never a name. Write it only through
-    ``apps.ratings.services.update_ratings_for_match()``, which locks the
-    row first. It is never deleted or bulk changed.
+    until the first live update or replay. It holds Player OPEN Codes and
+    their rating states, never a name. It has two writers, both in
+    ``apps.ratings.services``: the live update
+    (``update_ratings_for_match()``) and the replay (``replay_ratings()``).
+    Each locks the row first, so they serialize. It is never deleted or
+    bulk changed.
     """
 
     parameter_fingerprint = models.CharField(
@@ -644,3 +663,50 @@ class EngineSnapshot(models.Model):
 
     def delete(self, *args: Any, **kwargs: Any) -> NoReturn:
         raise EngineSnapshotWriteRefused
+
+
+class ReplayReason(models.TextChoices):
+    """Why a replay was requested.
+
+    The ``MatchChange`` values (``apps.matches.signals``), plus ``late``
+    (a match played before a player's last match) and ``replay_needed``
+    (a live update that could not be queued or failed in a worker).
+    """
+
+    VOID = "void", "Void"
+    EDIT = "edit", "Edit"
+    DISPUTE = "dispute", "Dispute"
+    HOLD = "hold", "Hold"
+    RELEASE = "release", "Release"
+    LATE = "late", "Late match"
+    REPLAY_NEEDED = "replay_needed", "Replay needed"
+
+
+class RatingReplayRequest(models.Model):
+    """A request for a replay of the Ledger (#47).
+
+    Inserted only through ``apps.ratings.services.request_replay()``, and
+    deleted only by the replay (``replay_ratings()``), which takes every
+    pending request, so quick successive changes share one replay.
+    ``earliest_date`` is the earliest date the change can affect, kept for
+    logging only: every replay is a full replay. Names no Player and holds
+    no personal data.
+    """
+
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    earliest_date = models.DateField(error_messages=_DATE_MESSAGES)
+    reason = models.CharField(
+        max_length=16, choices=ReplayReason, error_messages=CHOICE_MESSAGES
+    )
+
+    class Meta:
+        ordering = ("created_at", "id")
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.CheckConstraint(
+                condition=Q(reason__in=ReplayReason.values),
+                name="ratings_ratingreplayrequest_reason_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.reason} from {self.earliest_date.isoformat()}"
