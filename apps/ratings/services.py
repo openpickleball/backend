@@ -379,6 +379,44 @@ def _corrected_matches(match: Match) -> list[Match]:
     return chain
 
 
+def _record_and_apply(
+    row: EngineSnapshot, match: Match, players: list[Player]
+) -> LiveUpdateOutcome:
+    """Record ``match`` on the locked snapshot and apply the changes.
+
+    Runs inside ``update_ratings_for_match()``'s transaction, after its
+    locks and checks.
+    """
+    update = record_live(row.snapshot or None, match)
+    if update.already_recorded:
+        return LiveUpdateOutcome.UNCHANGED
+    if not update.counted:
+        logger.info(
+            "Live update rejected by the engine for match %s: %s",
+            match.public_code,
+            update.reason,
+        )
+        return LiveUpdateOutcome.REJECTED
+    if update.late:
+        schedule_replay(players, earliest_date=match.played_on)
+        return LiveUpdateOutcome.LATE
+
+    by_code = {str(player.public_code): player for player in players}
+    for summary, delta in sorted(
+        update.summaries,
+        key=lambda item: (by_code[item[0].player_id].pk, item[0].rating_format),
+    ):
+        apply_rating(
+            player=by_code[summary.player_id],
+            summary=summary,
+            kind=RatingChangeKind.LIVE_UPDATE,
+            match=match,
+            delta=delta,
+        )
+    _save_engine_snapshot(row, update)
+    return LiveUpdateOutcome.UPDATED
+
+
 def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
     """Apply the live rating update for the Match with row id ``match_id``.
 
@@ -403,8 +441,9 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
     and go to ``schedule_replay()`` (``replay_needed``). So does a
     correction of a Match that was rated live (any Match in its
     ``corrects`` chain has a live update history row): every player in the
-    chain goes to the replay, from the chain's earliest date. ``EngineMappingError`` and the engine's errors
-    propagate.
+    chain goes to the replay, from the chain's earliest date. Any other
+    error (``EngineMappingError``, the engine's errors, an apply failure)
+    is logged with the Match id and error class only, then propagates.
     """
     with transaction.atomic():
         match = Match.objects.filter(pk=match_id).first()
@@ -478,31 +517,14 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
             schedule_replay(players, earliest_date=match.played_on)
             return LiveUpdateOutcome.LATE
 
-        update = record_live(row.snapshot or None, match)
-        if update.already_recorded:
-            return LiveUpdateOutcome.UNCHANGED
-        if not update.counted:
-            logger.info(
-                "Live update rejected by the engine for match %s: %s",
-                match.public_code,
-                update.reason,
+        try:
+            return _record_and_apply(row, match, players)
+        # Any error: log the Match id and the class only (the text can quote
+        # values), then let the task fail; the transaction rolls back.
+        except Exception as exc:
+            logger.error(
+                "Live update failed for match %s (%s).",
+                match.pk,
+                type(exc).__name__,
             )
-            return LiveUpdateOutcome.REJECTED
-        if update.late:
-            schedule_replay(players, earliest_date=match.played_on)
-            return LiveUpdateOutcome.LATE
-
-        by_code = {str(player.public_code): player for player in players}
-        for summary, delta in sorted(
-            update.summaries,
-            key=lambda item: (by_code[item[0].player_id].pk, item[0].rating_format),
-        ):
-            apply_rating(
-                player=by_code[summary.player_id],
-                summary=summary,
-                kind=RatingChangeKind.LIVE_UPDATE,
-                match=match,
-                delta=delta,
-            )
-        _save_engine_snapshot(row, update)
-    return LiveUpdateOutcome.UPDATED
+            raise
