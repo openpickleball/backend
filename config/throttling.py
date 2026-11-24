@@ -3,8 +3,12 @@
 ninja's built-in throttles are not used: ``AuthRateThrottle`` keys on a hash
 of ``str(request.auth)``, the Account's email, and their read and write of
 a count is not atomic. These throttles count instead with ``cache.add``
-then ``cache.incr`` in the default cache, which are atomic on the Redis and
-local memory caches, so limits hold across web instances and workers.
+then ``cache.incr`` in the default cache. The increment itself is atomic
+on the Redis and local memory caches (Redis INCR), so concurrent requests
+on several web instances and workers never lose a count. Django's Redis
+``incr`` checks that the key exists before its INCR, so an eviction in
+between creates the counter again with no expiry; ``_count`` sets the
+expiry again whenever a count is 1.
 
 Each request is counted against a list of windows (a minute and a day).
 Each window is a fixed window: one counter per scope, window name, bucket,
@@ -89,15 +93,21 @@ class FixedWindowThrottle(BaseThrottle):
 
         If the counter expires or is evicted between ``add`` and ``incr``
         (``incr`` raises ``ValueError``), try once more, then allow the
-        request (count 0) rather than fail it.
+        request (count 0) rather than fail it. Django's Redis cache runs
+        ``incr`` as EXISTS then INCR, so an eviction between those two
+        creates the counter again at 1 with no expiry. A count of 1 sets
+        the expiry again with ``touch``, so no counter outlives its window.
         """
         timeout = period + THROTTLE_TIMEOUT_MARGIN
         for _ in range(2):
             self.cache.add(key, 0, timeout)
             try:
-                return int(self.cache.incr(key))
+                count = int(self.cache.incr(key))
             except ValueError:
                 continue
+            if count == 1:
+                self.cache.touch(key, timeout)
+            return count
         return 0
 
     def allow_request(self, request: HttpRequest) -> bool:
