@@ -31,6 +31,13 @@ States and transitions:
   is resolved as confirmed and its open flags as approved, in one
   transaction, with the status read under the match's locks.
 
+"Moderator" here means ``apps.matches.permissions.moderates``: a
+moderator whose own Player played in no match of the match's correction
+chain. A moderator who played is refused on the moderator-only paths and
+falls back to the other rules (``can_change_match``) for void and edit,
+which also refuse their reason. An edit as moderator that puts the
+moderator's own Player in the correction falls back the same way.
+
 Each service checks permission first and raises ``MatchActionDenied``
 (fixed text) before it reveals anything about the match. It then locks
 the match row and checks its state, raising ``MatchStateError`` (fixed
@@ -78,7 +85,7 @@ from apps.matches.permissions import (
     can_change_match,
     can_confirm_as_organizer,
     can_create_match,
-    is_moderator,
+    moderates,
     participant_player,
 )
 from apps.matches.services import (
@@ -352,7 +359,7 @@ def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) ->
     ``release`` for each match it no longer holds.
     """
     _saved(match)
-    if not is_moderator(actor):
+    if not moderates(actor, match):
         raise MatchActionDenied
     if outcome not in _RESOLUTIONS:
         raise ValueError("Resolve a dispute as confirmed or voided.")
@@ -381,6 +388,13 @@ def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) ->
 _REASON_REFUSED = "Only a moderator may give a reason."
 
 
+class ReasonRefused(ValueError):
+    """An actor not acting as moderator gave a reason. Fixed text."""
+
+    def __init__(self) -> None:
+        super().__init__(_REASON_REFUSED)
+
+
 def _check_reason(moderator: bool, reason: str) -> None:
     """Refuse a non-moderator's reason with fixed text.
 
@@ -388,7 +402,7 @@ def _check_reason(moderator: bool, reason: str) -> None:
     stored only from moderators.
     """
     if not moderator and reason.strip():
-        raise ValueError(_REASON_REFUSED)
+        raise ReasonRefused
 
 
 def _void(
@@ -425,7 +439,8 @@ def void_match(match: Match, *, actor: Actor, reason: str = "") -> Match:
     ``change=void``, and each match it no longer holds gets ``release``.
     """
     _saved(match)
-    moderator = is_moderator(actor)
+    # A moderator who played in the match falls back to the other rules.
+    moderator = moderates(actor, match)
     if not (moderator or can_change_match(actor, match)):
         raise MatchActionDenied
     _check_reason(moderator, reason)
@@ -477,7 +492,14 @@ def edit_match(
     counting changed.
     """
     _saved(match)
-    moderator = is_moderator(actor)
+    new_player_ids = [
+        player.pk
+        for player in (*team_a, *team_b)
+        if isinstance(player, Player) and player.pk is not None
+    ]
+    # A moderator who played in the match, or who puts their own Player in
+    # the correction, falls back to the other rules.
+    moderator = moderates(actor, match, new_player_ids=new_player_ids)
     if not (moderator or can_change_match(actor, match)):
         raise MatchActionDenied
     stored = Match.objects.select_related(
@@ -573,19 +595,33 @@ def edit_match(
 _FLAG_RESOLUTIONS = frozenset(FlagResolution.values)
 
 
+def _moderates_with_linked(actor: Actor, match: Match) -> bool:
+    """``moderates`` for ``match`` and every match an open flag links to it.
+
+    Resolving a flag also releases the match at its other end, so a
+    moderator who played in that match's correction chain may not resolve
+    it either. The links are read from the database (``_linked``).
+    """
+    if not moderates(actor, match):
+        return False
+    return all(moderates(actor, other) for other in _linked(match))
+
+
 def resolve_flags(match: Match, *, actor: Actor, outcome: str, reason: str) -> int:
     """A moderator resolves every open flag that involves ``match``.
 
     That is each open flag with ``match`` as its ``match`` or its
     ``duplicate_of``. ``outcome`` is ``approved`` or ``dismissed`` and
-    ``reason`` is required (``ValueError``, fixed text); anyone but a
-    moderator gets ``MatchActionDenied`` first. No Match changes. Records
+    ``reason`` is required (``ValueError``, fixed text). Anyone who does
+    not moderate ``match`` and every match an open flag links to it
+    (``_moderates_with_linked``) gets ``MatchActionDenied`` first. No
+    Match changes. Records
     one ``match.flag_resolve`` Audit Event per flag, with the reason, and
     sends ``release`` for each match that counts again. Returns how many
     flags it resolved: 0, with no event or signal, when none were open.
     """
     _saved(match)
-    if not is_moderator(actor):
+    if not _moderates_with_linked(actor, match):
         raise MatchActionDenied
     if outcome not in _FLAG_RESOLUTIONS:
         raise ValueError("Resolve a flag as approved or dismissed.")
@@ -624,8 +660,9 @@ def resolve_flags(match: Match, *, actor: Actor, outcome: str, reason: str) -> i
 def approve_match(match: Match, *, actor: Actor, reason: str) -> bool:
     """A moderator approves ``match``: its result stands.
 
-    Anyone but a moderator gets ``MatchActionDenied`` first, and a blank
-    ``reason`` raises ``ValueError``. Under the match's lineup and row
+    Anyone who does not moderate ``match`` and every match an open flag
+    links to it (``_moderates_with_linked``) gets ``MatchActionDenied``
+    first, and a blank ``reason`` raises ``ValueError``. Under the match's lineup and row
     locks, a voided match raises ``MatchStateError``, a disputed one is
     resolved as confirmed (``resolve_dispute``), and every open flag that
     involves it is resolved as approved (``resolve_flags``), all in one
@@ -633,7 +670,7 @@ def approve_match(match: Match, *, actor: Actor, reason: str) -> bool:
     when anything changed, False when there was nothing to approve.
     """
     _saved(match)
-    if not is_moderator(actor):
+    if not _moderates_with_linked(actor, match):
         raise MatchActionDenied
     if not reason.strip():
         raise ValueError("Give a reason for the approval.")

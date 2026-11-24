@@ -46,6 +46,7 @@ from apps.matches.permissions import MatchActionDenied, is_moderator
 from apps.matches.services import DuplicateMatchError, MatchValidationError
 from apps.matches.workflow import (
     MatchStateError,
+    ReasonRefused,
     approve_match,
     edit_match,
     resolve_dispute,
@@ -323,10 +324,21 @@ class MatchAdmin(admin.ModelAdmin[Match]):
             # locks last until the outermost transaction ends.
             try:
                 changed = change(match, request, reason)
-            except (MatchActionDenied, MatchStateError) as refused:
+            except MatchStateError as refused:
                 self.message_user(
                     request,
                     f"{match.public_code} was not changed: {refused.args[0]}",
+                    level=messages.WARNING,
+                )
+                continue
+            except (MatchActionDenied, ReasonRefused):
+                # ReasonRefused is the workflow refusing the reason of a
+                # moderator who played in the match and fell back to the
+                # other rules. Show only the fixed denied text, never which
+                # rule failed.
+                self.message_user(
+                    request,
+                    f"{match.public_code} was not changed: {MatchActionDenied.message}",
                     level=messages.WARNING,
                 )
                 continue
@@ -426,6 +438,10 @@ class MatchAdmin(admin.ModelAdmin[Match]):
                 form.add_error(None, message)
         except DuplicateMatchError as error:
             form.add_error(None, error.message)
-        except (MatchStateError, MatchActionDenied) as error:
+        except MatchStateError as error:
             form.add_error(None, str(error.args[0]))
+        except (MatchActionDenied, ReasonRefused):
+            # Also the refused reason of a moderator who played in the
+            # match: only the fixed denied text, never which rule failed.
+            form.add_error(None, MatchActionDenied.message)
         return None
