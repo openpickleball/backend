@@ -1,6 +1,7 @@
 # 0019. Gender division required at signup
 
 - Status: Proposed
+- Amended by: [ADR 0023](0023-birth-and-division-set-once.md) (the player cannot change the gender division once the Player exists)
 - Date: 2026-11-23
 
 ## Context
@@ -16,15 +17,15 @@ This amends ADR 0009 (the gender division is required for every new Player) and 
 - Signup on both headless clients takes a third required field, `gender_division`, `mens` or `womens` (`SignupAgeForm`, so allauth's OpenAPI document lists it as required). It is checked in the same step as the birth year and month, before allauth reads the email address. A missing or invalid value gets allauth's 400 with a field error (`param: "gender_division"`) and a fixed message that never repeats the value. Like a malformed age, it does not set the refusal flag. All three fields are checked before the age decision, so an under-13 age sent with a missing or invalid gender division gets the field error, not the refusal, and nothing is held.
 - A signup that passes holds the gender division in the session together with the birth year and month, bound to the new Account, under ADR 0017's rules. The session key is now `open_signup_details`, read with `peek_signup_details()` and taken with `take_signup_details()` (`apps/players/signup.py`). A taken address holds it bound to no Account, so the answers for a new and a taken address stay alike. An under-13 signup holds nothing.
 - The Player create endpoint (`POST /api/v1/me/player`) uses the held gender division with the held age, and ignores the body's. When the session holds no signup details, the body's `gender_division` is required, with the birth year and month.
-- Every new Player has a gender division. `create_player()` requires it, and `Player.full_clean()` refuses an empty value. The player can change it between `mens` and `womens`, but cannot clear it.
-- The database still allows an empty value. Removal of personal data (#190, #116) may empty it. A Player with an empty value can still change other fields; sending the stored empty value again is an unchanged value, so it changes nothing.
+- Every new Player has a gender division. `create_player()` requires it, and `Player.full_clean()` refuses an empty value. The player could change it between `mens` and `womens`, but not clear it. ADR 0023 later made it set once: the player cannot change it after the Player exists.
+- The database still allows an empty value. Removal of personal data (#190, #116) may empty it. A Player with an empty value can still change other fields. Since ADR 0023, sending the gender division at all is refused.
 
 ## Consequences
 
 - The web and Expo apps must send `gender_division` with every signup. The signup form shows it as "Gender", with "Man" and "Woman".
 - A player who does not fit either division cannot sign up. This is the project owner's decision, and a later ADR can revisit it.
 - Holds made under the old `open_signup_birth` key are ignored, and the create endpoint asks for the details again. Nothing was deployed with the old key.
-- A Player created before this change may have an empty gender division. Nothing fills it in; the player can set it.
+- A Player created before this change may have an empty gender division. Nothing fills it in. Since ADR 0023, the player cannot set it either.
 
 ## Alternatives considered
 

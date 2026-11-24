@@ -9,12 +9,20 @@ them: never the legal name, the birth year or month, or the gender
 division (ADR 0009).
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 from ninja import Schema
-from pydantic import ConfigDict, StrictInt
+from pydantic import BeforeValidator, ConfigDict, StrictInt
+from pydantic.json_schema import SkipJsonSchema
+from pydantic_core import PydanticCustomError
 
-from apps.players.models import Player, PlayerPrivacy, Visibility
+from apps.players.models import (
+    SET_ONCE_CODE,
+    SET_ONCE_MESSAGES,
+    Player,
+    PlayerPrivacy,
+    Visibility,
+)
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -61,13 +69,34 @@ class PrivacyIn(Schema):
     home_club_visibility: Visibility | None = None
 
 
+def _refuse_set_once(name: str) -> BeforeValidator:
+    """Refuse any value sent for ``name``, a field set once, at create.
+
+    Null and the stored value included, with a fixed 422 on that field
+    (ADR 0023).
+    """
+
+    def refuse(value: object) -> object:
+        raise PydanticCustomError(SET_ONCE_CODE, SET_ONCE_MESSAGES[name])
+
+    return BeforeValidator(refuse)
+
+
+# Left out of the OpenAPI document, since no value is accepted.
+SetOnceBirthYear = SkipJsonSchema[Annotated[object, _refuse_set_once("birth_year")]]
+SetOnceBirthMonth = SkipJsonSchema[Annotated[object, _refuse_set_once("birth_month")]]
+SetOnceGenderDivision = SkipJsonSchema[
+    Annotated[object, _refuse_set_once("gender_division")]
+]
+
+
 class PlayerUpdateIn(Schema):
     """Changes to the signed-in Account's own Player.
 
     Only the fields sent change. Null clears an optional text field
-    (``legal_name``, ``city``, ``region``); the display name, birth year,
-    birth month, and gender division cannot be cleared. ``gender_division``
-    is ``mens`` or ``womens``.
+    (``legal_name``, ``city``, ``region``); the display name cannot be
+    cleared. The birth year and month and the gender division are set
+    once, when the Player is created, and cannot be sent here (ADR 0023).
     ``privacy`` changes the settings it names. Unknown keys are refused.
     """
 
@@ -75,9 +104,9 @@ class PlayerUpdateIn(Schema):
 
     display_name: str | None = None
     legal_name: str | None = None
-    birth_year: StrictInt | None = None
-    birth_month: StrictInt | None = None
-    gender_division: str | None = None
+    birth_year: SetOnceBirthYear = None
+    birth_month: SetOnceBirthMonth = None
+    gender_division: SetOnceGenderDivision = None
     city: str | None = None
     region: str | None = None
     privacy: PrivacyIn | None = None

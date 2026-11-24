@@ -37,9 +37,11 @@ name and, for an adult, the starting display name; a player aged 13 to
 17 starts with "First L.". The body is read only when
 the session holds none, where the display name, birth year and month,
 and gender division are required.
-An under-13 age refuses the session as signup does (issue #220): the
-create sets the signup refusal flag, and every later create in that
-session gets the same fixed 422, whatever its body.
+An under-13 or future age refuses the session as signup does (issues
+#220 and #225): the create sets the signup refusal flag, and every later
+create in that session gets the same fixed 422, whatever its body. PATCH
+refuses the birth year and month and the gender division: they are set
+once, when the Player is created (ADR 0023).
 """
 
 import contextlib
@@ -74,6 +76,7 @@ from apps.matches.pagination import (
 from apps.matches.schemas import MatchOut, with_match_details
 from apps.players.age import is_minor
 from apps.players.models import (
+    FUTURE_BIRTH_MONTH_MESSAGE,
     UNDER_MINIMUM_AGE_MESSAGE,
     Player,
     has_visible_character,
@@ -517,17 +520,25 @@ def _take_hold(request: HttpRequest, session: SessionBase, account: "_User") -> 
         _save_token_session(request, session)
 
 
-def _is_under_minimum_age(error: DjangoValidationError) -> bool:
-    """Whether ``create_player`` refused the age as under 13."""
+# The age refusals that refuse the session, as signup does: under 13, and
+# a future birth year and month (issue #225).
+_REFUSED_AGE_MESSAGES = (UNDER_MINIMUM_AGE_MESSAGE, FUTURE_BIRTH_MONTH_MESSAGE)
+
+
+def _is_refused_age(error: DjangoValidationError) -> bool:
+    """Whether ``create_player`` refused the age as under 13 or future."""
     found = getattr(error, "error_dict", {}).get("birth_month", [])
-    return any(UNDER_MINIMUM_AGE_MESSAGE in item.messages for item in found)
+    return any(
+        message in item.messages for item in found for message in _REFUSED_AGE_MESSAGES
+    )
 
 
 def _refuse(request: HttpRequest, session: SessionBase) -> NinjaValidationError:
     """Refuse the session for age, and the fixed 422 to raise.
 
-    The same answer for the first under-13 create and every later one in
-    the session, so nothing in it depends on the body (issue #220).
+    The same answer for the first create refused for age and every later
+    one in the session, so nothing in it depends on the body (issues #220
+    and #225).
     """
     refuse_signup(session)
     _save_token_session(request, session)
@@ -560,10 +571,10 @@ def create_my_player(
     only when the session holds none, and its display name, birth year and
     month, and gender division are then required. The held details are
     removed once the Player exists (on a 409 too), so a create refused for
-    any other reason can be retried. A player under 13 is refused with a
-    fixed 422, and the refusal holds for the session, as at signup: every
-    later create in it gets the same 422, and so does a signup after
-    logout (ADR 0017).
+    any other reason can be retried. A player under 13, or a birth year
+    and month in the future, is refused with a fixed 422, and the refusal
+    holds for the session, as at signup: every later create in it gets the
+    same 422, and so does a signup after logout (ADR 0017).
     """
     account = request_account(request)
     if not _has_verified_email(account):
@@ -586,7 +597,7 @@ def create_my_player(
         if _is_duplicate_player(error):
             _take_hold(request, session, account)
             raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE) from None
-        if _is_under_minimum_age(error):
+        if _is_refused_age(error):
             raise _refuse(request, session) from None
         raise _body_errors(error) from None
     _take_hold(request, session, account)
@@ -621,9 +632,10 @@ def get_my_player(request: HttpRequest) -> MyPlayerOut:
 def update_my_player(request: HttpRequest, payload: PlayerUpdateIn) -> MyPlayerOut:
     """Change the signed-in Account's own profile fields and privacy settings.
 
-    Only the fields sent change. The gender division can change between
-    divisions but cannot be cleared (422). Both kinds of change apply
-    together or not at all: a 422 on either changes nothing. Each kind
+    Only the fields sent change. The birth year and month and the gender
+    division are set once, when the Player is created: sending any of
+    them gets a 422, whatever the value (ADR 0023). Both kinds of change
+    apply together or not at all: a 422 on either changes nothing. Each kind
     that changes records one Audit Event (profile changes by field name
     only). 404 when the Account has no Player.
     """

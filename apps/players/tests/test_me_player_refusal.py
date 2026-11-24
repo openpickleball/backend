@@ -246,10 +246,6 @@ def test_the_flag_survives_logout_and_login(base: str) -> None:
 # What does not set the flag
 
 
-def _future_birth() -> dict[str, int]:
-    return {"birth_year": age_limit_date().year + 1, "birth_month": 1}
-
-
 @pytest.mark.parametrize("base", CLIENTS)
 @pytest.mark.parametrize(
     "body",
@@ -257,10 +253,6 @@ def _future_birth() -> dict[str, int]:
         pytest.param(
             {"display_name": "Robin Q.", "birth_year": 2000, **DIVISION},
             id="missing-month",
-        ),
-        pytest.param(
-            {"display_name": "Robin Q.", **_future_birth(), **DIVISION},
-            id="future-month",
         ),
         pytest.param(
             {

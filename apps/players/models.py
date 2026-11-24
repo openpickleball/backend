@@ -29,6 +29,18 @@ if TYPE_CHECKING:
 # The under-13 refusal: fixed, with no age in it (issue #114). The Player
 # create endpoint matches it to refuse the session (issue #220).
 UNDER_MINIMUM_AGE_MESSAGE = "This birth year and month can't be used."
+# A future birth year and month. The Player create endpoint refuses the
+# session for it too, as signup does (issue #225).
+FUTURE_BIRTH_MONTH_MESSAGE = "The birth year and month cannot be in the future."
+# Set once, when the Player is created, and never changed by the player
+# after that (issue #225). Fixed messages, never the submitted value.
+SET_ONCE_MESSAGES = {
+    "birth_year": "Your birth year and month can't be changed.",
+    "birth_month": "Your birth year and month can't be changed.",
+    "gender_division": "Your gender division can't be changed.",
+}
+SET_ONCE_FIELDS: tuple[str, ...] = tuple(SET_ONCE_MESSAGES)
+SET_ONCE_CODE = "set_once"
 # Messages never include the submitted value (CLAUDE.md, API). Django's
 # defaults for these keys do.
 _CHOICE_MESSAGES = {"invalid_choice": "Choose one of the listed options."}
@@ -242,7 +254,7 @@ class Player(PublicCodeModel):
             errors["display_name"] = "Enter a display name."
         birth_changed = fields is None or not set(BIRTH_FIELDS).isdisjoint(fields)
         if birth_changed and self._birth_month_is_in_the_future():
-            errors["birth_month"] = "The birth year and month cannot be in the future."
+            errors["birth_month"] = FUTURE_BIRTH_MONTH_MESSAGE
         elif birth_changed and self._is_under_minimum_age():
             # A fixed message, with no age in it (issue #114).
             errors["birth_month"] = UNDER_MINIMUM_AGE_MESSAGE
@@ -251,8 +263,10 @@ class Player(PublicCodeModel):
 
     def _birth_month_is_in_the_future(self) -> bool:
         year, month = self.birth_year, self.birth_month
-        if not _is_int(year) or not _is_int(month):
-            # Field validation reports a missing or malformed value.
+        if not _is_int(year) or not _is_int(month) or not 1 <= month <= 12:
+            # Field validation reports a missing or malformed value, so a
+            # month out of range never gets the future message, which the
+            # Player create endpoint treats as a refusal (issue #225).
             return False
         today = timezone.localdate()
         return (year, month) > (today.year, today.month)

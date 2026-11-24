@@ -1,7 +1,7 @@
 """The name and place on allauth's headless signup, for both clients (#221).
 
 Signup asks for a first and last name, required, and a city and region,
-optional (ADR 0021). They are checked with the age screen, before allauth
+optional (ADR 0022). They are checked with the age screen, before allauth
 reads the email, and held in the session with the age and gender division:
 "First Last" as the legal name, which is also the starting display name.
 Made-up names and addresses on example.org only.

@@ -677,31 +677,6 @@ def test_a_profile_change_records_field_names_only(mine: Player) -> None:
     assert events(AuditAction.PRIVACY_CHANGE) == []
 
 
-@pytest.mark.parametrize("value", [None, ""])
-def test_patch_cannot_clear_the_gender_division(mine: Player, value: object) -> None:
-    response = patch(signed_in(mine.account), {"gender_division": value})
-
-    assert response.status_code == 422
-    assert fields(response) == {
-        "body.gender_division": (
-            "blank" if value == "" else "null",
-            "Choose a gender division.",
-        ),
-    }
-    mine.refresh_from_db()
-    assert mine.gender_division == "womens"
-    assert AuditEvent.objects.count() == 0
-
-
-def test_patch_changes_the_gender_division(mine: Player) -> None:
-    response = patch(signed_in(mine.account), {"gender_division": "mens"})
-
-    assert response.status_code == 200
-    assert response.json()["gender_division"] == "mens"
-    [event] = events(AuditAction.PLAYER_PROFILE_CHANGE)
-    assert event.after == {"changed_fields": ["gender_division"]}
-
-
 def test_a_stored_empty_gender_division_can_change_another_field(
     mine: Player,
 ) -> None:
@@ -713,35 +688,6 @@ def test_a_stored_empty_gender_division_can_change_another_field(
     assert response.status_code == 200
     assert response.json()["city"] == "Shelbyville"
     assert response.json()["gender_division"] == ""
-
-
-def test_a_stored_empty_gender_division_resent_empty_is_unchanged(
-    mine: Player,
-) -> None:
-    # Resending the stored value changes nothing, so it is not checked.
-    Player.objects.filter(pk=mine.pk).update(gender_division="")
-
-    response = patch(signed_in(mine.account), {"gender_division": ""})
-
-    assert response.status_code == 200
-    assert response.json()["gender_division"] == ""
-    mine.refresh_from_db()
-    assert mine.gender_division == ""
-    assert AuditEvent.objects.count() == 0
-
-
-def test_a_stored_empty_gender_division_cannot_be_sent_null(mine: Player) -> None:
-    Player.objects.filter(pk=mine.pk).update(gender_division="")
-
-    response = patch(signed_in(mine.account), {"gender_division": None})
-
-    assert response.status_code == 422
-    assert fields(response) == {
-        "body.gender_division": ("null", "Choose a gender division."),
-    }
-    mine.refresh_from_db()
-    assert mine.gender_division == ""
-    assert AuditEvent.objects.count() == 0
 
 
 def test_null_clears_an_optional_text_field(mine: Player) -> None:
@@ -805,22 +751,6 @@ def test_an_invalid_privacy_level_gets_422_without_the_value(mine: Player) -> No
     assert "body.privacy.city_region_visibility" in fields(response)
     assert "made-up-level" not in response.content.decode()
     assert AuditEvent.objects.count() == 0
-
-
-def test_an_under_13_birth_change_gets_a_fixed_422(mine: Player) -> None:
-    this_year = age_limit_date().year
-
-    response = patch(
-        signed_in(mine.account), {"birth_year": this_year - 5, "birth_month": 1}
-    )
-
-    assert response.status_code == 422
-    assert fields(response)["body.birth_month"][1] == (
-        "This birth year and month can't be used."
-    )
-    assert str(this_year - 5) not in response.content.decode()
-    mine.refresh_from_db()
-    assert mine.birth_year == 1985
 
 
 def test_a_null_display_name_gets_422(mine: Player) -> None:
