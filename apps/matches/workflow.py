@@ -388,6 +388,13 @@ def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) ->
 _REASON_REFUSED = "Only a moderator may give a reason."
 
 
+class ReasonRefused(ValueError):
+    """An actor not acting as moderator gave a reason. Fixed text."""
+
+    def __init__(self) -> None:
+        super().__init__(_REASON_REFUSED)
+
+
 def _check_reason(moderator: bool, reason: str) -> None:
     """Refuse a non-moderator's reason with fixed text.
 
@@ -395,7 +402,7 @@ def _check_reason(moderator: bool, reason: str) -> None:
     stored only from moderators.
     """
     if not moderator and reason.strip():
-        raise ValueError(_REASON_REFUSED)
+        raise ReasonRefused
 
 
 def _void(

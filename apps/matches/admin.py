@@ -46,6 +46,7 @@ from apps.matches.permissions import MatchActionDenied, is_moderator
 from apps.matches.services import DuplicateMatchError, MatchValidationError
 from apps.matches.workflow import (
     MatchStateError,
+    ReasonRefused,
     approve_match,
     edit_match,
     resolve_dispute,
@@ -330,9 +331,9 @@ class MatchAdmin(admin.ModelAdmin[Match]):
                     level=messages.WARNING,
                 )
                 continue
-            except (MatchActionDenied, ValueError):
-                # A ValueError here is the workflow refusing a reason from
-                # a moderator who played in the match and fell back to the
+            except (MatchActionDenied, ReasonRefused):
+                # ReasonRefused is the workflow refusing the reason of a
+                # moderator who played in the match and fell back to the
                 # other rules. Show only the fixed denied text, never which
                 # rule failed.
                 self.message_user(
@@ -439,7 +440,7 @@ class MatchAdmin(admin.ModelAdmin[Match]):
             form.add_error(None, error.message)
         except MatchStateError as error:
             form.add_error(None, str(error.args[0]))
-        except (MatchActionDenied, ValueError):
+        except (MatchActionDenied, ReasonRefused):
             # Also the refused reason of a moderator who played in the
             # match: only the fixed denied text, never which rule failed.
             form.add_error(None, MatchActionDenied.message)
