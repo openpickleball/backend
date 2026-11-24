@@ -10,6 +10,9 @@ Before anything else, ``record_match`` checks that the submitter may
 submit the match (``apps.matches.permissions``) and raises
 ``MatchPermissionDenied`` if not. A refused submitter gets no validation
 detail and no duplicate error, so it cannot learn whether a match exists.
+Next it checks that a Submission Batch it was given fits the submission
+(``BATCH_REFUSED``), so a bulk void of that batch reaches only matches its
+submitter sent.
 
 After that check, ``record_match`` runs every model rule on the Match, its
 participants, and its games, so nothing invalid reaches a lock, a lookup,
@@ -93,6 +96,7 @@ from apps.matches.models import (
     MatchStatus,
     RatingFormat,
     ScoringType,
+    SubmissionBatch,
     Team,
 )
 from apps.matches.permissions import Actor, MatchSubmission, check_can_create_match
@@ -118,6 +122,8 @@ _WOMENS = str(GenderDivision.WOMENS.value)
 _KNOWN_DIVISIONS = frozenset({_MENS, _WOMENS, ""})
 _UNKNOWN_DIVISION = "A player's gender division is not a known division."
 _UNKNOWN_FORMAT = "The match format is not singles or doubles."
+
+BATCH_REFUSED = "This submission batch does not fit this match."
 
 
 def derive_rating_format(
@@ -885,11 +891,13 @@ def draft_match(
     event_label: str = "",
     bracket_label: str = "",
     sequence: int = 0,
+    submission_batch: SubmissionBatch | None = None,
 ) -> MatchDraft:
     """Validate a match and run every model rule, with no lock or write.
 
     Raises ``MatchValidationError`` for a score or model rule. Checks no
-    permission: each caller checks its own first.
+    permission and does not check ``submission_batch``: each caller checks
+    its own first (``record_match`` calls ``check_batch``).
     """
     keys_a = _player_keys(team_a)
     keys_b = _player_keys(team_b)
@@ -925,6 +933,7 @@ def draft_match(
         bracket_label=bracket_label,
         sequence=sequence,
         fingerprint=fingerprint,
+        submission_batch=submission_batch,
     )
     participants = [
         MatchParticipant(match=match, player_id=key, team=team)
@@ -1127,6 +1136,41 @@ def _confirm_pending_duplicate(existing: Match, actor: "Actor") -> Match | None:
     return locked
 
 
+def check_batch(
+    batch: SubmissionBatch,
+    *,
+    submitted_by_user: "_User | None",
+    submitted_by_application: "PartnerApplication | None",
+    event: "Event | None",
+    club: "Club | None",
+) -> None:
+    """Refuse a batch that does not fit the submission, with fixed text.
+
+    Raises ``ValueError`` (``BATCH_REFUSED``) for an unsaved batch, a batch
+    whose submitter is not exactly this submission's (the same Account,
+    or the same application, and no other), a batch with an Event other
+    than the match's, or a batch with a Club other than the match's. A
+    batch with no Event or no Club accepts any value there. Reads only the
+    given instances' ids: the batch row never changes.
+    """
+    user_id = submitted_by_user.pk if submitted_by_user is not None else None
+    application_id = (
+        submitted_by_application.pk if submitted_by_application is not None else None
+    )
+    event_id = event.pk if event is not None else None
+    club_id = club.pk if club is not None else None
+    fits = (
+        batch.pk is not None
+        and not batch._state.adding
+        and batch.submitted_by_user_id == user_id
+        and batch.submitted_by_application_id == application_id
+        and (batch.event_id is None or batch.event_id == event_id)
+        and (batch.club_id is None or batch.club_id == club_id)
+    )
+    if not fits:
+        raise ValueError(BATCH_REFUSED)
+
+
 def record_match(
     *,
     format: str,
@@ -1148,6 +1192,7 @@ def record_match(
     event_label: str = "",
     bracket_label: str = "",
     sequence: int = 0,
+    submission_batch: SubmissionBatch | None = None,
 ) -> RecordedMatch:
     """Validate a submission, check it for duplicates, and add it to the ledger.
 
@@ -1160,6 +1205,13 @@ def record_match(
     check, and with two permitted ones the model rules refuse the match as
     a ``MatchValidationError``. A near duplicate is
     saved with one ``possible_duplicate`` flag per earlier Match.
+
+    ``submission_batch`` is the upload this match came in (a batch path,
+    #71 or #72); a single submission leaves it empty. It is checked right
+    after the permissions and before validation (``check_batch``): a
+    batch that does not fit raises ``ValueError`` (``BATCH_REFUSED``) and
+    nothing is written. A pending match that an exact duplicate confirms
+    instead keeps its own batch link, if any.
 
     A match with an Event or a Club comes from a permitted non-self
     submitter (decision F4) and is created confirmed, with a
@@ -1198,6 +1250,14 @@ def record_match(
         check_can_create_match(submitted_by_user, submission)
     if submitted_by_application is not None:
         check_can_create_match(submitted_by_application, submission)
+    if submission_batch is not None:
+        check_batch(
+            submission_batch,
+            submitted_by_user=submitted_by_user,
+            submitted_by_application=submitted_by_application,
+            event=event,
+            club=club,
+        )
     draft = draft_match(
         format=format,
         team_a=team_a,
@@ -1218,6 +1278,7 @@ def record_match(
         event_label=event_label,
         bracket_label=bracket_label,
         sequence=sequence,
+        submission_batch=submission_batch,
     )
     confirms = event is not None or club is not None
     submitter: Actor | None = submitted_by_user or submitted_by_application
