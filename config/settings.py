@@ -276,6 +276,41 @@ def _frontend_url(name: str, *, require_https: bool) -> str:
     return value
 
 
+# A base URL that a code is appended to: a lowercase http or https scheme,
+# a host as in _ORIGIN, an optional port, and a path that ends in "/", made
+# of unreserved characters, percent escapes, and the sub-delimiters, ":"
+# and "@". No query, fragment, user info, space, or control character.
+_BASE_URL = re.compile(
+    r"(?P<scheme>https?)://"
+    r"(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])"
+    r"(?::(?P<port>[1-9][0-9]{0,4}))?"
+    r"(?:/(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})*)*/"
+)
+
+
+def _base_url(name: str, default: str, *, require_https: bool) -> str:
+    """Read an optional base URL, failing fast without echoing it.
+
+    Unset or empty gives ``default``. With require_https (DEBUG off), only
+    an https URL is accepted.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return default
+    match = _BASE_URL.fullmatch(value)
+    if match is None or int(match.group("port") or 1) > 65535:
+        raise ImproperlyConfigured(
+            f"{name} is not a base URL. Use an absolute http or https URL with "
+            "a host and a path that ends in /, with no query, fragment, or "
+            "user info (see .env.example)."
+        )
+    if require_https and match.group("scheme") != "https":
+        raise ImproperlyConfigured(
+            f"{name} must use https when DJANGO_DEBUG is off (see .env.example)."
+        )
+    return value
+
+
 def _celery_broker_url(url: str) -> str:
     """Return a checked REDIS_URL in the form kombu reads as one broker.
 
@@ -631,7 +666,7 @@ MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS"
 # except player search, which has its own fixed limits (ADR 0018).
 API_ACCOUNT_THROTTLE_PER_MINUTE = _rate("API_ACCOUNT_THROTTLE_PER_MINUTE", 120)
 API_ACCOUNT_THROTTLE_PER_DAY = _rate("API_ACCOUNT_THROTTLE_PER_DAY", 10_000)
-# Requests per client IP to public operations (none is mounted yet; #53).
+# Requests per client IP to public operations (none is mounted yet).
 API_CLIENT_IP_THROTTLE_PER_MINUTE = _rate("API_CLIENT_IP_THROTTLE_PER_MINUTE", 60)
 API_CLIENT_IP_THROTTLE_PER_DAY = _rate("API_CLIENT_IP_THROTTLE_PER_DAY", 3_000)
 # The request header the proxy in front of the app sets to the client IP.
@@ -657,6 +692,13 @@ RATING_REPLAY_DELAY_SECONDS = 60
 # owner chose its release candidate tag, v1.0.0rc1, stored as 1.0.0rc1. Bump
 # it when rating-spec tags v1.0.0, then run the recompute (#48).
 OPEN_RATING_SPEC_VERSION = "1.0.0rc1"
+
+# Where a player's public profile lives (#53): the rating lookup's
+# profile_url is this followed by the player's OPEN Code. An absolute URL
+# whose path ends in /, https when DEBUG is off.
+OPEN_PUBLIC_PROFILE_URL = _base_url(
+    "OPEN_PUBLIC_PROFILE_URL", "https://openpb.org/players/", require_https=not DEBUG
+)
 
 
 # Accounts (django-allauth)

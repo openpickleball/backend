@@ -12,8 +12,8 @@ expiry again whenever a count is 1.
 
 Each request is counted against a list of windows (a minute and a day).
 Each window is a fixed window: one counter per scope, window name, bucket,
-and window index (``int(now // period)``), kept for the window plus a
-margin. Windows are checked in order, and a later window counts the
+and window index (``int(now // period)``), kept until its window ends
+plus a margin. Windows are checked in order, and a later window counts the
 request only when every earlier one allowed it, so a burst the minute
 limit refuses does not use up the day. Fixed windows allow a burst of up
 to twice a limit across a window edge. Accepted.
@@ -30,8 +30,8 @@ to twice a limit across a window edge. Accepted.
   address, and other IPv6 addresses count by their /64 prefix, so a client
   cannot rotate addresses within its /64 to escape the limit. Whether
   App Platform replaces a ``do-connecting-ip`` header the client sent is
-  unverified until the deploy-time check on #61 passes; until then no
-  public operation goes live (#53).
+  unverified until the deploy-time check on #61 passes. No public
+  operation is mounted yet; none may go live until that check passes.
 
 Rates are read from settings on every request, so ``override_settings``
 and a changed environment take effect at once.
@@ -46,6 +46,7 @@ throttle on an operation, so an operation has exactly one throttle.
 """
 
 import ipaddress
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -57,8 +58,8 @@ from ninja.throttling import BaseThrottle
 
 MINUTE = 60
 DAY = 24 * 60 * 60
-# Extra seconds a counter outlives its window, so it is never dropped
-# while its window is still open.
+# Extra seconds a counter outlives the end of its window, so it is never
+# dropped while its window is still open.
 THROTTLE_TIMEOUT_MARGIN = 60
 # The one bucket for every request without a valid client IP.
 FALLBACK_BUCKET = "unknown"
@@ -89,8 +90,11 @@ class FixedWindowThrottle(BaseThrottle):
     def limits(self) -> Windows:
         raise NotImplementedError
 
-    def _count(self, key: str, period: int) -> int:
+    def _count(self, key: str, timeout: int) -> int:
         """Add one to a window's counter and return the new count.
+
+        ``timeout`` is the seconds until the window ends, plus
+        ``THROTTLE_TIMEOUT_MARGIN``.
 
         If the counter expires or is evicted between ``add`` and ``incr``
         (``incr`` raises ``ValueError``), try once more, then allow the
@@ -99,7 +103,6 @@ class FixedWindowThrottle(BaseThrottle):
         creates the counter again at 1 with no expiry. A count of 1 sets
         the expiry again with ``touch``, so every counter has an expiry.
         """
-        timeout = period + THROTTLE_TIMEOUT_MARGIN
         for _ in range(2):
             self.cache.add(key, 0, timeout)
             try:
@@ -121,8 +124,9 @@ class FixedWindowThrottle(BaseThrottle):
         for index, (name, limit, period) in enumerate(windows):
             window = int(now // period)
             key = self._key(name, bucket, window)
-            if self._count(key, period) > limit:
-                end = float((window + 1) * period)
+            end = float((window + 1) * period)
+            timeout = math.ceil(end - now) + THROTTLE_TIMEOUT_MARGIN
+            if self._count(key, timeout) > limit:
                 end = max(end, self._full_window_end(windows[index + 1 :], bucket, now))
                 self._refused.retry_after = max(1.0, end - now)
                 return False

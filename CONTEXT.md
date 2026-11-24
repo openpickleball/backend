@@ -5,7 +5,7 @@ The shared vocabulary for this repository. Use these terms in models, endpoints,
 ## People and accounts
 
 **Player**:
-A person who plays matches and has ratings. Every Player is created by one Account and belongs to it. Deleting the Account (#116) keeps the Player and its Matches. Once Ratings are published, the display name and current Ratings of a Player whose Account is active are always visible to every signed-in Account, and the Player cannot hide them. Authenticated partner applications see them too, except for players aged 13 to 17 (ADR 0009). There are no unclaimed Player records, and no Submission creates a Player (ADR 0002). Engine: `Player`. Backend: `players.Player`.
+A person who plays matches and has ratings. Every Player is created by one Account and belongs to it. Deleting the Account (#116) keeps the Player and its Matches. Once Ratings are published, the display name of a Player whose Account is active is always visible to every signed-in Account. So are their current Ratings, unless the Player was created aged 13 to 17 and has not widened that Privacy Setting at 18 or later (ADR 0031). Authenticated partner applications see them too, except for players aged 13 to 17 (ADR 0009). There are no unclaimed Player records, and no Submission creates a Player (ADR 0002). Engine: `Player`. Backend: `players.Player`.
 _Avoid_: user, member, athlete.
 
 **Account**:
@@ -25,7 +25,7 @@ A band derived from a Player's birth year and month, shown in their place. OPEN 
 _Avoid_: age, birthdate.
 
 **Privacy Setting**:
-A Player's choice of who sees one of their other profile details (city and region, match history, rating history, stats, home club): every active signed-in Account, or only the player. While the player's own Account is inactive, nobody sees them. Display Name and current Ratings have no Privacy Setting (ADR 0002). Backend: the `*_visibility` fields of `players.PlayerPrivacy`.
+A Player's choice of who sees one of their other profile details (city and region, match history, rating history, stats, home club) or their current Ratings: every active signed-in Account, or only the player. While the player's own Account is inactive, nobody sees them. The current Ratings setting cannot be narrowed, and a player aged 13 to 17 cannot widen it (ADR 0031). Display Name has no Privacy Setting (ADR 0002). Backend: the `*_visibility` fields of `players.PlayerPrivacy`.
 _Avoid_: visibility flag, opt-out.
 
 **Gender Division**:

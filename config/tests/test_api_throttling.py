@@ -2,9 +2,11 @@
 
 Every operation that needs sign-in shares one per-Account throttle,
 except player search, which keeps only its own ``SearchThrottle`` (ADR
-0018). The health checks are never throttled. A refused request gets a
-429 ``ErrorResponse`` with code ``throttled`` and a ``Retry-After``
-header, and the OpenAPI document says so on every throttled operation.
+0018). No public operation is mounted yet; one would need no sign-in and
+have only a client IP throttle. The health checks are never throttled.
+A refused request gets a 429 ``ErrorResponse`` with code ``throttled``
+and a ``Retry-After`` header, and the OpenAPI document says so on every
+throttled operation.
 Made-up data only.
 """
 
@@ -33,6 +35,9 @@ SEARCH = "/api/v1/players/search"
 LIVE = "/api/v1/health/live"
 ERROR_REF = "#/components/schemas/ErrorResponse"
 HEALTH_OPERATIONS = {"health_live", "health_ready"}
+# Operations anyone may call without sign-in, throttled per client IP.
+# None is mounted yet; the client IP throttle is kept for a later one.
+PUBLIC_OPERATIONS: set[str] = set()
 THROTTLED = {"code": "throttled", "message": "Too many requests.", "errors": []}
 
 
@@ -75,7 +80,10 @@ def test_operation_walk_covers_the_api() -> None:
 
 def test_every_signed_in_operation_shares_the_account_throttle() -> None:
     for operation_id, operation in _by_id().items():
-        if operation_id in HEALTH_OPERATIONS or operation_id == "search_players":
+        if (
+            operation_id in HEALTH_OPERATIONS | PUBLIC_OPERATIONS
+            or operation_id == "search_players"
+        ):
             continue
         assert operation.auth_callbacks == account_auth, operation_id
         assert operation.throttle_objects == [account_throttle], operation_id
@@ -109,6 +117,7 @@ def test_health_checks_are_never_throttled() -> None:
         assert operations[operation_id].throttle_objects == [], operation_id
 
 
+# Name kept from #34: it also expects any public operation (none yet).
 def test_every_operation_without_sign_in_is_a_health_check() -> None:
     unauthenticated = {
         operation_id
@@ -116,7 +125,17 @@ def test_every_operation_without_sign_in_is_a_health_check() -> None:
         if not operation.auth_callbacks
     }
 
-    assert unauthenticated == HEALTH_OPERATIONS
+    assert unauthenticated == HEALTH_OPERATIONS | PUBLIC_OPERATIONS
+
+
+def test_every_public_operation_has_only_a_client_ip_throttle() -> None:
+    operations = _by_id()
+
+    for operation_id in PUBLIC_OPERATIONS:
+        operation = operations[operation_id]
+        assert not operation.auth_callbacks, operation_id
+        assert len(operation.throttle_objects) == 1, operation_id
+        assert isinstance(operation.throttle_objects[0], ClientIPThrottle), operation_id
 
 
 # Behavior through Django

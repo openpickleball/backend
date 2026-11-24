@@ -73,6 +73,7 @@ def test_privacy_fields_are_exactly_the_five_settings() -> None:
         "rating_history_visibility",
         "stats_visibility",
         "home_club_visibility",
+        "rating_visibility",
     )
 
 

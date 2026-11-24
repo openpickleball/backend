@@ -384,6 +384,7 @@ def test_create_takes_the_optional_profile_fields() -> None:
         "rating_history_visibility": "signed_in",
         "stats_visibility": "signed_in",
         "home_club_visibility": "signed_in",
+        "rating_visibility": "signed_in",
     }
 
 
@@ -619,6 +620,7 @@ def test_get_returns_the_own_profile(mine: Player) -> None:
             "rating_history_visibility": "signed_in",
             "stats_visibility": "signed_in",
             "home_club_visibility": "signed_in",
+            "rating_visibility": "signed_in",
         },
     }
 

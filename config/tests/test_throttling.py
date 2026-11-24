@@ -454,4 +454,4 @@ def test_counters_expire_after_their_window_and_a_margin(
 
     throttle.allow_request(_account_request(6_401))
 
-    assert timeouts == [60 + 60, DAY + 60]
+    assert timeouts == [60 + 60, DAY - 8 * 3_600 + 60]

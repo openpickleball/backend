@@ -5,9 +5,11 @@
 router (`config/health.py`) is mounted at /api/v1/health/, the signed-in
 Account at /api/v1/accounts/, match submission, reading one match,
 confirmation, and dispute at /api/v1/matches/, a player's match history and player
-search (/api/v1/players/search), and a player's profile at
-/api/v1/players/, and at /api/v1/me/ the matches awaiting the signed-in
-player's confirmation and the signed-in Account's own Player.
+search (/api/v1/players/search), a player's profile, the rating lookup
+(/api/v1/players/{code}/ratings), and a player's rating history
+(/api/v1/players/{code}/rating-history) at /api/v1/players/, and at
+/api/v1/me/ the matches awaiting the signed-in player's confirmation and
+the signed-in Account's own Player.
 
 Adding an app's endpoints (usually one router per app):
 
@@ -30,7 +32,9 @@ An app may add a second router when some of its operations belong under a
 different prefix. `apps.matches.api.me_router` does this: it holds the
 signed-in player's own match lists and is mounted at `me/`.
 `apps.players.api.me_router`, the Account's own Player, is mounted at
-`me/` too: ninja accepts several routers under one prefix.
+`me/` too: ninja accepts several routers under one prefix. `players/` is
+shared the same way, by the players router and the ratings router
+(`apps.ratings.api.router`).
 
 Every operation needs an explicit `operation_id`: it names the method in the
 generated client, so it must not change when a view is renamed. Building the
@@ -53,7 +57,8 @@ Throttles (ADR 0030): a router whose operations need sign-in passes
 `throttle=config.throttling.account_throttle` next to its `auth`, so they
 share one per-Account budget. An operation's own `throttle=` replaces its
 router's: player search keeps only its `SearchThrottle`. A public
-operation would use `config.throttling.ClientIPThrottle`. The health
+operation (`auth=None`; none is mounted yet) would have only a
+`config.throttling.ClientIPThrottle`. The health
 checks are never throttled. Every operation with a throttle documents a
 429 response with `ErrorResponse` and a `Retry-After` header, and may not
 declare a different 429 schema. A test walks every operation to pin this.
@@ -75,6 +80,7 @@ from apps.matches.api import me_router
 from apps.matches.api import router as matches_router
 from apps.players.api import me_router as players_me_router
 from apps.players.api import router as players_router
+from apps.ratings.api import router as ratings_router
 from config.api_errors import (
     THROTTLED_STATUS,
     UNAUTHORIZED_STATUS,
@@ -273,5 +279,6 @@ api.add_router("health/", health_router)
 api.add_router("accounts/", accounts_router)
 api.add_router("matches/", matches_router)
 api.add_router("players/", players_router)
+api.add_router("players/", ratings_router)
 api.add_router("me/", me_router)
 api.add_router("me/", players_me_router)

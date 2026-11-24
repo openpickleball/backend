@@ -77,14 +77,16 @@ BIRTH_FIELDS = ("birth_year", "birth_month")
 
 EARLIEST_BIRTH_YEAR = 1900
 
-# One setting per profile detail other than the display name and current
-# Ratings, which have none (ADR 0002).
+# One setting per profile detail other than the display name, which has
+# none (ADR 0002). ``rating_visibility`` covers current Ratings (#53): it
+# is last so the earlier order is kept.
 PRIVACY_SETTINGS = (
     "city_region_visibility",
     "match_history_visibility",
     "rating_history_visibility",
     "stats_visibility",
     "home_club_visibility",
+    "rating_visibility",
 )
 
 
@@ -328,8 +330,14 @@ def has_visible_character(value: object) -> bool:
 class PlayerPrivacy(models.Model):
     """Who may see each of a Player's other profile details.
 
-    There is no setting for the display name or current Ratings: once
-    Ratings are published, every signed-in Account sees them (ADR 0002).
+    There is no setting for the display name: once Ratings are published,
+    every signed-in Account sees it (ADR 0002). ``rating_visibility``
+    covers current Ratings (#53): a player created at 13 to 17 starts
+    private and stays private at 18 until the player widens it, and an
+    adult's is always signed-in (``apps.players.services.update_privacy``
+    enforces both). Its model default is private, so a row made outside
+    ``create_player()`` fails closed; ``create_player()`` sets it for an
+    adult.
     """
 
     SETTINGS: ClassVar[tuple[str, ...]] = PRIVACY_SETTINGS
@@ -365,6 +373,12 @@ class PlayerPrivacy(models.Model):
         max_length=16,
         choices=Visibility,
         default=Visibility.SIGNED_IN,
+        error_messages=_CHOICE_MESSAGES,
+    )
+    rating_visibility = models.CharField(
+        max_length=16,
+        choices=Visibility,
+        default=Visibility.PRIVATE,
         error_messages=_CHOICE_MESSAGES,
     )
 

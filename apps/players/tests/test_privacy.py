@@ -45,11 +45,11 @@ def test_no_setting_for_display_name_or_ratings() -> None:
     names = " ".join(SETTINGS)
 
     assert "display_name" not in names
-    assert "rating_visibility" not in names
     assert "current" not in names
 
 
-@pytest.mark.parametrize("setting", SETTINGS)
+# rating_visibility defaults to private (#53).
+@pytest.mark.parametrize("setting", SETTINGS[:-1])
 def test_default_is_signed_in(privacy: PlayerPrivacy, setting: str) -> None:
     privacy.refresh_from_db()
 
