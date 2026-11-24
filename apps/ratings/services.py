@@ -9,7 +9,10 @@ The values stored are the engine's (``engine_adapter.RatingSummary``):
 nothing here computes or rounds a rating (hard rule 2). Every change
 records one ``rating.change`` Audit Event in the same transaction, with no
 actor (the system). Applying the values already stored, or a live update
-a Match already made, changes nothing, so a repeated task is harmless.
+a Match already made, changes nothing, so a repeated live update task is
+harmless. A redelivered replay change is not caught that way: ordering
+replay changes against live updates, a redelivered replay task included,
+is the replay caller's job (#47).
 """
 
 from typing import Any
@@ -139,7 +142,13 @@ def record_replay(
         parameter_fingerprint=provenance.parameter_fingerprint,
         matches_considered=provenance.matches_considered,
         matches_counted=provenance.matches_counted,
-        net_rating_created=dict(provenance.net_rating_created),
+        # Copied, never coerced: a value that is not a mapping must reach
+        # the model's check as it is.
+        net_rating_created=(
+            dict(provenance.net_rating_created)
+            if isinstance(provenance.net_rating_created, dict)
+            else provenance.net_rating_created
+        ),
         engine_version=provenance.engine_version,
         spec_version=(
             settings.OPEN_RATING_SPEC_VERSION if spec_version is None else spec_version
@@ -172,7 +181,10 @@ def apply_rating(
     and returns the history row. It writes nothing and returns None when
     every value equals the stored state, and for a live update when this
     Match already updated this player in this format (a redelivery, even
-    after a version change).
+    after a version change). A redelivered replay change after a newer live
+    update is not caught here: it writes another history row and replaces
+    the live update's values. Ordering replay changes against live updates,
+    a redelivered replay task included, is the replay caller's job (#47).
 
     Raises ``RatingApplyError`` (fixed text) before any write for input
     that names the wrong player, format, or cause: a live update needs a
@@ -181,8 +193,10 @@ def apply_rating(
     parameter set, and fingerprint, and no live updates since). Raises
     ``ValidationError`` for a value the models refuse, before any write.
 
-    It locks the Player row first, so applies for one player serialize,
-    a first apply included, and then the state row. The locks last until
+    It locks the Player row first (``FOR NO KEY UPDATE``, so inserts of
+    rows that point at the Player, such as Match Participants, are not
+    blocked), so applies for one player serialize, a first apply included,
+    and then the state row. The locks last until
     the outermost transaction ends, so the caller chooses the transaction
     for each batch. The callers (#46, #47) own ordering, and the lock
     order across players.
@@ -206,7 +220,7 @@ def apply_rating(
     with transaction.atomic():
         # Serializes applies for one player, even when no state exists yet.
         list(
-            Player.objects.select_for_update()
+            Player.objects.select_for_update(no_key=True)
             .filter(pk=player.pk)
             .values_list("pk", flat=True)
         )

@@ -424,6 +424,12 @@ class RatingReplay(_InsertOnlyModel):
     def __str__(self) -> str:
         return f"Replay as of {self.as_of.isoformat()}"
 
+    def clean(self) -> None:
+        # The field's validator skips empty values ([], "", ()), so the
+        # mapping check runs here too. {} is allowed.
+        if not isinstance(self.net_rating_created, dict):
+            raise ValidationError({"net_rating_created": _NET_RATING_CREATED})
+
 
 class RatingState(_RatingValues):
     """A Player's current Rating in one rating format.
