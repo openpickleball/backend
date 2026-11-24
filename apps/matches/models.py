@@ -7,11 +7,12 @@ references the old one. The workflow services in ``apps.matches.workflow``
 make every change, with their Audit Events.
 
 The ORM guards the ledger (``MatchImmutable``): no Match, Match
-Participant, Game, or Match Confirmation can be deleted; an existing Match
-can be saved only with ``update_fields=["status"]``; the other three are
-inserted once and never saved again; and ``QuerySet.update``, ``delete``,
-``bulk_update``, and an upsert through ``bulk_create`` raise on all four,
-through the default and the base manager. Raw SQL and raw saves
+Participant, Game, Match Confirmation, or Submission Batch can be deleted;
+an existing Match can be saved only with ``update_fields=["status"]``; the
+other four are inserted once and never saved again; and
+``QuerySet.update``, ``delete``, ``bulk_update``, and an upsert through
+``bulk_create`` raise on all five, through the default and the base
+manager. Raw SQL and raw saves
 (``loaddata``) are not guarded.
 
 These models enforce only what a database constraint can: the allowed
@@ -107,8 +108,12 @@ _MATCH_MESSAGES = {"invalid": "Choose an existing match."}
 _PLAYER_MESSAGES = {"invalid": "Choose an existing player."}
 _USER_MESSAGES = {"invalid": "Choose an existing account."}
 _APPLICATION_MESSAGES = {"invalid": "Choose an existing partner application."}
+_BATCH_MESSAGES = {"invalid": "Choose an existing submission batch."}
 
 _ONE_SUBMITTER = "A match has exactly one submitter: an account or an application."
+_BATCH_ONE_SUBMITTER = (
+    "A submission batch has exactly one submitter: an account or an application."
+)
 _EXTERNAL_ID_NEEDS_APPLICATION = (
     "Only a match submitted by a partner application can have an external ID."
 )
@@ -306,6 +311,10 @@ class MatchConfirmationQuerySet(LedgerQuerySet["MatchConfirmation"]):
     """Match Confirmations, with the ledger guard."""
 
 
+class SubmissionBatchQuerySet(LedgerQuerySet["SubmissionBatch"]):
+    """Submission Batches, with the ledger guard."""
+
+
 class MatchFormat(models.TextChoices):
     """Singles or doubles.
 
@@ -394,6 +403,84 @@ class Team(models.TextChoices):
 
     A = "A", "Team A"
     B = "B", "Team B"
+
+
+class SubmissionBatch(_LinkMessagesModel, _InsertOnlyModel):
+    """The matches one submitter sent in one upload (#205, CONTEXT.md).
+
+    A batch path (a CSV upload, #71, or a bulk API request, #72) creates
+    one batch and passes it to ``record_match`` for each match, which sets
+    ``Match.submission_batch``. A moderator can then void every match of
+    the batch at once (``apps.matches.workflow.void_submission_batch``),
+    found by this link, never by a time range.
+
+    Exactly one of ``submitted_by_user`` and ``submitted_by_application``
+    is set, and ``record_match`` refuses a batch whose submitter is not the
+    match's. ``event`` and ``club`` are optional: when set, every match of
+    the batch has that Event or Club. Like the ledger rows, a batch is
+    inserted once and never changed or deleted (``MatchImmutable``). It has
+    no OPEN Code: no API shows it.
+    """
+
+    submitted_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="submission_batches",
+        error_messages=_USER_MESSAGES,
+    )
+    submitted_by_application = models.ForeignKey(
+        settings.OAUTH2_PROVIDER_APPLICATION_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="submission_batches",
+        error_messages=_APPLICATION_MESSAGES,
+    )
+    event = models.ForeignKey(
+        "events.Event",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="submission_batches",
+        error_messages=_EVENT_MESSAGES,
+    )
+    club = models.ForeignKey(
+        "clubs.Club",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="submission_batches",
+        error_messages=_CLUB_MESSAGES,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = SubmissionBatchQuerySet.as_manager()
+
+    class Meta:
+        verbose_name_plural = "submission batches"
+        # Django's internal queries use the base manager, so it must be the
+        # guarded one too.
+        base_manager_name = "objects"
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.CheckConstraint(
+                condition=(
+                    Q(submitted_by_user__isnull=False)
+                    & Q(submitted_by_application__isnull=True)
+                )
+                | (
+                    Q(submitted_by_user__isnull=True)
+                    & Q(submitted_by_application__isnull=False)
+                ),
+                name="matches_submissionbatch_one_submitter",
+                violation_error_message=_BATCH_ONE_SUBMITTER,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # Never the submitter: an Account's __str__ is its email.
+        return f"Submission batch {self.pk}"
 
 
 class Match(_LinkMessagesModel, _CleanedTextModel):
@@ -525,6 +612,15 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
         related_name="corrected_by",
         error_messages=_MATCH_MESSAGES,
         help_text="The voided match this match corrects, set only by edit_match()",
+    )
+    submission_batch = models.ForeignKey(
+        SubmissionBatch,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="matches",
+        error_messages=_BATCH_MESSAGES,
+        help_text="The upload this match came in, set only by record_match()",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
