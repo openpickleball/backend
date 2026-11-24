@@ -217,8 +217,8 @@ def _document_errors(schema: OpenAPISchema, throttled: set[str]) -> None:
             "Retry-After": {
                 "description": (
                     "Seconds until the request can be allowed again: when the "
-                    "refusing limit resets, or a later limit that is already "
-                    "used up."
+                    "refusing limit resets, or when a later limit that is "
+                    "already used up resets."
                 ),
                 "schema": {"type": "integer", "minimum": 1},
             }
