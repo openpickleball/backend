@@ -91,12 +91,13 @@ from apps.matches.models import (
     MatchFormat,
     MatchParticipant,
     MatchStatus,
+    RatingFormat,
     ScoringType,
     Team,
 )
 from apps.matches.permissions import Actor, MatchSubmission, check_can_create_match
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
-from apps.players.models import Player
+from apps.players.models import GenderDivision, Player
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -110,6 +111,55 @@ PLAYERS_PER_TEAM: dict[MatchFormat, int] = {
     MatchFormat.DOUBLES: 2,
 }
 WIN_MARGIN = 2
+
+_MENS = str(GenderDivision.MENS.value)
+_WOMENS = str(GenderDivision.WOMENS.value)
+# An empty division is one a removal cleared (#190, #116).
+_KNOWN_DIVISIONS = frozenset({_MENS, _WOMENS, ""})
+_UNKNOWN_DIVISION = "A player's gender division is not a known division."
+_UNKNOWN_FORMAT = "The match format is not singles or doubles."
+
+
+def derive_rating_format(
+    format: str, team_a: Sequence[str], team_b: Sequence[str]
+) -> RatingFormat:
+    """The rating format of a match, from its format and its players' divisions.
+
+    ``team_a`` and ``team_b`` hold each player's gender division. Singles is
+    ``singles``. In doubles, four men's players are ``doubles_men``, four
+    women's players ``doubles_women``, one of each on each team
+    ``mixed_doubles``, and any other mix, or a player with no division,
+    ``doubles`` (ADR 0024). Raises ``ValueError`` for an unknown format or
+    division; the message never names a division (ADR 0009).
+    """
+    divisions = [*team_a, *team_b]
+    if any(division not in _KNOWN_DIVISIONS for division in divisions):
+        raise ValueError(_UNKNOWN_DIVISION)
+    if format == MatchFormat.SINGLES:
+        return RatingFormat.SINGLES
+    if format != MatchFormat.DOUBLES:
+        raise ValueError(_UNKNOWN_FORMAT)
+    if divisions and all(division == _MENS for division in divisions):
+        return RatingFormat.DOUBLES_MEN
+    if divisions and all(division == _WOMENS for division in divisions):
+        return RatingFormat.DOUBLES_WOMEN
+    if all(sorted(team) == [_MENS, _WOMENS] for team in (team_a, team_b)):
+        return RatingFormat.MIXED_DOUBLES
+    return RatingFormat.DOUBLES
+
+
+def _stored_rating_format(
+    format: str, keys_a: Sequence[int], keys_b: Sequence[int]
+) -> RatingFormat:
+    """The rating format from the players' divisions as stored now, in one query."""
+    stored = dict(
+        Player.objects.filter(pk__in=[*keys_a, *keys_b]).values_list(
+            "pk", "gender_division"
+        )
+    )
+    return derive_rating_format(
+        format, [stored[key] for key in keys_a], [stored[key] for key in keys_b]
+    )
 
 
 @dataclass(frozen=True)
@@ -851,6 +901,7 @@ def draft_match(
     )
     match = Match(
         format=validated.format,
+        rating_format=_stored_rating_format(validated.format, keys_a, keys_b),
         played_on=validated.played_on,
         best_of=validated.best_of,
         game_target=validated.game_target,

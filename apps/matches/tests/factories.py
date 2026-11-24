@@ -7,7 +7,7 @@ from datetime import date
 from typing import Any
 
 from django.db.models import QuerySet
-from factory.declarations import LazyFunction, SubFactory, Trait
+from factory.declarations import LazyAttribute, LazyFunction, SubFactory, Trait
 from factory.django import DjangoModelFactory
 from factory.helpers import post_generation
 from faker import Faker
@@ -23,7 +23,7 @@ from apps.matches.models import (
     ScoringType,
     Team,
 )
-from apps.matches.services import match_fingerprint
+from apps.matches.services import derive_rating_format, match_fingerprint
 from apps.partners.tests.factories import PartnerApplicationFactory
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
@@ -90,6 +90,8 @@ class MatchFactory(DjangoModelFactory[Match]):
 
     It has the players its format needs and games that decide it: each
     game's winner reaches the target and the loser stays at least 2 behind.
+    Its rating format is derived from its players' divisions, as
+    ``record_match`` does; with no players it is the format's base value.
     Traits: ``best_of_1``, ``best_of_3``, ``best_of_5``, ``side_out``,
     ``rally``, and ``by_application`` (a Partner Application submitted it,
     with an external ID). Pass ``games=False`` or ``participants=False``
@@ -120,6 +122,9 @@ class MatchFactory(DjangoModelFactory[Match]):
         )
 
     format = MatchFormat.SINGLES
+    # The base value of the format; insert_rows derives the category from
+    # the players' divisions, as record_match does, unless one was passed.
+    rating_format = LazyAttribute(lambda match: str(match.format))  # type: ignore[no-untyped-call]
     played_on = LazyFunction(_played_on)  # type: ignore[no-untyped-call]
     best_of = BestOf.ONE
     game_target = GameTarget.ELEVEN
@@ -167,6 +172,12 @@ class MatchFactory(DjangoModelFactory[Match]):
             return
         participants: list[tuple[Player, Team]] = getattr(self, _PLANNED_PARTICIPANTS)
         games: list[tuple[int, int]] = getattr(self, _PLANNED_GAMES)
+        if participants and self.rating_format == self.format:
+            self.rating_format = derive_rating_format(
+                self.format,
+                [p.gender_division for p, side in participants if side == Team.A],
+                [p.gender_division for p, side in participants if side == Team.B],
+            )
         if not self.fingerprint and participants and games:
             teams = {
                 team: [player.pk for player, side in participants if side == team]
