@@ -31,6 +31,13 @@ States and transitions:
   is resolved as confirmed and its open flags as approved, in one
   transaction, with the status read under the match's locks.
 
+"Moderator" here means ``apps.matches.permissions.moderates``: a
+moderator whose own Player played in no match of the match's correction
+chain. A moderator who played is refused on the moderator-only paths and
+falls back to the other rules (``can_change_match``) for void and edit,
+which also refuse their reason. An edit as moderator that puts the
+moderator's own Player in the correction falls back the same way.
+
 Each service checks permission first and raises ``MatchActionDenied``
 (fixed text) before it reveals anything about the match. It then locks
 the match row and checks its state, raising ``MatchStateError`` (fixed
@@ -78,7 +85,7 @@ from apps.matches.permissions import (
     can_change_match,
     can_confirm_as_organizer,
     can_create_match,
-    is_moderator,
+    moderates,
     participant_player,
 )
 from apps.matches.services import (
@@ -352,7 +359,7 @@ def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) ->
     ``release`` for each match it no longer holds.
     """
     _saved(match)
-    if not is_moderator(actor):
+    if not moderates(actor, match):
         raise MatchActionDenied
     if outcome not in _RESOLUTIONS:
         raise ValueError("Resolve a dispute as confirmed or voided.")
@@ -425,7 +432,8 @@ def void_match(match: Match, *, actor: Actor, reason: str = "") -> Match:
     ``change=void``, and each match it no longer holds gets ``release``.
     """
     _saved(match)
-    moderator = is_moderator(actor)
+    # A moderator who played in the match falls back to the other rules.
+    moderator = moderates(actor, match)
     if not (moderator or can_change_match(actor, match)):
         raise MatchActionDenied
     _check_reason(moderator, reason)
@@ -477,7 +485,14 @@ def edit_match(
     counting changed.
     """
     _saved(match)
-    moderator = is_moderator(actor)
+    new_player_ids = [
+        player.pk
+        for player in (*team_a, *team_b)
+        if isinstance(player, Player) and player.pk is not None
+    ]
+    # A moderator who played in the match, or who puts their own Player in
+    # the correction, falls back to the other rules.
+    moderator = moderates(actor, match, new_player_ids=new_player_ids)
     if not (moderator or can_change_match(actor, match)):
         raise MatchActionDenied
     stored = Match.objects.select_related(
@@ -585,7 +600,7 @@ def resolve_flags(match: Match, *, actor: Actor, outcome: str, reason: str) -> i
     flags it resolved: 0, with no event or signal, when none were open.
     """
     _saved(match)
-    if not is_moderator(actor):
+    if not moderates(actor, match):
         raise MatchActionDenied
     if outcome not in _FLAG_RESOLUTIONS:
         raise ValueError("Resolve a flag as approved or dismissed.")
@@ -633,7 +648,7 @@ def approve_match(match: Match, *, actor: Actor, reason: str) -> bool:
     when anything changed, False when there was nothing to approve.
     """
     _saved(match)
-    if not is_moderator(actor):
+    if not moderates(actor, match):
         raise MatchActionDenied
     if not reason.strip():
         raise ValueError("Give a reason for the approval.")
