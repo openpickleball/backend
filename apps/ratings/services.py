@@ -28,6 +28,8 @@ from typing import Any
 
 from django.conf import settings
 from django.db import connection, models, transaction
+from django.db.models import Max
+from django.utils import timezone
 
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
@@ -43,15 +45,19 @@ from apps.ratings.engine_adapter import (
     LiveUpdate,
     RatingSummary,
     ReplayProvenance,
+    ReplayRun,
+    counted_engine_matches,
     engine_version,
     live_config,
     record_live,
+    run_replay,
 )
 from apps.ratings.models import (
     EngineSnapshot,
     RatingChangeKind,
     RatingHistory,
     RatingReplay,
+    RatingReplayRequest,
     RatingState,
 )
 
@@ -410,12 +416,15 @@ def _snapshot_row(labels: LiveConfig) -> EngineSnapshot:
     return locked
 
 
-def _save_engine_snapshot(row: EngineSnapshot, update: LiveUpdate) -> None:
-    """Store ``update``'s snapshot on the locked ``row``: its only writer."""
-    row.snapshot = update.snapshot
-    row.config_fingerprint = update.config_fingerprint
-    row.config_version = update.config_version
-    row.params_version = update.params_version
+def _save_engine_snapshot(row: EngineSnapshot, source: LiveUpdate | ReplayRun) -> None:
+    """Store ``source``'s snapshot and config labels on the locked ``row``.
+
+    The one writer of a snapshot, for the live update and the replay.
+    """
+    row.snapshot = source.snapshot
+    row.config_fingerprint = source.config_fingerprint
+    row.config_version = source.config_version
+    row.params_version = source.params_version
     row.engine_version = engine_version()
     row.full_clean()
     row.save()
@@ -613,3 +622,122 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
                 type(exc).__name__,
             )
             raise
+
+
+# Full replays (#47).
+
+
+class ReplayOutcome(StrEnum):
+    """What ``replay_ratings()`` did."""
+
+    REPLAYED = "replayed"
+    NOTHING_REQUESTED = "nothing_requested"
+
+
+def replay_as_of() -> date:
+    """The date a replay runs as of.
+
+    Today's date in UTC, or the latest ``played_on`` among the matches
+    that count when that is later: the engine skips a match dated after
+    ``as_of``, and ``validate_match`` allows the latest local date
+    anywhere on Earth (up to UTC+14), so no counted match is left out.
+    """
+    today = timezone.now().date()
+    latest = Match.objects.counted().aggregate(latest=Max("played_on"))["latest"]
+    return today if latest is None or latest <= today else latest
+
+
+def _apply_replay(run: ReplayRun, replay: RatingReplay) -> None:
+    """Store every replayed rating and remove every rating the replay dropped.
+
+    Locks every Player the replay rated or who has a stored rating, in one
+    query ordered by row id, then goes through them in that order and
+    their formats in sorted order. Runs inside ``replay_ratings()``'s
+    transaction.
+    """
+    codes = {summary.player_id for summary in run.summaries}
+    players = list(
+        Player.objects.select_for_update(no_key=True)
+        .filter(
+            models.Q(public_code__in=codes)
+            | models.Q(pk__in=RatingState.objects.values("player_id"))
+        )
+        .order_by("pk")
+    )
+    if codes - {str(player.public_code) for player in players}:
+        raise RatingApplyError("A replayed player has no player record.")
+    summaries: dict[str, dict[str, RatingSummary]] = {}
+    for summary in run.summaries:
+        summaries.setdefault(summary.player_id, {})[summary.rating_format] = summary
+    for player in players:
+        replayed = summaries.get(str(player.public_code), {})
+        stored = {
+            state.rating_format: state
+            for state in RatingState.objects.filter(player=player)
+        }
+        for rating_format in sorted({*replayed, *stored}):
+            if rating_format in replayed:
+                apply_rating(
+                    player=player,
+                    summary=replayed[rating_format],
+                    kind=RatingChangeKind.REPLAY,
+                    replay=replay,
+                )
+            else:
+                _remove_rating(
+                    player=player, state=stored[rating_format], replay=replay
+                )
+
+
+def replay_ratings(*, as_of: date | None = None) -> ReplayOutcome:
+    """Recalculate every rating with a full replay of the counted ledger.
+
+    In one transaction: lock the engine snapshot row for the loaded
+    config first (the live update takes it first too, so the two
+    serialize), take the pending replay requests, replay every match in
+    ``Match.objects.counted()`` as of ``as_of`` (default
+    ``replay_as_of()``), store the replay's provenance (hard rule 4),
+    apply each replayed rating through ``apply_rating()`` and remove each
+    stored rating the replay no longer produces, save the replayed
+    engine's snapshot on the row, and delete exactly the requests it took.
+    The requests are read after the lock and before the ledger, so every
+    change whose request was taken is in the ledger read. A request
+    stored while this runs stays, with its own task.
+
+    With no request pending it writes nothing (``nothing_requested``),
+    so quick successive changes and a redelivered task share one replay.
+    Any error is logged by class only (never its text), then propagates:
+    everything rolls back and the requests stay pending.
+    """
+    with transaction.atomic():
+        labels = live_config()
+        row = _snapshot_row(labels)
+        requests = list(RatingReplayRequest.objects.order_by("pk"))
+        if not requests:
+            # Undo the empty snapshot row _snapshot_row may have created.
+            transaction.set_rollback(True)
+            return ReplayOutcome.NOTHING_REQUESTED
+        try:
+            replay_date = replay_as_of() if as_of is None else as_of
+            run = run_replay(counted_engine_matches(), replay_date)
+            replay = record_replay(run.provenance)
+            _apply_replay(run, replay)
+            _save_engine_snapshot(row, run)
+            RatingReplayRequest.objects.filter(
+                pk__in=[request.pk for request in requests]
+            ).delete()
+        # Any error: log the class only (the text can quote values), then
+        # let it propagate; the transaction rolls back.
+        except Exception as exc:
+            logger.error("Replay failed (%s).", type(exc).__name__)
+            raise
+        logger.info(
+            "Replay as of %s for %s requests from %s: %s matches considered, "
+            "%s counted.",
+            replay_date.isoformat(),
+            len(requests),
+            min(request.earliest_date for request in requests).isoformat(),
+            run.provenance.matches_considered,
+            run.provenance.matches_counted,
+        )
+    return ReplayOutcome.REPLAYED
