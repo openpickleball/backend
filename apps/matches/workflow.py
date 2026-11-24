@@ -595,19 +595,33 @@ def edit_match(
 _FLAG_RESOLUTIONS = frozenset(FlagResolution.values)
 
 
+def _moderates_with_linked(actor: Actor, match: Match) -> bool:
+    """``moderates`` for ``match`` and every match an open flag links to it.
+
+    Resolving a flag also releases the match at its other end, so a
+    moderator who played in that match's correction chain may not resolve
+    it either. The links are read from the database (``_linked``).
+    """
+    if not moderates(actor, match):
+        return False
+    return all(moderates(actor, other) for other in _linked(match))
+
+
 def resolve_flags(match: Match, *, actor: Actor, outcome: str, reason: str) -> int:
     """A moderator resolves every open flag that involves ``match``.
 
     That is each open flag with ``match`` as its ``match`` or its
     ``duplicate_of``. ``outcome`` is ``approved`` or ``dismissed`` and
-    ``reason`` is required (``ValueError``, fixed text); anyone but a
-    moderator gets ``MatchActionDenied`` first. No Match changes. Records
+    ``reason`` is required (``ValueError``, fixed text). Anyone who does
+    not moderate ``match`` and every match an open flag links to it
+    (``_moderates_with_linked``) gets ``MatchActionDenied`` first. No
+    Match changes. Records
     one ``match.flag_resolve`` Audit Event per flag, with the reason, and
     sends ``release`` for each match that counts again. Returns how many
     flags it resolved: 0, with no event or signal, when none were open.
     """
     _saved(match)
-    if not moderates(actor, match):
+    if not _moderates_with_linked(actor, match):
         raise MatchActionDenied
     if outcome not in _FLAG_RESOLUTIONS:
         raise ValueError("Resolve a flag as approved or dismissed.")
@@ -646,8 +660,9 @@ def resolve_flags(match: Match, *, actor: Actor, outcome: str, reason: str) -> i
 def approve_match(match: Match, *, actor: Actor, reason: str) -> bool:
     """A moderator approves ``match``: its result stands.
 
-    Anyone but a moderator gets ``MatchActionDenied`` first, and a blank
-    ``reason`` raises ``ValueError``. Under the match's lineup and row
+    Anyone who does not moderate ``match`` and every match an open flag
+    links to it (``_moderates_with_linked``) gets ``MatchActionDenied``
+    first, and a blank ``reason`` raises ``ValueError``. Under the match's lineup and row
     locks, a voided match raises ``MatchStateError``, a disputed one is
     resolved as confirmed (``resolve_dispute``), and every open flag that
     involves it is resolved as approved (``resolve_flags``), all in one
@@ -655,7 +670,7 @@ def approve_match(match: Match, *, actor: Actor, reason: str) -> bool:
     when anything changed, False when there was nothing to approve.
     """
     _saved(match)
-    if not moderates(actor, match):
+    if not _moderates_with_linked(actor, match):
         raise MatchActionDenied
     if not reason.strip():
         raise ValueError("Give a reason for the approval.")
