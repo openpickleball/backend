@@ -64,7 +64,7 @@ Every file has a header row and then one row per match. The columns come in this
 
 ## Scores
 
-- Each score is a whole number made of the digits 0 to 9, such as `11` or `9`. No plus signs, decimals, spaces inside, or other characters: these fail with `invalid_score`, as does `-0`. A minus sign before another number is read, and the row then fails with `negative_score`.
+- Each score is a whole number made of the digits 0 to 9, such as `11` or `9`, with at most 9 digits. A longer one fails with `invalid_score`. No plus signs, decimals, spaces inside, or other characters: these fail with `invalid_score`, as does `-0`. A minus sign before another number is read, and the row then fails with `negative_score`.
 - Enter games in order from game 1. Leave the cells of games not played empty. Empty cells at the end of a row may also be left out entirely.
 - Both teams' cells of a played game must be filled.
 - A game is won at the game target by 2 or more points, or past the target by exactly 2 points (for example 11-9, 11-4, or 13-11 with a target of 11).
@@ -100,7 +100,10 @@ Every player in the file must be 13 or older (ADR 0009, #114). The file has no a
 
 The parser returns one result per match row, in file order. A row that passes has its normalized values. A row that fails has its issues, each with the columns it concerns (canonical names such as `playerB1Id`), a code, and a message. One bad row never stops the rows after it.
 
-A row's issues are every cell issue plus every match rule issue that does not only follow from a bad cell. For example, when game 3 has a bad score, the report shows that score and any issue with games 1 and 2, but not whether the games decide the match.
+A failed row reports every cell issue and the match rule issues that can still be checked. Two limits apply:
+
+- Only the games before the first bad game are checked against the match rules. Issues on later games, and whether the games decide the match, are not reported. For example, games `abc`-5 then 11-11 report only game 1's `invalid_score`, and the tie in game 2 shows up only after game 1 is fixed.
+- When `matchType` is bad, the team size check does not run. For example, `matchType` `X` with one player on Team A reports only `invalid_choice`.
 
 Each result names its row by its CSV record number. Records count from the start of the file, blank ones included, so when the header is the first record it is row 1, and the row numbers match a spreadsheet's for an ordinary file. A quoted name or event that spans more than one line is one record, so the rows after it are numbered one less per extra line.
 

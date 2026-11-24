@@ -3,9 +3,12 @@
 ``parse_results_csv`` reads a CSV file in the 22 column results layout
 that ``docs/csv-format.md`` describes, the layout a standard external
 rating system's export uses. Each data row becomes a ``CsvMatch`` (the
-row passed) or a ``CsvRowError`` (the row's issues: every cell issue,
-and every ``validate_match`` issue that does not only follow from a bad
-cell). The upload (#71) looks up each ``CsvPlayer.code``, compares names
+row passed) or a ``CsvRowError`` (the row's issues). A failed row
+reports every cell issue and the ``validate_match`` issues that remain
+checkable. Only the games before the first bad game reach
+``validate_match``, so issues on later games, and whether the games
+decide the match, are not reported. When ``matchType`` is bad, the team
+size check does not run. The upload (#71) looks up each ``CsvPlayer.code``, compares names
 with display names, and records each ``CsvMatch`` with ``record_match()``
 in its own transaction. ``record_match()`` can still refuse a parsed row
 (model limits, permission, duplicates).
@@ -220,7 +223,8 @@ def _check_header(record: list[str]) -> None:
     if len(cells) != len(COLUMNS):
         raise CsvFileError(
             "bad_header",
-            f"The first row must be the header, with {len(COLUMNS)} columns.",
+            f"The first row that is not blank must be the header, with "
+            f"{len(COLUMNS)} columns.",
         )
     for index, (cell, label) in enumerate(zip(cells, COLUMNS, strict=True)):
         pattern = _ID_HEADERS.get(index)
