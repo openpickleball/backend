@@ -106,13 +106,34 @@ class FixedWindowThrottle(BaseThrottle):
         if bucket is None:
             return True
         now = self.timer()
-        for name, limit, period in self.limits():
+        windows = self.limits()
+        for index, (name, limit, period) in enumerate(windows):
             window = int(now // period)
-            key = f"throttle:{self.scope}:{name}:{bucket}:{window}"
+            key = self._key(name, bucket, window)
             if self._count(key, period) > limit:
-                self._refused.retry_after = max(1.0, (window + 1) * period - now)
+                end = float((window + 1) * period)
+                end = max(end, self._full_window_end(windows[index + 1 :], bucket, now))
+                self._refused.retry_after = max(1.0, end - now)
                 return False
         return True
+
+    def _key(self, name: str, bucket: str, window: int) -> str:
+        return f"throttle:{self.scope}:{name}:{bucket}:{window}"
+
+    def _full_window_end(self, windows: Windows, bucket: str, now: float) -> float:
+        """The latest end of the windows already full, or 0 when none is.
+
+        A later window is only read, never counted, so a request an earlier
+        window refuses does not use it up. A request stays refused until
+        every full window has ended, so ``Retry-After`` waits for them too.
+        """
+        latest = 0.0
+        for name, limit, period in windows:
+            window = int(now // period)
+            count = self.cache.get(self._key(name, bucket, window), 0)
+            if isinstance(count, int) and count >= limit:
+                latest = max(latest, float((window + 1) * period))
+        return latest
 
     def wait(self) -> float | None:
         retry_after: float | None = getattr(self._refused, "retry_after", None)
