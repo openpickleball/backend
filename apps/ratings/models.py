@@ -21,8 +21,10 @@ Write these rows only through ``apps.ratings.services``
 The ORM guards them:
 ``RatingHistory`` and ``RatingReplay`` rows are inserted once and never
 saved again or deleted (``RatingHistoryImmutable``), and a ``RatingState``
-is never deleted, bulk inserted, or bulk changed
-(``RatingStateWriteRefused``). ``QuerySet.update``, ``delete``,
+is never bulk inserted or bulk changed, and deleted only by the replay's
+private removal path (``services._remove_rating()``): its ``delete()``
+and every queryset delete refuse (``RatingStateWriteRefused``).
+``QuerySet.update``, ``delete``,
 ``bulk_update``, and an upsert raise on all three, through the default and
 the base manager. ``bulk_create`` still inserts history and replay rows,
 skipping the service's checks and Audit Event. Raw SQL and raw saves

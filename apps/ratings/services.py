@@ -590,17 +590,21 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
     together, so the task can run again.
 
     Writes nothing for a Match that does not exist (``missing``), that no
-    longer counts (``not_counted``), that the snapshot already holds
-    (``unchanged``, a redelivery), or that the engine does not count
-    (``rejected``; the snapshot is not saved, so its id stays free). A
-    Match earlier than a player's stored last match in a format it
-    updates, or one the engine finds late, writes nothing and goes to
-    ``schedule_replay()`` (``late``). A participant whose stored rating in
-    a format the Match updates names another parameter fingerprint, or
-    exists while the snapshot is empty, would restart from an empty
-    engine, and a stored snapshot whose config fingerprint or version
-    differs from the loaded config's cannot be loaded: both write nothing
-    and go to ``schedule_replay()`` (``replay_needed``). So does a
+    longer counts (``not_counted``), that the stored snapshot already holds
+    (``unchanged``: a redelivery, or a Match a replay counted; checked
+    before the checks below), or that the engine does not count
+    (``rejected``; the snapshot is not saved, so its id stays free).
+
+    The cases below change no rating or snapshot; each stores a replay
+    request through ``schedule_replay()``. A Match rated live that the
+    snapshot no longer holds (a replay dropped it, and it counts again)
+    returns ``replay_needed``. A Match earlier than a player's stored last
+    match in a format it updates, or one the engine finds late, returns
+    ``late``. A participant whose stored rating in a format the Match
+    updates names another parameter fingerprint, or exists while the
+    snapshot is empty, would restart from an empty engine, and a stored
+    snapshot whose config fingerprint or version differs from the loaded
+    config's cannot be loaded: both return ``replay_needed``. So does a
     correction of a Match that was rated live (any Match in its
     ``corrects`` chain has a live update history row): every player in the
     chain goes to the replay, from the chain's earliest date. Any other

@@ -361,7 +361,8 @@ INSTALLED_APPS = [
     "apps.partners",
     "apps.matches",
     # Ratings: the engine adapter (apps/ratings/engine_adapter.py), rating
-    # state, history, replays, the engine snapshot, and the live update task.
+    # state, history, replays, replay requests, the engine snapshot, the
+    # live update task, and the replay task.
     "apps.ratings",
     # The email outbox: messages wait here for the email queue (ADR 0016).
     "apps.emails",
