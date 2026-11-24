@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-14
+- See also: [ADR 0031](0031-rating-lookup-and-history.md) (#53's rating lookups need sign-in)
 
 ## Context
 

@@ -693,7 +693,7 @@ RATING_REPLAY_DELAY_SECONDS = 60
 # it when rating-spec tags v1.0.0, then run the recompute (#48).
 OPEN_RATING_SPEC_VERSION = "1.0.0rc1"
 
-# Where a player's public profile lives (#53): the public rating lookup's
+# Where a player's public profile lives (#53): the rating lookup's
 # profile_url is this followed by the player's OPEN Code. An absolute URL
 # whose path ends in /, https when DEBUG is off.
 OPEN_PUBLIC_PROFILE_URL = _base_url(

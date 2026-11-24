@@ -1,6 +1,7 @@
 # 0030. API throttling per Account and per client IP
 
 - Status: Proposed
+- Amended by: [ADR 0031](0031-rating-lookup-and-history.md) (the rating lookup of #53 needs sign-in and the per-Account throttle; no public operation is mounted yet)
 - Date: 2026-11-24
 
 ## Context

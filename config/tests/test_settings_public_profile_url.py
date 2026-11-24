@@ -1,6 +1,6 @@
 """OPEN_PUBLIC_PROFILE_URL: where a player's public profile lives (issue #53).
 
-The public rating lookup returns ``profile_url``, this setting followed by
+The rating lookup returns ``profile_url``, this setting followed by
 the player's OPEN Code. Unset or empty, it is
 ``https://openpb.org/players/``. A value must be an absolute http or https
 URL with a host and a path that ends in ``/``, with no query, fragment, or

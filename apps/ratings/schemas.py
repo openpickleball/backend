@@ -3,7 +3,7 @@
 A rating is always returned with its reliability: the OPEN standard
 requires any app that shows an OPEN rating to show its reliability next
 to it. Every rating is a demonstration rating while the engine is a
-demonstration package, so every entry, and the public lookup's answer,
+demonstration package, so every entry, and the lookup's answer,
 carries ``demonstration: true``. Values are returned as stored, never
 rounded (hard rule 2). No row id, match code, or replay id is returned.
 """
