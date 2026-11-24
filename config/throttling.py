@@ -31,7 +31,8 @@ to twice a limit across a window edge. Accepted.
   cannot rotate addresses within its /64 to escape the limit. Whether
   App Platform replaces a ``do-connecting-ip`` header the client sent is
   unverified until the deploy-time check on #61 passes; until then no
-  public operation goes live (#53).
+  deployment may expose the public rating lookup (#53) to the public
+  (ADR 0030, ADR 0031).
 
 Rates are read from settings on every request, so ``override_settings``
 and a changed environment take effect at once.

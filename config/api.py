@@ -5,9 +5,11 @@
 router (`config/health.py`) is mounted at /api/v1/health/, the signed-in
 Account at /api/v1/accounts/, match submission, reading one match,
 confirmation, and dispute at /api/v1/matches/, a player's match history and player
-search (/api/v1/players/search), a player's profile, and the public
-rating lookup (/api/v1/players/{code}/ratings) at /api/v1/players/, and at /api/v1/me/ the matches awaiting the signed-in
-player's confirmation and the signed-in Account's own Player.
+search (/api/v1/players/search), a player's profile, the public rating
+lookup (/api/v1/players/{code}/ratings), and a player's rating history
+(/api/v1/players/{code}/rating-history) at /api/v1/players/, and at
+/api/v1/me/ the matches awaiting the signed-in player's confirmation and
+the signed-in Account's own Player.
 
 Adding an app's endpoints (usually one router per app):
 
@@ -30,7 +32,9 @@ An app may add a second router when some of its operations belong under a
 different prefix. `apps.matches.api.me_router` does this: it holds the
 signed-in player's own match lists and is mounted at `me/`.
 `apps.players.api.me_router`, the Account's own Player, is mounted at
-`me/` too: ninja accepts several routers under one prefix.
+`me/` too: ninja accepts several routers under one prefix. `players/` is
+shared the same way, by the players router and the ratings router
+(`apps.ratings.api.router`).
 
 Every operation needs an explicit `operation_id`: it names the method in the
 generated client, so it must not change when a view is renamed. Building the
