@@ -215,7 +215,11 @@ def _document_errors(schema: OpenAPISchema, throttled: set[str]) -> None:
         "description": "Too many requests. Retry after the seconds in Retry-After.",
         "headers": {
             "Retry-After": {
-                "description": "Seconds until the limit that refused the request resets.",
+                "description": (
+                    "Seconds until the request can be allowed again: when the "
+                    "refusing limit resets, or a later limit that is already "
+                    "used up."
+                ),
                 "schema": {"type": "integer", "minimum": 1},
             }
         },

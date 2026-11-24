@@ -38,9 +38,10 @@ and a changed environment take effect at once.
 
 ninja builds one throttle list per operation and shares it across requests
 and threads, so nothing about a request is stored on ``self``. What
-``wait()`` needs (when the refusing window ends) is kept in a
-``threading.local``: ninja calls ``wait()``, with no request, right after
-``allow_request`` returns False, on the same thread. ninja asks every
+``wait()`` needs (the latest end of the refusing window and of any later
+window already full) is kept in a ``threading.local``: ninja calls
+``wait()``, with no request, right after ``allow_request`` returns False,
+on the same thread. ninja asks every
 throttle on an operation, so an operation has exactly one throttle.
 """
 
@@ -96,7 +97,7 @@ class FixedWindowThrottle(BaseThrottle):
         request (count 0) rather than fail it. Django's Redis cache runs
         ``incr`` as EXISTS then INCR, so an eviction between those two
         creates the counter again at 1 with no expiry. A count of 1 sets
-        the expiry again with ``touch``, so no counter outlives its window.
+        the expiry again with ``touch``, so every counter has an expiry.
         """
         timeout = period + THROTTLE_TIMEOUT_MARGIN
         for _ in range(2):
