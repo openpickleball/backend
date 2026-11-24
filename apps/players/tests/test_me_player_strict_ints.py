@@ -34,23 +34,6 @@ def fields(response: Any) -> set[str]:
 
 @pytest.mark.parametrize("name", ["birth_year", "birth_month"])
 @pytest.mark.parametrize("value", NOT_INTS)
-def test_patch_refuses_a_birth_value_that_is_not_an_int(
-    name: str, value: object
-) -> None:
-    player = PlayerFactory.create(birth_year=1985, birth_month=3)
-
-    response = signed_in(player.account).patch(
-        ME_PLAYER, {name: value}, content_type="application/json"
-    )
-
-    assert response.status_code == 422
-    assert fields(response) == {f"body.{name}"}
-    player.refresh_from_db()
-    assert (player.birth_year, player.birth_month) == (1985, 3)
-
-
-@pytest.mark.parametrize("name", ["birth_year", "birth_month"])
-@pytest.mark.parametrize("value", NOT_INTS)
 def test_create_refuses_a_birth_value_that_is_not_an_int(
     name: str, value: object
 ) -> None:

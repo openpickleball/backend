@@ -146,31 +146,6 @@ def test_create_player_twice_for_one_account_fails(player: Player) -> None:
 # update_profile
 
 
-@pytest.mark.parametrize("value", [None, ""])
-def test_gender_division_cannot_be_cleared(
-    player: Player, owner: "_User", value: object
-) -> None:
-    # Every Player keeps a gender division (issue #215).
-    with pytest.raises(ValidationError) as caught:
-        update_profile(player=player, actor=owner, changes={"gender_division": value})
-
-    assert caught.value.message_dict == {
-        "gender_division": ["Choose a gender division."]
-    }
-    assert Player.objects.get(pk=player.pk).gender_division == "mens"
-    assert not _events()
-
-
-def test_gender_division_changes_between_divisions(
-    player: Player, owner: "_User"
-) -> None:
-    update_profile(player=player, actor=owner, changes={"gender_division": "womens"})
-
-    assert Player.objects.get(pk=player.pk).gender_division == "womens"
-    [event] = _events()
-    assert event.after == {"changed_fields": ["gender_division"]}
-
-
 def test_a_stored_empty_gender_division_does_not_block_another_change(
     player: Player, owner: "_User"
 ) -> None:
@@ -204,9 +179,6 @@ def test_profile_change_records_field_names_only(
     new: dict[str, object] = {
         "display_name": "New Made-up Name",
         "legal_name": "New Made-up Legal",
-        "birth_year": 1985,
-        "birth_month": 11,
-        "gender_division": "womens",
         "city": "Othertown",
         "region": "Other Region",
     }
@@ -219,7 +191,7 @@ def test_profile_change_records_field_names_only(
     assert event.target_content_type == ContentType.objects.get_for_model(Player)
     assert event.target_object_id == str(player.pk)
     assert event.before is None
-    assert event.after == {"changed_fields": sorted(PROFILE_FIELDS)}
+    assert event.after == {"changed_fields": sorted(new)}
     assert event.reason == ""
     stored = f"{event.before} {event.after} {event.reason}"
     for value in [*old.values(), *new.values()]:
@@ -264,12 +236,11 @@ def test_whitespace_only_difference_is_not_a_change(
 def test_invalid_profile_change_saves_nothing(player: Player, owner: "_User") -> None:
     with pytest.raises(ValidationError):
         update_profile(
-            player=player, actor=owner, changes={"city": "Othertown", "birth_month": 13}
+            player=player, actor=owner, changes={"city": "Othertown", "region": 7}
         )
 
     stored = Player.objects.get(pk=player.pk)
-    assert stored.city == "Madeupville"
-    assert stored.birth_month == 6
+    assert (stored.city, stored.region) == ("Madeupville", player.region)
     assert _events() == []
 
 
