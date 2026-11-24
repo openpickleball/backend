@@ -21,10 +21,10 @@ allauth's URLconf (`config/urls.py`).
   Account (or to none, for a taken address, so both answers stay alike),
   for the Player create endpoint (#124).
 - Sign-up age check (issue #223, ADR 0020): the birth year and month
-  alone (`SignupBirthForm`), before the app asks for anything else, with
-  the age screen's rules, order, rate limit, and refusal. A pass keeps
+  alone (`SignupBirthForm`), before the app asks for a name or a location,
+  with the age screen's rules, order, rate limit, and refusal. A pass keeps
   nothing in the session; under 13 flags it as a refused sign-up does.
-  It is OPEN's own view, at a path under allauth's sign-up.
+  It is OPEN's own view, at a new path under allauth's sign-up.
 - allauth's OpenAPI document: served with the age check added
   (`apps/accounts/openapi.py`).
 - Email verification: an address that is another Account's login cannot
@@ -77,6 +77,8 @@ from apps.players.signup import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from django.contrib.auth.base_user import AbstractBaseUser
     from django.http import HttpRequest, HttpResponseBase
 
@@ -227,7 +229,7 @@ class SignupView(BaseSignupView):
 
     def _screen_age(self, request: "HttpRequest") -> "HttpResponseBase | None":
         """A response that ends the sign-up, or None to go on."""
-        return _screen_birth(request, SignupAgeForm, self._parse_json(request))
+        return _screen_birth(request, SignupAgeForm, self._parse_json)
 
 
 def _signup_not_allowed(request: "HttpRequest") -> "HttpResponseBase | None":
@@ -244,18 +246,20 @@ def _signup_not_allowed(request: "HttpRequest") -> "HttpResponseBase | None":
 def _screen_birth(
     request: "HttpRequest",
     form_class: type[SignupBirthForm],
-    data: dict[str, Any] | None,
+    parse_json: "Callable[[HttpRequest], dict[str, Any] | None]",
 ) -> "HttpResponseBase | None":
     """The age screen: a response that ends the request, or None to go on.
 
     A flagged session gets the refusal without its body being read, so
-    the answer depends on nothing sent. Otherwise a missing or malformed
-    field gets allauth's 400 with only the form's errors, and under 13
-    flags the session and gets the refusal.
+    the answer depends on nothing sent: ``parse_json`` (allauth's, which
+    answers a body that is not a JSON object with a bare 400) runs only
+    after the flag check. Otherwise a missing or malformed field gets
+    allauth's 400 with only the form's errors, and under 13 flags the
+    session and gets the refusal.
     """
     if is_signup_refused(request.session):
         return _refusal(request)
-    form = form_class(data=data or {})
+    form = form_class(data=parse_json(request) or {})
     if not form.is_valid():
         invalid: HttpResponseBase = ErrorResponse(request, input=form)
         return invalid
@@ -288,7 +292,7 @@ class SignupAgeCheckView(APIView):
         self, request: "HttpRequest", *args: object, **kwargs: object
     ) -> "HttpResponseBase":
         answer = _signup_not_allowed(request) or _screen_birth(
-            request, SignupBirthForm, self._parse_json(request)
+            request, SignupBirthForm, self._parse_json
         )
         if answer is not None:
             return answer
