@@ -3,10 +3,16 @@
 ``parse_results_csv`` reads a CSV file in the 22 column results layout
 that ``docs/csv-format.md`` describes, the layout a standard external
 rating system's export uses. Each data row becomes a ``CsvMatch`` (the
-row passed) or a ``CsvRowError`` (every issue found in the row). The
-upload (#71) looks up each ``CsvPlayer.code``, compares names with
-display names, and records each ``CsvMatch`` with ``record_match()`` in
-its own transaction.
+row passed) or a ``CsvRowError`` (the row's issues: every cell issue,
+and every ``validate_match`` issue that does not only follow from a bad
+cell). The upload (#71) looks up each ``CsvPlayer.code``, compares names
+with display names, and records each ``CsvMatch`` with ``record_match()``
+in its own transaction. ``record_match()`` can still refuse a parsed row
+(model limits, permission, duplicates).
+
+Row numbers are CSV record numbers, counting from the file's first
+record: a quoted cell that spans lines is one record, and blank records
+count. When the header is the first record, it is row 1.
 
 The parser never reads the database. It checks the cells it reads (the
 choices, the date, the OPEN player IDs, which it normalizes with
@@ -89,15 +95,16 @@ EVENT_LABEL_MAX: Final = cast(int, Match._meta.get_field("event_label").max_leng
 # underscores, then "Id".
 _ID_HEADERS: Final[dict[int, re.Pattern[str]]] = {
     COLUMNS.index(_id_label(team, slot)): re.compile(
-        rf"player{team}{slot}[A-Za-z0-9_]*Id", re.IGNORECASE
+        rf"player{team}{slot}[A-Za-z0-9_]*Id", re.IGNORECASE | re.ASCII
     )
     for team in TEAMS
     for slot in SLOTS
 }
 
 # ASCII digits only: int() takes other scripts' digits, signs, and
-# underscores.
-_SCORE: Final = re.compile(r"-?[0-9]{1,9}")
+# underscores. A minus sign only before a number other than zero, so -0
+# is not read as 0.
+_SCORE: Final = re.compile(r"[0-9]{1,9}|-(?=[0-9]*[1-9])[0-9]{1,9}")
 _DATE: Final = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 # validate_match's fields and the columns their issues point to.
@@ -155,7 +162,7 @@ class CsvPlayer:
 class CsvMatch:
     """A row that passed every check, ready for #71 to look up and record.
 
-    ``row`` is the record's position in the file (the header is row 1).
+    ``row`` is the CSV record number (see the module docstring).
     ``sequence`` is the row's position among the data rows, the order of
     play stored on the Match.
     """
@@ -175,7 +182,10 @@ class CsvMatch:
 
 @dataclass(frozen=True)
 class CsvRowError:
-    """A row that failed. ``issues`` is never empty."""
+    """A row that failed. ``issues`` is never empty.
+
+    ``row`` and ``sequence`` are as on ``CsvMatch``.
+    """
 
     row: int
     sequence: int
@@ -202,6 +212,8 @@ def _is_blank(record: Sequence[str]) -> bool:
 
 
 def _check_header(record: list[str]) -> None:
+    # Every header cell is ASCII: changing the case of some other letters
+    # (a long s, a Kelvin sign, a dotless i) gives an ASCII letter.
     cells = [cell.strip() for cell in record]
     while cells and not cells[-1]:
         cells.pop()
@@ -212,7 +224,9 @@ def _check_header(record: list[str]) -> None:
         )
     for index, (cell, label) in enumerate(zip(cells, COLUMNS, strict=True)):
         pattern = _ID_HEADERS.get(index)
-        if pattern is not None:
+        if not cell.isascii():
+            ok = False
+        elif pattern is not None:
             ok = pattern.fullmatch(cell) is not None
         else:
             ok = cell.casefold() == label.casefold()
@@ -238,16 +252,23 @@ def _records(data: bytes) -> list[list[str]]:
 
 @dataclass
 class _Row:
-    """A data row while it is checked."""
+    """A data row while it is checked.
+
+    ``first_bad_game`` is the 0-based index of the first game with a cell
+    issue, or None.
+    """
 
     issues: list[CsvIssue]
-    games_failed: bool = False
+    first_bad_game: int | None = None
 
 
 def _parse_choice[T](
     value: str, choices: dict[str, T], column: str, message: str, row: _Row
 ) -> T | None:
-    choice = choices.get(value.strip().upper())
+    text = value.strip()
+    # Refuse non-ASCII before changing case, as normalize() does: some
+    # letters (a long s, a dotless i) uppercase to ASCII.
+    choice = choices.get(text.upper()) if text.isascii() else None
     if choice is None:
         row.issues.append(CsvIssue((column,), "invalid_choice", message))
     return choice
@@ -341,11 +362,26 @@ def _parse_games(cells: dict[str, str], row: _Row) -> list[tuple[int, int]]:
             )
         if issue is not None:
             row.issues.append(issue)
-            row.games_failed = True
+            if row.first_bad_game is None:
+                row.first_bad_game = index
             continue
-        if not row.games_failed:
+        if row.first_bad_game is None:
             games.append((int(values[0]), int(values[1])))
     return games
+
+
+def _after_bad_game(field: str, first_bad_game: int) -> bool:
+    """Whether a validate_match issue only repeats a game cell's issue.
+
+    Only the games before the first bad game reach validate_match, so its
+    issues on the whole game list, on the best of, and on any later game
+    are left out. Its issues on each earlier game are kept.
+    """
+    if field in ("games", "best_of"):
+        return True
+    if field.startswith("games."):
+        return int(field.removeprefix("games.")) >= first_bad_game
+    return False
 
 
 def _match_issue_columns(
@@ -425,8 +461,8 @@ def _parse_row(
         for issue in error.issues:
             if issue.field in skipped:
                 continue
-            if row.games_failed and (
-                issue.field in ("games", "best_of") or issue.field.startswith("games.")
+            if row.first_bad_game is not None and _after_bad_game(
+                issue.field, row.first_bad_game
             ):
                 continue
             match_issues.append(
