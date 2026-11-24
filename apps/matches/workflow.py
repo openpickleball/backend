@@ -30,6 +30,12 @@ States and transitions:
 - ``approve_match``: a moderator says the result stands: a disputed match
   is resolved as confirmed and its open flags as approved, in one
   transaction, with the status read under the match's locks.
+- ``void_submission_batch``: a moderator voids every match of one
+  Submission Batch (an upload), found by the batch link, each through
+  ``void_match`` in its own transaction, with one ``match.bulk_void``
+  Audit Event for the run.
+- ``void_submitter_matches``: the same for every match one submitter (an
+  Account or a Partner Application) recorded on or after a date.
 
 "Moderator" here means ``apps.matches.permissions.moderates``: a
 moderator whose own Player played in no match of the match's correction
@@ -43,8 +49,13 @@ Each service checks permission first and raises ``MatchActionDenied``
 the match row and checks its state, raising ``MatchStateError`` (fixed
 text) for a change the state does not allow. Every transition writes one
 Audit Event in its transaction; a repeated action that changes nothing
-writes none. Signals (``apps.matches.signals``) are sent inside the
-transaction, after the rows and the Audit Event.
+writes none. The exception is the bulk services (``void_submission_batch``,
+``void_submitter_matches``), which record one ``match.bulk_void`` every
+run, even a rerun that voids nothing. They void each match in its own
+transaction, so never call them inside an outer ``transaction.atomic()``:
+that would hold every match's lineup lock until it ends. Signals
+(``apps.matches.signals``) are sent inside the transaction, after the rows
+and the Audit Event.
 
 Lock order: every service takes advisory locks before the row lock, as
 ``record_match`` does, so no two paths wait on each other in opposite
@@ -57,13 +68,17 @@ Expiry only tries the lineup lock and skips a match it cannot get.
 
 import logging
 from collections.abc import Iterable, Sequence
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
-from django.db import transaction
+from django.contrib.auth import get_user_model
+from django.db import models, transaction
 from django.db.models import Exists, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
+from oauth2_provider.models import get_application_model
 
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
@@ -76,6 +91,7 @@ from apps.matches.models import (
     MatchFlag,
     MatchParticipant,
     MatchStatus,
+    SubmissionBatch,
     Team,
 )
 from apps.matches.permissions import (
@@ -85,6 +101,7 @@ from apps.matches.permissions import (
     can_change_match,
     can_confirm_as_organizer,
     can_create_match,
+    is_moderator,
     moderates,
     participant_player,
 )
@@ -103,6 +120,11 @@ from apps.matches.services import (
 )
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
 from apps.players.models import Player
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import _User
+
+    from apps.partners.models import PartnerApplication
 
 logger = logging.getLogger(__name__)
 
@@ -755,3 +777,189 @@ def _expire_one(pk: int, cutoff: datetime) -> bool:
             return False
         _void(locked, action=AuditAction.MATCH_EXPIRE, actor=None, reason="")
         return True
+
+
+_BULK_REASON = "Give a reason for the bulk void."
+_UNSAVED_BATCH = "Save the submission batch before voiding it."
+_UNKNOWN_SUBMITTER = "The submitter must be a saved account or partner application."
+
+
+@dataclass(frozen=True)
+class BulkVoidResult:
+    """What a bulk void did, as counts of matches.
+
+    ``voided``: voided by this run. ``skipped``: already voided, including
+    one voided by someone else while the run went on. ``refused``: the
+    actor may not void it as moderator (``void_match`` raised
+    ``MatchActionDenied`` or ``ReasonRefused``), which happens when the
+    moderator's own Player is in the match's correction chain. It also
+    counts every remaining match when the actor stops being a moderator
+    partway through a run (``void_match`` checks again for each match).
+    """
+
+    voided: int
+    skipped: int
+    refused: int
+
+
+def submission_batch_matches(batch: SubmissionBatch) -> QuerySet[Match]:
+    """Every match of ``batch``, by the batch link, in row order. Read only."""
+    return Match.objects.filter(submission_batch_id=batch.pk).order_by("pk")
+
+
+def submitter_matches(
+    submitter: "_User | PartnerApplication", recorded_since: date
+) -> QuerySet[Match]:
+    """Every match ``submitter`` recorded on or after ``recorded_since``.
+
+    ``submitter`` is an Account or a Partner Application. The date is
+    the recording time (``created_at``) in UTC, not ``played_on``, which
+    the submitter controls. In row order. Read only. Anything else raises
+    ``ValueError`` (fixed text).
+    """
+    start = datetime.combine(recorded_since, time.min, tzinfo=UTC)
+    matches = Match.objects.filter(created_at__gte=start).order_by("pk")
+    if isinstance(submitter, get_user_model()):
+        return matches.filter(submitted_by_user_id=submitter.pk)
+    if isinstance(submitter, get_application_model()):
+        return matches.filter(submitted_by_application_id=submitter.pk)
+    raise ValueError(_UNKNOWN_SUBMITTER)
+
+
+def _stored(instance: models.Model, model: type[models.Model]) -> bool:
+    """True when ``instance`` was loaded or saved and its row still exists.
+
+    An instance built in memory (``_state.adding``) is refused even with
+    an existing row's pk: the audit log refuses it as a target, so the
+    run would end with an error after voiding its matches. ``model`` is
+    the concrete model, never ``type(instance)``, which a lazy
+    ``request.user`` wrapper would hide.
+    """
+    if instance.pk is None or instance._state.adding:
+        return False
+    return model._default_manager.filter(pk=instance.pk).exists()
+
+
+def _check_bulk(actor: Actor, reason: str) -> None:
+    """Refuse anyone but a moderator first, then a blank reason."""
+    if not is_moderator(actor):
+        raise MatchActionDenied
+    if not reason.strip():
+        raise ValueError(_BULK_REASON)
+
+
+def void_submission_batch(
+    batch: SubmissionBatch, *, actor: Actor, reason: str
+) -> BulkVoidResult:
+    """A moderator voids every match of ``batch``.
+
+    Anyone but a moderator (``is_moderator``: an active Account with
+    ``matches.moderate_match``) gets ``MatchActionDenied`` before anything
+    is read or written. Then a blank ``reason``, and a batch that is
+    unsaved, built in memory, or has no stored row, raise ``ValueError``
+    (fixed text), before any match is read or voided. The matches are found by the batch link
+    (``submission_batch_matches``), never by time. See ``_bulk_void`` for
+    how each is voided and what is recorded.
+    """
+    _check_bulk(actor, reason)
+    if not _stored(batch, SubmissionBatch):
+        raise ValueError(_UNSAVED_BATCH)
+    return _bulk_void(
+        submission_batch_matches(batch),
+        actor=actor,
+        reason=reason,
+        target=batch,
+        scope="batch",
+        recorded_since=None,
+    )
+
+
+def void_submitter_matches(
+    submitter: "_User | PartnerApplication",
+    *,
+    recorded_since: date,
+    actor: Actor,
+    reason: str,
+) -> BulkVoidResult:
+    """A moderator voids every match ``submitter`` recorded since a date.
+
+    ``submitter`` is an Account or a Partner Application, and the scope
+    is ``submitter_matches``: recorded (``created_at``, UTC) on or after
+    ``recorded_since``. The same checks as ``void_submission_batch``, in
+    the same order; a submitter that is unsaved, built in memory, or has
+    no stored row, or one that is neither an Account nor a Partner
+    Application, raises ``ValueError`` before any match is read or voided.
+    """
+    _check_bulk(actor, reason)
+    account_model = get_user_model()
+    application_model = get_application_model()
+    if isinstance(submitter, account_model):
+        stored = _stored(submitter, account_model)
+    elif isinstance(submitter, application_model):
+        stored = _stored(submitter, application_model)
+    else:
+        stored = False
+    if not stored:
+        raise ValueError(_UNKNOWN_SUBMITTER)
+    return _bulk_void(
+        submitter_matches(submitter, recorded_since),
+        actor=actor,
+        reason=reason,
+        target=submitter,
+        scope="submitter",
+        recorded_since=recorded_since,
+    )
+
+
+def _bulk_void(
+    matches: QuerySet[Match],
+    *,
+    actor: Actor,
+    reason: str,
+    target: "SubmissionBatch | _User | PartnerApplication",
+    scope: str,
+    recorded_since: date | None,
+) -> BulkVoidResult:
+    """Void each match through ``void_match``, then record the run.
+
+    A match already voided in the list counts as skipped without a call.
+    Each other match is voided in its own transaction (``void_match``),
+    with its own ``match.void`` Audit Event and signals; this function
+    opens no transaction around them, so no lineup lock is held past its
+    own match. ``MatchStateError`` (voided meanwhile) counts as skipped,
+    and ``MatchActionDenied`` or ``ReasonRefused`` as refused. Any other
+    error propagates: the matches voided so far stay voided, and a rerun
+    resumes. Then one ``match.bulk_void`` Audit Event, recorded every
+    run, names the target (the batch or the submitter), the scope, the
+    date, and the three counts, with the moderator's reason.
+    """
+    voided = skipped = refused = 0
+    for match in list(matches):
+        if match.status == MatchStatus.VOIDED:
+            skipped += 1
+            continue
+        try:
+            void_match(match, actor=actor, reason=reason)
+        except MatchStateError:
+            skipped += 1
+        except (MatchActionDenied, ReasonRefused):
+            refused += 1
+        else:
+            voided += 1
+    with transaction.atomic():
+        record_event(
+            action=AuditAction.MATCH_BULK_VOID,
+            target=target,
+            after={
+                "scope": scope,
+                "recorded_since": (
+                    recorded_since.isoformat() if recorded_since is not None else None
+                ),
+                "voided": voided,
+                "skipped": skipped,
+                "refused": refused,
+            },
+            reason=reason,
+            **audit_actor(actor),
+        )
+    return BulkVoidResult(voided=voided, skipped=skipped, refused=refused)

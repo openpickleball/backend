@@ -97,6 +97,10 @@ _Avoid_: delete. The backend calls making a Correction an edit (`edit_match`, `m
 A request to add a Match through the Results API. A Submission becomes a Match in the Ledger only after it passes the submitter's permission check, validation, duplicate checks, and Confirmation.
 _Avoid_: upload (an upload is a batch of Submissions).
 
+**Submission Batch**:
+The Submissions one submitter sent together in one CSV upload or one bulk request. Each Match it created links to it, so a moderator can find the batch's Matches by that link and void them in one action. A Correction does not join its Match's batch. Backend: `matches.SubmissionBatch` and `Match.submission_batch` (ADR 0032).
+_Avoid_: upload, import (as names for the record).
+
 **Flagged Match**:
 A Match held for review because it looks like an outlier, a possible duplicate, or otherwise suspicious. A possible duplicate flag holds both Matches from counting, the flagged one and the earlier one it may repeat, until moderator review resolves the flag or one of the two is voided. A moderator resolves a flag as approved (the result stands) or dismissed; a resolved flag holds nothing and stays on record. Backend: `matches.MatchFlag`, one row per flag, so review never edits the Match.
 

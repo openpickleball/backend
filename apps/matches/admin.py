@@ -3,7 +3,7 @@
 Matches are read-only here: nothing is added, changed, or deleted through
 a form. The default list is the matches that need review: disputed ones,
 and ones an open flag links to a match that is not voided. Moderators
-(``apps.matches.permissions.is_moderator``) get four actions, each through
+(``apps.matches.permissions.is_moderator``) get six actions, each through
 ``apps.matches.workflow``:
 
 - approve: the result stands. A disputed match is resolved as confirmed,
@@ -12,12 +12,21 @@ and ones an open flag links to a match that is not voided. Moderators
 - dismiss flags: the match's open flags are resolved as dismissed. Its
   status does not change.
 - edit: opens a form for one match that calls ``edit_match``.
+- void upload batch: for one selected match, voids every match of its
+  Submission Batch (``void_submission_batch``).
+- void submitter since: for one selected match, voids every match its
+  submitter recorded on or after the day (UTC) the selected match was
+  recorded (``void_submitter_matches``).
 
-Every action needs a typed reason (``ReasonActionForm``), which goes into
-its Audit Event. Pages and messages show matches and players by OPEN Code
-only, never a name or an email.
+The two bulk actions first show a confirmation page with how many matches
+the run would void and how many are already voided, and change nothing
+until the moderator confirms. Every action needs a typed reason
+(``ReasonActionForm``), which goes into its Audit Event. Pages and
+messages show matches and players by OPEN Code only, never a name or an
+email.
 """
 
+from datetime import UTC
 from typing import Any
 
 from django.contrib import admin, messages
@@ -40,22 +49,31 @@ from apps.matches.models import (
     Match,
     MatchFlag,
     MatchStatus,
+    SubmissionBatch,
     Team,
 )
 from apps.matches.permissions import MatchActionDenied, is_moderator
 from apps.matches.services import DuplicateMatchError, MatchValidationError
 from apps.matches.workflow import (
+    BulkVoidResult,
     MatchStateError,
     ReasonRefused,
     approve_match,
     edit_match,
     resolve_dispute,
     resolve_flags,
+    submission_batch_matches,
+    submitter_matches,
     void_match,
+    void_submission_batch,
+    void_submitter_matches,
 )
 
 BLANK_REASON = "Give a reason for this action."
 SELECT_ONE = "Select exactly one match to edit."
+BULK_SELECT_ONE = "Select exactly one match to void in bulk."
+NO_BATCH = "The selected match did not come in an upload batch."
+BULK_CONFIRMATION = "admin/matches/match/bulk_void_confirmation.html"
 
 _OPEN_FLAGS = MatchFlag.objects.filter(resolved_at__isnull=True)
 
@@ -169,6 +187,7 @@ class MatchAdmin(admin.ModelAdmin[Match]):
         "event_label",
         "bracket_label",
         "sequence",
+        "submission_batch",
         "created_at",
     )
     readonly_fields = fields
@@ -178,6 +197,8 @@ class MatchAdmin(admin.ModelAdmin[Match]):
         "void_selected",
         "dismiss_flags_selected",
         "edit_selected",
+        "void_batch_selected",
+        "void_submitter_selected",
     )
     action_form = ReasonActionForm
 
@@ -273,6 +294,109 @@ class MatchAdmin(admin.ModelAdmin[Match]):
             self.message_user(request, SELECT_ONE, level=messages.WARNING)
             return None
         return HttpResponseRedirect(self._edit_url(pks[0]))
+
+    @admin.action(
+        permissions=["moderate"],
+        description="Void every match in the selected match's upload batch",
+    )
+    def void_batch_selected(
+        self, request: HttpRequest, queryset: QuerySet[Match]
+    ) -> HttpResponse | None:
+        return self._bulk(request, queryset, "batch")
+
+    @admin.action(
+        permissions=["moderate"],
+        description=(
+            "Void every match its submitter recorded on or after the selected "
+            "match's day (UTC)"
+        ),
+    )
+    def void_submitter_selected(
+        self, request: HttpRequest, queryset: QuerySet[Match]
+    ) -> HttpResponse | None:
+        return self._bulk(request, queryset, "submitter")
+
+    def _bulk(
+        self, request: HttpRequest, queryset: QuerySet[Match], scope: str
+    ) -> HttpResponse | None:
+        """Show the bulk void confirmation page, or run it on ``post=yes``.
+
+        Both POSTs check the reason and the single selection again. The
+        page shows the selected match's OPEN Code, the scope (the batch,
+        or the submitter as "Account" or its application's ``client_id``,
+        with the date), the counts, and the reason, never a name or email.
+        """
+        reason = action_reason(request)
+        problem = reason_problem(reason, BLANK_REASON)
+        if problem is not None:
+            self.message_user(request, problem, level=messages.WARNING)
+            return None
+        pks = list(queryset.order_by("pk").values_list("pk", flat=True)[:2])
+        if len(pks) != 1:
+            self.message_user(request, BULK_SELECT_ONE, level=messages.WARNING)
+            return None
+        match = Match.objects.select_related(
+            "submission_batch", "submitted_by_user", "submitted_by_application"
+        ).get(pk=pks[0])
+        batch: SubmissionBatch | None = match.submission_batch
+        recorded_since = match.created_at.astimezone(UTC).date()
+        if scope == "batch":
+            if batch is None:
+                self.message_user(request, NO_BATCH, level=messages.WARNING)
+                return None
+            matches = submission_batch_matches(batch)
+        else:
+            submitter = match.submitted_by_user or match.submitted_by_application
+            assert submitter is not None  # one submitter, a database rule
+            matches = submitter_matches(submitter, recorded_since)
+        if request.POST.get("post") != "yes":
+            context = {
+                **self.admin_site.each_context(request),
+                "title": "Void matches in bulk",
+                "opts": self.opts,
+                "match": match,
+                "scope": scope,
+                "batch": batch,
+                "submitter": self.submitted_by(match),
+                "recorded_since": recorded_since.isoformat(),
+                "to_void": matches.exclude(status=MatchStatus.VOIDED).count(),
+                "already_voided": matches.filter(status=MatchStatus.VOIDED).count(),
+                "reason": reason,
+                "action": request.POST.get("action", ""),
+                "selected": match.pk,
+            }
+            return TemplateResponse(request, BULK_CONFIRMATION, context)
+        try:
+            result = self._run_bulk(request, match, scope, reason)
+        except MatchActionDenied:
+            self.message_user(
+                request, MatchActionDenied.message, level=messages.WARNING
+            )
+            return None
+        self.message_user(
+            request,
+            f"{result.voided} match(es) voided, {result.skipped} already voided, "
+            f"{result.refused} refused.",
+        )
+        return None
+
+    @staticmethod
+    def _run_bulk(
+        request: HttpRequest, match: Match, scope: str, reason: str
+    ) -> BulkVoidResult:
+        if scope == "batch":
+            assert match.submission_batch is not None
+            return void_submission_batch(
+                match.submission_batch, actor=request.user, reason=reason
+            )
+        submitter = match.submitted_by_user or match.submitted_by_application
+        assert submitter is not None
+        return void_submitter_matches(
+            submitter,
+            recorded_since=match.created_at.astimezone(UTC).date(),
+            actor=request.user,
+            reason=reason,
+        )
 
     @staticmethod
     def _approve(match: Match, request: HttpRequest, reason: str) -> bool:

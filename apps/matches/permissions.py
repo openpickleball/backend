@@ -55,7 +55,10 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   ``apps.matches.workflow`` uses. A moderator whose Account has a Player
   in any match of the match's correction chain (the match, the matches it
   corrects, and the matches that correct it) does not moderate it, so no
-  one changes their own result as moderator (hard rule 8).
+  one changes their own result as moderator (hard rule 8). The bulk void
+  services (``void_submission_batch``, ``void_submitter_matches``) check
+  ``is_moderator`` first, then send each match through ``void_match``,
+  which applies ``moderates`` to it.
 
 A refused workflow action raises ``MatchActionDenied``, with fixed text
 that never says which rule failed or what state the match is in.

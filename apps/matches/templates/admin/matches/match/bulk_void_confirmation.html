@@ -1,0 +1,42 @@
+{% extends "admin/base_site.html" %}
+{% comment %}
+The moderator's bulk void confirmation page (#205). It shows OPEN Codes,
+counts, and the submitter as "Account" or an application's client id,
+never a player's name or an email. Nothing changes until it is confirmed.
+{% endcomment %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">Home</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:matches_match_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; Void matches in bulk
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+<p>Selected match: {{ match.public_code }}</p>
+{% if scope == "batch" %}
+<p>Scope: every match in its upload batch ({{ batch }}).</p>
+{% else %}
+<p>Scope: every match its submitter ({{ submitter }}) recorded on or after {{ recorded_since }} (UTC).</p>
+{% endif %}
+<ul>
+<li>Matches to void: {{ to_void }}</li>
+<li>Matches already voided: {{ already_voided }}</li>
+</ul>
+<p>Reason: {{ reason }}</p>
+<p>Each match is voided with its own audit event. A match whose correction chain includes your own player is left as it is.</p>
+<form method="post">{% csrf_token %}
+<input type="hidden" name="action" value="{{ action }}">
+<input type="hidden" name="_selected_action" value="{{ selected }}">
+<input type="hidden" name="reason" value="{{ reason }}">
+<input type="hidden" name="post" value="yes">
+<div class="submit-row">
+<input type="submit" value="Yes, void these matches" class="default">
+<a href="{% url 'admin:matches_match_changelist' %}" class="button cancel-link">No, go back</a>
+</div>
+</form>
+</div>
+{% endblock %}
