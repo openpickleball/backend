@@ -48,9 +48,12 @@ plain data. It does no rating math.
   `OPEN_ENGINE_PARAMETER_SET` in `config/settings.py` names (`v1`). It is a
   fixed value in code, not an environment variable, because a new set needs a
   full replay.
-- `rating_update()` and `replay_provenance()` turn an engine `MatchResult` and
-  `ReplayInfo` into plain dataclasses. `replay_provenance()` adds the installed
-  engine version (hard rule 4).
+- `rating_update()`, `replay_provenance()`, and `rating_summary()` turn an
+  engine `MatchResult`, `ReplayInfo`, and `PlayerSummary` into plain
+  dataclasses. `replay_provenance()` adds the installed engine version (hard
+  rule 4). `rating_summary()` keeps imported reliability apart from
+  OPEN-earned reliability (hard rule 5), and `apps.ratings.services` stores
+  its values (ADR 0025).
 
 ## The engine version
 
