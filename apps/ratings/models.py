@@ -17,10 +17,12 @@ Write these rows only through ``apps.ratings.services``
 (``apply_rating()``, ``record_replay()``). The ORM guards them:
 ``RatingHistory`` and ``RatingReplay`` rows are inserted once and never
 saved again or deleted (``RatingHistoryImmutable``), and a ``RatingState``
-is never deleted or bulk changed (``RatingStateWriteRefused``).
-``QuerySet.update``, ``delete``, ``bulk_update``, and an upsert raise on
-all three, through the default and the base manager. Raw SQL and raw
-saves (``loaddata``) are not guarded.
+is never deleted, bulk inserted, or bulk changed
+(``RatingStateWriteRefused``). ``QuerySet.update``, ``delete``,
+``bulk_update``, and an upsert raise on all three, through the default and
+the base manager. ``bulk_create`` still inserts history and replay rows,
+skipping the service's checks and Audit Event. Raw SQL and raw saves
+(``loaddata``) are not guarded.
 """
 
 import math
@@ -62,6 +64,12 @@ _KIND_LINKS = (
 )
 _DELTA_LIVE_ONLY = "Only a live update has a delta."
 _COUNTED_WITHIN_CONSIDERED = "A replay cannot count more matches than it considered."
+_NET_RATING_CREATED = "Give a finite number for each rating format."
+_ONE_LIVE_UPDATE = "This match already updated this player's rating in this format."
+
+# Postgres orders NaN above every number, so a finite check needs both
+# bounds: NaN fails "< Infinity".
+_INFINITY = float("inf")
 
 VERSION_MAX_LENGTH = 64
 FINGERPRINT_MAX_LENGTH = 128
@@ -70,6 +78,21 @@ FINGERPRINT_MAX_LENGTH = 128
 def _finite(value: float) -> None:
     if isinstance(value, float) and not math.isfinite(value):
         raise ValidationError(_NOT_FINITE, code="not_finite")
+
+
+def _finite_condition(field: str) -> Q:
+    return Q(**{f"{field}__lt": _INFINITY, f"{field}__gt": -_INFINITY})
+
+
+def _valid_net_rating_created(value: object) -> None:
+    """A mapping of rating format values to finite numbers, never a bool."""
+    if not isinstance(value, dict) or not all(
+        key in RatingFormat.values
+        and type(number) in (int, float)
+        and math.isfinite(number)
+        for key, number in value.items()
+    ):
+        raise ValidationError(_NET_RATING_CREATED, code="invalid")
 
 
 _RELIABILITY_VALIDATORS: list[Callable[[Any], None]] = [
@@ -157,9 +180,16 @@ class _GuardedQuerySet[ModelT: models.Model](models.QuerySet[ModelT]):
 
 
 class RatingStateQuerySet(_GuardedQuerySet["RatingState"]):
-    """Rating states, never bulk changed or deleted."""
+    """Rating states, never bulk inserted, bulk changed, or deleted.
+
+    A bulk insert would skip ``apply_rating()``'s history row and Audit
+    Event.
+    """
 
     refused = RatingStateWriteRefused
+
+    def bulk_create(self, *args: Any, **kwargs: Any) -> NoReturn:
+        self._refuse()
 
 
 class RatingHistoryQuerySet(_GuardedQuerySet["RatingHistory"]):
@@ -247,6 +277,16 @@ def _value_constraints(prefix: str) -> list[models.BaseConstraint]:
             condition=Q(rd__gte=0),
             name=f"{prefix}_rd_not_negative",
             violation_error_message=_RD_NOT_NEGATIVE,
+        ),
+        models.CheckConstraint(
+            condition=_finite_condition("rating"),
+            name=f"{prefix}_rating_finite",
+            violation_error_message=_NOT_FINITE,
+        ),
+        models.CheckConstraint(
+            condition=_finite_condition("rd"),
+            name=f"{prefix}_rd_finite",
+            violation_error_message=_NOT_FINITE,
         ),
         *(
             _not_blank(field, prefix)
@@ -348,7 +388,9 @@ class RatingReplay(_InsertOnlyModel):
     matches_considered = models.PositiveIntegerField(error_messages=_NUMBER_MESSAGES)
     matches_counted = models.PositiveIntegerField(error_messages=_NUMBER_MESSAGES)
     net_rating_created = models.JSONField(
-        help_text="The rating each format's counted updates added, by format"
+        blank=True,
+        validators=[_valid_net_rating_created],
+        help_text="The rating each format's counted updates added, by format",
     )
     engine_version = models.CharField(max_length=VERSION_MAX_LENGTH)
     spec_version = models.CharField(max_length=VERSION_MAX_LENGTH)
@@ -494,6 +536,18 @@ class RatingHistory(_RatingValues, _InsertOnlyModel):
                 condition=Q(delta__isnull=True) | Q(kind=RatingChangeKind.LIVE_UPDATE),
                 name="ratings_ratinghistory_delta_live_only",
                 violation_error_message=_DELTA_LIVE_ONLY,
+            ),
+            models.CheckConstraint(
+                condition=Q(delta__isnull=True) | _finite_condition("delta"),
+                name="ratings_ratinghistory_delta_finite",
+                violation_error_message=_NOT_FINITE,
+            ),
+            # A redelivered live update must not apply twice.
+            models.UniqueConstraint(
+                fields=("player", "rating_format", "match"),
+                condition=Q(kind=RatingChangeKind.LIVE_UPDATE),
+                name="ratings_ratinghistory_one_live_update_per_match",
+                violation_error_message=_ONE_LIVE_UPDATE,
             ),
         ]
 

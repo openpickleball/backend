@@ -8,8 +8,8 @@ rule 8).
 The values stored are the engine's (``engine_adapter.RatingSummary``):
 nothing here computes or rounds a rating (hard rule 2). Every change
 records one ``rating.change`` Audit Event in the same transaction, with no
-actor (the system). Applying the values already stored changes nothing,
-so a repeated task is harmless.
+actor (the system). Applying the values already stored, or a live update
+a Match already made, changes nothing, so a repeated task is harmless.
 """
 
 from typing import Any
@@ -90,12 +90,25 @@ def _check(
             raise RatingApplyError("A replay change names its replay and no match.")
         if delta is not None:
             raise RatingApplyError("Only a live update has a delta.")
+        # The summary must come from this replay: its date, config, and no
+        # live updates since.
+        if (
+            summary.calculated_as_of != replay.as_of
+            or summary.config_version != replay.config_version
+            or summary.params_version != replay.params_version
+            or summary.parameter_fingerprint != replay.parameter_fingerprint
+            or summary.live_updates_since_recalculation != 0
+        ):
+            raise RatingApplyError("The summary does not come from this replay.")
     else:
         raise RatingApplyError("The kind of change is not known.")
     if match is None:
         return
     if not MatchParticipant.objects.filter(match=match, player=player).exists():
         raise RatingApplyError("The player did not play in the match.")
+    # Only a Match that counts moves a rating (hard rule 8).
+    if not Match.objects.counted().filter(pk=match.pk).exists():
+        raise RatingApplyError("The match does not count.")
     # The engine feeds a category doubles match (mixed, men's, women's)
     # into overall doubles too, so a doubles match may update either its
     # own format or overall doubles.
@@ -106,10 +119,15 @@ def _check(
         raise RatingApplyError("The match does not count in this rating format.")
 
 
-def record_replay(provenance: ReplayProvenance) -> RatingReplay:
+def record_replay(
+    provenance: ReplayProvenance, *, spec_version: str | None = None
+) -> RatingReplay:
     """Store one replay's provenance (hard rule 4) and return it.
 
-    The spec version is ``settings.OPEN_RATING_SPEC_VERSION``. No Audit
+    The spec version is ``spec_version`` when given (the recompute, #48,
+    passes the version it replays under), otherwise
+    ``settings.OPEN_RATING_SPEC_VERSION``. Raises ``ValidationError`` for a
+    value the model refuses, before any write. No Audit
     Event: a replay itself changes no rating, and each rating it changes
     records its own through ``apply_rating()``.
     """
@@ -123,7 +141,9 @@ def record_replay(provenance: ReplayProvenance) -> RatingReplay:
         matches_counted=provenance.matches_counted,
         net_rating_created=dict(provenance.net_rating_created),
         engine_version=provenance.engine_version,
-        spec_version=settings.OPEN_RATING_SPEC_VERSION,
+        spec_version=(
+            settings.OPEN_RATING_SPEC_VERSION if spec_version is None else spec_version
+        ),
     )
     replay.full_clean()
     replay.save()
@@ -149,17 +169,23 @@ def apply_rating(
 
     Creates or changes the ``RatingState``, appends one ``RatingHistory``
     row, and records one ``rating.change`` Audit Event, in one transaction,
-    and returns the history row. When every value equals the stored state,
-    it writes nothing and returns None.
+    and returns the history row. It writes nothing and returns None when
+    every value equals the stored state, and for a live update when this
+    Match already updated this player in this format (a redelivery, even
+    after a version change).
 
-    Raises ``RatingApplyError`` (fixed text) for input that names the wrong
-    player, format, or cause, before any write, and ``ValidationError`` for
-    a value the models refuse, before any write.
+    Raises ``RatingApplyError`` (fixed text) before any write for input
+    that names the wrong player, format, or cause: a live update needs a
+    Match that counts (``Match.objects.counted()``), and a replay change
+    needs a summary from its replay (the same date, config version,
+    parameter set, and fingerprint, and no live updates since). Raises
+    ``ValidationError`` for a value the models refuse, before any write.
 
-    The state's row lock lasts until the outermost transaction ends, so the
-    caller chooses the transaction for each batch. The callers (#46, #47)
-    own ordering and concurrency across players. Two first applies for the
-    same player and format at once: one fails on the unique constraint.
+    It locks the Player row first, so applies for one player serialize,
+    a first apply included, and then the state row. The locks last until
+    the outermost transaction ends, so the caller chooses the transaction
+    for each batch. The callers (#46, #47) own ordering, and the lock
+    order across players.
     """
     _check(
         player=player,
@@ -178,6 +204,22 @@ def apply_rating(
         values["spec_version"] = settings.OPEN_RATING_SPEC_VERSION
 
     with transaction.atomic():
+        # Serializes applies for one player, even when no state exists yet.
+        list(
+            Player.objects.select_for_update()
+            .filter(pk=player.pk)
+            .values_list("pk", flat=True)
+        )
+        if (
+            kind == RatingChangeKind.LIVE_UPDATE
+            and RatingHistory.objects.filter(
+                player=player,
+                rating_format=summary.rating_format,
+                match=match,
+                kind=RatingChangeKind.LIVE_UPDATE,
+            ).exists()
+        ):
+            return None
         state = (
             RatingState.objects.select_for_update()
             .filter(player=player, rating_format=summary.rating_format)

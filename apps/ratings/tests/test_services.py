@@ -17,7 +17,15 @@ from django.core.exceptions import ValidationError
 from django.test import override_settings
 
 from apps.audit.models import AuditAction, AuditEvent
-from apps.matches.models import Match, MatchFormat, RatingFormat
+from apps.matches.models import (
+    Game,
+    Match,
+    MatchFormat,
+    MatchParticipant,
+    MatchStatus,
+    RatingFormat,
+    Team,
+)
 from apps.matches.tests.factories import DoublesMatchFactory, MatchFactory
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
@@ -53,8 +61,21 @@ def _played(match: Match) -> Player:
 
 @pytest.fixture
 def match() -> Match:
-    made: Match = MatchFactory.create()
+    made: Match = MatchFactory.create(status=MatchStatus.CONFIRMED)
     return made
+
+
+def _another_match(player: Player) -> Match:
+    """A second confirmed singles Match that counts, with ``player`` in it."""
+    other: Match = MatchFactory.create(
+        status=MatchStatus.CONFIRMED, participants=False, games=False
+    )
+    MatchParticipant.objects.create(match=other, player=player, team=Team.A)
+    MatchParticipant.objects.create(
+        match=other, player=PlayerFactory.create(), team=Team.B
+    )
+    Game.objects.create(match=other, game_number=1, team_a_score=11, team_b_score=4)
+    return other
 
 
 @pytest.fixture
@@ -159,7 +180,9 @@ def test_imported_reliability_is_stored_apart(player: Player, match: Match) -> N
 
 
 def test_a_category_match_may_update_overall_doubles() -> None:
-    mixed: Match = DoublesMatchFactory.create(rating_format=RatingFormat.MIXED_DOUBLES)
+    mixed: Match = DoublesMatchFactory.create(
+        rating_format=RatingFormat.MIXED_DOUBLES, status=MatchStatus.CONFIRMED
+    )
     player = _played(mixed)
 
     for rating_format in ("mixed_doubles", "doubles"):
@@ -178,7 +201,11 @@ def test_a_change_updates_the_state_and_appends_history(
     player: Player, match: Match
 ) -> None:
     _live(player, match, _singles(player, rating=3.5))
-    second = _live(player, match, _singles(player, rating=3.6, matches_played=4))
+    second = _live(
+        player,
+        _another_match(player),
+        _singles(player, rating=3.6, matches_played=4),
+    )
 
     state = RatingState.objects.get(player=player)
     assert state.rating == 3.6
@@ -198,7 +225,7 @@ def test_the_same_values_again_change_nothing(player: Player, match: Match) -> N
         player=player,
         summary=summary,
         kind=RatingChangeKind.LIVE_UPDATE,
-        match=match,
+        match=_another_match(player),
         delta=0.031,
     )
 
@@ -214,7 +241,7 @@ def test_a_new_spec_version_is_a_change(player: Player, match: Match) -> None:
     _live(player, match, summary)
 
     with override_settings(OPEN_RATING_SPEC_VERSION="spec-next-test"):
-        history = _live(player, match, summary)
+        history = _live(player, _another_match(player), summary)
 
     assert history.spec_version == "spec-next-test"
     assert RatingHistory.objects.count() == 2
@@ -257,8 +284,9 @@ def test_each_change_records_one_rating_change_event(
 ) -> None:
     first = _singles(player, rating=3.5)
     second = _singles(player, rating=3.6)
+    second_match = _another_match(player)
     _live(player, match, first)
-    _live(player, match, second)
+    _live(player, second_match, second)
 
     events = _events()
     state = RatingState.objects.get(player=player)
@@ -282,7 +310,7 @@ def test_each_change_records_one_rating_change_event(
     assert changed.after == {
         **second_values,
         "kind": "live_update",
-        "match": match.public_code,
+        "match": second_match.public_code,
         "replay": None,
     }
 
@@ -518,7 +546,9 @@ def test_a_live_update_in_another_format_is_refused(
 
 
 def test_a_category_match_cannot_update_another_category() -> None:
-    mixed: Match = DoublesMatchFactory.create(rating_format=RatingFormat.MIXED_DOUBLES)
+    mixed: Match = DoublesMatchFactory.create(
+        rating_format=RatingFormat.MIXED_DOUBLES, status=MatchStatus.CONFIRMED
+    )
     player = _played(mixed)
 
     _refused(
@@ -552,7 +582,7 @@ def test_a_bad_change_to_an_existing_state_writes_nothing(
             player=player,
             summary=_singles(player, reliability=101.0),
             kind=RatingChangeKind.LIVE_UPDATE,
-            match=match,
+            match=_another_match(player),
         )
 
     assert RatingState.objects.get(player=player).reliability == 41.5
