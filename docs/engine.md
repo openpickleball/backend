@@ -24,8 +24,11 @@ source = { git = "https://github.com/openpickleball/engine?rev=v1.0.0#be2a0ff590
 `uv sync` installs that commit, even if someone later moves the tag. The
 distribution is `openpickleball-engine`. The import name is `open_engine`.
 
-Only `apps/ratings/engine_adapter.py` imports `open_engine`. Other code goes
-through that module.
+Installing the engine from its git tag needs git wherever `uv sync` runs: the
+host, the compose containers, and any deploy build.
+
+`apps/ratings/engine_adapter.py` is the only application module that imports
+`open_engine` (tests aside). Other code goes through that module.
 
 ## The engine version
 
@@ -55,10 +58,10 @@ bump that forgets to relock fails them.
    Check that `uv.lock` names the new tag and a new commit.
 3. Run the full test suite (`uv run pytest -n auto`) and fix what the new
    version breaks in the adapter, never by copying engine code.
-4. Run the backtest: replay the ledger's matches with the new version and
-   compare its predictions with the old version's. The engine's evaluation
-   tools do this. A change that makes predictions worse needs a reason before
-   it ships. The backend has no backtest command yet.
+4. Run the backtest once under each version, each in its own environment.
+   Score the same ledger matches with the engine's evaluation (`evaluate`),
+   then compare the two reports. A change that makes predictions worse needs
+   a reason before it ships. The backend has no backtest command yet.
 5. Run the recompute: replay the whole ledger with the new version so every
    published rating comes from it (hard rule 3). Each replay stores its
    `as_of` date, config version, and config fingerprint (hard rule 4). The
