@@ -151,12 +151,19 @@ def derive_rating_format(
 def _stored_rating_format(
     format: str, keys_a: Sequence[int], keys_b: Sequence[int]
 ) -> RatingFormat:
-    """The rating format from the players' divisions as stored now, in one query."""
+    """The rating format from the players' divisions as stored now, in one query.
+
+    A player whose row is gone gets the format's base value here, so the
+    model rules that run next (``_clean_all``) report the missing player
+    as a ``MatchValidationError``, as they would without this lookup.
+    """
     stored = dict(
         Player.objects.filter(pk__in=[*keys_a, *keys_b]).values_list(
             "pk", "gender_division"
         )
     )
+    if any(key not in stored for key in (*keys_a, *keys_b)):
+        return RatingFormat(format)
     return derive_rating_format(
         format, [stored[key] for key in keys_a], [stored[key] for key in keys_b]
     )
