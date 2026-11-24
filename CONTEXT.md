@@ -107,16 +107,16 @@ _Avoid_: history table, log.
 ## Ratings
 
 **Rating**:
-A number on the 2.0 to 8.0 scale for one Player in one Rating Format. Engine: `RatingState.rating`.
+A number on the 2.0 to 8.0 scale for one Player in one Rating Format. Engine: `RatingState.rating`, `PlayerSummary.rating`. Backend: `ratings.RatingState`, one row per Player and Rating Format.
 
 **Rating Format**:
 The kind of play a rating covers: `singles`, `doubles`, `mixed_doubles`, `doubles_men`, `doubles_women`. Category formats also update the overall `doubles` rating. Engine: `RatingFormat`.
 
 **RD (rating deviation)**:
-How uncertain a Rating is. Grows with inactivity and shrinks with play. Engine: `RatingState.rd`.
+How uncertain a Rating is. Grows with inactivity and shrinks with play. Engine: `RatingState.rd`. Backend: `rd` on `ratings.RatingState` and `ratings.RatingHistory`.
 
 **Reliability**:
-A 0 to 100% score shown with every Rating, earned through OPEN matches, opponent and partner variety, and recent play. It cannot be chosen or converted from another system. Engine: `reliability()`.
+A 0 to 100% score shown with every Rating, earned through OPEN matches, opponent and partner variety, and recent play. It cannot be chosen or converted from another system. Engine: `reliability()`, `PlayerSummary.reliability`. Backend: `reliability` on `ratings.RatingState` and `ratings.RatingHistory`.
 
 **Seed**:
 A Player's starting Rating before any OPEN matches, either provisional or imported from an External Rating Snapshot.
@@ -126,16 +126,20 @@ A verified rating from a standard external rating system, with its source, date,
 _Avoid_: naming the external system.
 
 **Imported Reliability**:
-The external system's reliability, shown separately and clearly labeled until OPEN-earned Reliability exceeds it.
+The external system's reliability, shown separately and clearly labeled until OPEN-earned Reliability exceeds it. Engine: `PlayerSummary.imported_reliability`. Backend: `imported_reliability`, stored apart from `reliability`.
 
 **Replay**:
 Rebuilding all Ratings from Seeds plus the full Ledger as of a date. Same Ledger, Seeds, config, and date always give the same result. Replays run on a published schedule and produce the authoritative Ratings. Engine: `replay()`.
 
 **Replay Info**:
-The provenance stored with every Replay: as-of date, config version, config fingerprint, and match counts. Engine: `ReplayInfo`.
+The provenance stored with every Replay: as-of date, config version, config fingerprint, and match counts. Engine: `ReplayInfo`. Backend: `ratings.RatingReplay`, with the engine and spec versions.
 
 **Live Update**:
-A rating change applied when a Match arrives, between Replays. Live Updates are provisional and labeled with how many have occurred since the last Replay. Engine: `RatingEngine.record`, `RatingState.live_updates_since_replay`.
+A rating change applied when a Match arrives, between Replays. Live Updates are provisional and labeled with how many have occurred since the last Replay. Engine: `RatingEngine.record`, `RatingState.live_updates_since_replay`, `PlayerSummary.live_updates_since_recalculation`. Backend: `live_updates_since_recalculation` and the `provisional` property on `ratings.RatingState`.
+
+**Rating History**:
+The append-only record of every change to a Player's Rating in one Rating Format, with what caused it: a Live Update from one Match, or a Replay. Each row holds the Rating's values after the change and the engine and spec versions that produced them. Backend: `ratings.RatingHistory`.
+_Avoid_: audit log (each change also records an Audit Event, a different thing).
 
 **Frozen**:
 A player in a Match dated on or before their imported baseline. Their rating is used for the prediction but does not move. Reported on every match result. Engine: `MatchResult.frozen`.

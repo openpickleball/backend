@@ -27,6 +27,7 @@ class AuditAction(models.TextChoices):
     ADMIN_CHANGE = "admin.change", "Admin: change"
     ADMIN_DELETE = "admin.delete", "Admin: delete"
     RATING_EDIT = "rating.edit", "Manual rating edit"
+    RATING_CHANGE = "rating.change", "Rating change"
     MATCH_EDIT = "match.edit", "Manual match edit"
     MATCH_CONFIRM = "match.confirm", "Match confirmed"
     MATCH_DISPUTE = "match.dispute", "Match disputed"

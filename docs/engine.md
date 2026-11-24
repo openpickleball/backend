@@ -48,9 +48,21 @@ plain data. It does no rating math.
   `OPEN_ENGINE_PARAMETER_SET` in `config/settings.py` names (`v1`). It is a
   fixed value in code, not an environment variable, because a new set needs a
   full replay.
-- `rating_update()` and `replay_provenance()` turn an engine `MatchResult` and
-  `ReplayInfo` into plain dataclasses. `replay_provenance()` adds the installed
-  engine version (hard rule 4).
+- `rating_update()`, `replay_provenance()`, and `rating_summary()` turn an
+  engine `MatchResult`, `ReplayInfo`, and `PlayerSummary` into plain
+  dataclasses. `replay_provenance()` adds the installed engine version (hard
+  rule 4). `rating_summary()` keeps imported reliability apart from
+  OPEN-earned reliability (hard rule 5), and `apps.ratings.services` stores
+  its values (ADR 0025).
+
+## The rating spec version
+
+`OPEN_RATING_SPEC_VERSION` in `config/settings.py` names the
+openpickleball/rating-spec tag the ratings follow: tag `v1.0.0rc1`, stored as
+`1.0.0rc1`. Every rating
+state, history row, and replay stores a spec version, by default this one (ADR
+0025). Bump it when rating-spec
+tags v1.0.0, then run the recompute (#48).
 
 ## The engine version
 

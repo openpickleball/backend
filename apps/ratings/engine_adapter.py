@@ -402,8 +402,42 @@ class ReplayProvenance:
     engine_version: str
 
 
+@dataclass(frozen=True)
+class RatingSummary:
+    """A player's rating in one format, as plain data (#45).
+
+    The fields are ``open_engine.PlayerSummary``'s that the backend stores,
+    with the rating format as its ``str`` value and every date a plain
+    ``date``. The values are the engine's own, never rounded or computed
+    here (hard rule 2). ``reliability`` is OPEN-earned and
+    ``imported_reliability`` the carried external reliability, kept apart
+    (hard rule 5). The seed provenance fields (``initial_*``, #122),
+    ``account_linked``, and ``connectivity`` are not stored, so they are
+    left out.
+    """
+
+    player_id: str
+    rating_format: str
+    rating: float
+    rd: float
+    reliability: float
+    imported_reliability: float | None
+    established: bool
+    matches_played: int
+    last_played: date | None
+    calculated_as_of: date | None
+    live_updates_since_recalculation: int
+    config_version: str
+    params_version: str | None
+    parameter_fingerprint: str
+
+
 def _plain_date(value: date) -> date:
     return date(value.year, value.month, value.day)
+
+
+def _plain_optional_date(value: date | None) -> date | None:
+    return None if value is None else _plain_date(value)
 
 
 def rating_update(result: open_engine.MatchResult) -> RatingUpdate:
@@ -427,6 +461,32 @@ def rating_update(result: open_engine.MatchResult) -> RatingUpdate:
             if result.possible_duplicate_of is None
             else str(result.possible_duplicate_of)
         ),
+    )
+
+
+def rating_summary(summary: open_engine.PlayerSummary) -> RatingSummary:
+    """Convert an engine ``PlayerSummary`` to a ``RatingSummary``."""
+    return RatingSummary(
+        player_id=str(summary.player_id),
+        rating_format=str(summary.rating_format.value),
+        rating=float(summary.rating),
+        rd=float(summary.rd),
+        reliability=float(summary.reliability),
+        imported_reliability=(
+            None
+            if summary.imported_reliability is None
+            else float(summary.imported_reliability)
+        ),
+        established=bool(summary.established),
+        matches_played=int(summary.matches_played),
+        last_played=_plain_optional_date(summary.last_played),
+        calculated_as_of=_plain_optional_date(summary.calculated_as_of),
+        live_updates_since_recalculation=int(summary.live_updates_since_recalculation),
+        config_version=str(summary.config_version),
+        params_version=(
+            None if summary.params_version is None else str(summary.params_version)
+        ),
+        parameter_fingerprint=str(summary.parameter_fingerprint),
     )
 
 
