@@ -42,6 +42,8 @@ The engine is pinned at `v1.0.0`. The project still labels every rating as a dem
 - Events and other players cannot see the current ratings of a player created as a minor until that player widens the setting at 18 or later. ADR 0002 rejected a setting that hides ratings because events need them; this exception covers only players created as minors.
 - A player aged 13 to 17 who sets rating history to "Signed-in players" shows every signed-in Account their history, newest rating included, while their current ratings stay hidden. The history follows the player's own choice, as match history does.
 - Responses are not cached yet (#54): every lookup reads the database.
+- The migration that adds the setting gives every existing privacy row the model default, "Only me", adults included, so such an adult stays hidden until they widen it themselves. Nothing has been deployed. A local database with Players made before this change should be reset (`docker compose down -v`) and migrated again.
+- A signed-in Account that finds a player through search and gets a 404 from the lookup learns that the player was created aged 13 to 17 (or that their Account was made inactive in between), since an adult cannot hide current ratings. It does not learn a birthday. Open for the project owner.
 - The IPv6 /64 bucket and the `do-connecting-ip` check (ADR 0030, #61) still gate any later public operation.
 
 ## Alternatives considered
