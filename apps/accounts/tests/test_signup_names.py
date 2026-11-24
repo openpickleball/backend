@@ -165,7 +165,7 @@ def test_each_name_error_is_reported(base: str) -> None:
     response = HeadlessSession(base).signup(first_name=..., last_name="")
 
     assert response.status_code == 400
-    assert sorted(_params(response)) == ["first_name", "last_name"]
+    assert sorted(map(str, _params(response))) == ["first_name", "last_name"]
 
 
 @pytest.mark.parametrize("base", CLIENTS)
