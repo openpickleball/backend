@@ -1,6 +1,7 @@
 from typing import Any, ClassVar
 
 from django.apps import apps
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models, transaction
 from django.db.models import Q, QuerySet, Value
@@ -168,3 +169,51 @@ class User(AbstractUser):
 
     def get_short_name(self) -> str:
         return self.email
+
+
+class Agreement(models.TextChoices):
+    """The legal agreements sign-up requires accepting (#222, ADR 0026)."""
+
+    TERMS_OF_SERVICE = "terms_of_service", "Terms of Service"
+    PRIVACY_POLICY = "privacy_policy", "Privacy Policy"
+
+
+class AgreementAcceptance(models.Model):
+    """One version of one legal agreement an Account accepted, and when.
+
+    Written at sign-up for the new Account (``record_acceptance``), one row
+    per agreement, with the version in settings (ADR 0026). An Account
+    accepts each version once. #237 adds rows when a new version is
+    accepted later.
+    """
+
+    account = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="agreement_acceptances",
+    )
+    agreement = models.CharField(max_length=32, choices=Agreement.choices)
+    version = models.PositiveIntegerField()
+    accepted_at = models.DateTimeField()
+
+    class Meta:
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["account", "agreement", "version"],
+                name="accounts_agreement_acceptance_once",
+                violation_error_message="This account already accepted this version.",
+            ),
+            models.CheckConstraint(
+                condition=Q(agreement__in=Agreement.values),
+                name="accounts_agreement_acceptance_agreement_valid",
+                violation_error_message="Choose one of the listed agreements.",
+            ),
+            models.CheckConstraint(
+                condition=Q(version__gte=1),
+                name="accounts_agreement_acceptance_version_from_1",
+                violation_error_message="A version starts at 1.",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.agreement} version {self.version}"

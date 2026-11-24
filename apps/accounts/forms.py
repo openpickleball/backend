@@ -49,6 +49,8 @@ _BIRTH_MONTH_MESSAGES = {
     "min_value": "Enter a month from 1 to 12.",
     "max_value": "Enter a month from 1 to 12.",
 }
+_ACCEPT_TERMS = "Accept the Terms of Service."
+_ACCEPT_PRIVACY = "Accept the Privacy Policy."
 _GENDER_DIVISION_MESSAGES = {
     "required": "Choose a gender division.",
     "invalid_choice": "Choose one of the listed options.",
@@ -131,15 +133,16 @@ def signup_full_name(first_name: str, last_name: str) -> str:
 
 
 class SignupAgeForm(SignupBirthForm):
-    """The signup details on allauth's signup (issues #114, #215, #221).
+    """The signup details on allauth's signup (issues #114, #215, #221, #222).
 
     ``ACCOUNT_SIGNUP_FORM_CLASS`` names this form, so allauth's signup
     input for both headless clients carries the fields and its OpenAPI
     document lists them, all required but the city and region. A birth year
     and month only, never a day, a gender division (``mens`` or
     ``womens``), never a raw gender (ADR 0009, ADR 0017), the first and
-    last name, and the chosen city and region, never a street address
-    (ADR 0022). OPEN's signup view
+    last name, the chosen city and region, never a street address
+    (ADR 0022), and the acceptance of the legal agreements (ADR 0026).
+    OPEN's signup view
     (``apps/accounts/headless_views.py``) checks them first and refuses
     anyone under 13.
 
@@ -165,6 +168,26 @@ class SignupAgeForm(SignupBirthForm):
         max_length=_LOCATION_MAX_LENGTH,
         error_messages=_LOCATION_MESSAGES,
     )
+
+    # The legal agreements (issue #222, ADR 0026): both required, and only
+    # JSON true accepts. A plain BooleanField, so allauth's OpenAPI document
+    # lists a boolean; ``_accepted`` refuses the strings and numbers its
+    # conversion would read as true.
+    accepted_terms = forms.BooleanField(error_messages={"required": _ACCEPT_TERMS})
+    accepted_privacy = forms.BooleanField(error_messages={"required": _ACCEPT_PRIVACY})
+
+    def _accepted(self, name: str) -> bool:
+        if self.data.get(name) is not True:
+            raise forms.ValidationError(
+                self.fields[name].error_messages["required"], code="required"
+            )
+        return True
+
+    def clean_accepted_terms(self) -> bool:
+        return self._accepted("accepted_terms")
+
+    def clean_accepted_privacy(self) -> bool:
+        return self._accepted("accepted_privacy")
 
     def clean(self) -> dict[str, Any]:
         """allauth's signup form calls this through its own ``clean()``."""

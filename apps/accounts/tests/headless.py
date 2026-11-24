@@ -26,7 +26,8 @@ NEW_PASSWORD = "another-made-up-Passw0rd-2"
 # The age screen's fields for a made-up adult (issue #114).
 ADULT_BIRTH = {"birth_year": 1990, "birth_month": 6}
 # Every signup detail besides the email and password: the age, the
-# gender division (issue #215), and a made-up name and a place (#221).
+# gender division (issue #215), a made-up name and a place (#221), and
+# the acceptance of the legal agreements (#222).
 SIGNUP_GENDER_DIVISION = "womens"
 SIGNUP_NAMES = {"first_name": "Robin", "last_name": "Quillfeather"}
 SIGNUP_LOCATION = {"city": "Lakeview", "region": "Oregon"}
@@ -37,6 +38,8 @@ SIGNUP_DETAILS = {
     "gender_division": SIGNUP_GENDER_DIVISION,
     **SIGNUP_NAMES,
     **SIGNUP_LOCATION,
+    "accepted_terms": True,
+    "accepted_privacy": True,
 }
 
 VERIFY_PREFIX = f"{FRONTEND_URL}/account/verify-email/"

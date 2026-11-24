@@ -16,6 +16,7 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import Client
 
+from apps.accounts.agreements import current_versions
 from apps.accounts.tests.factories import UserFactory
 from apps.accounts.tests.headless import (
     ADULT_BIRTH,
@@ -372,6 +373,7 @@ def test_13_or_older_signs_up_and_holds_the_details(base: str) -> None:
         "legal_name": SIGNUP_FULL_NAME,
         **SIGNUP_LOCATION,
         "first_name": SIGNUP_NAMES["first_name"],
+        "agreements": current_versions(),
     }
     assert SIGNUP_REFUSED_SESSION_KEY not in stored
 
@@ -393,6 +395,7 @@ def test_taken_address_holds_the_details_with_no_account(base: str) -> None:
         "legal_name": SIGNUP_FULL_NAME,
         **SIGNUP_LOCATION,
         "first_name": SIGNUP_NAMES["first_name"],
+        "agreements": current_versions(),
     }
     assert _accounts() == 1
 
