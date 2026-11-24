@@ -35,7 +35,7 @@ Each change must name the spec version it follows (decision Q7 in #1). The ratin
 - The callers own transactions and ordering: the live update task (#46) and the replay task (#47). They decide how replays and live updates are ordered, and the lock order across players. `apply_rating()` locks the Player row (`FOR NO KEY UPDATE`, so inserts of rows that point at the Player, such as Match Participants and Match Confirmations, are not blocked), then the state row, until the outermost transaction ends, so two first applies for one player wait for each other.
 - No service removes a `RatingState`. A player whose only match in a format is voided keeps a stale state until a later issue (#47) decides what a replay does with it.
 - A replay writes no history row for a state it leaves unchanged, so a state's latest history row may name an earlier replay.
-- Every stored rating is a demonstration rating while the engine is a demonstration package. #53 labels it in responses.
+- Every stored rating is a demonstration rating while the engine is a demonstration package. #53 labels it in responses (ADR 0031).
 - Raw SQL and `loaddata` are not guarded, as for the match ledger.
 
 ## Alternatives considered

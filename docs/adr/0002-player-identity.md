@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-14
+- Amended by: [ADR 0031](0031-public-rating-lookup.md) (anyone, signed in or not, may read the current Ratings of a Player whose Account is active and who is 18 or older)
 
 ## Context
 
