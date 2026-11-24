@@ -112,8 +112,8 @@ def _live(player: Player, match: Match, summary: RatingSummary) -> RatingHistory
 # The spec version setting
 
 
-def test_the_spec_version_is_unpublished() -> None:
-    assert settings.OPEN_RATING_SPEC_VERSION == "unpublished"
+def test_the_spec_version_is_the_rating_spec_release_candidate() -> None:
+    assert settings.OPEN_RATING_SPEC_VERSION == "1.0.0rc1"
 
 
 # Live updates
@@ -159,7 +159,9 @@ def test_a_live_update_carries_the_installed_engine_and_spec_versions(
 
     state = RatingState.objects.get(player=player)
     assert history.engine_version == state.engine_version == engine_version()
-    assert history.spec_version == state.spec_version == "unpublished"
+    assert (
+        history.spec_version == state.spec_version == settings.OPEN_RATING_SPEC_VERSION
+    )
 
 
 @override_settings(OPEN_RATING_SPEC_VERSION="spec-2027-test")
@@ -297,8 +299,12 @@ def test_each_change_records_one_rating_change_event(
         assert event.actor_application is None
         assert event.reason == ""
     created, changed = events
-    first_values = _expected_values(first, engine_version(), "unpublished")
-    second_values = _expected_values(second, engine_version(), "unpublished")
+    first_values = _expected_values(
+        first, engine_version(), settings.OPEN_RATING_SPEC_VERSION
+    )
+    second_values = _expected_values(
+        second, engine_version(), settings.OPEN_RATING_SPEC_VERSION
+    )
     assert created.before is None
     assert created.after == {
         **first_values,
@@ -344,7 +350,7 @@ def test_record_replay_stores_every_provenance_field() -> None:
     assert {name: getattr(replay, name) for name in replay_values()} == {
         **replay_values(),
         "net_rating_created": provenance.net_rating_created,
-        "spec_version": "unpublished",
+        "spec_version": settings.OPEN_RATING_SPEC_VERSION,
     }
     assert RatingReplay.objects.count() == 1
     assert _events() == []
