@@ -17,7 +17,9 @@ from apps.players.signup import (
     SIGNUP_REFUSED_SESSION_KEY,
     SignupDetails,
     hold_signup_details,
+    is_signup_refused,
     peek_signup_details,
+    refuse_signup,
     take_signup_details,
 )
 
@@ -129,3 +131,30 @@ def test_an_old_birth_only_hold_is_ignored() -> None:
 
 def test_signup_module_does_not_import_accounts() -> None:
     assert "apps.accounts" not in Path(signup.__file__).read_text()
+
+
+def test_refuse_signup_sets_the_flag_and_drops_the_held_details() -> None:
+    session = SessionStore()
+    hold_signup_details(session, _account(7), DETAILS)
+
+    refuse_signup(session)
+
+    assert dict(session.items()) == {SIGNUP_REFUSED_SESSION_KEY: True}
+    assert is_signup_refused(session)
+
+
+def test_refuse_signup_with_nothing_held_sets_only_the_flag() -> None:
+    session = SessionStore()
+
+    refuse_signup(session)
+
+    assert dict(session.items()) == {SIGNUP_REFUSED_SESSION_KEY: True}
+
+
+@pytest.mark.parametrize("value", [None, False, 1, "true", "yes"])
+def test_only_true_counts_as_refused(value: object) -> None:
+    session = SessionStore()
+    if value is not None:
+        session[SIGNUP_REFUSED_SESSION_KEY] = value
+
+    assert not is_signup_refused(session)

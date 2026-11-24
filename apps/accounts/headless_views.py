@@ -56,9 +56,10 @@ from apps.accounts.validators import is_canonical_email
 from apps.players.age import is_old_enough
 from apps.players.signup import (
     SIGNUP_DETAILS_SESSION_KEY,
-    SIGNUP_REFUSED_SESSION_KEY,
     SignupDetails,
     hold_signup_details,
+    is_signup_refused,
+    refuse_signup,
 )
 
 if TYPE_CHECKING:
@@ -218,7 +219,7 @@ class SignupView(BaseSignupView):
 
     def _screen_age(self, request: "HttpRequest") -> "HttpResponseBase | None":
         """A response that ends the sign-up, or None to go on."""
-        if request.session.get(SIGNUP_REFUSED_SESSION_KEY):
+        if is_signup_refused(request.session):
             # Never reads the body: the answer depends on nothing sent.
             return _refusal(request)
         age = SignupAgeForm(data=self._parse_json(request) or {})
@@ -229,9 +230,7 @@ class SignupView(BaseSignupView):
         if not is_old_enough(
             age.cleaned_data["birth_year"], age.cleaned_data["birth_month"]
         ):
-            # A flag only, never the age or gender division (ADR 0009).
-            request.session.pop(SIGNUP_DETAILS_SESSION_KEY, None)
-            request.session[SIGNUP_REFUSED_SESSION_KEY] = True
+            refuse_signup(request.session)
             return _refusal(request)
         return None
 

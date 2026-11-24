@@ -33,6 +33,9 @@ own login address is verified. The birth year and month and the gender
 division come from the details the signup held in the session (ADR 0017,
 issue #215, ``auth_session`` for either headless client), and from the
 body only when the session holds none, where all three are required.
+An under-13 age refuses the session as signup does (issue #220): the
+create sets the signup refusal flag, and every later create in that
+session gets the same fixed 422, whatever its body.
 """
 
 import contextlib
@@ -65,7 +68,7 @@ from apps.matches.pagination import (
     MatchHistoryPagination,
 )
 from apps.matches.schemas import MatchOut, with_match_details
-from apps.players.models import Player
+from apps.players.models import UNDER_MINIMUM_AGE_MESSAGE, Player
 from apps.players.schemas import (
     MyPlayerOut,
     PlayerCreateIn,
@@ -82,7 +85,9 @@ from apps.players.services import (
 )
 from apps.players.signup import (
     SignupDetails,
+    is_signup_refused,
     peek_signup_details,
+    refuse_signup,
     take_signup_details,
 )
 from apps.public_ids.api import PublicCodePath, get_by_public_code
@@ -422,19 +427,50 @@ def _details_from_body(payload: PlayerCreateIn) -> SignupDetails:
     return SignupDetails(birth_year=year, birth_month=month, gender_division=division)
 
 
-def _take_hold(request: HttpRequest, session: SessionBase, account: "_User") -> None:
-    """Remove the signup details held for ``account`` from ``session``.
+def _save_token_session(request: HttpRequest, session: SessionBase) -> None:
+    """Save the app client's token session after a change.
 
     The browser client's session is saved by Django's middleware. The app
     client's token session is saved here: ``save()`` keeps its key, so the
     token still works. When a concurrent logout already deleted that
-    session, ``save()`` raises ``UpdateError``; the session and its hold
-    are gone, so there is nothing left to remove.
+    session, ``save()`` raises ``UpdateError``; the session is gone, so
+    there is nothing left to change.
     """
-    if take_signup_details(session, account) is None or session is request.session:
+    if session is request.session:
         return
     with contextlib.suppress(UpdateError):
         session.save()
+
+
+def _take_hold(request: HttpRequest, session: SessionBase, account: "_User") -> None:
+    """Remove the signup details held for ``account`` from ``session``."""
+    if take_signup_details(session, account) is not None:
+        _save_token_session(request, session)
+
+
+def _is_under_minimum_age(error: DjangoValidationError) -> bool:
+    """Whether ``create_player`` refused the age as under 13."""
+    found = getattr(error, "error_dict", {}).get("birth_month", [])
+    return any(UNDER_MINIMUM_AGE_MESSAGE in item.messages for item in found)
+
+
+def _refuse(request: HttpRequest, session: SessionBase) -> NinjaValidationError:
+    """Refuse the session for age, and the fixed 422 to raise.
+
+    The same answer for the first under-13 create and every later one in
+    the session, so nothing in it depends on the body (issue #220).
+    """
+    refuse_signup(session)
+    _save_token_session(request, session)
+    return NinjaValidationError(
+        [
+            {
+                "loc": ("body", "birth_month"),
+                "type": "invalid",
+                "msg": UNDER_MINIMUM_AGE_MESSAGE,
+            }
+        ]
+    )
 
 
 @me_router.post(
@@ -454,7 +490,9 @@ def create_my_player(
     session holds none, and are then required. The held details are
     removed once the Player exists (on a 409 too), so a create refused for
     any other reason can be retried. A player under 13 is refused with a
-    fixed message.
+    fixed 422, and the refusal holds for the session, as at signup: every
+    later create in it gets the same 422, and so does a signup after
+    logout (ADR 0017).
     """
     account = request_account(request)
     if not _has_verified_email(account):
@@ -464,6 +502,9 @@ def create_my_player(
         # The hold lives only until the Player exists (ADR 0017).
         _take_hold(request, session, account)
         raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE)
+    if is_signup_refused(session):
+        # Never reads the body's age: the answer depends on nothing sent.
+        raise _refuse(request, session)
     details = peek_signup_details(session, account) or _details_from_body(payload)
     try:
         player = create_player(
@@ -482,6 +523,8 @@ def create_my_player(
         if _is_duplicate_player(error):
             _take_hold(request, session, account)
             raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE) from None
+        if _is_under_minimum_age(error):
+            raise _refuse(request, session) from None
         raise _body_errors(error) from None
     _take_hold(request, session, account)
     return Status(201, my_player_out(player, player.privacy))

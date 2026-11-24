@@ -16,7 +16,7 @@ from apps.accounts.validators import (
     normalized_email_errors,
 )
 from apps.emails.services import queue_email
-from apps.players.signup import SIGNUP_REFUSED_SESSION_KEY
+from apps.players.signup import is_signup_refused, refuse_signup
 
 if TYPE_CHECKING:
     from allauth.account.models import EmailAddress
@@ -32,10 +32,10 @@ class AccountAdapter(DefaultAccountAdapter):
         Without this, a refused session could log out and sign up again
         with another age. Only the flag carries over, nothing else.
         """
-        refused = request.session.get(SIGNUP_REFUSED_SESSION_KEY) is True
+        refused = is_signup_refused(request.session)
         super().logout(request)
         if refused:
-            request.session[SIGNUP_REFUSED_SESSION_KEY] = True
+            refuse_signup(request.session)
 
     def clean_email(self, email: str) -> str:
         """Normalize an address, then apply the Account email rules to it.
