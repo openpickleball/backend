@@ -28,7 +28,7 @@ ADR 0002 makes a Player's display name visible to every signed-in Account, playe
 - Once the day limit is reached, further requests still count toward the minute limit, so a refusal can carry a minute-long `Retry-After` while the day stays used up.
 - The counters live in Valkey. If Valkey is down, search fails. Clearing the cache resets them.
 - The search reads the whole Player table with `UPPER(display_name) LIKE`. That is fine at today's size; an index is a later change if it is needed.
-- Search has its own throttle, with its rates in code, and stays out of #34's plan for first-party operations (`AuthRateThrottle`, rates from settings). Adding a second throttle to search would bring back the cross-counting described under Alternatives considered. #34 should weigh those problems for the other operations. No per-IP limit on search is planned.
+- Search has its own throttle, with its rates in code, and stays out of #34's plan for first-party operations (`AuthRateThrottle`, rates from settings). Adding a second throttle to search would bring back the cross-counting described under Alternatives considered. #34 should weigh those problems for the other operations. No per-IP limit on search is planned. (ADR 0030 settles #34: the other first-party operations share a per-Account fixed-window throttle with rates from settings, built on the same counters, and search keeps only its own throttle.)
 
 ## Alternatives considered
 

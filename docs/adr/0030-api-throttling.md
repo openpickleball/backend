@@ -17,9 +17,9 @@ The app runs on DigitalOcean App Platform. Its proxy puts the ingress address in
 - Every first-party operation that needs sign-in shares one per-Account throttle, keyed by the Account's id, never its email. Each router passes it next to its `auth`. A request refused by `auth` (401) is not counted.
 - Player search keeps only its own throttle and fixed limits (ADR 0018). ninja lets an operation's own throttle replace its router's, and a test pins that.
 - The health checks are never throttled, so a platform probe is never refused.
-- A public operation uses the client IP throttle. The IP comes only from the header named by the `CLIENT_IP_HEADER` setting, default `do-connecting-ip`. `X-Forwarded-For`, `Forwarded`, and `REMOTE_ADDR` are never read, and settings refuse `X-Forwarded-For` and `Forwarded` as the header. A missing or invalid value, a comma list included, falls into one shared bucket. An IPv4-mapped IPv6 address counts as its IPv4 address. Other IPv6 addresses count by their /64, so a client cannot escape the limit by changing addresses inside its /64.
+- A public operation uses the client IP throttle. The IP comes only from the header named by the `CLIENT_IP_HEADER` setting, default `do-connecting-ip`. `X-Forwarded-For`, `Forwarded`, and `REMOTE_ADDR` are never read, and settings refuse `X-Forwarded-For` and `Forwarded` as the header (and `Content-Type` and `Content-Length`, which never reach Django as request headers). A missing or invalid value, a comma list included, falls into one shared bucket. An IPv4-mapped IPv6 address counts as its IPv4 address. Other IPv6 addresses count by their /64, so a client cannot escape the limit by changing addresses inside its /64.
 - Rates come from settings, read on each request: `API_ACCOUNT_THROTTLE_PER_MINUTE` (default 120), `API_ACCOUNT_THROTTLE_PER_DAY` (10,000), `API_CLIENT_IP_THROTTLE_PER_MINUTE` (60), and `API_CLIENT_IP_THROTTLE_PER_DAY` (3,000). Each is a whole number from 1 to 1,000,000.
-- Past a limit the answer is 429 with code `throttled`, no items, and a `Retry-After` header with the whole seconds until the refusing window ends, at least 1. The OpenAPI document shows this 429 on every throttled operation.
+- Past a limit the answer is 429 with code `throttled`, no items, and a `Retry-After` header with the whole seconds until the refusing window ends, or until a later window ends when that window is already full, at least 1. CORS exposes `Retry-After`, so a browser client on an allowed origin can read it. The OpenAPI document shows this 429 on every throttled operation.
 
 ## Unverified header trust
 
@@ -30,8 +30,9 @@ Whether App Platform replaces or strips a `do-connecting-ip` header that the cli
 - One budget covers all of an Account's first-party requests except search. A client app that polls one operation uses up the budget for the others.
 - Fixed windows allow up to about twice a limit within seconds across a window edge. Accepted, as in ADR 0018.
 - If the client IP header is missing in production, every public request shares the fallback bucket, so one busy client can block the rest. That is an outage, not a way around the limit.
-- The counters live in Valkey. If Valkey is down, throttled operations fail. Clearing the cache resets them.
-- The client IP, with IPv6 cut to its /64, is held in cache keys for at most a window plus 60 seconds (personal data inventory).
+- The counters live in Valkey. If Valkey is down, every throttled operation fails, which is every first-party operation that needs sign-in, not only search. The health checks still answer. Clearing the cache resets the counters.
+- The client IP, with IPv6 cut to its /64, is held in cache keys. A key expires a window plus 60 seconds after the request that created it, so a day counter can outlast its day by up to a day (personal data inventory). Every key gets an expiry, even when Valkey evicts it between the existence check and the increment.
+- A client that holds more than one /64 (a /56 or /48 delegation, or a 6to4 address) gets one bucket per /64. Revisit the prefix length, or add a coarser window, before #53 goes public.
 - Per-application limits for partner operations are #119. Edge or CDN rate limits are out of scope.
 
 ## Alternatives considered
