@@ -347,6 +347,9 @@ CORS_ALLOW_HEADERS = (
     "x-email-verification-key",
     "x-password-reset-key",
 )
+# Response headers a script on an allowed origin may read beyond the
+# safelisted ones: Retry-After on a throttled 429 (ADR 0030).
+CORS_EXPOSE_HEADERS = ["Retry-After"]
 
 # Valkey URL (redis:// or rediss://). The cache and Celery (issue #9)
 # read it from here.
