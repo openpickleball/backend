@@ -2501,7 +2501,7 @@
     },
     "/api/v1/players/{code}/ratings": {
       "get": {
-        "description": "A player's current Ratings, one per rating format the player has.\n\nNo sign-in needed. Each rating comes with its reliability: the OPEN\nstandard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package. An unknown or malformed code, a\nplayer whose Account is inactive, and any player not shown to be 18 or\nolder get the same 404.\nLimited per client IP; past the limit the answer is 429 with a\nRetry-After header.",
+        "description": "A player's current Ratings, one per rating format the player has.\n\nAny signed-in Account sees them for every player whose Account is\nactive, players aged 13 to 17 included: current Ratings have no\nprivacy setting. Each rating comes with its reliability: the OPEN\nstandard requires any app that shows an OPEN rating to show its\nreliability next to it. Every rating is a demonstration rating while\nthe engine is a demonstration package. An unknown or malformed code and\na player whose Account is inactive get the same 404.",
         "operationId": "get_player_ratings",
         "parameters": [
           {
@@ -2534,6 +2534,16 @@
               }
             },
             "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
           },
           "404": {
             "content": {
@@ -2575,6 +2585,14 @@
             }
           }
         },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
         "summary": "Get Player Ratings",
         "tags": [
           "ratings"

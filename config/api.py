@@ -5,8 +5,8 @@
 router (`config/health.py`) is mounted at /api/v1/health/, the signed-in
 Account at /api/v1/accounts/, match submission, reading one match,
 confirmation, and dispute at /api/v1/matches/, a player's match history and player
-search (/api/v1/players/search), a player's profile, the public rating
-lookup (/api/v1/players/{code}/ratings), and a player's rating history
+search (/api/v1/players/search), a player's profile, the rating lookup
+(/api/v1/players/{code}/ratings), and a player's rating history
 (/api/v1/players/{code}/rating-history) at /api/v1/players/, and at
 /api/v1/me/ the matches awaiting the signed-in player's confirmation and
 the signed-in Account's own Player.
@@ -57,7 +57,7 @@ Throttles (ADR 0030): a router whose operations need sign-in passes
 `throttle=config.throttling.account_throttle` next to its `auth`, so they
 share one per-Account budget. An operation's own `throttle=` replaces its
 router's: player search keeps only its `SearchThrottle`. A public
-operation (`auth=None`, the rating lookup) has only a
+operation (`auth=None`; none is mounted yet) would have only a
 `config.throttling.ClientIPThrottle`. The health
 checks are never throttled. Every operation with a throttle documents a
 429 response with `ErrorResponse` and a `Retry-After` header, and may not

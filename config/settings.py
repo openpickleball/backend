@@ -666,7 +666,7 @@ MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS"
 # except player search, which has its own fixed limits (ADR 0018).
 API_ACCOUNT_THROTTLE_PER_MINUTE = _rate("API_ACCOUNT_THROTTLE_PER_MINUTE", 120)
 API_ACCOUNT_THROTTLE_PER_DAY = _rate("API_ACCOUNT_THROTTLE_PER_DAY", 10_000)
-# Requests per client IP to public operations (the public rating lookup, #53).
+# Requests per client IP to public operations (none is mounted yet).
 API_CLIENT_IP_THROTTLE_PER_MINUTE = _rate("API_CLIENT_IP_THROTTLE_PER_MINUTE", 60)
 API_CLIENT_IP_THROTTLE_PER_DAY = _rate("API_CLIENT_IP_THROTTLE_PER_DAY", 3_000)
 # The request header the proxy in front of the app sets to the client IP.

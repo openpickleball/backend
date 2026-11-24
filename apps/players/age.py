@@ -57,8 +57,3 @@ def is_minor(birth_year: int, birth_month: int, on: date | None = None) -> bool:
     """Whether the player is 13 to 17 on ``on`` (the age limit date)."""
     years = age_on(birth_year, birth_month, on or age_limit_date())
     return MINIMUM_AGE <= years < ADULT_AGE
-
-
-def is_adult(birth_year: int, birth_month: int, on: date | None = None) -> bool:
-    """Whether the player is at least 18 on ``on`` (the age limit date)."""
-    return age_on(birth_year, birth_month, on or age_limit_date()) >= ADULT_AGE

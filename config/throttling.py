@@ -30,9 +30,8 @@ to twice a limit across a window edge. Accepted.
   address, and other IPv6 addresses count by their /64 prefix, so a client
   cannot rotate addresses within its /64 to escape the limit. Whether
   App Platform replaces a ``do-connecting-ip`` header the client sent is
-  unverified until the deploy-time check on #61 passes; until then no
-  deployment may expose the public rating lookup (#53) to the public
-  (ADR 0030, ADR 0031).
+  unverified until the deploy-time check on #61 passes. No public
+  operation is mounted yet; none may go live until that check passes.
 
 Rates are read from settings on every request, so ``override_settings``
 and a changed environment take effect at once.
