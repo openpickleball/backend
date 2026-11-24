@@ -666,30 +666,8 @@
       },
       "PlayerUpdateIn": {
         "additionalProperties": false,
-        "description": "Changes to the signed-in Account's own Player.\n\nOnly the fields sent change. Null clears an optional text field\n(``legal_name``, ``city``, ``region``); the display name, birth year,\nbirth month, and gender division cannot be cleared. ``gender_division``\nis ``mens`` or ``womens``.\n``privacy`` changes the settings it names. Unknown keys are refused.",
+        "description": "Changes to the signed-in Account's own Player.\n\nOnly the fields sent change. Null clears an optional text field\n(``legal_name``, ``city``, ``region``); the display name cannot be\ncleared. The birth year and month and the gender division are set\nonce, when the Player is created, and cannot be sent here (ADR 0023).\n``privacy`` changes the settings it names. Unknown keys are refused.",
         "properties": {
-          "birth_month": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Birth Month"
-          },
-          "birth_year": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Birth Year"
-          },
           "city": {
             "anyOf": [
               {
@@ -711,17 +689,6 @@
               }
             ],
             "title": "Display Name"
-          },
-          "gender_division": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gender Division"
           },
           "legal_name": {
             "anyOf": [
@@ -1546,7 +1513,7 @@
         ]
       },
       "patch": {
-        "description": "Change the signed-in Account's own profile fields and privacy settings.\n\nOnly the fields sent change. The gender division can change between\ndivisions but cannot be cleared (422). Both kinds of change apply\ntogether or not at all: a 422 on either changes nothing. Each kind\nthat changes records one Audit Event (profile changes by field name\nonly). 404 when the Account has no Player.",
+        "description": "Change the signed-in Account's own profile fields and privacy settings.\n\nOnly the fields sent change. The birth year and month and the gender\ndivision are set once, when the Player is created: sending any of\nthem gets a 422, whatever the value (ADR 0023). Both kinds of change\napply together or not at all: a 422 on either changes nothing. Each kind\nthat changes records one Audit Event (profile changes by field name\nonly). 404 when the Account has no Player.",
         "operationId": "update_my_player",
         "parameters": [],
         "requestBody": {
@@ -1615,7 +1582,7 @@
         ]
       },
       "post": {
-        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). Every value comes from\nthe details held at signup in this session (ADR 0017, ADR 0019, ADR\n0022), the held name as the legal name and, for an adult, the display\nname (a player aged 13 to 17 starts with \"First L.\"); the body is used\nonly when the session holds none, and its display name, birth year and\nmonth, and gender division are then required. The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13 is refused with a\nfixed 422, and the refusal holds for the session, as at signup: every\nlater create in it gets the same 422, and so does a signup after\nlogout (ADR 0017).",
+        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). Every value comes from\nthe details held at signup in this session (ADR 0017, ADR 0019, ADR\n0022), the held name as the legal name and, for an adult, the display\nname (a player aged 13 to 17 starts with \"First L.\"); the body is used\nonly when the session holds none, and its display name, birth year and\nmonth, and gender division are then required. The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13, or a birth year\nand month in the future, is refused with a fixed 422, and the refusal\nholds for the session, as at signup: every later create in it gets the\nsame 422, and so does a signup after logout (ADR 0017).",
         "operationId": "create_my_player",
         "parameters": [],
         "requestBody": {
