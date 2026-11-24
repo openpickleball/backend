@@ -21,7 +21,7 @@ Signup creates an Account (allauth's headless API, ADR 0014), but the Player com
 
 ### The age screen at signup
 
-- Signup on both headless clients takes two more required fields, `birth_year` and `birth_month` (`ACCOUNT_SIGNUP_FORM_CLASS`, so allauth's OpenAPI document lists them). ADR 0019 adds a third, `gender_division`, checked with them. The web and Expo apps ask for them on the first screen, before the email address.
+- Signup on both headless clients takes two more required fields, `birth_year` and `birth_month` (`ACCOUNT_SIGNUP_FORM_CLASS`, so allauth's OpenAPI document lists them). ADR 0019 adds a third, `gender_division`, checked with them. The web and Expo apps ask for them on the first screen, before the email address. ADR 0020 changes the app's order: the email and password come first, and the app checks the age with a separate request before it asks for anything else personal.
 - OPEN's signup view checks, in this order:
   1. allauth's signup rate limit;
   2. allauth's own answers for a signed-in session (409) and for closed signup (403);
@@ -46,6 +46,6 @@ Signup creates an Account (allauth's headless API, ADR 0014), but the Player com
 
 ## Alternatives considered
 
-- **A separate age endpoint before signup.** It matches "before email" more closely, but it adds a second request to every signup, and a second place that must keep the rate limit, the check order, and the session rules in step with allauth's signup.
+- **A separate age endpoint before signup.** It matches "before email" more closely, but it adds a second request to every signup, and a second place that must keep the rate limit, the check order, and the session rules in step with allauth's signup. ADR 0020 later added one, for the app's new screen order, and keeps it in step by sharing signup's code and rate limit.
 - **Holding the age on the Account row.** ADR 0009 forbids an age on an Account with no Player.
 - **Using the server's time zone (UTC) for age limits.** For up to 12 hours a day, a player in a time zone behind UTC would count a day older than they are where they live.

@@ -611,8 +611,9 @@ HEADLESS_ONLY = True
 HEADLESS_CLIENTS = ("browser", "app")
 # The user object in allauth's responses carries no row id.
 HEADLESS_ADAPTER = "apps.accounts.headless_adapter.HeadlessAdapter"
-# allauth's OpenAPI document, at /_allauth/openapi.json and
-# /_allauth/openapi.html.
+# allauth's OpenAPI document, at /_allauth/openapi.json, .yaml, and
+# .html. OPEN serves the JSON and YAML with its signup age check added
+# (apps/accounts/openapi.py, ADR 0020).
 HEADLESS_SERVE_SPECIFICATION = True
 # The web app's origin, for example https://app.example.org. Links in
 # account emails (verify an address, reset a password) open pages there.

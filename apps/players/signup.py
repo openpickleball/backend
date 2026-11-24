@@ -7,9 +7,10 @@ endpoint (#124) reads them (``peek_signup_details``) and takes them once
 the Player exists (``take_signup_details``). The session never holds a
 day of birth or a raw gender (ADR 0009).
 
-An under-13 age, at signup or at the Player create endpoint, refuses the
-session (``refuse_signup``): it drops any held details and sets a flag.
-Both paths honor the flag (``is_signup_refused``), and logout keeps it.
+An under-13 age, at signup, at the signup age check (#223), or at the
+Player create endpoint, refuses the session (``refuse_signup``): it drops
+any held details and sets a flag. All three honor the flag
+(``is_signup_refused``), and logout keeps it.
 
 The accounts app imports this module, so it never imports that app back.
 """
@@ -25,8 +26,8 @@ if TYPE_CHECKING:
 
 # The details a signup gave, until the Player create endpoint takes them.
 SIGNUP_DETAILS_SESSION_KEY = "open_signup_details"
-# Set when a signup or a Player create was refused for age: the session
-# cannot retry either.
+# Set when a signup, a signup age check, or a Player create was refused
+# for age: the session cannot retry any of them.
 SIGNUP_REFUSED_SESSION_KEY = "open_signup_refused"
 
 

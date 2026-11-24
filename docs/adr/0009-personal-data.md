@@ -1,7 +1,7 @@
 # 0009. Personal data: what OPEN collects and how it is protected
 
 - Status: Accepted
-- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (gender division required for every new Player)
+- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (gender division required for every new Player), [ADR 0020](0020-signup-age-check.md) (the app asks for the email and password before the age, and checks the age before any other personal detail)
 - Date: 2026-11-14
 
 ## Context
