@@ -48,7 +48,23 @@ _GENDER_DIVISION_MESSAGES = {
 }
 
 
-class SignupAgeForm(forms.Form):
+class SignupBirthForm(forms.Form):
+    """A signup's birth year and month, never a day (ADR 0009, ADR 0017).
+
+    The signup age check (``SignupAgeCheckView``, ADR 0020) takes this form
+    alone, and ``SignupAgeForm`` adds the gender division to it, so both
+    answer a missing or malformed age with the same field errors.
+    """
+
+    birth_year = forms.IntegerField(
+        min_value=EARLIEST_BIRTH_YEAR, error_messages=_BIRTH_YEAR_MESSAGES
+    )
+    birth_month = forms.IntegerField(
+        min_value=1, max_value=12, error_messages=_BIRTH_MONTH_MESSAGES
+    )
+
+
+class SignupAgeForm(SignupBirthForm):
     """The signup details on allauth's signup (issues #114 and #215).
 
     ``ACCOUNT_SIGNUP_FORM_CLASS`` names this form, so allauth's signup
@@ -63,12 +79,6 @@ class SignupAgeForm(forms.Form):
     module must never import allauth's forms.
     """
 
-    birth_year = forms.IntegerField(
-        min_value=EARLIEST_BIRTH_YEAR, error_messages=_BIRTH_YEAR_MESSAGES
-    )
-    birth_month = forms.IntegerField(
-        min_value=1, max_value=12, error_messages=_BIRTH_MONTH_MESSAGES
-    )
     gender_division = forms.ChoiceField(
         choices=GenderDivision.choices, error_messages=_GENDER_DIVISION_MESSAGES
     )
