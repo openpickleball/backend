@@ -39,6 +39,7 @@ from apps.matches.models import (
 )
 from apps.players.models import Player
 from apps.ratings.engine_adapter import (
+    LiveConfig,
     LiveUpdate,
     RatingSummary,
     ReplayProvenance,
@@ -307,6 +308,7 @@ class LiveUpdateOutcome(StrEnum):
     NOT_COUNTED = "not_counted"
     REJECTED = "rejected"
     LATE = "late"
+    REPLAY_NEEDED = "replay_needed"
 
 
 def schedule_replay(players: Iterable[Player], earliest_date: date) -> None:
@@ -323,13 +325,12 @@ def schedule_replay(players: Iterable[Player], earliest_date: date) -> None:
     )
 
 
-def _snapshot_row() -> EngineSnapshot:
-    """The engine snapshot row for the loaded config, created if new, locked.
+def _snapshot_row(labels: LiveConfig) -> EngineSnapshot:
+    """The engine snapshot row for ``labels``, created if new, locked.
 
     A first run racing another first run: ``get_or_create`` catches the
     unique violation and reads the other's row. Both then lock it.
     """
-    labels = live_config()
     row, _ = EngineSnapshot.objects.get_or_create(
         parameter_fingerprint=labels.parameter_fingerprint,
         defaults={
@@ -382,8 +383,12 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
     (``rejected``; the snapshot is not saved, so its id stays free). A
     Match earlier than a player's stored last match in a format it
     updates, or one the engine finds late, writes nothing and goes to
-    ``schedule_replay()`` (``late``). ``EngineMappingError`` and the
-    engine's errors propagate.
+    ``schedule_replay()`` (``late``). A participant whose stored rating in
+    a format the Match updates names another parameter fingerprint, or
+    exists while the snapshot is empty, would restart from an empty
+    engine: that writes nothing and goes to ``schedule_replay()``
+    (``replay_needed``). ``EngineMappingError`` and the engine's errors
+    propagate.
     """
     with transaction.atomic():
         match = Match.objects.filter(pk=match_id).first()
@@ -391,7 +396,8 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
             return LiveUpdateOutcome.MISSING
         if not Match.objects.counted().filter(pk=match.pk).exists():
             return LiveUpdateOutcome.NOT_COUNTED
-        row = _snapshot_row()
+        labels = live_config()
+        row = _snapshot_row(labels)
         # Lock order: the snapshot row, then the Players by row id. A
         # subquery, not a join, so only the Player rows are locked.
         players = list(
@@ -409,6 +415,17 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
         ).exists():
             return LiveUpdateOutcome.UNCHANGED
         formats = _rating_formats(match)
+        states = RatingState.objects.filter(
+            player__in=players, rating_format__in=formats
+        )
+        # A rating from another parameter set, or one the snapshot does not
+        # hold, would restart from an empty engine: only a replay can
+        # continue it.
+        if states.exclude(
+            parameter_fingerprint=labels.parameter_fingerprint
+        ).exists() or (not row.snapshot and states.exists()):
+            schedule_replay(players, earliest_date=match.played_on)
+            return LiveUpdateOutcome.REPLAY_NEEDED
         if RatingState.objects.filter(
             player__in=players,
             rating_format__in=formats,
