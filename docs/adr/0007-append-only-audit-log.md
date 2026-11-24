@@ -1,6 +1,7 @@
 # 0007. An append-only audit log enforced in the database
 
 - Status: Proposed
+- Amended by: [ADR 0025](0025-rating-state-history-and-replay-provenance.md) (every rating change, replayed ones included, records a `rating.change` Audit Event)
 - Date: 2026-11-13
 
 ## Context
