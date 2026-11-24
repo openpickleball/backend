@@ -216,6 +216,7 @@ def test_a_pending_match_is_not_released(
     confirmed: Match, players: list[Player], moderator: User, signals: SignalLog
 ) -> None:
     later = _near_duplicate(players)
+    signals.changed.clear()
 
     resolve_flags(
         later, actor=moderator, outcome=FlagResolution.APPROVED, reason=REASON
