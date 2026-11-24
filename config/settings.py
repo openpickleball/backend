@@ -560,8 +560,8 @@ OPEN_ENGINE_PARAMETER_SET = "v1"
 
 # The rating spec version stored with every rating change (#45, decision Q7
 # in #1): the openpickleball/rating-spec tag the ratings follow. The project
-# owner chose its release candidate tag, 1.0.0rc1. Bump it when rating-spec
-# tags 1.0.0, then run the recompute (#48).
+# owner chose its release candidate tag, v1.0.0rc1, stored as 1.0.0rc1. Bump
+# it when rating-spec tags v1.0.0, then run the recompute (#48).
 OPEN_RATING_SPEC_VERSION = "1.0.0rc1"
 
 

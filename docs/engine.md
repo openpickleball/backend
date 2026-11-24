@@ -58,9 +58,10 @@ plain data. It does no rating math.
 ## The rating spec version
 
 `OPEN_RATING_SPEC_VERSION` in `config/settings.py` names the
-openpickleball/rating-spec tag the ratings follow, `1.0.0rc1`. Every rating
+openpickleball/rating-spec tag the ratings follow: tag `v1.0.0rc1`, stored as
+`1.0.0rc1`. Every rating
 state, history row, and replay stores it (ADR 0025). Bump it when rating-spec
-tags 1.0.0, then run the recompute (#48).
+tags v1.0.0, then run the recompute (#48).
 
 ## The engine version
 
