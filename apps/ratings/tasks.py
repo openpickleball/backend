@@ -25,7 +25,7 @@ def _update_ratings_for_match(self: "Task[..., str]", match_id: int) -> str:
     so no personal data passes through the broker or the worker log. Safe
     to run twice: a Match already recorded changes nothing.
 
-    In a worker, any error (a time limit included) is logged once with the
+    In a worker, any error (the soft time limit included) is logged once with the
     Match id and the error class, and replaced by a fixed-text
     ``LiveUpdateFailed`` with no context, so the worker log never holds
     the original text, which can quote values. Before that, a replay
