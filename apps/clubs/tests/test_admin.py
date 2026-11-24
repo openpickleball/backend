@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.django_db
 
+REASON = "Made-up verification reason."
+
 ORGANIZER_CHANGELIST = "admin:clubs_organizer_changelist"
 CLUB_CHANGELIST = "admin:clubs_club_changelist"
 
@@ -53,7 +55,11 @@ def superuser_client(client: Client, superuser: "_User") -> Client:
 def _run_action(client: Client, action: str, organizers: list[Organizer]) -> list[str]:
     response = client.post(
         reverse(ORGANIZER_CHANGELIST),
-        {"action": action, "_selected_action": [str(o.pk) for o in organizers]},
+        {
+            "action": action,
+            "_selected_action": [str(o.pk) for o in organizers],
+            "reason": REASON,
+        },
         follow=True,
     )
     assert response.status_code == 200
@@ -173,7 +179,7 @@ def test_verify_action_verifies_and_records_event(
         str(organizer.pk) for organizer in organizers
     }
     assert all(event.actor_user_id == superuser.pk for event in events)
-    assert all(event.reason == "Changed through the admin." for event in events)
+    assert all(event.reason == REASON for event in events)
 
 
 def test_unverify_action_clears_and_records_event(
@@ -239,7 +245,11 @@ def test_action_post_refused_without_verify_permission(client: Client) -> None:
 
     client.post(
         reverse(ORGANIZER_CHANGELIST),
-        {"action": "verify_selected", "_selected_action": [str(organizer.pk)]},
+        {
+            "action": "verify_selected",
+            "_selected_action": [str(organizer.pk)],
+            "reason": REASON,
+        },
     )
 
     organizer.refresh_from_db()
