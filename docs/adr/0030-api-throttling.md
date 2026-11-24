@@ -32,7 +32,7 @@ Whether App Platform replaces or strips a `do-connecting-ip` header that the cli
 - If the client IP header is missing in production, every public request shares the fallback bucket, so one busy client can block the rest. That is an outage, not a way around the limit.
 - The counters live in Valkey. If Valkey is down, every throttled operation fails, which is every first-party operation that needs sign-in, not only search. The health checks still answer. Clearing the cache resets the counters.
 - The client IP, with IPv6 cut to its /64, is held in cache keys. A key expires 60 seconds after its window ends (personal data inventory). Every key gets an expiry, even when Valkey evicts it between the existence check and the increment.
-- A client that holds more than one /64 (a /56 or /48 delegation, or a 6to4 address) gets one bucket per /64. Revisit the prefix length, or add a coarser window, before #53 goes public (ADR 0031).
+- A client that holds more than one /64 (a /56 or /48 delegation, or a 6to4 address) gets one bucket per /64. Revisit the prefix length, or add a coarser window, before a public operation goes live (ADR 0031).
 - Per-application limits for partner operations are #119. Edge or CDN rate limits are out of scope.
 
 ## Alternatives considered
