@@ -124,14 +124,14 @@ class RatingHistoryImmutable(RuntimeError):
 
 
 class RatingStateWriteRefused(RuntimeError):
-    """Raised when code tries to delete or bulk change a rating state.
+    """Raised when code tries to delete, bulk insert, or bulk change a rating state.
 
     The message is fixed text.
     """
 
     message: ClassVar[str] = (
         "A rating state changes only through apply_rating(): it cannot be "
-        "bulk changed or deleted."
+        "bulk inserted, bulk changed, or deleted."
     )
 
     def __init__(self) -> None:
