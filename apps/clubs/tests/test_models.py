@@ -9,7 +9,15 @@ from django.db.models import ProtectedError
 from django.utils import timezone
 
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.models import Club, ClubRole, MemberRole, Organizer, OrganizerMember
+from apps.clubs.models import (
+    Club,
+    ClubOrganizerGrant,
+    ClubRole,
+    ClubRoleKind,
+    MemberRole,
+    Organizer,
+    OrganizerMember,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -181,9 +189,7 @@ def test_club_role_links_account_with_role() -> None:
     club = Club.objects.create(name="Made-up Club")
     account = UserFactory.create()
 
-    role = ClubRole.objects.create(
-        club=club, account=account, role=MemberRole.MATCH_MANAGER
-    )
+    role = ClubRole.objects.create(club=club, account=account, role=ClubRoleKind.ADMIN)
 
     assert list(club.roles.all()) == [role]
     assert list(account.club_roles.all()) == [role]
@@ -205,16 +211,40 @@ def test_organizer_member_is_unique_per_pair() -> None:
 def test_club_role_is_unique_per_pair() -> None:
     club = Club.objects.create(name="Made-up Club")
     account = UserFactory.create()
-    ClubRole.objects.create(club=club, account=account, role=MemberRole.ADMIN)
+    ClubRole.objects.create(club=club, account=account, role=ClubRoleKind.ADMIN)
 
     with pytest.raises(IntegrityError), transaction.atomic():
-        ClubRole.objects.create(
-            club=club, account=account, role=MemberRole.MATCH_MANAGER
-        )
+        ClubRole.objects.create(club=club, account=account, role=ClubRoleKind.ADMIN)
 
 
 def test_role_choices() -> None:
     assert MemberRole.values == ["admin", "match_manager"]
+
+
+def test_club_role_choices_are_admin_only() -> None:
+    # ADR 0021: a Club has only the admin role.
+    assert ClubRoleKind.values == ["admin"]
+    assert [value for value, _label in ClubRole._meta.get_field("role").choices] == [
+        "admin"
+    ]
+
+
+def test_club_role_match_manager_is_refused_by_full_clean() -> None:
+    club = Club.objects.create(name="Made-up Club")
+    record = ClubRole(club=club, account=UserFactory.create(), role="match_manager")
+
+    with pytest.raises(ValidationError) as error:
+        record.full_clean()
+
+    assert "role" in error.value.message_dict
+
+
+def test_database_refuses_club_role_match_manager() -> None:
+    club = Club.objects.create(name="Made-up Club")
+    account = UserFactory.create()
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        ClubRole.objects.create(club=club, account=account, role="match_manager")
 
 
 @pytest.mark.parametrize("model", ["member", "club_role"])
@@ -260,12 +290,10 @@ def test_role_str_has_code_and_role_not_email() -> None:
     member = OrganizerMember.objects.create(
         organizer=organizer, account=account, role=MemberRole.ADMIN
     )
-    role = ClubRole.objects.create(
-        club=club, account=account, role=MemberRole.MATCH_MANAGER
-    )
+    role = ClubRole.objects.create(club=club, account=account, role=ClubRoleKind.ADMIN)
 
     assert str(member) == f"{organizer.public_code} admin"
-    assert str(role) == f"{club.public_code} match_manager"
+    assert str(role) == f"{club.public_code} admin"
     assert account.email not in str(member) + str(role)
 
 
@@ -278,3 +306,51 @@ def test_deleting_verifier_account_is_protected() -> None:
 
     with pytest.raises(ProtectedError):
         staff.delete()
+
+
+# Club Organizer Grants (ADR 0021).
+
+
+def test_club_organizer_grant_links_club_and_organizer() -> None:
+    club = Club.objects.create(name="Made-up Club")
+    organizer = Organizer.objects.create(name="Made-up Events")
+
+    grant = ClubOrganizerGrant.objects.create(club=club, organizer=organizer)
+
+    assert list(club.organizer_grants.all()) == [grant]
+    assert list(organizer.club_grants.all()) == [grant]
+    assert grant.created_at is not None
+
+
+def test_club_organizer_grant_is_unique_per_pair() -> None:
+    club = Club.objects.create(name="Made-up Club")
+    organizer = Organizer.objects.create(name="Made-up Events")
+    ClubOrganizerGrant.objects.create(club=club, organizer=organizer)
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        ClubOrganizerGrant.objects.create(club=club, organizer=organizer)
+
+
+def test_club_organizer_grant_str_has_codes_only() -> None:
+    club = Club.objects.create(name="Made-up Club")
+    organizer = Organizer.objects.create(name="Made-up Events")
+
+    grant = ClubOrganizerGrant.objects.create(club=club, organizer=organizer)
+
+    assert str(grant) == f"{club.public_code} {organizer.public_code}"
+    assert "Made-up" not in str(grant)
+
+
+def test_club_organizer_grant_cascades_with_club_and_organizer() -> None:
+    club = Club.objects.create(name="Made-up Club")
+    organizer = Organizer.objects.create(name="Made-up Events")
+    by_club = ClubOrganizerGrant.objects.create(club=club, organizer=organizer)
+    other_club = Club.objects.create(name="Made-up Other Club")
+    by_organizer = ClubOrganizerGrant.objects.create(
+        club=other_club, organizer=organizer
+    )
+
+    club.delete()
+    assert not ClubOrganizerGrant.objects.filter(pk=by_club.pk).exists()
+    organizer.delete()
+    assert not ClubOrganizerGrant.objects.filter(pk=by_organizer.pk).exists()

@@ -234,30 +234,33 @@ class PartnerApplication(AbstractApplication):
         super().save(*args, **kwargs)
 
 
-class ClubApplicationGrant(models.Model):
-    """A Club's permission for one Partner Application.
+class OrganizerApplicationGrant(models.Model):
+    """An Organizer's permission for one Partner Application (ADR 0021).
 
     ``apps.matches.permissions`` uses it: an approved application with a
-    grant may submit that Club's matches. A grant change records no Audit
-    Event yet.
+    grant may submit and confirm matches for that Organizer's Events
+    while the Organizer is verified, as an application the Organizer owns
+    may. A grant change records no Audit Event until #158 lands.
     """
 
-    club = models.ForeignKey(
-        "clubs.Club", on_delete=models.CASCADE, related_name="application_grants"
+    organizer = models.ForeignKey(
+        "clubs.Organizer",
+        on_delete=models.CASCADE,
+        related_name="application_grants",
     )
     application = models.ForeignKey(
-        PartnerApplication, on_delete=models.CASCADE, related_name="club_grants"
+        PartnerApplication, on_delete=models.CASCADE, related_name="organizer_grants"
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.UniqueConstraint(
-                fields=["club", "application"],
-                name="partners_clubapplicationgrant_unique_pair",
+                fields=["organizer", "application"],
+                name="partners_organizerapplicationgrant_unique_pair",
             ),
         ]
 
     def __str__(self) -> str:
         # Codes, never a name (CLAUDE.md, Personal data).
-        return f"{self.club.public_code} {self.application.client_id}"
+        return f"{self.organizer.public_code} {self.application.client_id}"

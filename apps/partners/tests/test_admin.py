@@ -10,11 +10,11 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.tests.factories import ClubFactory, OrganizerFactory
-from apps.partners.admin import ClubApplicationGrantAdmin, PartnerApplicationAdmin
-from apps.partners.models import ClubApplicationGrant, PartnerApplication
+from apps.clubs.tests.factories import OrganizerFactory
+from apps.partners.admin import OrganizerApplicationGrantAdmin, PartnerApplicationAdmin
+from apps.partners.models import OrganizerApplicationGrant, PartnerApplication
 from apps.partners.tests.factories import (
-    ClubApplicationGrantFactory,
+    OrganizerApplicationGrantFactory,
     PartnerApplicationFactory,
 )
 
@@ -26,8 +26,8 @@ pytestmark = pytest.mark.django_db
 APPLICATION_ADD = "admin:partners_partnerapplication_add"
 APPLICATION_CHANGE = "admin:partners_partnerapplication_change"
 APPLICATION_CHANGELIST = "admin:partners_partnerapplication_changelist"
-GRANT_ADD = "admin:partners_clubapplicationgrant_add"
-GRANT_CHANGELIST = "admin:partners_clubapplicationgrant_changelist"
+GRANT_ADD = "admin:partners_organizerapplicationgrant_add"
+GRANT_CHANGELIST = "admin:partners_organizerapplicationgrant_changelist"
 RAW_SECRET = "made-up-client-secret-for-tests-only"
 
 
@@ -65,7 +65,7 @@ def _add_data(**extra: str) -> dict[str, str]:
 def test_our_admins_are_registered() -> None:
     assert isinstance(admin.site._registry[PartnerApplication], PartnerApplicationAdmin)
     assert isinstance(
-        admin.site._registry[ClubApplicationGrant], ClubApplicationGrantAdmin
+        admin.site._registry[OrganizerApplicationGrant], OrganizerApplicationGrantAdmin
     )
 
 
@@ -200,17 +200,18 @@ def test_changelist_loads(superuser_client: Client) -> None:
 
 
 def test_grant_add_and_changelist(superuser_client: Client) -> None:
-    club = ClubFactory.create()
+    organizer = OrganizerFactory.create()
     application = PartnerApplicationFactory.create()
 
+    assert superuser_client.get(reverse(GRANT_ADD)).status_code == 200
     response = superuser_client.post(
         reverse(GRANT_ADD),
-        {"club": str(club.pk), "application": str(application.pk)},
+        {"organizer": str(organizer.pk), "application": str(application.pk)},
     )
 
     assert response.status_code == 302
-    assert ClubApplicationGrant.objects.filter(
-        club=club, application=application
+    assert OrganizerApplicationGrant.objects.filter(
+        organizer=organizer, application=application
     ).exists()
-    ClubApplicationGrantFactory.create()
+    OrganizerApplicationGrantFactory.create()
     assert superuser_client.get(reverse(GRANT_CHANGELIST)).status_code == 200

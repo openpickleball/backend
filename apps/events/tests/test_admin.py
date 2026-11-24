@@ -9,7 +9,11 @@ from django.urls import reverse
 
 from apps.accounts.tests.factories import UserFactory
 from apps.clubs.models import Club, Organizer
-from apps.clubs.tests.factories import ClubFactory, OrganizerFactory
+from apps.clubs.tests.factories import (
+    ClubFactory,
+    ClubOrganizerGrantFactory,
+    OrganizerFactory,
+)
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
 
@@ -102,6 +106,8 @@ def test_add_and_change_pages_load(superuser_client: Client) -> None:
 def test_add_form_creates_an_event(superuser_client: Client) -> None:
     organizer: Organizer = OrganizerFactory.create()
     club: Club = ClubFactory.create()
+    # ADR 0021: an Event names a Club only with the Club's grant.
+    ClubOrganizerGrantFactory.create(club=club, organizer=organizer)
 
     response = superuser_client.post(
         reverse(EVENT_ADD), _add_data(organizer, club=str(club.pk))

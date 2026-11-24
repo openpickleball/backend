@@ -8,7 +8,15 @@ from factory.django import DjangoModelFactory
 from faker import Faker
 
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.models import Club, ClubRole, MemberRole, Organizer, OrganizerMember
+from apps.clubs.models import (
+    Club,
+    ClubOrganizerGrant,
+    ClubRole,
+    ClubRoleKind,
+    MemberRole,
+    Organizer,
+    OrganizerMember,
+)
 from apps.clubs.services import verify_organizer
 
 _faker = Faker()
@@ -51,14 +59,24 @@ class OrganizerMemberFactory(DjangoModelFactory[OrganizerMember]):
 
 
 class ClubRoleFactory(DjangoModelFactory[ClubRole]):
-    """An Account's role at a Club, match manager by default."""
+    """An Account's admin role at a Club, the only Club Role."""
 
     class Meta:
         model = ClubRole
 
     club = SubFactory(ClubFactory)  # type: ignore[no-untyped-call]
     account = SubFactory(UserFactory)  # type: ignore[no-untyped-call]
-    role = MemberRole.MATCH_MANAGER
+    role = ClubRoleKind.ADMIN
+
+
+class ClubOrganizerGrantFactory(DjangoModelFactory[ClubOrganizerGrant]):
+    """A Club's consent for an Organizer to name it."""
+
+    class Meta:
+        model = ClubOrganizerGrant
+
+    club = SubFactory(ClubFactory)  # type: ignore[no-untyped-call]
+    organizer = SubFactory(OrganizerFactory)  # type: ignore[no-untyped-call]
 
 
 def verify(organizer: Organizer) -> Organizer:

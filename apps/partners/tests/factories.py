@@ -8,10 +8,10 @@ from factory.django import DjangoModelFactory
 from faker import Faker
 
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.tests.factories import ClubFactory
+from apps.clubs.tests.factories import OrganizerFactory
 from apps.partners.models import (
     APPROVAL_FIELDS,
-    ClubApplicationGrant,
+    OrganizerApplicationGrant,
     PartnerApplication,
 )
 
@@ -34,13 +34,13 @@ class PartnerApplicationFactory(DjangoModelFactory[PartnerApplication]):
     authorization_grant_type = PartnerApplication.GRANT_CLIENT_CREDENTIALS
 
 
-class ClubApplicationGrantFactory(DjangoModelFactory[ClubApplicationGrant]):
-    """A Club's grant to a new Partner Application."""
+class OrganizerApplicationGrantFactory(DjangoModelFactory[OrganizerApplicationGrant]):
+    """An Organizer's grant to a new Partner Application."""
 
     class Meta:
-        model = ClubApplicationGrant
+        model = OrganizerApplicationGrant
 
-    club = SubFactory(ClubFactory)  # type: ignore[no-untyped-call]
+    organizer = SubFactory(OrganizerFactory)  # type: ignore[no-untyped-call]
     application = SubFactory(PartnerApplicationFactory)  # type: ignore[no-untyped-call]
 
 

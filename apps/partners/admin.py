@@ -1,4 +1,4 @@
-"""Admin for Partner Applications and Club Application Grants.
+"""Admin for Partner Applications and Organizer Application Grants.
 
 django-oauth-toolkit registers its own admin for the swapped Application
 model. This module runs after it (``apps.partners`` follows
@@ -13,7 +13,7 @@ from django.contrib import admin
 from django.http import HttpRequest
 from oauth2_provider.admin import ApplicationAdmin
 
-from apps.partners.models import ClubApplicationGrant, PartnerApplication
+from apps.partners.models import OrganizerApplicationGrant, PartnerApplication
 
 # Every secret is hashed (a check constraint), so the choice is never shown.
 _ALWAYS_EXCLUDED: tuple[str, ...] = ("hash_client_secret",)
@@ -59,9 +59,9 @@ class PartnerApplicationAdmin(ApplicationAdmin):
         return (*_ALWAYS_EXCLUDED, "client_secret")
 
 
-@admin.register(ClubApplicationGrant)
-class ClubApplicationGrantAdmin(admin.ModelAdmin[ClubApplicationGrant]):
-    list_display = ("club", "application", "created_at")
-    list_select_related = ("club", "application")
-    raw_id_fields = ("club", "application")
+@admin.register(OrganizerApplicationGrant)
+class OrganizerApplicationGrantAdmin(admin.ModelAdmin[OrganizerApplicationGrant]):
+    list_display = ("organizer", "application", "created_at")
+    list_select_related = ("organizer", "application")
+    raw_id_fields = ("organizer", "application")
     readonly_fields = ("created_at",)

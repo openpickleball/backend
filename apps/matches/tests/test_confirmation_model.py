@@ -7,7 +7,8 @@ import pytest
 from django.contrib.auth.models import Permission
 from django.db import IntegrityError, transaction
 
-from apps.clubs.tests.factories import ClubFactory
+from apps.clubs.tests.factories import verified_organizer
+from apps.events.tests.factories import EventFactory
 from apps.matches.models import (
     ConfirmationDecision,
     Match,
@@ -18,7 +19,7 @@ from apps.matches.models import (
 )
 from apps.matches.services import DuplicateKind, DuplicateMatchError, record_match
 from apps.matches.tests.factories import MatchFactory, raw_update
-from apps.partners.tests.factories import ClubApplicationGrantFactory, approve
+from apps.partners.tests.factories import OrganizerApplicationGrantFactory, approve
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
@@ -141,8 +142,10 @@ def test_a_repeated_external_id_names_the_live_match_first() -> None:
         submitted_by_application=application,
         external_id=voided.external_id,
     )
-    club = ClubFactory.create()
-    ClubApplicationGrantFactory.create(club=club, application=application)
+    event = EventFactory.create(organizer=verified_organizer())
+    OrganizerApplicationGrantFactory.create(
+        organizer=event.organizer, application=application
+    )
     players = [PlayerFactory.create(), PlayerFactory.create()]
 
     with pytest.raises(DuplicateMatchError) as error:
@@ -154,7 +157,7 @@ def test_a_repeated_external_id_names_the_live_match_first() -> None:
             played_on=date(2026, 6, 1),
             submitted_by_application=application,
             external_id=voided.external_id,
-            club=club,
+            event=event,
         )
 
     assert error.value.kind == DuplicateKind.DUPLICATE_EXTERNAL_ID

@@ -1,4 +1,4 @@
-"""Admin for Clubs and Organizers.
+"""Admin for Clubs, Organizers, and Club Organizer Grants.
 
 Verification is read-only on the change form. It changes only through the
 verify and unverify actions, which call ``apps.clubs.services`` and are
@@ -23,6 +23,7 @@ from apps.audit.admin_actions import (
 )
 from apps.clubs.models import (
     Club,
+    ClubOrganizerGrant,
     ClubRole,
     Organizer,
     OrganizerMember,
@@ -56,6 +57,19 @@ class ClubAdmin(admin.ModelAdmin[Club]):
     readonly_fields = ("public_code",)
     search_fields = ("public_code", "name")
     inlines = (ClubRoleInline,)
+
+
+@admin.register(ClubOrganizerGrant)
+class ClubOrganizerGrantAdmin(admin.ModelAdmin[ClubOrganizerGrant]):
+    """A Club's consent for an Organizer to name it (ADR 0021).
+
+    Only this admin manages grants until the self-service issues land.
+    """
+
+    list_display = ("club", "organizer", "created_at")
+    list_select_related = ("club", "organizer")
+    raw_id_fields = ("club", "organizer")
+    readonly_fields = ("created_at",)
 
 
 @admin.register(Organizer)

@@ -2,9 +2,18 @@
 
 import pytest
 
-from apps.clubs.models import Club, ClubRole, MemberRole, Organizer, OrganizerMember
+from apps.clubs.models import (
+    Club,
+    ClubOrganizerGrant,
+    ClubRole,
+    ClubRoleKind,
+    MemberRole,
+    Organizer,
+    OrganizerMember,
+)
 from apps.clubs.tests.factories import (
     ClubFactory,
+    ClubOrganizerGrantFactory,
     ClubRoleFactory,
     OrganizerFactory,
     OrganizerMemberFactory,
@@ -45,7 +54,16 @@ def test_club_role_is_valid() -> None:
 
     stored = ClubRole.objects.get(pk=role.pk)
     stored.full_clean()
-    assert stored.role == MemberRole.MATCH_MANAGER
+    assert stored.role == ClubRoleKind.ADMIN
+
+
+def test_club_organizer_grant_is_valid() -> None:
+    grant = ClubOrganizerGrantFactory.create()
+
+    stored = ClubOrganizerGrant.objects.get(pk=grant.pk)
+    stored.full_clean()
+    assert stored.club_id is not None
+    assert stored.organizer_id is not None
 
 
 def test_batches_get_distinct_accounts() -> None:

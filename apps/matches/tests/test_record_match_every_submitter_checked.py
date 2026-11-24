@@ -13,15 +13,16 @@ import pytest
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.models import Club
-from apps.clubs.tests.factories import ClubFactory, ClubRoleFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
+from apps.events.models import Event
+from apps.events.tests.factories import EventFactory
 from apps.matches import services
 from apps.matches.models import Game, Match, MatchFlag, MatchFormat, MatchParticipant
 from apps.matches.permissions import MatchPermissionDenied
 from apps.matches.services import MatchValidationError, record_match
 from apps.partners.models import PartnerApplication
 from apps.partners.tests.factories import (
-    ClubApplicationGrantFactory,
+    OrganizerApplicationGrantFactory,
     approved_application,
 )
 from apps.players.models import Player
@@ -79,11 +80,13 @@ def test_unpermitted_account_with_unsaved_application_is_refused(
 
 
 def test_two_permitted_submitters_fail_the_one_submitter_rule() -> None:
-    club: Club = ClubFactory.create()
+    event: Event = EventFactory.create(organizer=verified_organizer())
     account: User = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=account)
+    OrganizerMemberFactory.create(organizer=event.organizer, account=account)
     application = approved_application()
-    ClubApplicationGrantFactory.create(club=club, application=application)
+    OrganizerApplicationGrantFactory.create(
+        organizer=event.organizer, application=application
+    )
     before = _counts()
 
     with pytest.raises(MatchValidationError) as error:
@@ -92,7 +95,7 @@ def test_two_permitted_submitters_fail_the_one_submitter_rule() -> None:
             [PlayerFactory.create()],
             submitted_by_user=account,
             submitted_by_application=application,
-            club=club,
+            event=event,
         )
 
     fields = {issue.field for issue in error.value.issues}

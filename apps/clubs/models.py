@@ -85,10 +85,16 @@ class VerifiedOrganizerDelete(ValueError):
 
 
 class MemberRole(models.TextChoices):
-    """A role an Account holds at an Organizer or a Club."""
+    """A role an Account holds at an Organizer."""
 
     ADMIN = "admin", "Admin"
     MATCH_MANAGER = "match_manager", "Match manager"
+
+
+class ClubRoleKind(models.TextChoices):
+    """A role an Account holds at a Club. A Club has only admins (ADR 0021)."""
+
+    ADMIN = "admin", "Admin"
 
 
 class Club(_CleanedTextModel):
@@ -292,7 +298,11 @@ class OrganizerMember(models.Model):
 
 
 class ClubRole(models.Model):
-    """An Account's role at a Club."""
+    """An Account's role at a Club.
+
+    A Club admin manages the Club's profile and its Club Organizer Grants.
+    A Club Role gives no authority to submit or change a match (ADR 0021).
+    """
 
     club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="roles")
     account = models.ForeignKey(
@@ -301,7 +311,7 @@ class ClubRole(models.Model):
         related_name="club_roles",
     )
     role = models.CharField(
-        max_length=16, choices=MemberRole, error_messages=_CHOICE_MESSAGES
+        max_length=16, choices=ClubRoleKind, error_messages=_CHOICE_MESSAGES
     )
 
     class Meta:
@@ -311,7 +321,7 @@ class ClubRole(models.Model):
                 name="clubs_clubrole_unique_pair",
             ),
             models.CheckConstraint(
-                condition=Q(role__in=MemberRole.values),
+                condition=Q(role__in=ClubRoleKind.values),
                 name="clubs_clubrole_role_valid",
             ),
         ]
@@ -319,3 +329,34 @@ class ClubRole(models.Model):
     def __str__(self) -> str:
         # Never the Account's email (CLAUDE.md, Personal data).
         return f"{self.club.public_code} {self.role}"
+
+
+class ClubOrganizerGrant(models.Model):
+    """A Club's consent for one Organizer to name it (ADR 0021).
+
+    ``apps.matches.permissions`` and ``Event.clean()`` use it: a match or
+    an Event that names a Club needs a grant from that Club to the
+    Event's Organizer. The grant gives consent, not trust: the Organizer
+    must still be verified. A grant change records no Audit Event until
+    #158 lands.
+    """
+
+    club = models.ForeignKey(
+        Club, on_delete=models.CASCADE, related_name="organizer_grants"
+    )
+    organizer = models.ForeignKey(
+        Organizer, on_delete=models.CASCADE, related_name="club_grants"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["club", "organizer"],
+                name="clubs_cluborganizergrant_unique_pair",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # Codes, never a name (CLAUDE.md, Personal data).
+        return f"{self.club.public_code} {self.organizer.public_code}"
