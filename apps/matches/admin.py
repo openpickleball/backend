@@ -29,7 +29,11 @@ from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import URLPattern, path, reverse
 
-from apps.audit.admin_actions import ReasonActionForm, action_reason
+from apps.audit.admin_actions import (
+    ReasonActionForm,
+    action_reason,
+    reason_problem,
+)
 from apps.matches.admin_forms import MatchEditForm, initial_values
 from apps.matches.models import (
     FlagReason,
@@ -326,8 +330,9 @@ class MatchAdmin(admin.ModelAdmin[Match]):
         verb: str,
     ) -> None:
         reason = action_reason(request)
-        if not reason:
-            self.message_user(request, BLANK_REASON, level=messages.WARNING)
+        problem = reason_problem(reason, BLANK_REASON)
+        if problem is not None:
+            self.message_user(request, problem, level=messages.WARNING)
             return
         count = 0
         # Which selected matches needed review before any change, so a

@@ -16,7 +16,11 @@ from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
-from apps.audit.admin_actions import ReasonActionForm, action_reason
+from apps.audit.admin_actions import (
+    ReasonActionForm,
+    action_reason,
+    reason_problem,
+)
 from apps.clubs.models import (
     Club,
     ClubRole,
@@ -185,8 +189,9 @@ class OrganizerAdmin(admin.ModelAdmin[Organizer]):
         done: str,
     ) -> None:
         reason = action_reason(request)
-        if not reason:
-            self.message_user(request, BLANK_REASON, level=messages.WARNING)
+        problem = reason_problem(reason, BLANK_REASON)
+        if problem is not None:
+            self.message_user(request, problem, level=messages.WARNING)
             return
         count = 0
         for organizer in queryset.order_by("pk"):
