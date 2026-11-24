@@ -53,8 +53,9 @@ writes none. The exception is the bulk services (``void_submission_batch``,
 ``void_submitter_matches``), which record one ``match.bulk_void`` every
 run, even a rerun that voids nothing. They void each match in its own
 transaction, so never call them inside an outer ``transaction.atomic()``:
-that would hold every match's lineup lock until it ends. Signals (``apps.matches.signals``) are sent inside the
-transaction, after the rows and the Audit Event.
+that would hold every match's lineup lock until it ends. Signals
+(``apps.matches.signals``) are sent inside the transaction, after the rows
+and the Audit Event.
 
 Lock order: every service takes advisory locks before the row lock, as
 ``record_match`` does, so no two paths wait on each other in opposite
@@ -74,7 +75,7 @@ from typing import TYPE_CHECKING
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Exists, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 from oauth2_provider.models import get_application_model
@@ -825,6 +826,20 @@ def submitter_matches(
     raise ValueError(_UNKNOWN_SUBMITTER)
 
 
+def _stored(instance: models.Model, model: type[models.Model]) -> bool:
+    """True when ``instance`` was loaded or saved and its row still exists.
+
+    An instance built in memory (``_state.adding``) is refused even with
+    an existing row's pk: the audit log refuses it as a target, so the
+    run would end with an error after voiding its matches. ``model`` is
+    the concrete model, never ``type(instance)``, which a lazy
+    ``request.user`` wrapper would hide.
+    """
+    if instance.pk is None or instance._state.adding:
+        return False
+    return model._default_manager.filter(pk=instance.pk).exists()
+
+
 def _check_bulk(actor: Actor, reason: str) -> None:
     """Refuse anyone but a moderator first, then a blank reason."""
     if not is_moderator(actor):
@@ -840,13 +855,14 @@ def void_submission_batch(
 
     Anyone but a moderator (``is_moderator``: an active Account with
     ``matches.moderate_match``) gets ``MatchActionDenied`` before anything
-    is read or written. Then a blank ``reason`` and a batch with no stored
-    row raise ``ValueError`` (fixed text). The matches are found by the batch link
+    is read or written. Then a blank ``reason``, and a batch that is
+    unsaved, built in memory, or has no stored row, raise ``ValueError``
+    (fixed text), before any match is read or voided. The matches are found by the batch link
     (``submission_batch_matches``), never by time. See ``_bulk_void`` for
     how each is voided and what is recorded.
     """
     _check_bulk(actor, reason)
-    if batch.pk is None or not SubmissionBatch.objects.filter(pk=batch.pk).exists():
+    if not _stored(batch, SubmissionBatch):
         raise ValueError(_UNSAVED_BATCH)
     return _bulk_void(
         submission_batch_matches(batch),
@@ -870,15 +886,20 @@ def void_submitter_matches(
     ``submitter`` is an Account or a Partner Application, and the scope
     is ``submitter_matches``: recorded (``created_at``, UTC) on or after
     ``recorded_since``. The same checks as ``void_submission_batch``, in
-    the same order; a submitter with no stored row, or one that is
-    neither an Account nor a Partner Application, raises ``ValueError``.
+    the same order; a submitter that is unsaved, built in memory, or has
+    no stored row, or one that is neither an Account nor a Partner
+    Application, raises ``ValueError`` before any match is read or voided.
     """
     _check_bulk(actor, reason)
-    if (
-        not isinstance(submitter, (get_user_model(), get_application_model()))
-        or submitter.pk is None
-        or not type(submitter)._default_manager.filter(pk=submitter.pk).exists()
-    ):
+    account_model = get_user_model()
+    application_model = get_application_model()
+    if isinstance(submitter, account_model):
+        stored = _stored(submitter, account_model)
+    elif isinstance(submitter, application_model):
+        stored = _stored(submitter, application_model)
+    else:
+        stored = False
+    if not stored:
         raise ValueError(_UNKNOWN_SUBMITTER)
     return _bulk_void(
         submitter_matches(submitter, recorded_since),

@@ -21,8 +21,9 @@ and ones an open flag links to a match that is not voided. Moderators
 The two bulk actions first show a confirmation page with how many matches
 the run would void and how many are already voided, and change nothing
 until the moderator confirms. Every action needs a typed reason
-(``ReasonActionForm``), which goes into its Audit Event. Pages and messages show matches and players by OPEN Code
-only, never a name or an email.
+(``ReasonActionForm``), which goes into its Audit Event. Pages and
+messages show matches and players by OPEN Code only, never a name or an
+email.
 """
 
 from datetime import UTC
