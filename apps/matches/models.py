@@ -273,13 +273,16 @@ class MatchQuerySet(LedgerQuerySet["Match"]):
     def counted(self) -> "MatchQuerySet":
         """The matches that count toward ratings.
 
-        A match counts when it is confirmed and no ``possible_duplicate``
-        flag links it, as ``match`` or as ``duplicate_of``, to a match that
-        is not voided. This is ADR 0011's hold, refined only so that a
-        voided match (expired or corrected) stops holding the other one.
-        #40 adds flag resolution.
+        A match counts when it is confirmed and no open (unresolved)
+        ``possible_duplicate`` flag links it, as ``match`` or as
+        ``duplicate_of``, to a match that is not voided. This is ADR 0011's
+        hold, refined so that a voided match (expired or corrected) stops
+        holding the other one, and a flag a moderator resolved holds
+        nothing (``apps.matches.workflow.resolve_flags``).
         """
-        flags = MatchFlag.objects.filter(reason=FlagReason.POSSIBLE_DUPLICATE)
+        flags = MatchFlag.objects.filter(
+            reason=FlagReason.POSSIBLE_DUPLICATE, resolved_at__isnull=True
+        )
         held_as_match = flags.filter(match=OuterRef("pk")).exclude(
             duplicate_of__status=MatchStatus.VOIDED
         )
@@ -840,6 +843,17 @@ class FlagReason(models.TextChoices):
     POSSIBLE_DUPLICATE = "possible_duplicate", "Possible duplicate"
 
 
+class FlagResolution(models.TextChoices):
+    """How a moderator closed a flag (#40).
+
+    ``approved``: the flagged result stands. ``dismissed``: the flag was
+    not a real concern. Either way the flag stops holding its matches.
+    """
+
+    APPROVED = "approved", "Approved"
+    DISMISSED = "dismissed", "Dismissed"
+
+
 class MatchFlag(_LinkMessagesModel):
     """A reason to hold a Match for moderator review (#40).
 
@@ -850,12 +864,17 @@ class MatchFlag(_LinkMessagesModel):
     Match in the ledger.
 
     An open ``possible_duplicate`` flag holds both its ``match`` and its
-    ``duplicate_of`` from counting until a moderator resolves it (#40),
-    whatever the new Match's status or submitter (ADR 0011). The one
-    refinement (``MatchQuerySet.counted``): a voided match, expired or
-    corrected, no longer holds the other one. The engine adapter counts
-    only ``counted()`` matches (``counted_engine_matches``). #40 adds the review actions and any resolution
-    fields.
+    ``duplicate_of`` from counting until a moderator resolves it, whatever
+    the new Match's status or submitter (ADR 0011). The one refinement
+    (``MatchQuerySet.counted``): a voided match, expired or corrected, no
+    longer holds the other one. The engine adapter counts only
+    ``counted()`` matches (``counted_engine_matches``).
+
+    A moderator resolves a flag through
+    ``apps.matches.workflow.resolve_flags``, which sets ``resolution`` and
+    ``resolved_at`` together (a check constraint). Both are empty while the
+    flag is open. A flag row is never deleted. The resolver and reason are
+    in its Audit Event, not on the flag.
     """
 
     match = models.ForeignKey(
@@ -876,12 +895,30 @@ class MatchFlag(_LinkMessagesModel):
         error_messages=_MATCH_MESSAGES,
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    resolution = models.CharField(
+        max_length=20,
+        choices=FlagResolution,
+        blank=True,
+        error_messages=CHOICE_MESSAGES,
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.CheckConstraint(
                 condition=Q(reason__in=FlagReason.values),
                 name="matches_matchflag_reason_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(resolution="", resolved_at__isnull=True)
+                | (
+                    Q(resolution__in=FlagResolution.values)
+                    & Q(resolved_at__isnull=False)
+                ),
+                name="matches_matchflag_resolution_set_together",
+                violation_error_message=(
+                    "A resolved flag has both a resolution and a time."
+                ),
             ),
             models.CheckConstraint(
                 condition=Q(

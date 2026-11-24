@@ -34,6 +34,7 @@ class AuditAction(models.TextChoices):
     MATCH_VOID = "match.void", "Match voided"
     MATCH_EXPIRE = "match.expire", "Unconfirmed match expired"
     DISPUTE_OUTCOME = "dispute.outcome", "Dispute outcome"
+    MATCH_FLAG_RESOLVE = "match.flag_resolve", "Match flag resolved"
     MFA_CHANGE = "mfa.change", "MFA change"
     PASSWORD_CHANGE = "password.change", "Password change"
     SESSION_END = "session.end", "Session ended by the player"
