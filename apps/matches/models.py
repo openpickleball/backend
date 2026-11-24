@@ -27,9 +27,10 @@ status changes are ``apps.matches.workflow``. Which matches count is
 
 ``ScoringType`` values equal ``open_engine.ScoringType``'s and
 ``GameTarget`` values equal the points in the engine's ``ALL_GAME_FORMATS``,
-so #44 maps them directly. ``MatchFormat`` holds only the two base values
-of ``open_engine.RatingFormat``: #44 derives the doubles categories (mixed,
-men's, women's) from the players. ``MatchStatus``, ``BestOf``, and ``Team``
+so the engine adapter (``apps.ratings.engine_adapter``) maps them
+directly. ``MatchFormat`` holds only the two base values of
+``open_engine.RatingFormat``: the engine adapter derives the doubles
+categories (mixed, men's, women's) from the players. ``MatchStatus``, ``BestOf``, and ``Team``
 have no engine enum. The match type is not stored: it comes from the
 Event's kind, or is self-reported when there is no Event (decision F1 in
 #1).
@@ -306,7 +307,8 @@ class MatchFormat(models.TextChoices):
 
     The values are the two base values of ``open_engine.RatingFormat``. The
     engine's doubles categories (mixed, men's, women's) are not stored here:
-    #44 derives them from the players.
+    the engine adapter (``apps.ratings.engine_adapter``) derives them from
+    the players.
     """
 
     SINGLES = "singles", "Singles"
@@ -785,8 +787,8 @@ class MatchFlag(_LinkMessagesModel):
     ``duplicate_of`` from counting until a moderator resolves it (#40),
     whatever the new Match's status or submitter (ADR 0011). The one
     refinement (``MatchQuerySet.counted``): a voided match, expired or
-    corrected, no longer holds the other one. #44 must count only
-    ``counted()`` matches. #40 adds the review actions and any resolution
+    corrected, no longer holds the other one. The engine adapter counts
+    only ``counted()`` matches (``counted_engine_matches``). #40 adds the review actions and any resolution
     fields.
     """
 
