@@ -386,8 +386,9 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
     ``schedule_replay()`` (``late``). A participant whose stored rating in
     a format the Match updates names another parameter fingerprint, or
     exists while the snapshot is empty, would restart from an empty
-    engine: that writes nothing and goes to ``schedule_replay()``
-    (``replay_needed``). ``EngineMappingError`` and the engine's errors
+    engine, and a stored snapshot whose config fingerprint or version
+    differs from the loaded config's cannot be loaded: both write nothing
+    and go to ``schedule_replay()`` (``replay_needed``). ``EngineMappingError`` and the engine's errors
     propagate.
     """
     with transaction.atomic():
@@ -414,6 +415,14 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
             match=match, kind=RatingChangeKind.LIVE_UPDATE
         ).exists():
             return LiveUpdateOutcome.UNCHANGED
+        # A snapshot taken under another config (an engine upgrade) cannot
+        # be loaded; a brand-new empty row has nothing to load.
+        if row.snapshot and (
+            row.config_fingerprint != labels.config_fingerprint
+            or row.config_version != labels.config_version
+        ):
+            schedule_replay(players, earliest_date=match.played_on)
+            return LiveUpdateOutcome.REPLAY_NEEDED
         formats = _rating_formats(match)
         states = RatingState.objects.filter(
             player__in=players, rating_format__in=formats
