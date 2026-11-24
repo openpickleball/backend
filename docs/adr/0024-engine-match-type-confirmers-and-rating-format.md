@@ -31,7 +31,7 @@ The project owner decided all three on 2026-11-23 (comment on issue #44).
 - A self-reported match confirmed through the duplicate path with one team's confirmation counts in the backend (`counted()`) but not in the engine, until the other team confirms. A partner or the web app that reads "confirmed" as "rated" must allow for this.
 - A stored category format reveals the gender division of all four players. It is listed in the personal data inventory, and the API does not return it.
 - Removing a gender division does not change any stored rating format, so past matches keep their category. Account deletion (#116) decides what happens to the stored formats of a deleted player's matches.
-- Matches already in a local database before this change get a one-off value from the migration. Nothing has been deployed. A local database with old matches may need a reset (`docker compose down -v`).
+- The field's default is `singles`, the only value the check constraint allows for a singles match. A doubles match must set its own value, or the constraint refuses it. Nothing has been deployed. A local database that already holds a doubles match fails the migration when it adds the constraint. Reset it (`docker compose down -v`) and migrate again.
 
 ## Alternatives considered
 
