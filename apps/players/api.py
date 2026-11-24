@@ -106,13 +106,14 @@ from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
 from config.api_errors import ErrorResponse
 from config.auth import account_auth, auth_session
+from config.throttling import account_throttle
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
-router = Router(tags=["players"], auth=account_auth)
+router = Router(tags=["players"], auth=account_auth, throttle=account_throttle)
 # The signed-in Account's own Player, mounted at /api/v1/me/.
-me_router = Router(tags=["players"], auth=account_auth)
+me_router = Router(tags=["players"], auth=account_auth, throttle=account_throttle)
 
 PlayerCode = Annotated[str, PublicCodePath(CodeType.PLAYER)]
 

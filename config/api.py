@@ -48,6 +48,15 @@ returns 409) come back as `ErrorResponse` (see `config/api_errors.py`). Every op
 takes input documents a 422 response with that schema, and may not declare
 a different 422 schema. Every operation with `auth` (such as
 `config.auth.account_auth`) documents a 401 response with it.
+
+Throttles (ADR 0030): a router whose operations need sign-in passes
+`throttle=config.throttling.account_throttle` next to its `auth`, so they
+share one per-Account budget. An operation's own `throttle=` replaces its
+router's: player search keeps only its `SearchThrottle`. A public
+operation would use `config.throttling.ClientIPThrottle`. The health
+checks are never throttled. Every operation with a throttle documents a
+429 response with `ErrorResponse` and a `Retry-After` header, and may not
+declare a different 429 schema. A test walks every operation to pin this.
 Two kinds of error never reach these handlers: a known path called with the
 wrong method gets ninja's plain-text 405, and a path under /api/v1/ that
 matches no operation gets Django's own 404 page.
@@ -67,6 +76,7 @@ from apps.matches.api import router as matches_router
 from apps.players.api import me_router as players_me_router
 from apps.players.api import router as players_router
 from config.api_errors import (
+    THROTTLED_STATUS,
     UNAUTHORIZED_STATUS,
     VALIDATION_ERROR_STATUS,
     ErrorResponse,
@@ -106,7 +116,7 @@ class OpenNinjaAPI(NinjaAPI):
         schema = super().get_openapi_schema(
             path_prefix=path_prefix, path_params=path_params
         )
-        _document_errors(schema)
+        _document_errors(schema, _throttled_operation_ids(self))
         return schema
 
     def get_openapi_operation_id(self, operation: "Operation") -> str:
@@ -136,9 +146,46 @@ def _wire_location(error: dict[str, Any], single_attr: str | None) -> dict[str, 
     return error
 
 
-def _document_errors(schema: OpenAPISchema) -> None:
-    """Add `ErrorResponse`, a 422 response to every operation with input, and
-    a 401 response to every operation that takes auth."""
+def _throttled_operation_ids(target: NinjaAPI) -> set[str]:
+    """The operation ids of every operation that has a throttle."""
+    return {
+        str(operation.operation_id)
+        for bound_router in target._get_bound_routers()
+        for path_view in bound_router.path_operations.values()
+        for operation in path_view.operations
+        if operation.throttle_objects
+    }
+
+
+def _document_throttled(
+    operation: dict[str, Any], error_ref: dict[str, str], response: dict[str, Any]
+) -> None:
+    """Document the 429 a throttled operation returns, with `Retry-After`.
+
+    An operation may declare its own 429 only with `ErrorResponse`, the
+    schema a throttle's refusal always returns.
+    """
+    responses = operation.setdefault("responses", {})
+    # ninja keys responses by int status; JSON rendering makes them strings.
+    declared = [code for code in responses if str(code) == str(THROTTLED_STATUS)]
+    for code in declared:
+        content = responses[code].get("content", {}).get("application/json", {})
+        if content.get("schema") != error_ref:
+            raise ImproperlyConfigured(
+                f"API operation {operation.get('operationId')} declares its own "
+                f"{THROTTLED_STATUS} response, but a throttle always returns "
+                f"{ErrorResponse.__name__}. Remove it or declare "
+                f"{ErrorResponse.__name__}."
+            )
+        responses[code] = response
+    if not declared:
+        responses[THROTTLED_STATUS] = response
+
+
+def _document_errors(schema: OpenAPISchema, throttled: set[str]) -> None:
+    """Add `ErrorResponse`, a 422 response to every operation with input, a
+    401 response to every operation that takes auth, and a 429 response to
+    every operation in `throttled`."""
     error_schema = ErrorResponse.model_json_schema(
         ref_template=_SCHEMA_REF, schema_generator=NinjaGenerateJsonSchema
     )
@@ -164,8 +211,20 @@ def _document_errors(schema: OpenAPISchema) -> None:
         "description": "The request is not authenticated.",
         "content": {"application/json": {"schema": error_ref}},
     }
+    too_many = {
+        "description": "Too many requests. Retry after the seconds in Retry-After.",
+        "headers": {
+            "Retry-After": {
+                "description": "Seconds until the limit that refused the request resets.",
+                "schema": {"type": "integer", "minimum": 1},
+            }
+        },
+        "content": {"application/json": {"schema": error_ref}},
+    }
     for path_item in schema.get("paths", {}).values():
         for operation in path_item.values():
+            if operation.get("operationId") in throttled:
+                _document_throttled(operation, error_ref, too_many)
             if operation.get("security"):
                 operation.setdefault("responses", {})[UNAUTHORIZED_STATUS] = (
                     unauthorized

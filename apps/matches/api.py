@@ -70,13 +70,14 @@ from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType, normalize
 from config.api_errors import ErrorResponse
 from config.auth import account_auth
+from config.throttling import account_throttle
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
-router = Router(tags=["matches"], auth=account_auth)
+router = Router(tags=["matches"], auth=account_auth, throttle=account_throttle)
 # The signed-in Account's own matches, mounted at /api/v1/me/.
-me_router = Router(tags=["matches"], auth=account_auth)
+me_router = Router(tags=["matches"], auth=account_auth, throttle=account_throttle)
 
 MatchCode = Annotated[str, PublicCodePath(CodeType.MATCH)]
 
