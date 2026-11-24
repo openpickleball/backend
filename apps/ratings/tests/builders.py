@@ -65,6 +65,7 @@ def saved_match(
     played_at: datetime | None = None,
     played_at_utc_offset: int | None = None,
     sequence: int = 0,
+    players: Mapping[Team, Sequence[Player]] | None = None,
     **extra: object,
 ) -> tuple[Match, dict[Team, list[Player]]]:
     """Insert a Match and return it fetched again, with its players by team.
@@ -74,17 +75,20 @@ def saved_match(
     in doubles, and a men's player in singles. ``confirm`` and ``dispute``
     name players as (team, index) for MatchConfirmation rows. The rating
     format is derived from the divisions, as ``record_match`` does, unless
-    ``rating_format`` is passed.
+    ``rating_format`` is passed. ``players`` reuses Players from an
+    earlier match (``divisions`` is then ignored).
     """
-    if divisions is None:
-        size = 2 if match_format == MatchFormat.DOUBLES else 1
-        divisions = {team: MIXED[team][:size] for team in Team}
-    players = {team: [_player(d) for d in divisions[team]] for team in Team}
+    if players is None:
+        if divisions is None:
+            size = 2 if match_format == MatchFormat.DOUBLES else 1
+            divisions = {team: MIXED[team][:size] for team in Team}
+        players = {team: [_player(d) for d in divisions[team]] for team in Team}
+    by_team: dict[Team, list[Player]] = {team: list(players[team]) for team in Team}
     if "rating_format" not in extra:
         extra["rating_format"] = derive_rating_format(
             match_format,
-            [p.gender_division for p in players[Team.A]],
-            [p.gender_division for p in players[Team.B]],
+            [p.gender_division for p in by_team[Team.A]],
+            [p.gender_division for p in by_team[Team.B]],
         )
     made: Match = MatchFactory.create(
         format=match_format,
@@ -100,7 +104,7 @@ def saved_match(
         games=False,
         **extra,
     )
-    for team, members in players.items():
+    for team, members in by_team.items():
         for player in members:
             MatchParticipant.objects.create(match=made, player=player, team=team)
     for number, (a, b) in enumerate(games, start=1):
@@ -113,8 +117,8 @@ def saved_match(
     ):
         for team, index in chosen:
             MatchConfirmation.objects.create(
-                match=made, player=players[team][index], decision=decision
+                match=made, player=by_team[team][index], decision=decision
             )
     if status != MatchStatus.PENDING:
         raw_update(made, status=status)
-    return Match.objects.get(pk=made.pk), players
+    return Match.objects.get(pk=made.pk), by_team
