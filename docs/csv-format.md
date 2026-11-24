@@ -8,7 +8,7 @@ A template with made-up players is in [`csv-results-template.csv`](csv-results-t
 
 ## One submission schema, one set of rules
 
-The CSV is an input layout for OPEN's one match submission schema (#80). It is not a second format. Each row becomes one match submission, and each row goes through the same validation as an API submission (`validate_match`). The column-to-field table below gives the field each column fills. The field names are `validate_match`'s and `record_match`'s argument names, the same names as the first-party `POST /api/v1/matches/` body (`MatchCreateIn`).
+The CSV is an input layout for OPEN's one match submission schema (#80). It is not a second format. Each row becomes one match submission, and each row goes through the same validation as an API submission (`validate_match`). The column-to-field table below gives the field each column fills. The field names are `validate_match`'s and `record_match`'s argument names. `format`, `scoring_type`, `played_on`, `team_a`, `team_b`, and `games` are also the field names of the first-party `POST /api/v1/matches/` body (`MatchCreateIn`). `event_label` is a `record_match` argument only, like the upload's `event`, `location`, and the row's `sequence`.
 
 `apps/matches/csv_format.py` reads the file (`parse_results_csv`). The upload (#71) then looks up the players and records each match.
 
@@ -24,7 +24,7 @@ Every file has a header row and then one row per match. The columns come in this
 | 4 | `date` | `played_on` | Yes | The date played, as `YYYY-MM-DD`. |
 | 5 | `playerA1` | none (a name check, see below) | No | Team A's first player's name. |
 | 6 | `playerA1Id` | `team_a` | Yes | Team A's first player's OPEN player ID. |
-| 7 | `playerA2` | none (a name check) | No | Team A's second player's name. Empty in singles. |
+| 7 | `playerA2` | none (a name check) | No | Team A's second player's name. Empty in singles (see Singles below). |
 | 8 | `playerA2Id` | `team_a` | Doubles | Team A's second player's OPEN player ID. Empty in singles. |
 | 9 | `playerB1` | none (a name check) | No | Team B's first player's name. |
 | 10 | `playerB1Id` | `team_b` | Yes | Team B's first player's OPEN player ID. |
@@ -36,12 +36,14 @@ Every file has a header row and then one row per match. The columns come in this
 | 19, 20 | `teamAGame4`, `teamBGame4` | `games[3]` | No | Game 4. |
 | 21, 22 | `teamAGame5`, `teamBGame5` | `games[4]` | No | Game 5. |
 
+`matchType` and `scoreType` are compared without regard to case or spaces around them, and must use only ASCII characters.
+
 `matchType` is the match's format (singles or doubles). It is not OPEN's Match Type (tournament, league, and so on). The Event chosen at upload sets the Match Type.
 
 ## The header
 
-- The header must be the first row, with the 22 columns in the order above.
-- Header names are compared without regard to case or spaces around them.
+- The header must be the first row that is not blank, with the 22 columns in the order above. Blank rows before it are skipped.
+- Header names are compared without regard to case or spaces around them. They must use only ASCII characters.
 - Each player ID column header may have any letters, digits, or underscores between the slot and `Id`. For example `playerA1Id`, `playerA1ExternalId`, and `playerA1RatingId` are all accepted in column 6. So the header from another system's export works unchanged.
 - Empty cells after the last header column are ignored.
 - A header that does not match is refused with `bad_header`. The message names the column number and the expected column, never the text in the file.
@@ -53,7 +55,7 @@ Every file has a header row and then one row per match. The columns come in this
 - A player ID that is not a valid OPEN player ID fails the row with `unknown_player`. The upload (#71) also fails a row whose ID is valid but belongs to no player, with the same code. The report names the row and the ID column (such as `playerB1Id`). It never repeats the ID itself.
 - A name with no player ID fails the row with `missing_player_id`.
 - Names never find or create a player. They are only a check. When a name does not match the player's display name, the upload's report shows a warning and the row still counts (#71).
-- In singles, leave the second player of each team empty (both the name and the ID).
+- In singles, fill the first player of each team and leave the second empty (both the name and the ID). A team whose only player is in the second slot is also accepted.
 
 ## Dates
 
@@ -62,7 +64,7 @@ Every file has a header row and then one row per match. The columns come in this
 
 ## Scores
 
-- Each score is a whole number made of the digits 0 to 9, such as `11` or `9`. No signs, decimals, spaces inside, or other characters.
+- Each score is a whole number made of the digits 0 to 9, such as `11` or `9`. No plus signs, decimals, spaces inside, or other characters: these fail with `invalid_score`, as does `-0`. A minus sign before another number is read, and the row then fails with `negative_score`.
 - Enter games in order from game 1. Leave the cells of games not played empty. Empty cells at the end of a row may also be left out entirely.
 - Both teams' cells of a played game must be filled.
 - A game is won at the game target by 2 or more points, or past the target by exactly 2 points (for example 11-9, 11-4, or 13-11 with a target of 11).
@@ -90,13 +92,17 @@ Every player in the file must be 13 or older (ADR 0009, #114). The file has no a
 - Use standard CSV quoting. A name with a comma or a quote goes in double quotes, such as `"O'Nealy, Morgan"`. Apostrophes need no quoting.
 - Line endings may be CRLF (Windows) or LF. A trailing newline is optional.
 - Blank rows are skipped.
-- A file that is not valid CSV (an unclosed quote, a stray quote, a NUL byte) is refused with `malformed`.
+- A file that is not valid CSV is refused with `malformed`: a quote that is never closed, a character right after a closing quote (such as `"Morgan"x`), or a NUL byte. A quote inside a cell that does not start with a quote (such as `Mo"rgan`) is read as part of the cell.
 - A file with a header and no match rows is refused with `no_rows`.
 - The upload (#71) limits the file size and the number of rows.
 
 ## The report
 
-The parser returns one result per match row, in file order. A row that passes has its normalized values. A row that fails has every issue found, each with the columns it concerns (canonical names such as `playerB1Id`), a code, and a message. One bad row never stops the rows after it.
+The parser returns one result per match row, in file order. A row that passes has its normalized values. A row that fails has its issues, each with the columns it concerns (canonical names such as `playerB1Id`), a code, and a message. One bad row never stops the rows after it.
+
+A row's issues are every cell issue plus every match rule issue that does not only follow from a bad cell. For example, when game 3 has a bad score, the report shows that score and any issue with games 1 and 2, but not whether the games decide the match.
+
+Each result names its row by its CSV record number. Records count from the start of the file, blank ones included, so when the header is the first record it is row 1, and the row numbers match a spreadsheet's for an ordinary file. A quoted name or event that spans more than one line is one record, so the rows after it are numbered one less per extra line.
 
 Messages are fixed text. They name columns, game numbers, and allowed values, and never repeat what the file holds. The upload (#71) adds its own per-row results (player lookups, name warnings, duplicates) to the report and decides, by the mode the organizer picks, whether the good rows are recorded.
 
@@ -124,7 +130,7 @@ Each example starts from a valid doubles row and changes one thing.
 | No games | Every score cell empty | `no_games` | the game columns |
 | Future date | A date after today | `future_date` | `date` |
 | Wrong date form | `2026/04/11` or `2026-02-30` | `invalid_date` | `date` |
-| Wrong team size for `matchType` | `D` with one player a side, or `S` with two | `team_size` | that team's ID columns |
+| Wrong team size for `matchType` | `D` with one player a side, or `S` with two | `team_size` | the ID columns of that team that hold a player (both of the team's ID columns when it has none) |
 | Event label too long | More than 200 characters | `too_long` | `event` |
 | Cells past the last column | A note in column 23 | `extra_columns` | none (the whole row) |
 
@@ -133,5 +139,6 @@ Each example starts from a valid doubles row and changes one thing.
 - Read files only through `apps.matches.csv_format.parse_results_csv(data, game_target=...)`. It raises `CsvFileError` (with `code` and `message`) for a file it cannot read, and `ValueError` for a game target outside 11, 15, and 21.
 - Each `CsvMatch` holds the row number, `sequence`, format, scoring type, event label, date, both teams as `CsvPlayer` (ID column, name, normalized OPEN Code), games, inferred best of, and game target. Look up each code, report an unknown one as `unknown_player` on its column, and compare each name with the player's display name as a warning.
 - Record each row with `record_match()` in its own transaction, passing `sequence`, `event_label`, and the upload's Event and location.
+- A parsed `CsvMatch` can still be refused by `record_match()`: the model's limits (such as the largest score a Game stores), the submitter's permission, or a duplicate. Handle `MatchValidationError`, `DuplicateMatchError`, and `MatchPermissionDenied` for each row and report them on that row.
 - The parser does not check players' ages, file size, or row count. The upload does.
 - Change this page, the template, and the parser together.
