@@ -367,6 +367,18 @@ def _rating_formats(match: Match) -> list[str]:
     return formats
 
 
+def _corrected_matches(match: Match) -> list[Match]:
+    """The Matches ``match`` corrects, directly or through earlier corrections."""
+    chain: list[Match] = []
+    seen = {match.pk}
+    current = match
+    while current.corrects_id is not None and current.corrects_id not in seen:
+        seen.add(current.corrects_id)
+        current = Match.objects.get(pk=current.corrects_id)
+        chain.append(current)
+    return chain
+
+
 def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
     """Apply the live rating update for the Match with row id ``match_id``.
 
@@ -388,7 +400,10 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
     exists while the snapshot is empty, would restart from an empty
     engine, and a stored snapshot whose config fingerprint or version
     differs from the loaded config's cannot be loaded: both write nothing
-    and go to ``schedule_replay()`` (``replay_needed``). ``EngineMappingError`` and the engine's errors
+    and go to ``schedule_replay()`` (``replay_needed``). So does a
+    correction of a Match that was rated live (any Match in its
+    ``corrects`` chain has a live update history row): every player in the
+    chain goes to the replay, from the chain's earliest date. ``EngineMappingError`` and the engine's errors
     propagate.
     """
     with transaction.atomic():
@@ -415,6 +430,22 @@ def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
             match=match, kind=RatingChangeKind.LIVE_UPDATE
         ).exists():
             return LiveUpdateOutcome.UNCHANGED
+        # A correction of a Match that was rated live: the old Match's
+        # effect is still in the ratings and the snapshot, so only a replay
+        # can put the correction in its place.
+        chain = _corrected_matches(match)
+        if RatingHistory.objects.filter(
+            match__in=chain, kind=RatingChangeKind.LIVE_UPDATE
+        ).exists():
+            schedule_replay(
+                Player.objects.filter(
+                    pk__in=MatchParticipant.objects.filter(
+                        match__in=[match, *chain]
+                    ).values("player_id")
+                ).order_by("pk"),
+                earliest_date=min(m.played_on for m in [match, *chain]),
+            )
+            return LiveUpdateOutcome.REPLAY_NEEDED
         # A snapshot taken under another config (an engine upgrade) cannot
         # be loaded; a brand-new empty row has nothing to load.
         if row.snapshot and (
