@@ -21,7 +21,7 @@ from apps.accounts.tests.factories import UserFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus, Team
 from apps.matches.workflow import confirm_match, dispute_match, edit_match
 from apps.players.models import GenderDivision, Player
-from apps.ratings import services
+from apps.ratings import services, tasks
 from apps.ratings.models import RatingHistory, RatingState
 from apps.ratings.tests.builders import saved_match
 
@@ -53,6 +53,11 @@ def test_a_correction_of_a_live_rated_match_needs_a_replay(
         lambda found, earliest_date: calls.append(
             (sorted(str(p.public_code) for p in found), earliest_date)
         ),
+    )
+    # Hold the replay (#47): it would count the correction before its live
+    # update runs, and the live update would then find it unchanged.
+    monkeypatch.setattr(
+        tasks.replay_ratings, "apply_async", lambda *args, **kwargs: None
     )
     original, players = saved_match(
         match_format=MatchFormat.SINGLES,
