@@ -40,8 +40,9 @@ uv run python manage.py shell -c "from apps.ratings.engine_adapter import engine
 ```
 
 The tests in `apps/ratings/tests/test_engine_adapter.py` check that the tag in
-`pyproject.toml`, the tag in `uv.lock`, and the installed version agree. A tag
-bump that forgets to relock fails them.
+`pyproject.toml`, the tag in `uv.lock`, and the installed version agree. A
+stale lock is caught earlier: CI's `uv sync --locked` fails when `uv.lock` does
+not match `pyproject.toml`, and so does `uv lock --check`.
 
 ## Upgrading the engine
 
@@ -63,7 +64,7 @@ bump that forgets to relock fails them.
    then compare the two reports. A change that makes predictions worse needs
    a reason before it ships. The backend has no backtest command yet.
 5. Run the recompute: replay the whole ledger with the new version so every
-   published rating comes from it (hard rule 3). Each replay stores its
+   published rating comes from it (hard rule 3). Each replay must store its
    `as_of` date, config version, and config fingerprint (hard rule 4). The
    recompute command comes with issue #48.
 6. Open one pull request with the bump, the changelog notes from step 1, and
