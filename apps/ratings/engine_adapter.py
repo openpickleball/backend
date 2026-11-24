@@ -508,3 +508,125 @@ def replay_provenance(info: open_engine.ReplayInfo) -> ReplayProvenance:
         },
         engine_version=engine_version(),
     )
+
+
+# Live updates (#46, ADR 0027).
+
+
+@dataclass(frozen=True)
+class LiveConfig:
+    """The loaded config's labels, as plain data.
+
+    ``parameter_fingerprint`` keys the stored engine snapshot.
+    """
+
+    parameter_fingerprint: str
+    config_fingerprint: str
+    config_version: str
+    params_version: str | None
+
+
+@dataclass(frozen=True)
+class LiveUpdate:
+    """What recording one Match live did, as plain data.
+
+    ``summaries`` holds each player's summary and the engine's delta, for
+    every format whose update counted: the Match's own format, plus overall
+    doubles for a category doubles match whose parent update counted.
+    Ordered by format, then player code. ``late`` is True when the engine
+    found the match (or its overall doubles update) earlier than a
+    player's last match. ``snapshot`` is the engine's ``to_snapshot()``
+    after recording; save it only when the update counted and was not
+    late. ``already_recorded`` is True when the snapshot had the Match
+    already (a redelivery): nothing was recorded.
+    """
+
+    counted: bool
+    reason: str | None
+    late: bool
+    already_recorded: bool
+    summaries: tuple[tuple[RatingSummary, float], ...]
+    snapshot: dict[str, object]
+    parameter_fingerprint: str
+    config_fingerprint: str
+    config_version: str
+    params_version: str | None
+
+
+def _live_config(cfg: open_engine.Config) -> LiveConfig:
+    return LiveConfig(
+        parameter_fingerprint=str(cfg.parameter_fingerprint()),
+        config_fingerprint=str(cfg.fingerprint()),
+        config_version=str(cfg.version),
+        params_version=None if cfg.params_version is None else str(cfg.params_version),
+    )
+
+
+def live_config() -> LiveConfig:
+    """The labels of the config ``load_config()`` loads."""
+    return _live_config(load_config())
+
+
+def _summaries(
+    engine: open_engine.RatingEngine, result: open_engine.MatchResult
+) -> tuple[tuple[RatingSummary, float], ...]:
+    """Each counted format's summaries, with the engine's delta for each player."""
+    updates = [result]
+    if result.parent is not None and result.parent.counted:
+        updates.append(result.parent)
+    found: list[tuple[RatingSummary, float]] = []
+    for update in updates:
+        rating_format = update.rating_format
+        for player_id, delta in update.deltas.items():
+            last_played = engine.state(player_id, rating_format).last_played
+            # The engine's own default reference (the later of the last
+            # replay and the player's last match), passed explicitly since
+            # player_summary refuses no as_of before any replay.
+            dates = [d for d in (engine.calculated_as_of, last_played) if d is not None]
+            summary = engine.player_summary(player_id, rating_format, as_of=max(dates))
+            found.append((rating_summary(summary), float(delta)))
+    found.sort(key=lambda item: (item[0].rating_format, item[0].player_id))
+    return tuple(found)
+
+
+def record_live(snapshot: Mapping[str, object] | None, match: Match) -> LiveUpdate:
+    """Record ``match`` live on the engine ``snapshot`` holds, and return the result.
+
+    ``snapshot`` is an earlier ``to_snapshot()`` output under the loaded
+    config, or None for an empty engine. Pass only a Match that counts
+    (``Match.objects.counted()``). The match is recorded without
+    ``as_of``, so the engine labels it a live update. Raises
+    ``EngineMappingError`` for a Match with no engine value, and the
+    engine's own errors for a snapshot it refuses (``SnapshotError``,
+    ``ConfigError``).
+    """
+    cfg = load_config()
+    labels = _live_config(cfg)
+    engine = (
+        open_engine.RatingEngine(cfg)
+        if snapshot is None
+        else open_engine.RatingEngine.from_snapshot(snapshot, cfg)
+    )
+    engine_match = to_engine_match(match)
+    if engine_match.match_id in engine.processed_match_ids:
+        return LiveUpdate(
+            counted=True,
+            reason=None,
+            late=False,
+            already_recorded=True,
+            summaries=(),
+            snapshot=dict(snapshot) if snapshot is not None else engine.to_snapshot(),
+            **vars(labels),
+        )
+    result = engine.record(engine_match)
+    counted = bool(result.counted)
+    late = bool(result.late) or (result.parent is not None and bool(result.parent.late))
+    return LiveUpdate(
+        counted=counted,
+        reason=None if result.reason is None else str(result.reason.value),
+        late=late,
+        already_recorded=False,
+        summaries=_summaries(engine, result) if counted else (),
+        snapshot=engine.to_snapshot(),
+        **vars(labels),
+    )

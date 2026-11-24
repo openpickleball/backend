@@ -72,3 +72,4 @@ Add each record here when it merges.
 - [0023. Birth year and month and gender division are set once](0023-birth-and-division-set-once.md) (issue #225)
 - [0024. Engine match type, confirmers, and a stored rating format](0024-engine-match-type-confirmers-and-rating-format.md) (issue #44)
 - [0025. Rating state, rating history, and replay provenance](0025-rating-state-history-and-replay-provenance.md) (issue #45)
+- [0027. Live rating updates and the engine snapshot](0027-live-rating-updates-and-engine-snapshot.md) (issue #46)

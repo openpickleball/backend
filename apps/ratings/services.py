@@ -13,12 +13,21 @@ a Match already made, changes nothing, so a repeated live update task is
 harmless. A redelivered replay change is not caught that way: ordering
 replay changes against live updates, a redelivered replay task included,
 is the replay caller's job (#47).
+
+``update_ratings_for_match()`` is the live update (#46, ADR 0027): it
+records one confirmed Match on the stored engine snapshot and applies the
+changes through ``apply_rating()``. ``schedule_replay()`` is where a late
+match goes; #47 fills it in.
 """
 
+import logging
+from collections.abc import Iterable
+from datetime import date
+from enum import StrEnum
 from typing import Any
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
@@ -29,13 +38,24 @@ from apps.matches.models import (
     RatingFormat,
 )
 from apps.players.models import Player
-from apps.ratings.engine_adapter import RatingSummary, ReplayProvenance, engine_version
+from apps.ratings.engine_adapter import (
+    LiveConfig,
+    LiveUpdate,
+    RatingSummary,
+    ReplayProvenance,
+    engine_version,
+    live_config,
+    record_live,
+)
 from apps.ratings.models import (
+    EngineSnapshot,
     RatingChangeKind,
     RatingHistory,
     RatingReplay,
     RatingState,
 )
+
+logger = logging.getLogger(__name__)
 
 # The stored summary fields and the versions that produced them. They
 # decide whether an apply changes anything, and they are what the Audit
@@ -277,3 +297,267 @@ def apply_rating(
             },
         )
     return history
+
+
+class LiveUpdateFailed(Exception):
+    """A live update task failed in a worker, without the error's text.
+
+    Holds only the Match's row id and the error's class, so Celery's
+    worker log never prints the original text, which can quote values.
+    """
+
+    def __init__(self, match_id: int, error_class: str) -> None:
+        super().__init__(f"Live update failed for match {match_id} ({error_class}).")
+        self.match_id = match_id
+        self.error_class = error_class
+
+
+class LiveUpdateOutcome(StrEnum):
+    """What ``update_ratings_for_match()`` did."""
+
+    UPDATED = "updated"
+    UNCHANGED = "unchanged"
+    MISSING = "missing"
+    NOT_COUNTED = "not_counted"
+    REJECTED = "rejected"
+    LATE = "late"
+    REPLAY_NEEDED = "replay_needed"
+
+
+def schedule_replay(players: Iterable[Player], earliest_date: date) -> None:
+    """Hand a late match's players to a replay from ``earliest_date``.
+
+    A stub until #47 replaces it: it only logs the players' OPEN Codes and
+    the date, never a name or other personal data.
+    """
+    codes = sorted(str(player.public_code) for player in players)
+    logger.info(
+        "Live update skipped, replay needed from %s for players %s",
+        earliest_date.isoformat(),
+        ", ".join(codes),
+    )
+
+
+def _snapshot_row(labels: LiveConfig) -> EngineSnapshot:
+    """The engine snapshot row for ``labels``, created if new, locked.
+
+    A first run racing another first run: ``get_or_create`` catches the
+    unique violation and reads the other's row. Both then lock it.
+    """
+    row, _ = EngineSnapshot.objects.get_or_create(
+        parameter_fingerprint=labels.parameter_fingerprint,
+        defaults={
+            "config_fingerprint": labels.config_fingerprint,
+            "config_version": labels.config_version,
+            "params_version": labels.params_version,
+            "engine_version": engine_version(),
+            "snapshot": {},
+        },
+    )
+    locked: EngineSnapshot = EngineSnapshot.objects.select_for_update().get(pk=row.pk)
+    return locked
+
+
+def _save_engine_snapshot(row: EngineSnapshot, update: LiveUpdate) -> None:
+    """Store ``update``'s snapshot on the locked ``row``: its only writer."""
+    row.snapshot = update.snapshot
+    row.config_fingerprint = update.config_fingerprint
+    row.config_version = update.config_version
+    row.params_version = update.params_version
+    row.engine_version = engine_version()
+    row.full_clean()
+    row.save()
+
+
+def _rating_formats(match: Match) -> list[str]:
+    """The formats a Match can update: its own, and overall doubles for doubles."""
+    formats = [str(match.rating_format)]
+    if (
+        match.format == MatchFormat.DOUBLES
+        and match.rating_format != RatingFormat.DOUBLES
+    ):
+        formats.append(str(RatingFormat.DOUBLES))
+    return formats
+
+
+def _share_lock_match(match_id: int) -> None:
+    """Lock the Match row ``FOR SHARE`` until the transaction ends.
+
+    Django's ``select_for_update`` has no share mode, so this is raw SQL
+    on the model's table, with the id as a parameter.
+    """
+    # The table name is the model's own, never input.
+    table = connection.ops.quote_name(Match._meta.db_table)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT 1 FROM {table} WHERE id = %s FOR SHARE",
+            [match_id],
+        )
+
+
+def _corrected_matches(match: Match) -> list[Match]:
+    """The Matches ``match`` corrects, directly or through earlier corrections."""
+    chain: list[Match] = []
+    seen = {match.pk}
+    current = match
+    while current.corrects_id is not None and current.corrects_id not in seen:
+        seen.add(current.corrects_id)
+        current = Match.objects.get(pk=current.corrects_id)
+        chain.append(current)
+    return chain
+
+
+def _record_and_apply(
+    row: EngineSnapshot, match: Match, players: list[Player]
+) -> LiveUpdateOutcome:
+    """Record ``match`` on the locked snapshot and apply the changes.
+
+    Runs inside ``update_ratings_for_match()``'s transaction, after its
+    locks and checks.
+    """
+    update = record_live(row.snapshot or None, match)
+    if update.already_recorded:
+        return LiveUpdateOutcome.UNCHANGED
+    if not update.counted:
+        logger.info(
+            "Live update rejected by the engine for match %s: %s",
+            match.public_code,
+            update.reason,
+        )
+        return LiveUpdateOutcome.REJECTED
+    if update.late:
+        schedule_replay(players, earliest_date=match.played_on)
+        return LiveUpdateOutcome.LATE
+
+    by_code = {str(player.public_code): player for player in players}
+    for summary, delta in sorted(
+        update.summaries,
+        key=lambda item: (by_code[item[0].player_id].pk, item[0].rating_format),
+    ):
+        apply_rating(
+            player=by_code[summary.player_id],
+            summary=summary,
+            kind=RatingChangeKind.LIVE_UPDATE,
+            match=match,
+            delta=delta,
+        )
+    _save_engine_snapshot(row, update)
+    return LiveUpdateOutcome.UPDATED
+
+
+def update_ratings_for_match(match_id: int) -> LiveUpdateOutcome:
+    """Apply the live rating update for the Match with row id ``match_id``.
+
+    In one transaction: lock the engine snapshot row for the loaded config
+    (every live update serializes on it), then the Match's Players in row
+    id order, then the Match row ``FOR SHARE`` (so a void, dispute, or
+    edit waits until this update commits), check again that it counts,
+    then record the Match on the engine the snapshot holds,
+    apply each changed rating through ``apply_rating()``, and save the new
+    snapshot. A failure anywhere rolls back the ratings and the snapshot
+    together, so the task can run again.
+
+    Writes nothing for a Match that does not exist (``missing``), that no
+    longer counts (``not_counted``), that the snapshot already holds
+    (``unchanged``, a redelivery), or that the engine does not count
+    (``rejected``; the snapshot is not saved, so its id stays free). A
+    Match earlier than a player's stored last match in a format it
+    updates, or one the engine finds late, writes nothing and goes to
+    ``schedule_replay()`` (``late``). A participant whose stored rating in
+    a format the Match updates names another parameter fingerprint, or
+    exists while the snapshot is empty, would restart from an empty
+    engine, and a stored snapshot whose config fingerprint or version
+    differs from the loaded config's cannot be loaded: both write nothing
+    and go to ``schedule_replay()`` (``replay_needed``). So does a
+    correction of a Match that was rated live (any Match in its
+    ``corrects`` chain has a live update history row): every player in the
+    chain goes to the replay, from the chain's earliest date. Any other
+    error (``EngineMappingError``, the engine's errors, an apply failure)
+    is logged with the Match id and error class only, then propagates.
+    """
+    with transaction.atomic():
+        match = Match.objects.filter(pk=match_id).first()
+        if match is None:
+            return LiveUpdateOutcome.MISSING
+        if not Match.objects.counted().filter(pk=match.pk).exists():
+            return LiveUpdateOutcome.NOT_COUNTED
+        labels = live_config()
+        row = _snapshot_row(labels)
+        # Lock order: the snapshot row, then the Players by row id. A
+        # subquery, not a join, so only the Player rows are locked.
+        players = list(
+            Player.objects.select_for_update(no_key=True)
+            .filter(
+                pk__in=MatchParticipant.objects.filter(match=match).values("player_id")
+            )
+            .order_by("pk")
+        )
+        # Hold the Match row until commit: the workflow's void, dispute,
+        # and edit lock it FOR UPDATE, so they wait for this update.
+        _share_lock_match(match.pk)
+        # Again under the locks: the Match may have been voided or held
+        # while this update waited for the snapshot row.
+        if not Match.objects.counted().filter(pk=match.pk).exists():
+            return LiveUpdateOutcome.NOT_COUNTED
+        # A counted live update always writes history rows in the same
+        # transaction as the snapshot, so a Match with one is a
+        # redelivery, even after a later match moved last_played.
+        if RatingHistory.objects.filter(
+            match=match, kind=RatingChangeKind.LIVE_UPDATE
+        ).exists():
+            return LiveUpdateOutcome.UNCHANGED
+        # A correction of a Match that was rated live: the old Match's
+        # effect is still in the ratings and the snapshot, so only a replay
+        # can put the correction in its place.
+        chain = _corrected_matches(match)
+        if RatingHistory.objects.filter(
+            match__in=chain, kind=RatingChangeKind.LIVE_UPDATE
+        ).exists():
+            schedule_replay(
+                Player.objects.filter(
+                    pk__in=MatchParticipant.objects.filter(
+                        match__in=[match, *chain]
+                    ).values("player_id")
+                ).order_by("pk"),
+                earliest_date=min(m.played_on for m in [match, *chain]),
+            )
+            return LiveUpdateOutcome.REPLAY_NEEDED
+        # A snapshot taken under another config (an engine upgrade) cannot
+        # be loaded; a brand-new empty row has nothing to load.
+        if row.snapshot and (
+            row.config_fingerprint != labels.config_fingerprint
+            or row.config_version != labels.config_version
+        ):
+            schedule_replay(players, earliest_date=match.played_on)
+            return LiveUpdateOutcome.REPLAY_NEEDED
+        formats = _rating_formats(match)
+        states = RatingState.objects.filter(
+            player__in=players, rating_format__in=formats
+        )
+        # A rating from another parameter set, or one the snapshot does not
+        # hold, would restart from an empty engine: only a replay can
+        # continue it.
+        if states.exclude(
+            parameter_fingerprint=labels.parameter_fingerprint
+        ).exists() or (not row.snapshot and states.exists()):
+            schedule_replay(players, earliest_date=match.played_on)
+            return LiveUpdateOutcome.REPLAY_NEEDED
+        if RatingState.objects.filter(
+            player__in=players,
+            rating_format__in=formats,
+            last_played__gt=match.played_on,
+        ).exists():
+            schedule_replay(players, earliest_date=match.played_on)
+            return LiveUpdateOutcome.LATE
+
+        try:
+            return _record_and_apply(row, match, players)
+        # Any error: log the Match id and the class only (the text can quote
+        # values), then let the task fail; the transaction rolls back.
+        except Exception as exc:
+            logger.error(
+                "Live update failed for match %s (%s).",
+                match.pk,
+                type(exc).__name__,
+            )
+            raise

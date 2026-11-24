@@ -560,3 +560,87 @@ class RatingHistory(_RatingValues, _InsertOnlyModel):
     def __str__(self) -> str:
         # The OPEN Code, never a name.
         return f"{self.player.public_code} {self.rating_format} {self.kind}"
+
+
+class EngineSnapshotWriteRefused(RuntimeError):
+    """Raised when code tries to delete, bulk insert, or bulk change a snapshot.
+
+    The message is fixed text.
+    """
+
+    message: ClassVar[str] = (
+        "An engine snapshot changes only through the live update service: it "
+        "cannot be bulk inserted, bulk changed, or deleted."
+    )
+
+    def __init__(self) -> None:
+        super().__init__(self.message)
+
+
+class EngineSnapshotQuerySet(_GuardedQuerySet["EngineSnapshot"]):
+    """Engine snapshots, never bulk inserted, bulk changed, or deleted."""
+
+    refused = EngineSnapshotWriteRefused
+
+    def bulk_create(self, *args: Any, **kwargs: Any) -> NoReturn:
+        self._refuse()
+
+
+_SNAPSHOT_NOT_MAPPING = "The snapshot must be a mapping."
+
+
+class EngineSnapshot(models.Model):
+    """The engine's whole state that live updates build on (#46, ADR 0027).
+
+    One row per parameter fingerprint, the published parameter set's
+    values. ``snapshot`` is ``RatingEngine.to_snapshot()`` output, empty
+    until the first live update. It holds Player OPEN Codes and their
+    rating states, never a name. Write it only through
+    ``apps.ratings.services.update_ratings_for_match()``, which locks the
+    row first. It is never deleted or bulk changed.
+    """
+
+    parameter_fingerprint = models.CharField(
+        max_length=FINGERPRINT_MAX_LENGTH, unique=True
+    )
+    config_fingerprint = models.CharField(max_length=FINGERPRINT_MAX_LENGTH)
+    config_version = models.CharField(max_length=VERSION_MAX_LENGTH)
+    params_version = models.CharField(  # noqa: DJ001 (None as the engine reports it)
+        max_length=VERSION_MAX_LENGTH, null=True, blank=True
+    )
+    engine_version = models.CharField(max_length=VERSION_MAX_LENGTH)
+    snapshot = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="RatingEngine.to_snapshot() output; empty before the first update",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = EngineSnapshotQuerySet.as_manager()
+
+    class Meta:
+        base_manager_name = "objects"
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            *(
+                _not_blank(field, "ratings_enginesnapshot")
+                for field in (
+                    "parameter_fingerprint",
+                    "config_fingerprint",
+                    "config_version",
+                    "engine_version",
+                )
+            ),
+            _params_version_not_blank("ratings_enginesnapshot"),
+        ]
+
+    def __str__(self) -> str:
+        return str(self.parameter_fingerprint)
+
+    def clean(self) -> None:
+        # The field skips empty values, so the mapping check runs here.
+        if not isinstance(self.snapshot, dict):
+            raise ValidationError({"snapshot": _SNAPSHOT_NOT_MAPPING})
+
+    def delete(self, *args: Any, **kwargs: Any) -> NoReturn:
+        raise EngineSnapshotWriteRefused
