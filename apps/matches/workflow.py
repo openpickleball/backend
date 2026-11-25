@@ -29,7 +29,9 @@ States and transitions:
   creation core ``record_match`` uses: validation, model rules, locks,
   duplicate checks, and flags. Only a moderator, or the Event's verified
   Organizer settling the dispute with a required reason, edits a
-  disputed match.
+  disputed match. A participant corrects a pending or disputed
+  self-reported match with the same teams (#267); the correction is
+  pending with the corrector's confirmation.
 - ``expire_unconfirmed_matches``: with ``MATCH_CONFIRMATION_EXPIRY_DAYS``
   set, voids pending matches older than that.
 - ``expire_disputes_and_holds``: voids a disputed match whose first open
@@ -117,7 +119,9 @@ from apps.matches.permissions import (
     MatchSubmission,
     can_change_match,
     can_confirm_as_organizer,
+    can_correct_as_player,
     can_create_match,
+    corrects_as_player,
     is_moderator,
     moderates,
     participant_player,
@@ -650,6 +654,7 @@ def edit_match(
     bracket_label: str = "",
     sequence: int = 0,
     as_moderator: bool = True,
+    as_player: bool = False,
 ) -> Match:
     """Void ``match`` and create its correction. Returns the new match.
 
@@ -675,6 +680,19 @@ def edit_match(
     rolls everything back. One ``match.edit`` Audit Event on the old match
     records it (no separate ``match.void``).
 
+    With ``as_player=True`` (the players' correction operation, #267) only
+    the player rules apply: a participant of a self-reported match (no
+    Event, no Club) corrects a pending or disputed one
+    (``corrects_as_player``). The correction must have the same two teams,
+    in either order, or the edit is refused with ``MatchActionDenied``
+    before any validation. A confirmed or voided match gets
+    ``MatchStateError`` (dispute it first). The correction is always
+    pending, with the corrector's ``confirm`` row written in the same
+    transaction, so it counts only once a player on the other team
+    confirms it. The Audit Event's ``after`` then also names the
+    correction's status (``correction_status``). Without ``as_player`` a
+    participant gets ``MatchActionDenied``, as before.
+
     Only a moderator, or the settling Organizer, may give a ``reason``;
     anyone else giving one gets ``ReasonRefused``. The settling Organizer
     must give one (``ValueError``), and a match that is no longer disputed
@@ -695,9 +713,30 @@ def edit_match(
     # the correction, falls back to the other rules.
     # With as_moderator=False (the Organizer's API operations) only the
     # non-moderator rules apply, whoever the actor is.
-    moderator = as_moderator and moderates(actor, match, new_player_ids=new_player_ids)
-    if not (moderator or can_change_match(actor, match)):
+    # With as_player=True (the players' correction operation) only the
+    # player rules apply (#267): never the moderator or Organizer paths.
+    moderator = (
+        as_moderator
+        and not as_player
+        and moderates(actor, match, new_player_ids=new_player_ids)
+    )
+    player_path = as_player
+    if player_path:
+        if not can_correct_as_player(actor, match):
+            raise MatchActionDenied
+    elif not (moderator or can_change_match(actor, match)):
         raise MatchActionDenied
+    team_ids = [
+        [p.pk for p in team if isinstance(p, Player) and p.pk is not None]
+        for team in (team_a, team_b)
+    ]
+    corrector: Player | None = None
+    if player_path:
+        corrector = corrects_as_player(
+            actor, match, team_a_ids=team_ids[0], team_b_ids=team_ids[1]
+        )
+        if corrector is None:
+            raise MatchActionDenied
     stored = Match.objects.select_related(
         "submitted_by_user", "submitted_by_application", "event", "club"
     ).get(pk=match.pk)
@@ -710,9 +749,17 @@ def edit_match(
     def check_editor() -> None:
         # An edit creates a match, so the editor also needs the authority
         # to submit it, checked before any validation.
-        if not moderator and not (
-            can_change_match(actor, match) and can_create_match(actor, submission)
-        ):
+        if moderator:
+            return
+        if player_path:
+            allowed = corrects_as_player(
+                actor, match, team_a_ids=team_ids[0], team_b_ids=team_ids[1]
+            ) is not None and can_create_match(actor, submission)
+        else:
+            allowed = can_change_match(actor, match) and can_create_match(
+                actor, submission
+            )
+        if not allowed:
             raise MatchActionDenied
 
     check_editor()
@@ -721,6 +768,7 @@ def edit_match(
     # whether a reason may be given; it is checked again under the lock.
     settles = (
         not moderator
+        and not player_path
         and stored.status == MatchStatus.DISPUTED
         and settles_dispute(actor, match, new_player_ids=new_player_ids)
     )
@@ -757,10 +805,15 @@ def edit_match(
         locked = _lock_row(match)
         if locked.status == MatchStatus.VOIDED:
             raise MatchStateError
+        if player_path:
+            # A player corrects only a pending or disputed match: a
+            # confirmed one is disputed first.
+            if locked.status == MatchStatus.CONFIRMED:
+                raise MatchStateError
         # Only a moderator or the settling Organizer edits a disputed match.
         # A match no longer disputed under the lock refuses the settling
         # Organizer's reason: a reason is taken only to settle a dispute.
-        if not moderator and (locked.status == MatchStatus.DISPUTED) != settles:
+        elif not moderator and (locked.status == MatchStatus.DISPUTED) != settles:
             raise MatchStateError
         old_status = MatchStatus(locked.status)
         was_counting = locked.is_counted()
@@ -778,18 +831,29 @@ def edit_match(
             raise duplicate_error(existing, actor, reveal=moderator)
         new_status = (
             MatchStatus.PENDING
-            if old_status == MatchStatus.PENDING
+            if player_path or old_status == MatchStatus.PENDING
             else MatchStatus.CONFIRMED
         )
         corrected, _held = insert_draft(draft, status=new_status, corrects=locked)
+        if corrector is not None:
+            # The corrector's own confirmation, as a submission is the
+            # submitter's (#197). One team never confirms a self-reported
+            # match, so the correction waits for the other team.
+            _record_decision(corrected, corrector, ConfirmationDecision.CONFIRM)
+        after: dict[str, object] = {
+            **snapshot(locked, ["status"]),
+            "corrected_by": corrected.public_code,
+        }
+        if player_path:
+            # A player's correction of a disputed match is created pending,
+            # so the rating adapter must not read ``before`` alone as a
+            # correction created confirmed (ADR 0024).
+            after["correction_status"] = corrected.status
         record_event(
             action=AuditAction.MATCH_EDIT,
             target=locked,
             before=before,
-            after={
-                **snapshot(locked, ["status"]),
-                "corrected_by": corrected.public_code,
-            },
+            after=after,
             reason=reason,
             **audit_actor(actor),
         )

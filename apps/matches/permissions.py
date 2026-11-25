@@ -67,6 +67,12 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   rule ``moderates`` applies to moderators). Such an actor resolves a
   dispute or corrects a disputed match, with a required reason. A match
   with no Event has no Organizer level.
+- ``can_correct_as_player`` and ``corrects_as_player``: a participant
+  correcting a self-reported match (no Event, no Club) with the same two
+  teams, in either order (#267). The correction is pending until the
+  other team confirms it. A player never corrects a match with an Event,
+  and never changes who played. The match's status is checked by
+  ``edit_match``, not here.
 - ``is_moderator``: an active Account with the ``matches.moderate_match``
   permission. A moderator may void and edit any match, resolve disputes,
   resolve flags, and approve matches, except a match they played in.
@@ -485,3 +491,56 @@ def settles_dispute(
         # An application: it has no Player.
         return True
     return not _plays_in(account.pk, match.pk, new_player_ids)
+
+
+def _self_reported(match: Match) -> bool:
+    """True when the stored ``match`` has no Event and no Club."""
+    return Match.objects.filter(
+        pk=match.pk, event_id__isnull=True, club_id__isnull=True
+    ).exists()
+
+
+def can_correct_as_player(actor: Actor, match: Match) -> bool:
+    """True when ``actor`` is a participant of the saved, self-reported
+    ``match`` (no Event, no Club), so may correct it as a player (#267).
+
+    The teams of the correction are checked by ``corrects_as_player``.
+    Read from the database by ids.
+    """
+    if match.pk is None or participant_player(actor, match) is None:
+        return False
+    return _self_reported(match)
+
+
+def _stored_teams(match_pk: int) -> set[frozenset[int]]:
+    teams: dict[str, set[int]] = {}
+    for player_id, team in MatchParticipant.objects.filter(
+        match_id=match_pk
+    ).values_list("player_id", "team"):
+        teams.setdefault(team, set()).add(player_id)
+    return {frozenset(players) for players in teams.values()}
+
+
+def corrects_as_player(
+    actor: Actor,
+    match: Match,
+    *,
+    team_a_ids: Collection[int],
+    team_b_ids: Collection[int],
+) -> Player | None:
+    """The actor's Player when it may correct ``match`` with these teams.
+
+    That is a participant of the saved, self-reported ``match``
+    (``can_correct_as_player``) whose correction has the stored two teams,
+    in either order (#267). Else None. The match's status is not checked
+    here. Everything is read from the database by ids.
+    """
+    if match.pk is None:
+        return None
+    player = participant_player(actor, match)
+    if player is None or not _self_reported(match):
+        return None
+    wanted = {frozenset(team_a_ids), frozenset(team_b_ids)}
+    if len(wanted) != 2 or wanted != _stored_teams(match.pk):
+        return None
+    return player

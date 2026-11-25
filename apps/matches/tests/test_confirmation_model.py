@@ -64,7 +64,7 @@ def test_a_player_may_confirm_and_dispute(match: Match) -> None:
     for decision in ConfirmationDecision:
         MatchConfirmation.objects.create(match=match, player=player, decision=decision)
 
-    assert match.confirmations.count() == 2
+    assert match.confirmations.count() == len(ConfirmationDecision)
 
 
 def test_a_bad_decision_is_refused(match: Match) -> None:
