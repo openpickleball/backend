@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 
 from apps.accounts.models import User
@@ -157,11 +156,11 @@ def test_a_refused_organizer_change_records_nothing(actor: User) -> None:
     assert _events(event) == []
 
 
-def test_a_save_the_database_refuses_records_nothing(actor: User) -> None:
+def test_a_save_the_model_rules_refuse_records_nothing(actor: User) -> None:
     event: Event = EventFactory.create()
     event.end_date = date(event.start_date.year - 1, 1, 1)
 
-    with transaction.atomic(), pytest.raises(IntegrityError):
+    with pytest.raises(ValidationError):
         save_event(event, actor=actor)
 
     assert _events(event) == []

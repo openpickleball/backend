@@ -5,7 +5,8 @@ kind sets the match type of matches recorded after a change, so every
 create, change, and delete made through these services records one Audit
 Event with an explicit actor, in the same transaction:
 
-- ``save_event()`` records ``event.create`` (``before`` None, ``after``
+- ``save_event()`` runs ``full_clean()`` (``ValidationError``, nothing
+  saved or recorded), then records ``event.create`` (``before`` None, ``after``
   every audited value) or ``event.change`` (``before`` and ``after`` hold
   only the changed fields), and nothing when nothing changed or the save
   raises.
@@ -48,6 +49,10 @@ def save_event(event: Event, *, actor: Actor) -> None:
         before = None
         if not event._state.adding and event.pk is not None:
             before = _stored_values(event.pk, lock=True)
+        # Every model rule, for a caller that did not clean the Event (the
+        # admin form did): the Club Organizer Grant (ADR 0021), the dates,
+        # and the organizer lock. The OPEN Code is issued by save().
+        event.full_clean(exclude=["public_code"])
         event.save()
         after = _stored_values(event.pk, lock=False)
         if after is None:
