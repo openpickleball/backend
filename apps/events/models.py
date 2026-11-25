@@ -2,8 +2,9 @@
 
 An Event groups the matches played under one Organizer, optionally at a
 Club that granted that Organizer a Club Organizer Grant (ADR 0021), over a
-span of dates. Its ``kind`` is the match type its matches
-count as. Self-reported matches have no Event (decision F1 in #1).
+span of dates. Its ``kind`` is the match type of the matches recorded
+with it, and a kind change reaches only matches recorded after it.
+Self-reported matches have no Event (decision F1 in #1).
 
 Each Match stores the kind as its match type when it is recorded, so the
 kind may change at any time and the change reaches only matches recorded
@@ -43,7 +44,10 @@ ORGANIZER_LOCKED = "This event has matches, so its organizer cannot change."
 
 
 class EventKind(models.TextChoices):
-    """The match type an Event's matches count as.
+    """The match type of matches recorded with an Event.
+
+    Each Match stores the kind it was recorded with, so a kind change
+    reaches only matches recorded after it (ADR 0035).
 
     The values are the engine's ``open_engine.MatchType`` values.
     ``self_reported`` is left out: self-reported matches have no Event
@@ -106,23 +110,42 @@ class Event(_CleanedTextModel):
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Save, refusing an organizer change once a Match names the Event.
 
-        When the stored organizer differs from this instance's, the Event
-        row is locked with a plain ``FOR UPDATE`` before the check. Every
-        Match write transaction for an Event (``record_match`` and
-        ``edit_match``, through ``apps.matches.services.hold_event``) first
-        takes ``FOR KEY SHARE`` on the row and checks the submitter again,
-        so the two serialize: this save waits until an in-flight
-        submission commits and then sees its Match and refuses, or the
-        submission waits until this save commits and is judged against the
-        new organizer. A concurrent organizer change waits too. The check
-        counts Matches in every status, voided ones included. Raw writes
-        (``QuerySet.update``, raw SQL) skip it.
+        Every save of an existing Event first locks its row with a plain
+        ``FOR UPDATE`` and compares the organizer with the stored one under
+        that lock, so a stale instance never writes an old organizer back
+        over another session's change. Every Match write transaction for an
+        Event (``record_match`` and ``edit_match``, through
+        ``apps.matches.services.hold_event``) first takes ``FOR KEY SHARE``
+        on the row, checks the submitter again, and reads the kind, so the
+        two serialize: this save waits until an in-flight submission
+        commits (an organizer change then sees its Match and refuses), or
+        the submission waits until this save commits and is judged against
+        the stored organizer and kind. The check counts Matches in every
+        status, voided ones included. A save whose ``update_fields`` leave
+        out the organizer writes no organizer, so it is not refused, but
+        it still takes the lock. Raw writes (``QuerySet.update``, raw SQL)
+        skip all of this.
         """
         if self._state.adding or self.pk is None:
             super().save(*args, **kwargs)
             return
+        update_fields = kwargs.get("update_fields")
+        writes_organizer = update_fields is None or bool(
+            {"organizer", "organizer_id"} & set(update_fields)
+        )
         with transaction.atomic():
-            if self._organizer_changes(lock=True) and self._has_matches():
+            stored = (
+                Event._base_manager.select_for_update()
+                .filter(pk=self.pk)
+                .values_list("organizer_id", flat=True)
+                .first()
+            )
+            if (
+                writes_organizer
+                and stored is not None
+                and stored != self.organizer_id
+                and self._has_matches()
+            ):
                 raise ValidationError({"organizer": ORGANIZER_LOCKED})
             super().save(*args, **kwargs)
 
@@ -139,31 +162,24 @@ class Event(_CleanedTextModel):
             raise ValidationError({"end_date": _DATES_ORDER})
         if self._club_needs_grant():
             raise ValidationError({"club": _CLUB_NOT_GRANTED})
-        if (
-            not self._state.adding
-            and self._organizer_changes(lock=False)
-            and self._has_matches()
-        ):
+        if not self._state.adding and self._organizer_changes() and self._has_matches():
             raise ValidationError({"organizer": ORGANIZER_LOCKED})
 
-    def _organizer_changes(self, *, lock: bool) -> bool:
+    def _organizer_changes(self) -> bool:
         """True when the stored organizer differs from this instance's.
 
-        Reads the stored row, without a lock first. With ``lock``, a
-        change locks the row ``FOR UPDATE`` and reads it again, so only an
-        organizer change takes the lock.
+        Reads the stored row without a lock, for ``clean()``'s message;
+        ``save()`` checks again under its row lock.
         """
         if self.pk is None or not isinstance(self.organizer_id, int):
             # Field validation reports a missing or invalid link.
             return False
-        rows = Event._base_manager.filter(pk=self.pk)
-        stored = rows.values_list("organizer_id", flat=True).first()
-        if stored is None or stored == self.organizer_id:
-            return False
-        if not lock:
-            return True
-        locked = rows.select_for_update().values_list("organizer_id", flat=True).first()
-        return locked is not None and locked != self.organizer_id
+        stored = (
+            Event._base_manager.filter(pk=self.pk)
+            .values_list("organizer_id", flat=True)
+            .first()
+        )
+        return stored is not None and stored != self.organizer_id
 
     def _has_matches(self) -> bool:
         """True when any Match, in any status, names this Event."""

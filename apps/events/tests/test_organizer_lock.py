@@ -8,6 +8,7 @@ name, and dates stay changeable. Made-up data only.
 from datetime import timedelta
 
 import pytest
+from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.db import connection
 from django.test import Client
@@ -18,8 +19,9 @@ from apps.accounts.tests.factories import UserFactory
 from apps.clubs.tests.factories import OrganizerFactory
 from apps.events.models import Event, EventKind
 from apps.events.tests.factories import EventFactory
-from apps.matches.models import MatchStatus
+from apps.matches.models import Match, MatchStatus
 from apps.matches.tests.factories import MatchFactory, raw_update
+from apps.matches.workflow import void_match
 
 pytestmark = pytest.mark.django_db
 
@@ -90,14 +92,37 @@ def test_an_organizer_change_locks_the_event_row_for_update() -> None:
     assert all("FOR UPDATE" in sql and "NO KEY" not in sql for sql in locks)
 
 
-def test_a_save_with_the_same_organizer_takes_no_lock() -> None:
+def test_a_save_with_the_same_organizer_still_locks_the_row() -> None:
     event = _event_with_match()
     event.name = "Made-up Other Name"
 
     with CaptureQueriesContext(connection) as queries:
         event.save()
 
-    assert not [q for q in queries if "FOR UPDATE" in q["sql"]]
+    locks = [q["sql"] for q in queries if "FOR UPDATE" in q["sql"]]
+    assert locks
+    assert all("NO KEY" not in sql for sql in locks)
+
+
+def test_an_event_whose_only_match_was_voided_still_refuses() -> None:
+    event: Event = EventFactory.create()
+    match = MatchFactory.create(event=event)
+    moderator = UserFactory.create()
+    moderator.user_permissions.add(
+        Permission.objects.get(
+            content_type__app_label="matches", codename="moderate_match"
+        )
+    )
+    void_match(match, actor=moderator, reason="Made-up void")
+    assert Match.objects.get(pk=match.pk).status == MatchStatus.VOIDED
+    old = event.organizer_id
+    event.organizer = OrganizerFactory.create()
+
+    with pytest.raises(ValidationError) as caught:
+        event.save()
+
+    assert caught.value.message_dict == {"organizer": [LOCKED]}
+    assert _stored_organizer_id(event) == old
 
 
 def test_full_clean_reports_the_same_message() -> None:
