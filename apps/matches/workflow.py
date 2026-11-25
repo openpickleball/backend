@@ -14,14 +14,19 @@ States and transitions:
   Organizer Application Grant, confirms a pending match alone.
 - ``dispute_match``: a participant disputes a pending or confirmed match,
   which becomes disputed.
-- ``resolve_dispute``: a moderator resolves a disputed match as confirmed
-  or voided, with a reason.
+- ``resolve_dispute``: the match's Event's verified Organizer
+  (``settles_dispute``: a member whose Player is not in the match's
+  correction chain, or the approved application that submitted the match
+  and still acts for that Organizer, ADR 0034), or a moderator, resolves
+  a disputed match as confirmed or voided, with a required reason.
 - ``void_match``: a moderator, or an actor ``can_change_match`` allows,
   voids a match in any other status.
 - ``edit_match``: the same actors void a match and create its correction
   (``corrects`` links it to the old one) in one transaction, through the
   creation core ``record_match`` uses: validation, model rules, locks,
-  duplicate checks, and flags. Only a moderator edits a disputed match.
+  duplicate checks, and flags. Only a moderator, or the Event's verified
+  Organizer settling the dispute with a required reason, edits a
+  disputed match.
 - ``expire_unconfirmed_matches``: with ``MATCH_CONFIRMATION_EXPIRY_DAYS``
   set, voids pending matches older than that.
 - ``expire_disputes_and_holds``: voids a disputed match whose first open
@@ -525,16 +530,20 @@ def edit_match(
 
     For a moderator, or an actor ``can_change_match`` allows that may also
     submit the correction (``can_create_match`` for the old match's Event
-    and Club and the new players), checked before any validation; only a
-    moderator edits a disputed match, and a voided one raises
-    ``MatchStateError``. The correction keeps the old match's submitter,
+    and Club and the new players), checked before any validation. Only a
+    moderator, or the Event's verified Organizer settling the dispute
+    (``settles_dispute`` with the new players, ADR 0034), edits a disputed
+    match; anyone else gets ``MatchStateError``, as for a voided match. The correction keeps the old match's submitter,
     external id, Event, and Club, links to it through ``corrects``, and is
     confirmed when the old one was confirmed or disputed, else pending. It
     goes through validation, the model rules, and the duplicate checks
     (``MatchValidationError``, ``DuplicateMatchError``), and any error
     rolls everything back. One ``match.edit`` Audit Event on the old match
-    records it (no separate ``match.void``). Only a moderator may give a
-    ``reason``; anyone else giving one gets ``ValueError``. Signals: ``match_changed``
+    records it (no separate ``match.void``). Only a moderator, or the
+    settling Organizer, may give a ``reason``; anyone else giving one gets
+    ``ReasonRefused``. The settling Organizer must give one (``ValueError``),
+    and a match that is no longer disputed under the lock refuses it
+    (``MatchStateError``). Signals: ``match_changed``
     with ``change=edit`` for an old match that was counting (the earlier
     of the two dates), else ``match_confirmed`` for a confirmed
     correction, and ``hold`` or ``release`` for each other match whose
@@ -568,7 +577,17 @@ def edit_match(
         )
         if not can_create_match(actor, submission):
             raise MatchActionDenied
-    _check_reason(moderator, reason)
+    # The Event's verified Organizer settling a dispute (ADR 0034) gives a
+    # reason, as a moderator does. The status read here only decides
+    # whether a reason may be given; it is checked again under the lock.
+    settles = (
+        not moderator
+        and stored.status == MatchStatus.DISPUTED
+        and settles_dispute(actor, match, new_player_ids=new_player_ids)
+    )
+    _check_reason(moderator or settles, reason)
+    if settles and not reason.strip():
+        raise ValueError(_DISPUTE_REASON_REQUIRED)
     draft = draft_match(
         format=format,
         team_a=team_a,
@@ -595,7 +614,10 @@ def edit_match(
         locked = _lock_row(match)
         if locked.status == MatchStatus.VOIDED:
             raise MatchStateError
-        if locked.status == MatchStatus.DISPUTED and not moderator:
+        # Only a moderator or the settling Organizer edits a disputed match.
+        # A match no longer disputed under the lock refuses the settling
+        # Organizer's reason: a reason is taken only to settle a dispute.
+        if not moderator and (locked.status == MatchStatus.DISPUTED) != settles:
             raise MatchStateError
         old_status = MatchStatus(locked.status)
         was_counting = locked.is_counted()

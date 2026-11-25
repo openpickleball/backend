@@ -33,13 +33,16 @@ from apps.matches.models import (
     MatchConfirmation,
     MatchFormat,
     MatchStatus,
+    Team,
 )
 from apps.matches.permissions import MatchActionDenied, settles_dispute
 from apps.matches.services import record_match
+from apps.matches.signals import MatchChange
 from apps.matches.tests.conftest import SignalLog
 from apps.matches.tests.factories import MatchFactory, raw_update
 from apps.matches.workflow import (
     MatchStateError,
+    ReasonRefused,
     confirm_match,
     dispute_match,
     edit_match,
@@ -399,3 +402,139 @@ def test_a_member_cannot_resolve_a_match_that_is_not_disputed(
         resolve_dispute(
             match, actor=_member(event), outcome=MatchStatus.VOIDED, reason=REASON
         )
+
+
+# Correcting a disputed match (AC 8, 9).
+
+CORRECTED_GAMES = ((11, 3), (11, 5))
+
+
+def _correct(match: Match, actor: Any, **overrides: Any) -> Match:
+    stored = Match.objects.get(pk=match.pk)
+    teams = {
+        team: [p.player for p in stored.participants.filter(team=team)] for team in Team
+    }
+    values: dict[str, Any] = {
+        "format": stored.format,
+        "team_a": teams[Team.A],
+        "team_b": teams[Team.B],
+        "games": CORRECTED_GAMES,
+        "played_on": stored.played_on,
+        "reason": REASON,
+    }
+    values.update(overrides)
+    return edit_match(match, actor=actor, **values)
+
+
+def test_a_member_corrects_a_disputed_match(
+    players: list[Player], event: Event, signals: SignalLog
+) -> None:
+    match = _disputed(players, event)
+    member = _member(event)
+    signals.confirmed.clear()
+
+    corrected = _correct(match, member)
+
+    assert _status(match) == MatchStatus.VOIDED
+    assert corrected.status == MatchStatus.CONFIRMED
+    assert corrected.corrects_id == match.pk
+    assert Match.objects.counted().filter(pk=corrected.pk).exists()
+    [audit] = _audits(match, AuditAction.MATCH_EDIT)
+    assert audit.actor_user == member
+    assert audit.reason == REASON
+    # The disputed match did not count, so the correction is confirmed news.
+    assert signals.confirmed == [corrected.pk]
+    assert MatchChange.EDIT not in signals.changes(match)
+
+
+def test_the_submitting_application_corrects_a_disputed_match(
+    players: list[Player], event: Event
+) -> None:
+    application = approved_application(organizer=event.organizer)
+    match = _disputed(players, event, application=application)
+
+    corrected = _correct(match, application)
+
+    assert corrected.status == MatchStatus.CONFIRMED
+    [audit] = _audits(match, AuditAction.MATCH_EDIT)
+    assert audit.actor_application == application
+    assert audit.reason == REASON
+
+
+@pytest.mark.parametrize("reason", ["", "   "])
+def test_a_correction_needs_a_reason(
+    players: list[Player], event: Event, reason: str
+) -> None:
+    match = _disputed(players, event)
+    count = Match.objects.count()
+
+    with pytest.raises(ValueError, match="Give a reason"):
+        _correct(match, _member(event), reason=reason)
+
+    assert _status(match) == MatchStatus.DISPUTED
+    assert Match.objects.count() == count
+    assert _audits(match, AuditAction.MATCH_EDIT) == []
+
+
+def test_a_member_who_plays_in_the_match_cannot_correct_it(
+    players: list[Player], event: Event
+) -> None:
+    match = _disputed(players, event)
+    playing = _member(event, players[2].account)
+
+    with pytest.raises(MatchStateError):
+        _correct(match, playing, reason="")
+    with pytest.raises(ReasonRefused):
+        _correct(match, playing)
+
+    assert _status(match) == MatchStatus.DISPUTED
+
+
+def test_a_member_who_puts_their_player_in_the_correction_is_refused(
+    players: list[Player], event: Event
+) -> None:
+    match = _disputed(players, event)
+    member = _member(event)
+    own = PlayerFactory.create(account=member)
+
+    assert not settles_dispute(member, match, new_player_ids=[own.pk])
+    with pytest.raises(MatchStateError):
+        _correct(match, member, team_a=[players[0], own], reason="")
+
+    assert _status(match) == MatchStatus.DISPUTED
+
+
+def test_an_application_without_organizer_authority_cannot_correct(
+    players: list[Player], event: Event
+) -> None:
+    application = approved_application(organizer=event.organizer)
+    match = _disputed(players, event, application=application)
+    _unverify(event)
+
+    with pytest.raises(MatchActionDenied):
+        _correct(match, application)
+
+    assert _status(match) == MatchStatus.DISPUTED
+
+
+def test_a_reason_on_a_match_that_is_not_disputed_is_still_refused(
+    players: list[Player], event: Event
+) -> None:
+    match = _record(players, event, submitter=_member(event))
+
+    with pytest.raises(ReasonRefused):
+        _correct(match, _member(event))
+
+    assert _status(match) == MatchStatus.CONFIRMED
+
+
+def test_a_member_still_corrects_a_confirmed_match_without_a_reason(
+    players: list[Player], event: Event
+) -> None:
+    match = _record(players, event, submitter=_member(event))
+
+    corrected = _correct(match, _member(event), reason="")
+
+    assert corrected.status == MatchStatus.CONFIRMED
+    [audit] = _audits(match, AuditAction.MATCH_EDIT)
+    assert audit.reason == ""
