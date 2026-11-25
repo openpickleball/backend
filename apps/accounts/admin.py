@@ -4,6 +4,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
 from apps.accounts.forms import UserChangeForm, UserCreationForm
 from apps.accounts.models import User
+from apps.audit.admin_access import AccessAuditAdminMixin
 
 # allauth registers an admin for EmailAddress, whose __str__ returns the
 # address, so the admin log's object_repr would hold an identifying field
@@ -13,7 +14,7 @@ admin.site.unregister(EmailAddress)
 
 
 @admin.register(User)
-class UserAdmin(BaseUserAdmin[User]):
+class UserAdmin(AccessAuditAdminMixin, BaseUserAdmin[User]):
     form = UserChangeForm
     add_form = UserCreationForm
     fieldsets = (

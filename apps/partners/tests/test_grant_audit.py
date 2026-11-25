@@ -88,29 +88,6 @@ def test_grant_admin_add_change_and_delete_each_record_one_event(
         assert value not in stored
 
 
-def test_deleting_an_application_records_its_grants_removed(
-    admin_client: Client, superuser: "_User"
-) -> None:
-    grant = OrganizerApplicationGrantFactory.create()
-    application = grant.application
-    before = len(_grant_events())
-
-    response = admin_client.post(
-        reverse("admin:partners_partnerapplication_delete", args=[application.pk]),
-        {"post": "yes"},
-    )
-
-    assert response.status_code == 302
-    [event] = _grant_events()[before:]
-    assert event.action == AuditAction.ORGANIZER_APPLICATION_GRANT_REMOVE
-    assert event.target_object_id == str(grant.pk)
-    assert event.actor_user == superuser
-    assert event.before == {
-        "organizer": grant.organizer.public_code,
-        "application": application.client_id,
-    }
-
-
 def test_a_grant_saved_unchanged_records_nothing() -> None:
     grant = OrganizerApplicationGrantFactory.create()
     before = len(_grant_events())

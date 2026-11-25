@@ -243,8 +243,8 @@ class OrganizerApplicationGrant(AuditedAccessModel):
     ``apps.matches.permissions`` uses it: an approved application with a
     grant may submit and confirm matches for that Organizer's Events
     while the Organizer is verified, as an application the Organizer owns
-    may. Each add, change, and removal records one Audit Event
-    (``apps.audit.access``).
+    may. Change it only through ``apps.audit.access`` (the admin does),
+    which records each add, change, and removal.
     """
 
     organizer = models.ForeignKey(

@@ -235,9 +235,10 @@ class Organizer(_CleanedTextModel):
 class OrganizerMember(AuditedAccessModel):
     """An Account that acts for an Organizer, with its role.
 
-    Each add, change, and removal records one Audit Event
-    (``apps.audit.access``). While the Organizer is verified, the Account that verified it cannot
-    be its member, so no one verifies an Organizer they act for.
+    Change it only through ``apps.audit.access`` (the admin does), which
+    records each add, change, and removal. While the Organizer is
+    verified, the Account that verified it cannot be its member, so no
+    one verifies an Organizer they act for.
     ``clean()`` and ``save()`` refuse it. ``bulk_create`` and
     ``QuerySet.update`` skip the check, like any other raw write.
     """
@@ -261,6 +262,8 @@ class OrganizerMember(AuditedAccessModel):
     AUDIT_CHANGE = AuditAction.ORGANIZER_MEMBER_CHANGE
     AUDIT_REMOVE = AuditAction.ORGANIZER_MEMBER_REMOVE
     AUDIT_RELATED = ("organizer",)
+    # save() locks the Organizer first, and so does the Organizer's delete.
+    AUDIT_LOCK_FIRST = ("organizer",)
 
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [
@@ -319,8 +322,8 @@ class ClubRole(AuditedAccessModel):
 
     A Club admin manages the Club's profile and its Club Organizer Grants.
     A Club Role gives no authority to submit or change a match (ADR 0021).
-    Each add, change, and removal records one Audit Event
-    (``apps.audit.access``).
+    Change it only through ``apps.audit.access`` (the admin does), which
+    records each add, change, and removal.
     """
 
     club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="roles")
@@ -369,8 +372,8 @@ class ClubOrganizerGrant(AuditedAccessModel):
     ``apps.matches.permissions`` and ``Event.clean()`` use it: a match or
     an Event that names a Club needs a grant from that Club to the
     Event's Organizer. The grant gives consent, not trust: the Organizer
-    must still be verified. Each add, change, and removal records one
-    Audit Event (``apps.audit.access``).
+    must still be verified. Change it only through ``apps.audit.access``
+    (the admin does), which records each add, change, and removal.
     """
 
     club = models.ForeignKey(

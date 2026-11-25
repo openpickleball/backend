@@ -36,7 +36,7 @@ This amends ADR 0012 (submission and change rules) and ADR 0013 (the duplicate p
 - Casual play that club staff want to record as confirmed goes in an Event of kind `rec_verified`. A player can still self-submit any match.
 - A verified Organizer's Event cannot claim a Club without that Club's consent. A Club that removes a grant stops new matches and Events under its name; matches already recorded stay in the Ledger (hard rule 3).
 - The code, the `ClubRole` choices, the `ClubApplicationGrant` model, `CONTEXT.md`, `CLAUDE.md`, and the personal data inventory change in the issue that carries this out. Nothing has been deployed, so there is no data to move.
-- Every grant and role change is a permission change in a security-sensitive area, so each records an Audit Event (#158 widens to cover the new grants).
+- Every grant and role change is a permission change in a security-sensitive area, so each records an Audit Event (#158 widens to cover the new grants; ADR 0033 records them from the admin and services).
 - A verified Organizer carries all trusted submissions, so abuse by one is handled by review signals and cleanup (#205, #206, #208), not by a second kind of trust.
 
 ## Alternatives considered
