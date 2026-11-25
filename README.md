@@ -124,7 +124,7 @@ To try the pool locally, start PgBouncer in transaction mode on 127.0.0.1:6432, 
 docker compose --profile pgbouncer up -d --wait
 ```
 
-Then set `DATABASE_URL=postgres://open@localhost:6432/open` and `DIRECT_DATABASE_URL=postgres://open@localhost:5432/open`. PgBouncer routes every database name to the compose Postgres, so the tests run through it too.
+Then set `DATABASE_URL=postgres://open@localhost:6432/open` and `DIRECT_DATABASE_URL=postgres://open@localhost:5432/open`. PgBouncer routes every database name to the compose Postgres, so the tests run through it too. At the end of such a run, the test databases cannot be dropped, because PgBouncer still holds idle server connections to them: pytest warns and leaves them behind. Drop them from Postgres afterwards with `DROP DATABASE ... WITH (FORCE)`, or restart PgBouncer before the next run.
 
 With `DJANGO_DEBUG` off, settings trust the `X-Forwarded-Proto` header to tell https from http. So run the web container only behind the hosting proxy, which sets that header, and never let clients reach it directly. To test it locally, send `X-Forwarded-Proto: https` with each request, as in [Serving like production](#serving-like-production).
 
