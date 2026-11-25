@@ -4,6 +4,13 @@ Verification is read-only on the change form. It changes only through the
 verify and unverify actions, which call ``apps.clubs.services`` and are
 shown only to Accounts with ``clubs.verify_organizer``. Both need a typed
 reason (``ReasonActionForm``), which goes into the Audit Event.
+
+Organizer Reports (#271) are read-only here. A moderator closes open
+ones with the close action, which needs a typed reason and calls
+``apps.clubs.reports.close_report``. The reporter is shown only to
+Accounts with ``clubs.verify_organizer``, and only as their Player's OPEN
+Code. The Organizer change page shows those Accounts a read-only
+"Moderator review" section from ``organizer_review``.
 """
 
 from collections.abc import Callable, Sequence
@@ -15,6 +22,8 @@ from django.db import transaction
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
+from django.utils.html import format_html, format_html_join
+from django.utils.safestring import SafeString
 
 from apps.audit.admin_access import AccessAuditAdminMixin
 from apps.audit.admin_actions import (
@@ -28,16 +37,21 @@ from apps.clubs.models import (
     ClubRole,
     Organizer,
     OrganizerMember,
+    OrganizerReport,
     VerifiedOrganizerDelete,
 )
+from apps.clubs.reports import NotAllowedToClose, close_report, organizer_review
 from apps.clubs.services import (
     VERIFY_PERMISSION,
     NotAllowedToVerify,
     unverify_organizer,
     verify_organizer,
 )
+from apps.players.models import Player
 
 BLANK_REASON = "Give a reason to verify or unverify organizers."
+BLANK_CLOSE_REASON = "Give a reason to close reports."
+REVIEW_FIELD = "moderator_review"
 
 
 class OrganizerMemberInline(admin.TabularInline[OrganizerMember, Organizer]):
@@ -83,6 +97,75 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
     inlines = (OrganizerMemberInline,)
     actions = ("verify_selected", "unverify_selected", "delete_selected")
     action_form = ReasonActionForm
+
+    def _shows_review(self, request: HttpRequest, obj: Organizer | None) -> bool:
+        return obj is not None and self.has_verify_permission(request)
+
+    def get_readonly_fields(
+        self, request: HttpRequest, obj: Organizer | None = None
+    ) -> Sequence[str]:
+        fields = tuple(super().get_readonly_fields(request, obj))
+        if self._shows_review(request, obj):
+            fields += (REVIEW_FIELD,)
+        return fields
+
+    def get_fields(
+        self, request: HttpRequest, obj: Organizer | None = None
+    ) -> Sequence[Callable[..., Any] | str]:
+        # The review has a fieldset of its own (get_fieldsets).
+        return [f for f in super().get_fields(request, obj) if f != REVIEW_FIELD]
+
+    def get_fieldsets(self, request: HttpRequest, obj: Organizer | None = None) -> Any:
+        fieldsets = list(super().get_fieldsets(request, obj))
+        if self._shows_review(request, obj):
+            fieldsets.append(("Moderator review", {"fields": (REVIEW_FIELD,)}))
+        return fieldsets
+
+    @admin.display(description="Review")
+    def moderator_review(self, organizer: Organizer) -> SafeString:
+        """The open reports and the recent dispute counts (#271).
+
+        Reasons, dates, links, and counts only: never a reporter, a name,
+        or an email.
+        """
+        review = organizer_review(organizer)
+        reports = format_html_join(
+            "",
+            '<li><a href="{}">{}</a>, {}</li>',
+            (
+                (
+                    reverse(
+                        "admin:clubs_organizerreport_change",
+                        args=[report.pk],
+                        current_app=self.admin_site.name,
+                    ),
+                    report.get_reason_display(),
+                    report.created_at.date().isoformat(),
+                )
+                for report in review.open_reports
+            ),
+        )
+        counts = format_html_join(
+            "",
+            "<li>{}: {}</li>",
+            (
+                ("Disputes opened", review.disputes_opened),
+                ("Disputes withdrawn", review.disputes_withdrawn),
+                ("Disputes resolved as confirmed", review.disputes_confirmed),
+                ("Disputes resolved as voided", review.disputes_voided),
+                ("Disputes expired", review.disputes_expired),
+                ("Signal flags", review.signal_flags),
+            ),
+        )
+        return format_html(
+            "<p>Open reports: {}</p><ul>{}</ul>"
+            "<p>On this organizer's events' matches, in the last {} days:</p>"
+            "<ul>{}</ul>",
+            len(review.open_reports),
+            reports,
+            review.window_days,
+            counts,
+        )
 
     def get_deleted_objects(
         self, objs: Sequence[Organizer] | QuerySet[Organizer], request: HttpRequest
@@ -237,3 +320,126 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
                 count += 1
         if count:
             self.message_user(request, f"{count} organizer(s) {done}.")
+
+
+class OpenReportFilter(admin.SimpleListFilter):
+    """Open (not closed) or closed reports."""
+
+    title = "open"
+    parameter_name = "open"
+
+    def lookups(self, request: HttpRequest, model_admin: Any) -> list[tuple[str, str]]:
+        return [("yes", "Open"), ("no", "Closed")]
+
+    def queryset(
+        self, request: HttpRequest, queryset: QuerySet[OrganizerReport]
+    ) -> QuerySet[OrganizerReport]:
+        if self.value() == "yes":
+            return queryset.filter(closed_at__isnull=True)
+        if self.value() == "no":
+            return queryset.filter(closed_at__isnull=False)
+        return queryset
+
+
+@admin.register(OrganizerReport)
+class OrganizerReportAdmin(admin.ModelAdmin[OrganizerReport]):
+    """Reports of verified Organizers to moderators (#271). Read-only.
+
+    The reporter's Account is never shown: ``User.__str__`` is its email.
+    Accounts with ``clubs.verify_organizer`` see the reporter's Player's
+    OPEN Code; others see no reporter at all.
+    """
+
+    list_display = ("organizer_code", "reason", "created_at", "is_open")
+    list_filter = (OpenReportFilter, "reason")
+    list_select_related = ("organizer",)
+    search_fields = ("organizer__public_code",)
+    ordering = ("-created_at", "-pk")
+    actions = ("close_selected",)
+    action_form = ReasonActionForm
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: OrganizerReport | None = None
+    ) -> bool:
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: OrganizerReport | None = None
+    ) -> bool:
+        return False
+
+    def has_verify_permission(self, request: HttpRequest) -> bool:
+        """Django shows an action marked ``permissions=["verify"]`` only
+        when this is True.
+        """
+        return request.user.has_perm(VERIFY_PERMISSION)
+
+    def get_fields(
+        self, request: HttpRequest, obj: OrganizerReport | None = None
+    ) -> Sequence[Callable[..., Any] | str]:
+        fields: list[Callable[..., Any] | str] = [
+            "organizer_code",
+            "reason",
+            "created_at",
+            "closed_at",
+        ]
+        if self.has_verify_permission(request):
+            fields.append("reporter_player")
+        return fields
+
+    def get_readonly_fields(
+        self, request: HttpRequest, obj: OrganizerReport | None = None
+    ) -> Sequence[str]:
+        return [str(field) for field in self.get_fields(request, obj)]
+
+    @admin.display(description="Organizer", ordering="organizer__public_code")
+    def organizer_code(self, report: OrganizerReport) -> str:
+        return report.organizer.public_code
+
+    @admin.display(boolean=True, description="Open")
+    def is_open(self, report: OrganizerReport) -> bool:
+        return report.is_open
+
+    @admin.display(description="Reporter's player")
+    def reporter_player(self, report: OrganizerReport) -> str:
+        """The reporter's Player's OPEN Code, never the Account's email."""
+        code = (
+            Player.objects.filter(account_id=report.reporter_id)
+            .values_list("public_code", flat=True)
+            .first()
+        )
+        return code or "-"
+
+    @admin.action(permissions=["verify"], description="Close selected reports")
+    def close_selected(
+        self, request: HttpRequest, queryset: QuerySet[OrganizerReport]
+    ) -> None:
+        reason = action_reason(request)
+        problem = reason_problem(reason, BLANK_CLOSE_REASON)
+        if problem is not None:
+            self.message_user(request, problem, level=messages.WARNING)
+            return
+        count = 0
+        for report in queryset.select_related("organizer").order_by("pk"):
+            try:
+                if close_report(report, actor=request.user, reason=reason):
+                    count += 1
+            except NotAllowedToClose:
+                # The OPEN Code only: the name may be a person's.
+                self.message_user(
+                    request,
+                    f"{report} was not closed: you may not close it.",
+                    level=messages.WARNING,
+                )
+            except OrganizerReport.DoesNotExist:
+                # Removed with its Account after the action loaded it.
+                self.message_user(
+                    request,
+                    f"{report} was not closed: it no longer exists.",
+                    level=messages.WARNING,
+                )
+        if count:
+            self.message_user(request, f"{count} report(s) closed.")
