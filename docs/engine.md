@@ -41,7 +41,8 @@ plain data. It does no rating math.
   number of queries.
 - The `match_id` is the Match's OPEN Code, and each player id is the Player's
   OPEN Code.
-- The match type follows ADR 0035 (stored on each Match when it is recorded), and `confirmed_by` and the stored rating format follow ADR 0024.
+- The match type is stored on each Match when it is recorded (ADR 0035).
+  `confirmed_by` and the stored rating format follow ADR 0024.
 - Every stored value goes through an explicit table. A value the table does not
   know raises `EngineMappingError`, which names the field.
 - `load_config()` loads the published parameter set that
