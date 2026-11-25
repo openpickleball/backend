@@ -87,6 +87,25 @@ uv run gunicorn
 
 With `DJANGO_DEBUG` off, the admin and the API docs page return an error until `collectstatic` has run. This also applies to `runserver` and the compose `web` profile.
 
+### Production image
+
+The `Dockerfile` builds the image production runs. It installs only the runtime packages from `uv.lock`, collects the static files at build time, and runs as a non-root user. The image has no uv, git, tests, or dev packages. `.dockerignore` lets only the app's files into the build, so a `.env` in your checkout never reaches the image. Pass every setting as an environment variable when you run it.
+
+```bash
+docker build -t open-backend .
+```
+
+The default command is gunicorn, which reads `gunicorn.conf.py`, so `PORT` and `WEB_CONCURRENCY` come from the environment. The same image runs migrations, the Celery worker, and beat when you give it another command:
+
+```bash
+docker run --rm --env-file prod.env open-backend python manage.py migrate
+docker run --rm --env-file prod.env -e PORT=8000 -p 8000:8000 open-backend
+docker run --rm --env-file prod.env open-backend celery -A config worker -Q ratings,email,webhooks,default -l info
+docker run --rm --env-file prod.env open-backend celery -A config beat -l info
+```
+
+Here `prod.env` is a file of settings you keep outside the repository. Run one beat process only.
+
 ### CORS
 
 A browser page on another origin can read API responses only if its origin is listed in `CORS_ALLOWED_ORIGINS`, comma-separated, as exact origins such as `https://app.example.org` or `http://localhost:3000`. It is empty by default, so no other origin is allowed. Only `/api/` and `/_allauth/` paths send CORS headers. CORS limits what browsers let a page read; it is not access control, and it does not limit other clients.
