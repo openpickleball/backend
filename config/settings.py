@@ -457,6 +457,9 @@ INSTALLED_APPS = [
     "apps.emails",
     # Development only: the seed_dev_data command. No models.
     "apps.devdata",
+    # Its migrate command runs on the direct connection when DATABASE_URL
+    # is a pool (ADR 0038). App commands win over Django's own. No models.
+    "apps.database",
 ]
 
 # The OPEN Account login model, keyed on email (apps/accounts).
