@@ -9,8 +9,8 @@ Self-reported matches have no Event (decision F1 in #1).
 Each Match stores the kind as its match type when it is recorded, so the
 kind may change at any time and the change reaches only matches recorded
 after it. The organizer decides who may submit the Event's counted
-matches, so it cannot change once any Match (in any status) names the
-Event (ADR 0035).
+matches and the club consents to them, so neither can change once any
+Match (in any status) names the Event (ADR 0035).
 
 An Event has no weight of its own. The engine weights a match only by its
 match type and takes no per-event weight (openpickleball/engine#30), so
@@ -41,6 +41,10 @@ _ORGANIZER_MESSAGES = {"invalid": "Choose an existing organizer."}
 _CLUB_MESSAGES = {"invalid": "Choose an existing club."}
 _CLUB_NOT_GRANTED = "This club has not allowed the organizer to name it."
 ORGANIZER_LOCKED = "This event has matches, so its organizer cannot change."
+CLUB_LOCKED = "This event has matches, so its club cannot change."
+# The fields fixed once a Match names the Event, with their columns.
+_LOCKED_COLUMNS = {"organizer": "organizer_id", "club": "club_id"}
+_LOCKED_MESSAGES = {"organizer": ORGANIZER_LOCKED, "club": CLUB_LOCKED}
 
 
 class EventKind(models.TextChoices):
@@ -108,23 +112,23 @@ class Event(_CleanedTextModel):
         return self.public_code
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """Save, refusing an organizer change once a Match names the Event.
+        """Save, refusing an organizer or club change once a Match names it.
 
         Every save of an existing Event first locks its row with a plain
-        ``FOR UPDATE`` and compares the organizer with the stored one under
-        that lock, so a stale instance never writes an old organizer back
-        over another session's change. Every Match write transaction for an
-        Event (``record_match`` and ``edit_match``, through
+        ``FOR UPDATE`` and compares the organizer and club with the stored
+        ones under that lock, so a stale instance never writes an old value
+        back over another session's change. Every Match write transaction
+        for an Event (``record_match`` and ``edit_match``, through
         ``apps.matches.services.hold_event``) first takes ``FOR KEY SHARE``
-        on the row, checks the submitter again, and reads the kind, so the
-        two serialize: this save waits until an in-flight submission
-        commits (an organizer change then sees its Match and refuses), or
-        the submission waits until this save commits and is judged against
-        the stored organizer and kind. The check counts Matches in every
-        status, voided ones included. A save whose ``update_fields`` leave
-        out the organizer writes no organizer, so it is not refused, but
-        it still takes the lock. Raw writes (``QuerySet.update``, raw SQL)
-        skip all of this.
+        on the row and checks the submitter again (``record_match`` also
+        reads the kind), so the two serialize: this save waits until an
+        in-flight submission commits (an organizer or club change then
+        sees its Match and refuses), or the submission waits until this
+        save commits and is judged against the stored Event. The check
+        counts Matches in every status, voided ones included. A save whose
+        ``update_fields`` leave out a field writes none of it, so it is not
+        refused for that field, but it still takes the lock. Raw writes
+        (``QuerySet.update``, raw SQL) skip all of this.
         """
         if self._state.adding or self.pk is None:
             super().save(*args, **kwargs)
@@ -134,23 +138,16 @@ class Event(_CleanedTextModel):
             # Read a one-pass iterator once, and hand Django the same values.
             update_fields = tuple(update_fields)
             kwargs["update_fields"] = update_fields
-        writes_organizer = update_fields is None or bool(
-            {"organizer", "organizer_id"} & set(update_fields)
-        )
         with transaction.atomic():
             stored = (
                 Event._base_manager.select_for_update()
                 .filter(pk=self.pk)
-                .values_list("organizer_id", flat=True)
+                .values(*_LOCKED_COLUMNS.values())
                 .first()
             )
-            if (
-                writes_organizer
-                and stored is not None
-                and stored != self.organizer_id
-                and self._has_matches()
-            ):
-                raise ValidationError({"organizer": ORGANIZER_LOCKED})
+            errors = self._locked_field_errors(stored, update_fields)
+            if errors:
+                raise ValidationError(errors)
             super().save(*args, **kwargs)
 
     def clean(self) -> None:
@@ -166,24 +163,45 @@ class Event(_CleanedTextModel):
             raise ValidationError({"end_date": _DATES_ORDER})
         if self._club_needs_grant():
             raise ValidationError({"club": _CLUB_NOT_GRANTED})
-        if not self._state.adding and self._organizer_changes() and self._has_matches():
-            raise ValidationError({"organizer": ORGANIZER_LOCKED})
+        if not self._state.adding and self.pk is not None:
+            # Without a lock, for the form's message; save() checks again
+            # under its row lock.
+            stored = (
+                Event._base_manager.filter(pk=self.pk)
+                .values(*_LOCKED_COLUMNS.values())
+                .first()
+            )
+            errors = self._locked_field_errors(stored, None)
+            if errors:
+                raise ValidationError(errors)
 
-    def _organizer_changes(self) -> bool:
-        """True when the stored organizer differs from this instance's.
+    def _locked_field_errors(
+        self, stored: dict[str, Any] | None, update_fields: tuple[str, ...] | None
+    ) -> dict[str, str]:
+        """The fixed message for each locked field this save would change.
 
-        Reads the stored row without a lock, for ``clean()``'s message;
-        ``save()`` checks again under its row lock.
+        A field changes when the save writes it (no ``update_fields``, or
+        ``update_fields`` naming it) and its value differs from ``stored``.
+        Locked fields change freely while no Match names the Event.
         """
-        if self.pk is None or not isinstance(self.organizer_id, int):
-            # Field validation reports a missing or invalid link.
-            return False
-        stored = (
-            Event._base_manager.filter(pk=self.pk)
-            .values_list("organizer_id", flat=True)
-            .first()
-        )
-        return stored is not None and stored != self.organizer_id
+        if stored is None:
+            return {}
+        changed = []
+        for name, column in _LOCKED_COLUMNS.items():
+            value = getattr(self, column)
+            if value is not None and not isinstance(value, int):
+                # Field validation reports an invalid link.
+                continue
+            writes = (
+                update_fields is None
+                or name in update_fields
+                or column in update_fields
+            )
+            if writes and value != stored[column]:
+                changed.append(name)
+        if not changed or not self._has_matches():
+            return {}
+        return {name: _LOCKED_MESSAGES[name] for name in changed}
 
     def _has_matches(self) -> bool:
         """True when any Match, in any status, names this Event."""

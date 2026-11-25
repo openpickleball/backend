@@ -1,7 +1,9 @@
 """Save and delete Events with their Audit Events (#163, ADR 0035).
 
-An Event's organizer decides who may submit its counted matches, and its
-kind sets the match type of matches recorded after a change, so every
+An Event's organizer decides who may submit its counted matches, its
+club consents to them, and its kind sets the match type of matches
+recorded after a change (the organizer and club are fixed once a Match
+names the Event, see ``Event.save()``), so every
 create, change, and delete made through these services records one Audit
 Event with an explicit actor, in the same transaction:
 
@@ -51,7 +53,7 @@ def save_event(event: Event, *, actor: Actor) -> None:
             before = _stored_values(event.pk, lock=True)
         # Every model rule, for a caller that did not clean the Event (the
         # admin form did): the Club Organizer Grant (ADR 0021), the dates,
-        # and the organizer lock. The OPEN Code is issued by save().
+        # and the organizer and club locks. The OPEN Code is issued by save().
         event.full_clean(exclude=["public_code"])
         event.save()
         after = _stored_values(event.pk, lock=False)
