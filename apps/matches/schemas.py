@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from django.db.models import Prefetch, QuerySet
 from ninja import Schema
-from pydantic import BeforeValidator, Field
+from pydantic import AfterValidator, BeforeValidator, Field
 from pydantic_core import PydanticCustomError
 
 from apps.matches.models import (
@@ -111,6 +111,62 @@ class MatchCreateIn(Schema):
     best_of: BestOf | None = None
     scoring_type: ScoringType | None = None
     game_target: GameTarget | None = None
+
+
+MAX_REASON_LENGTH = 1000
+
+
+def _reason(value: object) -> object:
+    """Refuse a blank or overlong reason with fixed text.
+
+    The messages never repeat the value: a reason is free text, and the
+    422 response returns each message to the client.
+    """
+    if isinstance(value, str):
+        if not value.strip():
+            raise PydanticCustomError("blank", "Give a reason.")
+        if len(value) > MAX_REASON_LENGTH:
+            raise PydanticCustomError(
+                "too_long",
+                f"Enter a reason of at most {MAX_REASON_LENGTH} characters.",
+            )
+    return value
+
+
+ReasonText = Annotated[
+    str,
+    AfterValidator(_reason),
+    Field(json_schema_extra={"minLength": 1, "maxLength": MAX_REASON_LENGTH}),
+]
+
+
+class DisputeOutcome(StrEnum):
+    """How the Event's Organizer settles a dispute."""
+
+    CONFIRMED = "confirmed"
+    VOIDED = "voided"
+
+
+class DisputeResolutionIn(Schema):
+    """The Organizer's decision on a disputed match, and why.
+
+    The reason is stored in the match's audit log, which cannot be
+    erased, so it should not name a player.
+    """
+
+    outcome: DisputeOutcome
+    reason: ReasonText
+
+
+class DisputeCorrectionIn(MatchCreateIn):
+    """The Organizer's correction of a disputed match, and why.
+
+    The fields are ``create_match``'s, with the same defaults. The
+    reason is stored in the match's audit log, which cannot be erased, so
+    it should not name a player.
+    """
+
+    reason: ReasonText
 
 
 class ParticipantOut(Schema):
