@@ -373,3 +373,64 @@ def test_a_released_match_leaves_the_list(
         _vouch(players[2].account, match.public_code)
 
     assert signed_in(players[0].account).get(HOLDS).json()["count"] == 0
+
+
+def _empty_list(account: Any) -> None:
+    assert signed_in(account).get(HOLDS).json() == {"items": [], "count": 0}
+
+
+def test_a_member_in_the_correction_chain_lists_nothing(
+    players: list[Player], event: Event
+) -> None:
+    original = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=((11, 7), (11, 9)),
+        played_on=WORKFLOW_PLAYED_ON,
+        submitted_by_user=_member(event),
+        event=event,
+    ).match
+    newcomer = PlayerFactory.create()
+    corrected = edit_match(
+        original,
+        actor=_member(event),
+        format=MatchFormat.DOUBLES,
+        team_a=[players[0], newcomer],
+        team_b=players[2:],
+        games=((11, 7), (11, 9)),
+        played_on=WORKFLOW_PLAYED_ON,
+    )
+    _self_reported([players[0], newcomer, *players[2:]], ((11, 5), (11, 6)))
+    assert MatchFlag.objects.filter(duplicate_of=corrected).exists()
+    # Player 1 played only the original, so is in the chain, not the match.
+    member = _member(event, players[1].account)
+
+    _empty_list(member)
+    assert set(_codes(signed_in(_member(event)).get(HOLDS))) == {corrected.public_code}
+
+
+def test_a_club_admin_lists_nothing(players: list[Player], event: Event) -> None:
+    club = ClubFactory.create()
+    ClubOrganizerGrantFactory.create(club=club, organizer=event.organizer)
+    record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=((11, 7), (11, 9)),
+        played_on=WORKFLOW_PLAYED_ON,
+        submitted_by_user=_member(event),
+        event=event,
+        club=club,
+    )
+    _self_reported(players, ((11, 5), (11, 6)))
+    club_admin: User = UserFactory.create()
+    ClubRoleFactory.create(club=club, account=club_admin, role=ClubRoleKind.ADMIN)
+
+    _empty_list(club_admin)
+
+
+def test_a_member_of_another_organizer_lists_nothing(
+    mixed: tuple[Match, Match],
+) -> None:
+    _empty_list(_member(EventFactory.create(organizer=verified_organizer())))
