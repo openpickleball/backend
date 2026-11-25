@@ -1,0 +1,20 @@
+# An allowlist: only what the image needs reaches the build context.
+*
+!apps
+!config
+!templates
+!manage.py
+!gunicorn.conf.py
+!pyproject.toml
+!uv.lock
+!.python-version
+
+# Never send these, even inside an allowed directory.
+**/__pycache__
+**/*.py[cod]
+**/tests
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/secrets

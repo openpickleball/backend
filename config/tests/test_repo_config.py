@@ -1,6 +1,12 @@
-"""CODEOWNERS and .editorconfig stay valid and agree with ruff format."""
+"""Repository config files stay valid and agree with each other.
+
+CODEOWNERS matches tracked paths, .editorconfig agrees with ruff format,
+and the Dockerfile uses the Python in .python-version and runs as a
+non-root user.
+"""
 
 import configparser
+import re
 import subprocess
 from pathlib import Path
 
@@ -10,6 +16,8 @@ from ruff import find_ruff_bin  # type: ignore[import-untyped]
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CODEOWNERS = BASE_DIR / ".github" / "CODEOWNERS"
 EDITORCONFIG = BASE_DIR / ".editorconfig"
+DOCKERFILE = BASE_DIR / "Dockerfile"
+PYTHON_VERSION = BASE_DIR / ".python-version"
 MAINTAINERS = "@openpickleball/maintainers"
 
 
@@ -148,3 +156,50 @@ def test_editorconfig_base_settings() -> None:
     }
     assert config["*.{yml,yaml}"]["indent_size"] == "2"
     assert config["*.toml"]["indent_size"] == "4"
+
+
+def _dockerfile_lines() -> list[str]:
+    return [
+        line.strip()
+        for line in DOCKERFILE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+def test_dockerfile_python_matches_python_version() -> None:
+    expected = PYTHON_VERSION.read_text(encoding="utf-8").strip()
+    tags = [
+        match.group(1)
+        for line in _dockerfile_lines()
+        if (match := re.match(r"FROM\s+python:(\d+\.\d+)-", line, re.IGNORECASE))
+    ]
+
+    assert tags
+    assert set(tags) == {expected}
+
+
+def test_dockerfile_base_images_pinned_by_digest() -> None:
+    images = [
+        line.split()[1]
+        for line in _dockerfile_lines()
+        if line.upper().startswith("FROM ")
+    ]
+
+    assert images
+    assert all(re.search(r":[^@]+@sha256:[0-9a-f]{64}$", image) for image in images)
+
+
+def test_dockerfile_last_stage_runs_as_non_root_user() -> None:
+    lines = _dockerfile_lines()
+    last_from = max(
+        i for i, line in enumerate(lines) if line.upper().startswith("FROM ")
+    )
+    users = [
+        line.split()[1]
+        for line in lines[last_from:]
+        if line.upper().startswith("USER ")
+    ]
+
+    assert users
+    user = users[-1].split(":")[0]
+    assert user not in {"0", "root"}
