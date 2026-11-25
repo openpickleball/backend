@@ -643,9 +643,9 @@ def edit_match(
         sequence=sequence,
     )
     with transaction.atomic():
-        # Holds the Event's organizer fixed until commit, and checks the
-        # editor again under that lock (ADR 0035).
-        hold_event(stored.event, check_editor)
+        # Holds the Event fixed until commit, checks the editor again, and
+        # takes the kind under that lock (ADR 0035).
+        hold_event(draft, check_editor)
         lock_draft(draft, also=[stored_lineup_lock_key(stored)])
         locked = _lock_row(match)
         if locked.status == MatchStatus.VOIDED:

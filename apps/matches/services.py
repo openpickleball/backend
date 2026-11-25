@@ -995,20 +995,24 @@ def stored_lineup_lock_key(match: Match) -> int:
     return _lineup_lock_key(teams[Team.A], teams[Team.B], played_on.get())
 
 
-def hold_event(event: "Event | None", recheck: Callable[[], None]) -> None:
-    """Share-lock the Event row, then run the authority check again.
+def hold_event(draft: MatchDraft, recheck: Callable[[], None]) -> None:
+    """Share-lock the draft's Event row, check authority again, take its kind.
 
     Call first inside the write transaction, before ``lock_draft`` and any
     lookup, lock, or write. ``FOR KEY SHARE`` conflicts with the
-    ``FOR UPDATE`` that ``Event.save()`` takes to change the organizer, so
-    the two serialize: either the organizer change waits until this match
-    commits (and then sees it and refuses), or this call waits until the
-    change commits and ``recheck`` judges the submitter against the new
-    organizer. ``recheck`` raises the caller's fixed-text refusal. The
-    lock lasts until the outermost transaction ends; nothing takes the
-    Event row lock after a Match lock. With no Event, it runs ``recheck``
-    alone.
+    ``FOR UPDATE`` that ``Event.save()`` takes on every save, so the two
+    serialize: either the Event change waits until this match commits (an
+    organizer change then sees the match and refuses), or this call waits
+    until the change commits and is judged against the stored Event.
+    ``recheck`` raises the caller's fixed-text refusal. Then the draft's
+    match type is read again from the Event's kind as stored under the
+    lock, so a kind change committed after ``draft_match`` reaches this
+    match (ADR 0035). The lock lasts until the outermost transaction ends;
+    nothing takes the Event row lock after a Match lock. With no Event, it
+    runs ``recheck`` alone.
     """
+    match = draft.match
+    event = match.event
     if event is not None and event.pk is not None:
         pk_column = event._meta.pk.column
         assert pk_column is not None
@@ -1020,6 +1024,7 @@ def hold_event(event: "Event | None", recheck: Callable[[], None]) -> None:
                 [event.pk],
             )
     recheck()
+    match.match_type = _stored_match_type(event, match.club)
 
 
 def lock_draft(draft: MatchDraft, *, also: Sequence[int] = ()) -> None:
@@ -1364,9 +1369,9 @@ def record_match(
     submitter: Actor | None = submitted_by_user or submitted_by_application
 
     with transaction.atomic():
-        # Holds the Event's organizer fixed until commit, and checks the
-        # submitters again under that lock (ADR 0035).
-        hold_event(event, check_submitters)
+        # Holds the Event fixed until commit, checks the submitters again,
+        # and takes the kind under that lock (ADR 0035).
+        hold_event(draft, check_submitters)
         lock_draft(draft)
         check_external_id(draft)
         existing = exact_duplicate(draft)
