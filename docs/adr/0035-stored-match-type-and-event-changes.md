@@ -26,7 +26,7 @@ This amends [ADR 0024](0024-engine-match-type-confirmers-and-rating-format.md): 
 - The three matches migrations (add the field, fill it, then require it and add the constraint) must run together with no older code writing Matches in between: a Match inserted between the fill and the last step without a match type makes that step fail.
 - A correction keeps the match type of the match it corrects, even after the Event's kind changed. A kind change therefore never reaches a match recorded before it, corrections included.
 - An Event's organizer decides who may submit its counted matches, so `/apps/events/` gets its own CODEOWNERS entry.
-- A plain ORM save or delete of an Event outside the services, and raw writes (`QuerySet.update`, `bulk_create`, raw SQL, `loaddata`), record no Audit Event, and raw writes also skip the organizer lock.
+- A plain ORM save or delete of an Event outside the services, and raw writes (`QuerySet.update`, `bulk_create`, raw SQL, `loaddata`), record no Audit Event, and raw writes also skip the organizer and Club locks.
 
 ## Alternatives considered
 
