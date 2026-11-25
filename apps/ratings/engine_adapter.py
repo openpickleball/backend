@@ -16,11 +16,12 @@ Converting a Match (``to_engine_match``):
   (``Match.rating_format``, ADR 0024), never the players' current gender
   divisions, so a division removed later does not move a past match. The
   engine feeds the category matches into overall doubles itself.
-- The match type is the Event's kind. A Match with a Club and no Event is
-  ``rec_verified``, and one with neither is self-reported (decision F1 in
-  #1, ADR 0024). Submitted input never chooses it. Since ADR 0021 no
-  submission can create a Match with a Club and no Event, so that mapping
-  covers only matches already in the Ledger and their corrections.
+- The match type is the one stored on the Match when it was recorded
+  (``Match.match_type``, ADR 0035): the Event's kind at that moment,
+  ``rec_verified`` for a Club with no Event, and self-reported for neither
+  (decision F1 in #1, ADR 0024). It is never the Event's current kind, so
+  a later change of the kind does not move a past match. Submitted input
+  never chooses it.
 - The game format is the scoring type and game target, win by 2, no cap
   (``validate_match``'s rules). Games are ordered by game number.
 - ``played_at`` keeps its instant, in a ``datetime.timezone`` of the stored
@@ -59,7 +60,6 @@ from django.db.models.fields.json import KT
 from django.db.models.functions import Cast
 
 from apps.audit.models import AuditAction, AuditEvent
-from apps.events.models import EventKind
 from apps.matches.models import (
     RATING_FORMATS_BY_FORMAT,
     BestOf,
@@ -69,6 +69,7 @@ from apps.matches.models import (
     MatchFormat,
     MatchParticipant,
     MatchStatus,
+    MatchType,
     RatingFormat,
     ScoringType,
     Team,
@@ -95,9 +96,10 @@ _RATING_FORMATS: Mapping[str, open_engine.RatingFormat] = {
 }
 
 _MATCH_TYPES: Mapping[str, open_engine.MatchType] = {
-    str(EventKind.TOURNAMENT.value): open_engine.MatchType.TOURNAMENT,
-    str(EventKind.LEAGUE.value): open_engine.MatchType.LEAGUE,
-    str(EventKind.REC_VERIFIED.value): open_engine.MatchType.REC_VERIFIED,
+    str(MatchType.TOURNAMENT.value): open_engine.MatchType.TOURNAMENT,
+    str(MatchType.LEAGUE.value): open_engine.MatchType.LEAGUE,
+    str(MatchType.REC_VERIFIED.value): open_engine.MatchType.REC_VERIFIED,
+    str(MatchType.SELF_REPORTED.value): open_engine.MatchType.SELF_REPORTED,
 }
 
 _SCORING_TYPES: Mapping[str, open_engine.ScoringType] = {
@@ -253,8 +255,8 @@ def _played_at(match: Match, code: str) -> datetime | None:
 def to_engine_match(match: Match) -> open_engine.Match:
     """Convert a saved backend Match to an ``open_engine.Match``.
 
-    Reads the Match's participants and their Players, games,
-    confirmations, and Event, through any prefetched rows (see
+    Reads the Match's participants and their Players, games, and
+    confirmations, through any prefetched rows (see
     ``counted_engine_matches``). It does not choose which matches count:
     pass only ``Match.objects.counted()`` rows. Raises
     ``EngineMappingError`` for a value with no engine value, and for a
@@ -273,17 +275,9 @@ def to_engine_match(match: Match) -> open_engine.Match:
         teams[team].append(player_code)
         codes_by_player[participant.player_id] = player_code
 
-    # Only the Event, then the Club, decide the match type, never
-    # submitted input (ADR 0024). A Club with no Event is only a match
-    # already in the Ledger, or its correction: none can be submitted since
-    # ADR 0021.
-    event = match.event
-    if event is not None:
-        match_type = _look_up(_MATCH_TYPES, event.kind, "event kind", code)
-    elif match.club_id is not None:
-        match_type = open_engine.MatchType.REC_VERIFIED
-    else:
-        match_type = open_engine.MatchType.SELF_REPORTED
+    # Stored when the match was recorded, never the Event's current kind
+    # (ADR 0035).
+    match_type = _look_up(_MATCH_TYPES, match.match_type, "match type", code)
 
     game_format = open_engine.GameFormat(
         scoring=_look_up(_SCORING_TYPES, match.scoring_type, "scoring type", code),
@@ -335,14 +329,13 @@ def to_engine_match(match: Match) -> open_engine.Match:
 def counted_engine_matches() -> list[open_engine.Match]:
     """Every match that counts (``Match.objects.counted()``), converted.
 
-    Four queries whatever the number of matches: the matches with their
-    Events and the audit log checks for moderator actions, the
+    Four queries whatever the number of matches: the matches with the
+    audit log checks for moderator actions, the
     participants with their Players, the games, and the confirmations. Ordered by date played, then by row, for a stable list;
     the engine orders its ledger itself.
     """
     matches = (
         _with_moderator_actions(Match.objects.counted())
-        .select_related("event")
         .prefetch_related(
             Prefetch(
                 "participants",
