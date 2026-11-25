@@ -52,6 +52,7 @@ from apps.players.models import Player
 BLANK_REASON = "Give a reason to verify or unverify organizers."
 BLANK_CLOSE_REASON = "Give a reason to close reports."
 REVIEW_FIELD = "moderator_review"
+REPORT_VIEW_PERMISSION = "clubs.view_organizerreport"
 
 
 class OrganizerMemberInline(admin.TabularInline[OrganizerMember, Organizer]):
@@ -104,6 +105,8 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
         return (
             obj is not None
             and self.has_verify_permission(request)
+            # Its links open the report admin, which needs this.
+            and request.user.has_perm(REPORT_VIEW_PERMISSION)
             and not _is_member(request, obj.pk)
         )
 
