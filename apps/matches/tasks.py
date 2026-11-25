@@ -40,11 +40,11 @@ def expire_disputes_and_holds() -> int:
 
     Beat runs it daily. A disputed match whose first open dispute is older
     than MATCH_DISPUTE_EXPIRY_DAYS is voided, and so is the newer match of
-    a possible duplicate flag open for longer than
-    MATCH_DUPLICATE_HOLD_DAYS whose earlier match is confirmed (never one
-    held against a pending or disputed earlier match). Takes no arguments and returns only the
-    count. Safe to run twice: a match already voided, or locked by another
-    run, is skipped. A match that fails is logged by id and skipped, and
-    the task then fails with ``ExpiryFailed`` so the failure is visible.
+    a possible duplicate flag open for longer than MATCH_DUPLICATE_HOLD_DAYS
+    whose earlier match is confirmed (never one held against a pending or
+    disputed earlier match). Takes no arguments and returns only the count.
+    Safe to run twice: a match already voided, or locked by another run, is
+    skipped. A match that fails is logged by id and skipped, and the task
+    then fails with ``ExpiryFailed`` so the failure is visible.
     """
     return workflow.expire_disputes_and_holds()

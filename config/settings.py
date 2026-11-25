@@ -646,7 +646,8 @@ CELERY_BEAT_SCHEDULE = {
     },
     # Voids a disputed match past MATCH_DISPUTE_EXPIRY_DAYS and the newer
     # match of a possible duplicate flag past MATCH_DUPLICATE_HOLD_DAYS
-    # when the earlier match is confirmed (#268, ADR 0034). A run missed for more than an hour is dropped.
+    # when the earlier match is confirmed (#268, ADR 0034). A run missed
+    # for more than an hour is dropped.
     "expire-disputes-and-holds": {
         "task": "apps.matches.tasks.expire_disputes_and_holds",
         "schedule": crontab(hour=3, minute=30),
@@ -678,8 +679,8 @@ MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS"
 
 # Days a dispute stays unsettled before the daily task voids the match, and
 # days a possible duplicate flag stays open before it voids the flagged
-# (newer) match, only when the earlier match is confirmed (#268, ADR 0034). Unset or empty gives 30 and 14; there is
-# no value that turns either off.
+# (newer) match, only when the earlier match is confirmed (#268, ADR 0034).
+# Unset or empty gives 30 and 14; there is no value that turns either off.
 MATCH_DISPUTE_EXPIRY_DAYS = _days("MATCH_DISPUTE_EXPIRY_DAYS", 30)
 MATCH_DUPLICATE_HOLD_DAYS = _days("MATCH_DUPLICATE_HOLD_DAYS", 14)
 

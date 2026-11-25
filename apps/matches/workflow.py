@@ -27,8 +27,9 @@ States and transitions:
 - ``expire_disputes_and_holds``: voids a disputed match whose first open
   dispute is older than ``MATCH_DISPUTE_EXPIRY_DAYS``, and the newer match
   (``match``) of a possible duplicate flag open for longer than
-  ``MATCH_DUPLICATE_HOLD_DAYS`` whose earlier match is confirmed, so the
-  earlier one counts again (ADR 0034).
+  ``MATCH_DUPLICATE_HOLD_DAYS`` whose earlier match is confirmed. That
+  ends the flag's hold on the earlier match, which counts again unless
+  another open flag still holds it (ADR 0034).
 - ``resolve_flags``: a moderator closes every open flag that involves a
   match, as approved or dismissed, with a reason. It changes no Match:
   a resolved flag stops holding its matches from counting.
@@ -849,10 +850,11 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     The hold rule then voids the ``match`` (the newer one) of each open
     possible duplicate flag older than ``MATCH_DUPLICATE_HOLD_DAYS`` whose
     earlier match (``duplicate_of``) is confirmed and whose newer match is
-    not voided, so the earlier match counts again and sends ``release``. A
-    hold against a pending or disputed earlier match never voids the newer
-    one under this rule. The flag stays open: only ``resolve_flags`` resolves
-    flags, and a voided match holds nothing.
+    not voided. That ends the flag's hold on the earlier match, which
+    counts again, and sends ``release``, unless another open flag still
+    holds it. A hold against a pending or disputed earlier match never
+    voids the newer one under this rule. The flag stays open: only
+    ``resolve_flags`` resolves flags, and a voided match holds nothing.
 
     Each match is voided in its own transaction, as
     ``expire_unconfirmed_matches`` does: lineup lock tried, never waited
