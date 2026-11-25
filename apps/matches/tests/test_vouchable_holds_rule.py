@@ -73,7 +73,7 @@ def _held() -> list[Match]:
     ).select_related("match", "duplicate_of"):
         assert flag.duplicate_of is not None
         if MatchStatus.VOIDED not in (flag.match.status, flag.duplicate_of.status):
-            held |= {flag.match_id, flag.duplicate_of_id}
+            held |= {flag.match_id, flag.duplicate_of.pk}
     return list(Match.objects.filter(pk__in=held))
 
 
