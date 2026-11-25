@@ -21,7 +21,7 @@ know, and issues and warnings as columns, code, and fixed message. It
 never holds a name, a player ID, or any other cell value. The raw file
 is emptied once processing ends (done or failed), and the sweep
 (``sweep_results_files``) fails a file still pending after
-``PENDING_EXPIRY`` and empties it.
+``PENDING_EXPIRY``, once no run can still hold it, and empties it.
 
 Each row runs in its own transaction, in this lock order: the Results
 File row (``FOR UPDATE``), then, inside ``record_match()``, the Event row

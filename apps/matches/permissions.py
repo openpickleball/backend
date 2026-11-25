@@ -58,7 +58,8 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   duplicate path confirms one too: a permitted submitter of a match with
   an Event, so one with event authority and the Clubs' consent, whose
   exact duplicate matches a pending match confirms it (ADR 0013, ADR
-  0021).
+  0021), except in a Submission Batch: a batch submission never confirms
+  a pending match and is refused as a duplicate (ADR 0036).
 - ``settles_dispute``: the Event's verified Organizer settling a dispute
   (ADR 0034): an actor ``can_change_match`` allows that also passes
   ``can_confirm_as_organizer``, and, for an Account, has no Player in the

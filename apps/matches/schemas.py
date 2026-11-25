@@ -379,8 +379,10 @@ class ResultsFileOut(Schema):
 
     ``status`` is ``pending``, ``done``, or ``failed``. ``error`` is the
     code of a file that failed as a whole (``not_utf8``, ``malformed``,
-    ``bad_header``, ``no_rows``, ``too_many_rows``, or ``expired``), else
-    null. ``rows`` is empty until the file is processed.
+    ``bad_header``, ``no_rows``, ``too_many_rows``, ``expired``, or
+    ``voided``: a moderator voided the upload's matches), else null.
+    ``rows`` holds the rows processed so far: a file that failed partway
+    keeps them.
     """
 
     code: str

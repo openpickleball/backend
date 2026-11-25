@@ -1382,7 +1382,7 @@
         "type": "string"
       },
       "ResultsFileOut": {
-        "description": "An uploaded results file and its report.\n\n``status`` is ``pending``, ``done``, or ``failed``. ``error`` is the\ncode of a file that failed as a whole (``not_utf8``, ``malformed``,\n``bad_header``, ``no_rows``, ``too_many_rows``, or ``expired``), else\nnull. ``rows`` is empty until the file is processed.",
+        "description": "An uploaded results file and its report.\n\n``status`` is ``pending``, ``done``, or ``failed``. ``error`` is the\ncode of a file that failed as a whole (``not_utf8``, ``malformed``,\n``bad_header``, ``no_rows``, ``too_many_rows``, ``expired``, or\n``voided``: a moderator voided the upload's matches), else null.\n``rows`` holds the rows processed so far: a file that failed partway\nkeeps them.",
         "properties": {
           "code": {
             "title": "Code",

@@ -1123,8 +1123,9 @@ class ResultsFile(_LinkMessagesModel, _CleanedTextModel):
 
     Created by ``apps.matches.results_files.create_results_file`` with its
     Submission Batch (the uploader and the Event), and changed only by that
-    module's processing and sweep. It is not a ledger row: its status,
-    report, and content change once, when it is processed.
+    module's processing and sweep, and by a bulk void of its batch. It is
+    not a ledger row: its report grows as each row is processed, and its
+    status and content change once, when processing ends.
 
     ``content`` holds the raw file, which has player names and IDs, only
     until processing ends (done or failed); then it is emptied. ``report``
