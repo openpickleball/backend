@@ -3,8 +3,9 @@
 Every operation that needs sign-in shares one per-Account throttle,
 except player search, which keeps only its own ``SearchThrottle`` (ADR
 0018), and reporting an Organizer, which keeps only its own
-``OrganizerReportThrottle`` (#271). No public operation is mounted yet; one would need no sign-in and
-have only a client IP throttle. The health checks are never throttled.
+``OrganizerReportThrottle`` (#271). No public operation is mounted yet;
+one would need no sign-in and have only a client IP throttle. The health
+checks are never throttled.
 A refused request gets a 429 ``ErrorResponse`` with code ``throttled``
 and a ``Retry-After`` header, and the OpenAPI document says so on every
 throttled operation.

@@ -6,8 +6,9 @@ rule 8), so these are the only ways to change ``verified_at`` and
 active Account with ``clubs.verify_organizer``, or that is a member of the
 Organizer. A change records one Audit Event in the same transaction. An
 unverify that changes the status also closes every open Organizer Report
-on it (``apps.clubs.reports``), in that transaction. A call that would
-change nothing records nothing. Each call sets
+on it (``apps.clubs.reports``) in that transaction, with one
+``organizer_report.close`` Audit Event each. A call that would change
+nothing records nothing. Each call sets
 ``organizer.verification_changed`` to whether that call changed the
 status, so a caller (the admin) reports only its own changes.
 """
@@ -19,13 +20,12 @@ from django.utils import timezone
 
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
-from apps.clubs.models import Organizer, OrganizerMember
+from apps.clubs.models import VERIFY_PERMISSION, Organizer, OrganizerMember
 from apps.clubs.reports import RULE_ORGANIZER_UNVERIFIED, close_open_reports
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
-VERIFY_PERMISSION = "clubs.verify_organizer"
 _FIELDS = ["verified_at", "verified_by"]
 
 
@@ -49,8 +49,11 @@ def unverify_organizer(
 ) -> Organizer:
     """Remove ``organizer``'s verification and return it.
 
-    Raises ``NotAllowedToVerify`` for an actor who may not. Does nothing
-    and records nothing when the Organizer is not verified.
+    Raises ``NotAllowedToVerify`` for an actor who may not. A change also
+    closes every open Organizer Report on it in the same transaction, one
+    ``organizer_report.close`` Audit Event each, with ``actor`` and
+    ``reason``. Does nothing and records nothing when the Organizer is not
+    verified.
     """
     return _set_verified(organizer, actor=actor, reason=reason, verified=False)
 

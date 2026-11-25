@@ -32,6 +32,7 @@ from apps.audit.admin_actions import (
     reason_problem,
 )
 from apps.clubs.models import (
+    VERIFY_PERMISSION,
     Club,
     ClubOrganizerGrant,
     ClubRole,
@@ -42,7 +43,6 @@ from apps.clubs.models import (
 )
 from apps.clubs.reports import NotAllowedToClose, close_report, organizer_review
 from apps.clubs.services import (
-    VERIFY_PERMISSION,
     NotAllowedToVerify,
     unverify_organizer,
     verify_organizer,

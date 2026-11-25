@@ -27,6 +27,9 @@ _CONTROL_CHARACTER = "Remove control or invalid characters."
 _NOT_TEXT = "Enter text."
 # Written only by apps.clubs.services.
 VERIFICATION_FIELDS = ("verified_at", "verified_by")
+# The permission to verify and unverify an Organizer, which also lets a
+# moderator close Organizer Reports (apps.clubs.reports).
+VERIFY_PERMISSION = "clubs.verify_organizer"
 _VERIFIER_MEMBER = "The account that verified this organizer cannot be its member."
 VERIFIED_DELETE_MESSAGE = "A verified organizer cannot be deleted: unverify it first."
 # Control characters (Postgres cannot store NUL) and lone surrogates

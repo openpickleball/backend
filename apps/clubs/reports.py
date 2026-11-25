@@ -32,6 +32,7 @@ from django.utils import timezone
 from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
 from apps.clubs.models import (
+    VERIFY_PERMISSION,
     Organizer,
     OrganizerMember,
     OrganizerReport,
@@ -43,9 +44,6 @@ from apps.players.models import Player
 if TYPE_CHECKING:
     from django.contrib.auth.models import AnonymousUser, _User
 
-# The permission a moderator needs to close a report: the same one that
-# verifies and unverifies Organizers.
-CLOSE_PERMISSION = "clubs.verify_organizer"
 OPEN_REPORT_CONSTRAINT = "clubs_one_open_report_per_account"
 RULE_MODERATOR = "moderator"
 RULE_ORGANIZER_UNVERIFIED = "organizer_unverified"
@@ -145,7 +143,7 @@ def may_close(actor: "_User | AnonymousUser", organizer_id: int) -> bool:
     return bool(
         actor.is_authenticated
         and actor.is_active
-        and actor.has_perm(CLOSE_PERMISSION)
+        and actor.has_perm(VERIFY_PERMISSION)
         and not OrganizerMember.objects.filter(
             organizer_id=organizer_id, account_id=actor.pk
         ).exists()
