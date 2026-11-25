@@ -19,13 +19,14 @@ their own:
   active Account that ``permissions.vouch_level`` allows (an Event
   match's Organizer members, a self-reported match's players, nobody for
   a club-only match). A voided match, or one no open flag of this
-  submission still holds, gets nothing. An earlier match that an older
-  open flag it has not been vouched for on yet (older means a lower flag
-  id than this submission's flags; its other match not voided) already
-  held gets nothing either: its recipients were told when that hold
-  began. One it was already vouched for on needs a new vouch for this
-  submission's flag, so its recipients are told. The new match is always
-  notified.
+  submission still holds, gets nothing. The skip for an earlier match is
+  per recipient: a recipient is not told again while their own side (the
+  players of their team, or the Organizer) still has an older open hold
+  on that match to vouch on (older means a lower flag id than this
+  submission's flags; its other match not voided). They were told when
+  that hold began, and the vouch they owe covers the new flag too. A side
+  that has vouched on every older hold is told, since the new flag needs
+  its new vouch. The new match's recipients are always notified.
 
 A failure while building or queuing notices is logged with the match's
 row id and the error class only, and never fails the change, which has
@@ -59,6 +60,7 @@ from apps.matches.models import (
     MatchFlag,
     MatchParticipant,
     MatchStatus,
+    MatchVouch,
 )
 from apps.matches.permissions import settles_dispute, vouch_level
 
@@ -243,34 +245,29 @@ def _send_hold_notices(new_match_pk: int) -> int:
 
 def _send_hold_target(target_pk: int, new_match_pk: int, flag_pks: list[int]) -> int:
     """The hold notices for one match a flag of this submission holds."""
-    from apps.matches.workflow import _flag_vouched, _open_holds_of
+    from apps.matches.workflow import _open_holds_of
 
     match = Match.objects.filter(pk=target_pk).first()
     if match is None or match.status == MatchStatus.VOIDED:
         return 0
     holds = _open_holds_of(match)
-    if target_pk != new_match_pk and any(
-        not _flag_vouched(flag, match.pk) for flag in holds.filter(pk__lt=min(flag_pks))
-    ):
-        # An older open flag it has not been vouched for on yet already
-        # held this earlier match, and its recipients were told when that
-        # hold began. Telling them again for every new near duplicate
-        # would grow with the square of the submissions. Only flags older
-        # than this submission's count (flag ids are insertion order): a
-        # newer flag's callback skips this match because of ours, so ours
-        # must still tell them. A flag it was vouched for on stays open
-        # only for its other match, and our flag needs a new vouch, so
-        # its recipients are told.
-        return 0
     holding = list(holds.filter(pk__in=flag_pks).values_list("created_at", flat=True))
     if not holding:
         return 0
+    # Only flags older than this submission's (flag ids are insertion
+    # order) can make an earlier match's recipient owe a vouch already: a
+    # newer flag's callback skips this match because of ours. The new
+    # match has no older flag of its own to wait on.
+    older = (
+        [] if target_pk == new_match_pk else list(holds.filter(pk__lt=min(flag_pks)))
+    )
     ends_on = _ends_on(max(holding), settings.MATCH_DUPLICATE_HOLD_DAYS)
-    return _send_holds_for(match, ends_on)
+    return _send_holds_for(match, ends_on, older)
 
 
-def _send_holds_for(match: Match, ends_on: date) -> int:
-    """One hold notice to each Account that may vouch for ``match``."""
+def _send_holds_for(match: Match, ends_on: date, older: list[MatchFlag]) -> int:
+    """One hold notice to each Account that may vouch for ``match`` and
+    whose side owes no vouch on an ``older`` flag."""
     teams: dict[int, str] = {}
     candidates: list[_User] = []
     for participant in _participants(match):
@@ -287,17 +284,51 @@ def _send_holds_for(match: Match, ends_on: date) -> int:
         count += _queue_one(
             match.pk,
             HOLD_NOTICE,
-            partial(_hold_notice, account, match, teams.get(account.pk), ends_on),
+            partial(
+                _hold_notice, account, match, teams.get(account.pk), ends_on, older
+            ),
         )
     return count
 
 
 def _hold_notice(
-    account: "_User", match: Match, team: str | None, ends_on: date
+    account: "_User",
+    match: Match,
+    team: str | None,
+    ends_on: date,
+    older: list[MatchFlag],
 ) -> EmailMultiAlternatives | None:
     if vouch_level(account, match) is None:
         return None
+    if any(not _side_vouched(flag, match, team) for flag in older):
+        # The recipient's side still owes a vouch on an older open hold of
+        # this match, so it was told when that hold began, and the vouch
+        # it owes covers this flag too: vouch_for_match covers every open
+        # flag that holds the match. Telling it again for every new near
+        # duplicate would grow with the square of the submissions. A side
+        # that has vouched on every older hold must be told, since this
+        # flag needs its new vouch.
+        return None
     return render_hold_notice(account, match, team=team, ends_on=ends_on)
+
+
+def _side_vouched(flag: MatchFlag, match: Match, team: str | None) -> bool:
+    """True when the recipient's side has vouched for ``match`` on ``flag``.
+
+    For an Event match the side is its Organizer: any vouch row on the
+    flag for the match (only the Organizer's actors write one). For a
+    self-reported match it is the recipient's team: a vouch from an
+    Account whose Player plays on that team in the match.
+    """
+    vouches = MatchVouch.objects.filter(flag=flag, match_id=match.pk)
+    if match.event_id is not None:
+        return vouches.exists()
+    if team is None:
+        return False
+    teammates = MatchParticipant.objects.filter(match_id=match.pk, team=team).values(
+        "player__account_id"
+    )
+    return vouches.filter(account_id__in=teammates).exists()
 
 
 def _ends_on(start: datetime, days: int) -> date:
