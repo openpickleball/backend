@@ -85,6 +85,15 @@ def _positive_days(name: str) -> int | None:
     return int(value)
 
 
+def _days(name: str, default: int) -> int:
+    """A whole number of days from 1 to 36500, or ``default`` when unset or empty.
+
+    The same check as ``_positive_days``, for a period that always applies.
+    """
+    value = _positive_days(name)
+    return default if value is None else value
+
+
 def _version(name: str, default: int) -> int:
     """A whole number from 1 to 1,000,000, or ``default`` when unset or empty.
 
@@ -658,6 +667,13 @@ CELERY_BEAT_SCHEDULE = {
 # Days a pending (unconfirmed) match waits before the daily task voids it
 # (#26). Unset or empty means pending matches never expire.
 MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS")
+
+# Days a dispute stays unsettled before the daily task voids the match, and
+# days a possible duplicate flag stays open before it voids the flagged
+# (newer) match (#268, ADR 0034). Unset or empty gives 30 and 14; there is
+# no value that turns either off.
+MATCH_DISPUTE_EXPIRY_DAYS = _days("MATCH_DISPUTE_EXPIRY_DAYS", 30)
+MATCH_DUPLICATE_HOLD_DAYS = _days("MATCH_DUPLICATE_HOLD_DAYS", 14)
 
 
 # API throttling (#34, ADR 0030)
