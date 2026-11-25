@@ -14,6 +14,7 @@ No confirmation row is shown, and nothing names who confirmed or
 disputed, though a participant can sometimes infer it (ADR 0015).
 """
 
+import unicodedata
 from collections.abc import Callable
 from datetime import date, datetime
 from enum import StrEnum
@@ -114,15 +115,28 @@ class MatchCreateIn(Schema):
 
 
 MAX_REASON_LENGTH = 1000
+# Control characters and lone surrogates, as Player search refuses them.
+# Postgres refuses a NUL in text, which would be a 500. A typed reason may
+# hold line breaks and tabs.
+_REASON_REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
+_REASON_ALLOWED_CONTROLS = frozenset({"\n", "\r", "\t"})
 
 
 def _reason(value: object) -> object:
-    """Refuse a blank or overlong reason with fixed text.
+    """Refuse a blank, overlong, or control-character reason with fixed text.
 
     The messages never repeat the value: a reason is free text, and the
     422 response returns each message to the client.
     """
     if isinstance(value, str):
+        if any(
+            unicodedata.category(char) in _REASON_REFUSED_CATEGORIES
+            and char not in _REASON_ALLOWED_CONTROLS
+            for char in value
+        ):
+            raise PydanticCustomError(
+                "invalid", "The reason has a character not allowed."
+            )
         if not value.strip():
             raise PydanticCustomError("blank", "Give a reason.")
         if len(value) > MAX_REASON_LENGTH:
