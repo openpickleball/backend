@@ -348,8 +348,8 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
     ``match.dispute`` Audit Event, and a match that was counting sends
     ``match_changed`` with ``change=dispute``. A disputed match only gains
     the participant's dispute row. A participant disputes a match at most
-    once: a repeat (also after a moderator resolved the dispute as
-    confirmed) does nothing. A voided match raises ``MatchStateError``.
+    once: a repeat (also after a moderator or the Event's Organizer
+    resolved the dispute as confirmed) does nothing. A voided match raises ``MatchStateError``.
     Only a participant may dispute. A dispute takes no reason: Audit
     Events are append-only, and a participant's free text could hold a
     name.
@@ -363,7 +363,8 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
         if locked.status == MatchStatus.VOIDED:
             raise MatchStateError
         # A participant disputes a match once. A repeat, even after a
-        # moderator resolved the dispute as confirmed, changes nothing.
+        # moderator or the Event's Organizer resolved the dispute as
+        # confirmed, changes nothing.
         added = _record_decision(locked, player, ConfirmationDecision.DISPUTE)
         if not added or locked.status == MatchStatus.DISPUTED:
             return locked
@@ -437,21 +438,25 @@ def resolve_dispute(
         return locked
 
 
-_REASON_REFUSED = "Only a moderator may give a reason."
+_REASON_REFUSED = (
+    "Only a moderator, or an organizer settling a dispute, may give a reason."
+)
 
 
 class ReasonRefused(ValueError):
-    """An actor not acting as moderator gave a reason. Fixed text."""
+    """An actor not acting as moderator, nor as the Organizer settling a
+    dispute, gave a reason. Fixed text."""
 
     def __init__(self) -> None:
         super().__init__(_REASON_REFUSED)
 
 
 def _check_reason(moderator: bool, reason: str) -> None:
-    """Refuse a non-moderator's reason with fixed text.
+    """Refuse the reason of an actor who may not give one, with fixed text.
 
     Audit Events are append-only, so free text that could hold a name is
-    stored only from moderators.
+    stored only from moderators and from the Event's verified Organizer
+    settling a dispute (ADR 0034). ``moderator`` is True for either.
     """
     if not moderator and reason.strip():
         raise ReasonRefused
@@ -499,8 +504,9 @@ def void_match(match: Match, *, actor: Actor, reason: str = "") -> Match:
 
     Any status but voided becomes voided, with one ``match.void`` Audit
     Event. Only a moderator may give a ``reason``; anyone else giving one
-    gets ``ValueError``. A match that was counting sends ``match_changed`` with
-    ``change=void``, and each match it no longer holds gets ``release``.
+    gets ``ReasonRefused``. A match that was counting sends
+    ``match_changed`` with ``change=void``, and each match it no longer
+    holds gets ``release``.
     """
     _saved(match)
     # A moderator who played in the match falls back to the other rules.

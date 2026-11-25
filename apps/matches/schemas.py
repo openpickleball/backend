@@ -221,7 +221,8 @@ class MatchOut(Schema):
     not play in the match. ``my_decision`` is the latest confirm or dispute
     this player recorded on the match, ``none`` when they recorded none or
     did not play. A repeated decision is not recorded again, so confirming
-    again after a dispute that a moderator resolved still shows
+    again after a dispute that a moderator or the Event's organizer resolved
+    still shows
     ``dispute``. An organizer's confirmation is not a player decision: a
     player who confirms as a member of the match's Event Organizer still
     shows ``none``. For a participant, ``confirmed_by_team`` says whether

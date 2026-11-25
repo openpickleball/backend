@@ -1,10 +1,13 @@
-"""Only a moderator's reason reaches the append-only audit log (review
-finding L, #26).
+"""Only a moderator's reason, or the reason of the Event's Organizer
+settling a dispute, reaches the append-only audit log (review finding L,
+#26, ADR 0034).
 
 An Audit Event can never be changed or deleted, so free text that could
-hold a name is stored only from moderators. A dispute takes no reason. A
-non-moderator who gives a reason to void or edit is refused with fixed
-text, and nothing changes. Made-up data only.
+hold a name is stored only from moderators and from the Organizer
+settling a dispute. A dispute takes no reason. Anyone else who gives a
+reason to void or edit, an Organizer member editing a match that is not
+disputed included, is refused with fixed text, and nothing changes.
+Made-up data only.
 """
 
 from typing import Any
@@ -24,7 +27,7 @@ from apps.players.models import Player
 pytestmark = pytest.mark.django_db
 
 REASON = "Made-up free text."
-REFUSAL = "Only a moderator may give a reason."
+REFUSAL = "Only a moderator, or an organizer settling a dispute, may give a reason."
 
 
 def _member(event: Event) -> User:

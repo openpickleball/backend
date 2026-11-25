@@ -312,7 +312,7 @@ def test_a_resolution_is_confirmed_or_voided(
         resolve_dispute(disputed, actor=moderator, outcome=outcome, reason=REASON)
 
 
-def test_only_a_moderator_resolves(disputed: Match, players: list[Player]) -> None:
+def test_a_participant_cannot_resolve(disputed: Match, players: list[Player]) -> None:
     with pytest.raises(MatchActionDenied):
         resolve_dispute(
             disputed,
@@ -432,7 +432,7 @@ def _edit(match: Match, actor: Any, **overrides: Any) -> Match:
         "team_b": teams[Team.B],
         "games": OTHER_GAMES,
         "played_on": stored.played_on,
-        # Only a moderator may give a reason (review finding L).
+        # Only a moderator may give a reason here (review finding L).
         "reason": REASON if is_moderator(actor) else "",
     }
     values.update(overrides)
