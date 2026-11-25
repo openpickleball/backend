@@ -164,7 +164,7 @@ def test_hold_notice_for_a_player() -> None:
         assert "July 1, 2026" in body
         assert "same teams and date as another match" in body
         assert "One player from each team needs to vouch." in body
-        assert "the earlier of the two matches is confirmed" in body
+        assert "as long as the earlier one is confirmed by then" in body
         assert (
             "You received this email because a match you played in is on "
             "hold on OPEN." in body

@@ -10,6 +10,6 @@
 <p style="margin: 4px 0 0; font-size: 14px; color: #555555;"><span style="word-break: break-all;">{{ url }}</span></p>
 </div>
 <p style="margin: 0 0 16px;">{% if as_organizer %}If it is a separate match, not a repeat, a member of your organizer can vouch for it from its page.{% else %}If it is a separate match, not a repeat, vouch for it from its page. One player from each team needs to vouch.{% endif %}</p>
-<p style="margin: 0;">If the hold is still open on {{ ends_on|date:"F j, Y" }} and the earlier of the two matches is confirmed, the newer one is voided and the earlier one counts.</p>
+<p style="margin: 0;">If nobody settles the hold first, the newer of the two matches is voided on {{ ends_on|date:"F j, Y" }} or the next day (UTC), as long as the earlier one is confirmed by then.</p>
 {% endblock content %}
 {% block reason %}{% if as_organizer %}You received this email because you are a member of the organizer that ran this match's event.{% else %}You received this email because a match you played in is on hold on OPEN.{% endif %}{% endblock reason %}

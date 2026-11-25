@@ -10,6 +10,6 @@
 <p style="margin: 4px 0 0; font-size: 14px; color: #555555;"><span style="word-break: break-all;">{{ url }}</span></p>
 </div>
 <p style="margin: 0 0 16px;">{% if as_organizer %}As a member of the organizer, you can confirm it, void it, or correct it from its page, with a reason.{% else %}The player who disputed it can withdraw the dispute. {% if event_match %}The event's organizer can settle it.{% else %}Either team can correct the scores from the match's page; the correction counts once the other team confirms it.{% endif %}{% endif %}</p>
-<p style="margin: 0;">If the dispute is not settled by {{ ends_on|date:"F j, Y" }}, the match is voided and does not count.</p>
+<p style="margin: 0;">If nobody settles the dispute first, the match is voided on {{ ends_on|date:"F j, Y" }} or the next day (UTC), and does not count.</p>
 {% endblock content %}
 {% block reason %}{% if as_organizer %}You received this email because you are a member of the organizer that ran this match's event.{% else %}You received this email because a match you played in was disputed on OPEN.{% endif %}{% endblock reason %}
