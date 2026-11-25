@@ -966,6 +966,13 @@ class MatchFlag(_LinkMessagesModel):
     longer holds the other one. The engine adapter counts only
     ``counted()`` matches (``counted_engine_matches``).
 
+    The hold period (ADR 0034): a flag still open after
+    ``MATCH_DUPLICATE_HOLD_DAYS`` whose ``duplicate_of`` is confirmed makes
+    the daily ``expire_disputes_and_holds`` void its ``match`` (the newer
+    one). That ends its hold on the earlier one, which counts again unless
+    another open flag still holds it. A hold against a pending or disputed
+    earlier match never ends this way. The flag itself stays open.
+
     A moderator resolves a flag through
     ``apps.matches.workflow.resolve_flags``, which sets ``resolution`` and
     ``resolved_at`` together (a check constraint). Both are empty while the
