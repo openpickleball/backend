@@ -996,8 +996,9 @@ class FlagReason(models.TextChoices):
 class FlagResolution(models.TextChoices):
     """How a flag was closed (#40): by a moderator, or by vouches (#270).
 
-    ``approved``: the flagged result stands. Vouching always approves. ``dismissed``: the flag was
-    not a real concern. Either way the flag stops holding its matches.
+    ``approved``: the flagged result stands. Vouching always approves.
+    ``dismissed``: the flag was not a real concern. Either way the flag
+    stops holding its matches.
     """
 
     APPROVED = "approved", "Approved"

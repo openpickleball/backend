@@ -1170,7 +1170,8 @@ def vouchable_holds(account: "_User") -> QuerySet[Match]:
     does not play in (the Organizer level). Only an Event match with a
     correction chain (it corrects a match, or a match corrects it) is
     checked in Python with ``vouch_level``, since the conflict rule
-    follows the chain.
+    follows the chain. Such matches are rare, so the list still calls
+    ``vouch_level`` once for each of them.
     """
     if not get_user_model().objects.filter(pk=account.pk, is_active=True).exists():
         return Match.objects.none()
