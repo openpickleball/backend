@@ -220,10 +220,14 @@ def update_organizer_event(
             for name, value in changes.items():
                 setattr(event, name, value)
             # The model's own cleaning (the name is stripped), so a sent
-            # value equal to the stored one is not a change.
+            # value equal to the stored one is not a change. Only the
+            # fields sent are compared: cleaning a stored value that was
+            # never sent is not a change the client asked for.
             event.full_clean(exclude=["public_code"])
             changed = any(
-                getattr(event, name) != stored[name] for name in _FIXED_ONCE_MATCHED
+                getattr(event, name) != stored[name]
+                for name in _FIXED_ONCE_MATCHED
+                if name in changes
             )
             if changed and event.matches.exists():
                 raise HttpError(409, LOCKED_MESSAGE)
