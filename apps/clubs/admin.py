@@ -103,7 +103,7 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
 
     def get_readonly_fields(
         self, request: HttpRequest, obj: Organizer | None = None
-    ) -> Sequence[str]:
+    ) -> tuple[str, ...]:
         fields = tuple(super().get_readonly_fields(request, obj))
         if self._shows_review(request, obj):
             fields += (REVIEW_FIELD,)
@@ -111,7 +111,7 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
 
     def get_fields(
         self, request: HttpRequest, obj: Organizer | None = None
-    ) -> Sequence[Callable[..., Any] | str]:
+    ) -> list[str | list[str] | tuple[str, ...]]:
         # The review has a fieldset of its own (get_fieldsets).
         return [f for f in super().get_fields(request, obj) if f != REVIEW_FIELD]
 
@@ -379,21 +379,21 @@ class OrganizerReportAdmin(admin.ModelAdmin[OrganizerReport]):
 
     def get_fields(
         self, request: HttpRequest, obj: OrganizerReport | None = None
-    ) -> Sequence[Callable[..., Any] | str]:
-        fields: list[Callable[..., Any] | str] = [
+    ) -> tuple[str, ...]:
+        fields: tuple[str, ...] = (
             "organizer_code",
             "reason",
             "created_at",
             "closed_at",
-        ]
+        )
         if self.has_verify_permission(request):
-            fields.append("reporter_player")
+            fields += ("reporter_player",)
         return fields
 
     def get_readonly_fields(
         self, request: HttpRequest, obj: OrganizerReport | None = None
-    ) -> Sequence[str]:
-        return [str(field) for field in self.get_fields(request, obj)]
+    ) -> tuple[str, ...]:
+        return self.get_fields(request, obj)
 
     @admin.display(description="Organizer", ordering="organizer__public_code")
     def organizer_code(self, report: OrganizerReport) -> str:

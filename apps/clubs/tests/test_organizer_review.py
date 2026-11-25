@@ -162,11 +162,12 @@ def test_counts_equal_the_audit_events_on_its_events_matches(
         == events.filter(action=AuditAction.MATCH_DISPUTE_WITHDRAW).count()
     )
     outcomes = [
-        e.after["status"] for e in events.filter(action=AuditAction.DISPUTE_OUTCOME)
+        (e.after or {})["status"]
+        for e in events.filter(action=AuditAction.DISPUTE_OUTCOME)
     ]
     assert review.disputes_confirmed == outcomes.count("confirmed")
     assert review.disputes_voided == outcomes.count("voided")
-    expiries = [e.after for e in events.filter(action=AuditAction.MATCH_EXPIRE)]
+    expiries = [e.after or {} for e in events.filter(action=AuditAction.MATCH_EXPIRE)]
     assert review.disputes_expired == [a["rule"] for a in expiries].count("dispute")
 
 

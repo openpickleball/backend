@@ -41,7 +41,7 @@ from apps.matches.models import SIGNAL_FLAG_REASONS, Match, MatchFlag, MatchStat
 from apps.players.models import Player
 
 if TYPE_CHECKING:
-    from django.contrib.auth.models import _User
+    from django.contrib.auth.models import AnonymousUser, _User
 
 # The permission a moderator needs to close a report: the same one that
 # verifies and unverifies Organizers.
@@ -140,7 +140,7 @@ def _constraint_name(error: IntegrityError) -> str | None:
     return name if isinstance(name, str) else None
 
 
-def may_close(actor: "_User", organizer_id: int) -> bool:
+def may_close(actor: "_User | AnonymousUser", organizer_id: int) -> bool:
     """True when ``actor`` may close a report on this Organizer."""
     return bool(
         actor.is_authenticated
@@ -152,7 +152,9 @@ def may_close(actor: "_User", organizer_id: int) -> bool:
     )
 
 
-def close_report(report: OrganizerReport, *, actor: "_User", reason: str) -> bool:
+def close_report(
+    report: OrganizerReport, *, actor: "_User | AnonymousUser", reason: str
+) -> bool:
     """Close ``report`` as a moderator, with a required ``reason``.
 
     Raises ``NotAllowedToClose`` for an actor who is not an active Account
@@ -193,7 +195,13 @@ def close_open_reports(
     return count
 
 
-def _close(locked: OrganizerReport, *, actor: "_User", reason: str, rule: str) -> None:
+def _close(
+    locked: OrganizerReport,
+    *,
+    actor: "_User | AnonymousUser",
+    reason: str,
+    rule: str,
+) -> None:
     before = snapshot(locked, _CLOSED_FIELDS)
     locked.closed_at = timezone.now()
     locked.save(update_fields=_CLOSED_FIELDS)
