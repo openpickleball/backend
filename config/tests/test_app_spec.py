@@ -1,7 +1,7 @@
-"""Tests for the App Platform app specs in .do/ (issue #61).
+"""Tests for the App Platform app spec .do/production.yaml (issue #61).
 
-Each environment has one spec: web, worker, beat, a pre-deploy migrate
-job, managed Postgres, and managed Valkey. Settings must start from the
+There is no staging environment. The production spec has web, worker,
+beat, a pre-deploy migrate job, managed Postgres, and managed Valkey. Settings must start from the
 values the spec gives, including the connection strings DigitalOcean
 binds, shown here with made-up hosts and passwords.
 """
@@ -11,7 +11,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-import pytest
 import yaml
 
 from config.tests.test_celery import QUEUES
@@ -21,8 +20,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # A made-up password that must never appear in any output.
 DO_MARKER = "not-a-real-do-pw-MARKER"
-PG_HOST = "open-staging-pg-do-user-1-0.f.db.ondigitalocean.example.org"
-VALKEY_HOST = "open-staging-valkey-do-user-1-0.f.db.ondigitalocean.example.org"
+PG_HOST = "open-production-pg-do-user-1-0.f.db.ondigitalocean.example.org"
+VALKEY_HOST = "open-production-valkey-do-user-1-0.f.db.ondigitalocean.example.org"
 
 # The shapes DigitalOcean binds: the cluster's own connection string, the
 # pool's (the pool name in place of the database), and Valkey's (TLS).
@@ -91,7 +90,7 @@ def test_settings_accept_the_cluster_default_database_name() -> None:
 
 # The spec ---------------------------------------------------------------
 
-ENVIRONMENTS = ("staging", "production")
+SPEC_PATH = BASE_DIR / ".do" / "production.yaml"
 
 SLUG = "apps-s-1vcpu-0.5gb"
 IMAGE = {
@@ -121,25 +120,19 @@ LITERALS = {
     "EMAIL_BACKEND": "anymail.backends.resend.EmailBackend",
     "DEFAULT_FROM_EMAIL": "OPEN <noreply@mail.openpb.org>",
 }
-FRONTEND_URLS = {
-    "staging": "${APP_URL}",
-    "production": "https://app.openpb.org",
-}
+FRONTEND_URL = "https://app.openpb.org"
 
 # Made-up values for the bindable variables, as App Platform fills them.
 BOUND = {
-    "${APP_DOMAIN}": "open-backend-staging-ab1cd.ondigitalocean.example.org",
-    "${APP_URL}": "https://open-backend-staging-ab1cd.ondigitalocean.example.org",
+    "${APP_DOMAIN}": "open-backend-production-ab1cd.ondigitalocean.example.org",
     "${pg.open-pool.DATABASE_URL}": DO_POOL_URL,
     "${pg.DATABASE_URL}": DO_DIRECT_URL,
     "${valkey.DATABASE_URL}": DO_VALKEY_URL,
 }
 
 
-def _spec(environment: str) -> dict[str, Any]:
-    spec: dict[str, Any] = yaml.safe_load(
-        (BASE_DIR / ".do" / f"{environment}.yaml").read_text()
-    )
+def _spec() -> dict[str, Any]:
+    spec: dict[str, Any] = yaml.safe_load(SPEC_PATH.read_text())
     return spec
 
 
@@ -161,16 +154,10 @@ def _one(items: list[dict[str, Any]], name: str) -> dict[str, Any]:
     return matches[0]
 
 
-@pytest.fixture(params=ENVIRONMENTS)
-def environment(request: pytest.FixtureRequest) -> str:
-    name: str = request.param
-    return name
+def test_spec_has_exactly_the_components() -> None:
+    spec = _spec()
 
-
-def test_spec_has_exactly_the_components(environment: str) -> None:
-    spec = _spec(environment)
-
-    assert spec["name"] == f"open-backend-{environment}"
+    assert spec["name"] == "open-backend-production"
     assert [c["name"] for c in spec["services"]] == ["web"]
     assert [c["name"] for c in spec["workers"]] == ["worker", "beat"]
     assert [c["name"] for c in spec["jobs"]] == ["migrate"]
@@ -185,10 +172,8 @@ def test_spec_has_exactly_the_components(environment: str) -> None:
     }
 
 
-def test_web_serves_the_image_command_with_both_health_checks(
-    environment: str,
-) -> None:
-    web = _one(_spec(environment)["services"], "web")
+def test_web_serves_the_image_command_with_both_health_checks() -> None:
+    web = _one(_spec()["services"], "web")
 
     # The image's command is gunicorn; App Platform sets PORT.
     assert "run_command" not in web
@@ -200,8 +185,8 @@ def test_web_serves_the_image_command_with_both_health_checks(
         assert "tcp" not in str(web[check]).lower()
 
 
-def test_worker_consumes_every_queue(environment: str) -> None:
-    worker = _one(_spec(environment)["workers"], "worker")
+def test_worker_consumes_every_queue() -> None:
+    worker = _one(_spec()["workers"], "worker")
 
     assert worker["run_command"] == WORKER_COMMAND
     options = re.findall(r"-Q\s+([\w,]+)", worker["run_command"])
@@ -209,24 +194,24 @@ def test_worker_consumes_every_queue(environment: str) -> None:
     assert set(options[0].split(",")) == QUEUES
 
 
-def test_beat_runs_once_with_the_database_scheduler(environment: str) -> None:
-    beat = _one(_spec(environment)["workers"], "beat")
+def test_beat_runs_once_with_the_database_scheduler() -> None:
+    beat = _one(_spec()["workers"], "beat")
 
     assert beat["run_command"] == BEAT_COMMAND
     assert beat["instance_count"] == 1
     assert "autoscaling" not in beat
 
 
-def test_migrate_runs_before_each_deploy(environment: str) -> None:
-    migrate = _one(_spec(environment)["jobs"], "migrate")
+def test_migrate_runs_before_each_deploy() -> None:
+    migrate = _one(_spec()["jobs"], "migrate")
 
     assert migrate["kind"] == "PRE_DEPLOY"
     # No --database: OPEN's migrate uses the direct URL itself (ADR 0038).
     assert migrate["run_command"] == MIGRATE_COMMAND
 
 
-def test_databases_are_managed_production_clusters(environment: str) -> None:
-    spec = _spec(environment)
+def test_databases_are_managed_production_clusters() -> None:
+    spec = _spec()
     pg = _one(spec["databases"], "pg")
     valkey = _one(spec["databases"], "valkey")
 
@@ -234,7 +219,7 @@ def test_databases_are_managed_production_clusters(environment: str) -> None:
         "name": "pg",
         "engine": "PG",
         "production": True,
-        "cluster_name": f"open-{environment}-pg",
+        "cluster_name": "open-production-pg",
         "db_name": "open",
         "db_user": "open",
     }
@@ -242,30 +227,28 @@ def test_databases_are_managed_production_clusters(environment: str) -> None:
         "name": "valkey",
         "engine": "VALKEY",
         "production": True,
-        "cluster_name": f"open-{environment}-valkey",
+        "cluster_name": "open-production-valkey",
     }
 
 
-def test_every_component_uses_the_smallest_slug_and_one_image(
-    environment: str,
-) -> None:
-    for component in _components(_spec(environment)):
+def test_every_component_uses_the_smallest_slug_and_one_image() -> None:
+    for component in _components(_spec()):
         assert component["instance_size_slug"] == SLUG, component["name"]
         assert component["image"] == IMAGE, component["name"]
         # Shared values are set once, at app level.
         assert "envs" not in component, component["name"]
 
 
-def test_connection_strings_are_bound_at_app_level(environment: str) -> None:
-    envs = _envs(_spec(environment))
+def test_connection_strings_are_bound_at_app_level() -> None:
+    envs = _envs(_spec())
 
     for key, binding in BINDINGS.items():
         assert envs[key]["value"] == binding, key
         assert envs[key]["scope"] == "RUN_TIME", key
 
 
-def test_secrets_have_no_value(environment: str) -> None:
-    envs = _envs(_spec(environment))
+def test_secrets_have_no_value() -> None:
+    envs = _envs(_spec())
 
     for key in SECRETS:
         assert envs[key]["type"] == "SECRET", key
@@ -275,8 +258,8 @@ def test_secrets_have_no_value(environment: str) -> None:
             assert env.get("type", "GENERAL") == "GENERAL", key
 
 
-def test_no_literal_holds_credentials_or_celery_urls(environment: str) -> None:
-    envs = _envs(_spec(environment))
+def test_no_literal_holds_credentials_or_celery_urls() -> None:
+    envs = _envs(_spec())
 
     for key, env in envs.items():
         value = str(env.get("value", ""))
@@ -286,37 +269,24 @@ def test_no_literal_holds_credentials_or_celery_urls(environment: str) -> None:
     assert "CLIENT_IP_HEADER" not in envs
 
 
-def test_env_values_are_exactly_the_planned_ones(environment: str) -> None:
-    envs = _envs(_spec(environment))
+def test_env_values_are_exactly_the_planned_ones() -> None:
+    envs = _envs(_spec())
     values = {key: env.get("value") for key, env in envs.items()}
 
     assert values == {
         **BINDINGS,
         **LITERALS,
-        "FRONTEND_URL": FRONTEND_URLS[environment],
+        "FRONTEND_URL": FRONTEND_URL,
         **dict.fromkeys(SECRETS),
     }
 
 
-def test_the_two_specs_differ_only_in_names_and_frontend_url() -> None:
-    def normalized(environment: str) -> str:
-        spec = _spec(environment)
-        envs = _envs(spec)
-        envs["FRONTEND_URL"]["value"] = "FRONTEND"
-        text = json.dumps(spec, sort_keys=True)
-        return text.replace(f"open-backend-{environment}", "NAME").replace(
-            f"open-{environment}-", "CLUSTER-"
-        )
-
-    assert normalized("staging") == normalized("production")
+def test_no_region_is_set() -> None:
+    assert "region" not in _spec()
 
 
-def test_no_region_is_set(environment: str) -> None:
-    assert "region" not in _spec(environment)
-
-
-def _bound_env(environment: str) -> dict[str, str]:
-    envs = _envs(_spec(environment))
+def _bound_env() -> dict[str, str]:
+    envs = _envs(_spec())
     values: dict[str, str] = {}
     for key, env in envs.items():
         value = env.get("value")
@@ -328,8 +298,8 @@ def _bound_env(environment: str) -> dict[str, str]:
     return values
 
 
-def test_settings_start_from_the_spec_values(environment: str) -> None:
-    result = _run(["manage.py", "check", "--deploy"], _bound_env(environment))
+def test_settings_start_from_the_spec_values() -> None:
+    result = _run(["manage.py", "check", "--deploy"], _bound_env())
 
     output = result.stdout + result.stderr
     assert result.returncode == 0, result.stderr

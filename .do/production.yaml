@@ -15,7 +15,7 @@ envs:
   - key: DJANGO_ALLOWED_HOSTS
     value: ${APP_DOMAIN}
     scope: RUN_TIME
-  # The pool open-pool, in transaction mode, which #62 creates.
+  # The pool open-pool, in transaction mode, which #68 creates.
   - key: DATABASE_URL
     value: ${pg.open-pool.DATABASE_URL}
     scope: RUN_TIME
