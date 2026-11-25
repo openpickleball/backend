@@ -170,13 +170,18 @@ def _verified_organizer_id(event_id: int | None) -> int | None:
     return organizer_id
 
 
+def _account_acts_for(account: "_User", organizer_id: int) -> bool:
+    """True when ``account`` is a member (either role) of ``organizer_id``."""
+    return OrganizerMember.objects.filter(
+        organizer_id=organizer_id, account=account
+    ).exists()
+
+
 def _account_event_authority(account: "_User", event_id: int | None) -> bool:
     organizer_id = _verified_organizer_id(event_id)
     if organizer_id is None:
         return False
-    return OrganizerMember.objects.filter(
-        organizer_id=organizer_id, account=account
-    ).exists()
+    return _account_acts_for(account, organizer_id)
 
 
 def _application_event_authority(
@@ -202,25 +207,17 @@ def _application_acts_for(application: "PartnerApplication", organizer_id: int) 
     ).exists()
 
 
-def _clubs_consent(event_id: int, club_id: int | None) -> bool:
-    """True when every Club the submission names granted the Event's
-    Organizer a Club Organizer Grant (ADR 0021).
-
-    The Clubs are the submission's ``club_id`` and the Event's own stored
-    Club, both read from the database by id. Consent is independent of
-    the actor and of verification.
+def _clubs_consent(organizer_id: int, club_ids: Collection[int | None]) -> bool:
+    """True when every Club in ``club_ids`` granted ``organizer_id`` a Club
+    Organizer Grant (ADR 0021). Consent is independent of the actor and of
+    verification; ``None`` entries name no Club.
     """
-    stored = Event.objects.filter(pk=event_id).values("organizer_id", "club_id").first()
-    if stored is None:
-        return False
-    named: set[int] = {
-        named_id for named_id in (stored["club_id"], club_id) if named_id is not None
-    }
+    named: set[int] = {club_id for club_id in club_ids if club_id is not None}
     if not named:
         return True
     granted = set(
         ClubOrganizerGrant.objects.filter(
-            organizer_id=stored["organizer_id"], club_id__in=named
+            organizer_id=organizer_id, club_id__in=named
         ).values_list("club_id", flat=True)
     )
     return granted == named
@@ -249,14 +246,28 @@ def can_create_match(actor: Actor, submission: MatchSubmission) -> bool:
         )
     if event.pk is None or (club is not None and club.pk is None):
         return False
+    # One read of the Event decides both checks, so an Event moved to
+    # another Organizer mid-check cannot pass authority on one Organizer
+    # and consent on another.
+    stored = (
+        Event.objects.filter(
+            pk=event.pk,
+            organizer__in=Organizer.objects.filter(verified_at__isnull=False),
+        )
+        .values("organizer_id", "club_id")
+        .first()
+    )
+    if stored is None:
+        return False
+    organizer_id: int = stored["organizer_id"]
     authorized = (
-        _account_event_authority(account, event.pk)
+        _account_acts_for(account, organizer_id)
         if account is not None
         else application is not None
-        and _application_event_authority(application, event.pk)
+        and _application_acts_for(application, organizer_id)
     )
     return authorized and _clubs_consent(
-        event.pk, club.pk if club is not None else None
+        organizer_id, (stored["club_id"], club.pk if club is not None else None)
     )
 
 
