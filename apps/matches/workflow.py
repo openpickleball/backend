@@ -399,9 +399,16 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
         return locked
 
 
-def _dispute_period(
-    match: Match,
-) -> tuple[AuditEvent | None, list[MatchConfirmation]]:
+@dataclass(frozen=True)
+class _DisputePeriod:
+    """The current disputed period of a match (``_dispute_period``)."""
+
+    event: AuditEvent | None
+    open_disputes: list[MatchConfirmation]
+    opening_pk: int | None
+
+
+def _dispute_period(match: Match) -> _DisputePeriod:
     """The current disputed period's ``match.dispute`` event and open disputes.
 
     The period starts at the match's latest ``match.dispute`` Audit Event
@@ -412,7 +419,9 @@ def _dispute_period(
     Rows before the opening row belong to an earlier period that a
     resolution settled, so they are never open again. With no event or no
     opening row (rows written outside the services), every dispute row not
-    withdrawn counts, so the match stays disputed (fail closed).
+    withdrawn counts as open, so a withdrawal leaves the match disputed
+    while any such row remains (fail closed). ``dispute_started_at`` then
+    uses the event's time instead (the later, safe start).
 
     Only ids are compared, never times. One match's rows are written under
     its row lock, so id order is insertion order.
@@ -438,12 +447,8 @@ def _dispute_period(
     withdrawn = MatchConfirmation.objects.filter(
         match_id=match.pk, decision=ConfirmationDecision.WITHDRAW
     ).values("player_id")
-    open_disputes = list(
-        disputes.exclude(player_id__in=withdrawn)
-        .select_related("player")
-        .order_by("pk")
-    )
-    return event, open_disputes
+    open_disputes = list(disputes.exclude(player_id__in=withdrawn).order_by("pk"))
+    return _DisputePeriod(event, open_disputes, opening_pk)
 
 
 def withdraw_dispute(match: Match, *, actor: Actor) -> Match:
@@ -481,7 +486,8 @@ def withdraw_dispute(match: Match, *, actor: Actor) -> Match:
             return locked
         if locked.status != MatchStatus.DISPUTED:
             raise MatchStateError
-        event, open_disputes = _dispute_period(locked)
+        period = _dispute_period(locked)
+        event, open_disputes = period.event, period.open_disputes
         if not any(row.player_id == player.pk for row in open_disputes):
             raise MatchStateError
         _record_decision(locked, player, ConfirmationDecision.WITHDRAW)
@@ -1072,16 +1078,19 @@ def dispute_started_at(match: Match) -> datetime | None:
     and one match's status changes are serialized by its locks, so the
     highest id is the latest. When the opener withdrew and a later dispute
     is still open, the start is that row's time (the first open dispute
-    by id). With no event or no open dispute, None. Times are never
-    compared to choose a row, so a host with a clock behind another cannot
-    hide a dispute.
+    by id). With no event or no open dispute, None. With no opening row
+    (the event names no Account, or its Player has no dispute row: rows
+    written outside the services), the start is the event's time, the
+    later and safe start: a dispute row from an earlier settled period
+    never expires the match early. Times are never compared to choose a
+    row, so a host with a clock behind another cannot hide a dispute.
     """
-    event, open_disputes = _dispute_period(match)
-    if event is None or not open_disputes:
+    period = _dispute_period(match)
+    if period.event is None or not period.open_disputes:
         return None
-    first = open_disputes[0]
-    if first.player.account_id == event.actor_user_id:
-        started: datetime = event.created_at
+    started: datetime = period.event.created_at
+    first = period.open_disputes[0]
+    if period.opening_pk is None or first.pk == period.opening_pk:
         return started
     return first.created_at
 
