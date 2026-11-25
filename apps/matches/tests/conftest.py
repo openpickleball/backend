@@ -1,8 +1,9 @@
 """Shared fixtures for the match workflow tests (#26). Made-up data only."""
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import pytest
@@ -10,6 +11,7 @@ from django.contrib.auth.models import Permission
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import AuditEvent
 from apps.clubs.tests.factories import verified_organizer
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
@@ -104,3 +106,17 @@ def moderator() -> User:
 def event() -> Event:
     made: Event = EventFactory.create(organizer=verified_organizer())
     return made
+
+
+@contextmanager
+def audit_events_at(when: datetime) -> Iterator[None]:
+    """Give every Audit Event written inside the block ``when`` as its time.
+
+    Audit rows are append-only (a trigger refuses UPDATE), so a test that
+    needs an old or out-of-order event sets the time as the row is made,
+    as a host with another clock would.
+    """
+    created_at = AuditEvent._meta.get_field("created_at")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(created_at, "_get_default", lambda: when)
+        yield

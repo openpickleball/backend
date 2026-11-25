@@ -17,6 +17,7 @@ from pytest_django.fixtures import Settings
 
 from apps.accounts.models import User
 from apps.audit.models import AuditAction, AuditEvent
+from apps.audit.services import record_event
 from apps.matches import workflow
 from apps.matches.models import (
     ConfirmationDecision,
@@ -32,7 +33,11 @@ from apps.matches.models import (
 from apps.matches.services import record_match
 from apps.matches.signals import MatchChange
 from apps.matches.tasks import expire_disputes_and_holds as expire_task
-from apps.matches.tests.conftest import WORKFLOW_PLAYED_ON, SignalLog
+from apps.matches.tests.conftest import (
+    WORKFLOW_PLAYED_ON,
+    SignalLog,
+    audit_events_at,
+)
 from apps.matches.tests.factories import MatchFactory, raw_update
 from apps.matches.tests.test_fix_service_lineup_locks import (
     _key,
@@ -176,10 +181,13 @@ def test_a_dispute_resolved_as_confirmed_is_not_expired(
 
 
 def test_a_new_dispute_after_a_resolution_starts_a_new_period(
-    disputed: Match, players: list[Player], moderator: User
+    confirmed: Match, players: list[Player], moderator: User
 ) -> None:
     long_ago = timezone.now() - timedelta(days=40)
+    with audit_events_at(long_ago):
+        disputed = dispute_match(confirmed, actor=players[0].account)
     _backdate_dispute(disputed, players[0], long_ago)
+    assert dispute_started_at(disputed) == long_ago
     resolve_dispute(
         disputed, actor=moderator, outcome=MatchStatus.CONFIRMED, reason=REASON
     )
@@ -197,10 +205,11 @@ def test_a_new_dispute_after_a_resolution_starts_a_new_period(
 
 
 def test_the_period_runs_from_the_first_open_dispute(
-    disputed: Match, players: list[Player]
+    confirmed: Match, players: list[Player]
 ) -> None:
     first = timezone.now() - timedelta(days=31)
-    _backdate_dispute(disputed, players[0], first)
+    with audit_events_at(first):
+        disputed = dispute_match(confirmed, actor=players[0].account)
     # A second participant joins the dispute later: no new period.
     dispute_match(disputed, actor=players[2].account)
 
@@ -382,6 +391,14 @@ def test_a_match_whose_lineup_lock_is_held_is_skipped() -> None:
         player=disputed.participants.get(team=Team.B).player,
         decision=ConfirmationDecision.DISPUTE,
     )
+    # What dispute_match records, written directly so this session takes
+    # no lineup lock.
+    record_event(
+        action=AuditAction.MATCH_DISPUTE,
+        target=disputed,
+        before={"status": MatchStatus.CONFIRMED},
+        after={"status": MatchStatus.DISPUTED},
+    )
     later = _days_from_now(31)
 
     with _other_session_holds(_key(disputed)):
@@ -471,8 +488,9 @@ def test_the_soft_time_limit_stops_the_run(
 # Task
 
 
-def test_the_task_returns_the_count(disputed: Match, players: list[Player]) -> None:
-    _backdate_dispute(disputed, players[0], timezone.now() - timedelta(days=31))
+def test_the_task_returns_the_count(confirmed: Match, players: list[Player]) -> None:
+    with audit_events_at(timezone.now() - timedelta(days=31)):
+        dispute_match(confirmed, actor=players[0].account)
 
     assert expire_task.delay().get() == 1
 
