@@ -13,9 +13,10 @@ written. Change and delete name the Event in the path: anyone who may not
 manage it gets the same 404 as an unknown or malformed code (ADR 0008,
 ADR 0015).
 
-Change and delete first lock the Event row ``FOR UPDATE`` in their
-transaction, so they serialize with a match in flight (which holds
-``FOR KEY SHARE`` on it) and a concurrent delete gives 404. ``kind`` may
+Change and delete check the permission without a lock, so a refused
+actor never locks the Event, then lock the row ``FOR UPDATE`` in their
+transaction and check again, so they serialize with a match in flight
+(which holds ``FOR KEY SHARE`` on it) and a concurrent delete gives 404. ``kind`` may
 change at any time (ADR 0035). ``name`` and the dates change only while no
 Match, in any status, names the Event (409 otherwise). An Event that a
 Match or Submission Batch names cannot be deleted (409).
@@ -182,10 +183,16 @@ def _managed_event(account: "_User", code: str) -> Event:
     """The Event, locked ``FOR UPDATE``, when ``account`` may manage it.
 
     404 for an unknown Event and for one the Account may not manage alike.
-    Call inside a transaction.
+    The permission is checked first without a lock, so a refused actor
+    never locks the row (which would block the Organizer's in-flight match
+    submissions), then again on the locked row, whose Organizer cannot
+    change while it is held. Call inside a transaction.
     """
-    event = get_by_public_code(Event.objects.select_for_update(), code)
-    if not can_manage_events(account, event.organizer_id):
+    found = get_by_public_code(Event.objects.only("pk", "organizer_id"), code)
+    if not can_manage_events(account, found.organizer_id):
+        raise Http404
+    event = Event.objects.select_for_update().filter(pk=found.pk).first()
+    if event is None or not can_manage_events(account, event.organizer_id):
         raise Http404
     return event
 
