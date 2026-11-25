@@ -175,8 +175,9 @@ class DisputeResolutionIn(Schema):
 class DisputeCorrectionIn(MatchCreateIn):
     """The Organizer's correction of a disputed match, and why.
 
-    The fields are ``create_match``'s, with the same defaults. The
-    reason is stored in the match's audit log, which cannot be erased, so
+    The fields are ``create_match``'s, except that a scoring type or game
+    target left out is the disputed match's; a missing best-of is
+    inferred from the games. The reason is stored in the match's audit log, which cannot be erased, so
     it should not name a player.
     """
 
