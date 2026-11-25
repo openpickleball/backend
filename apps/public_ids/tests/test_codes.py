@@ -60,6 +60,7 @@ def test_alphabet_is_crockford_base32() -> None:
         (CodeType.EVENT, "E", 8),
         (CodeType.ORGANIZER, "G", 8),
         (CodeType.MATCH, "M", 12),
+        (CodeType.RESULTS_FILE, "F", 8),
     ],
 )
 def test_code_type_prefix_and_length(

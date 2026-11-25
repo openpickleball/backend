@@ -35,9 +35,12 @@ from apps.matches.models import (
     MatchFormat,
     MatchParticipant,
     MatchStatus,
+    ResultsFile,
+    ResultsFileStatus,
     ScoringType,
     Team,
 )
+from apps.matches.results_files import ResultRow
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -341,4 +344,81 @@ def match_out(match: Match, viewer: "_User | None") -> MatchOut:
         my_decision=my_decision,
         confirmed_by_team=confirmed_by_team,
         created_at=match.created_at,
+    )
+
+
+# CSV results files (#71)
+
+
+class ResultsIssueOut(Schema):
+    """One issue or warning on a row: the columns it concerns (canonical
+    names such as ``playerB1Id``, empty for the whole row), a code, and a
+    fixed message. Never a cell value."""
+
+    columns: list[str]
+    code: str
+    message: str
+
+
+class ResultsRowOut(Schema):
+    """One match row's result. ``row`` is the CSV record number and
+    ``sequence`` the row's place among the match rows. ``match`` is the
+    Match's OPEN Code: the recorded match, the row's match that was voided
+    later (issue code ``voided``), or, for a duplicate, the earlier match
+    when the uploader may know it."""
+
+    row: int
+    sequence: int
+    result: ResultRow
+    match: str | None
+    issues: list[ResultsIssueOut]
+    warnings: list[ResultsIssueOut]
+
+
+class ResultsFileOut(Schema):
+    """An uploaded results file and its report.
+
+    ``status`` is ``pending``, ``done``, or ``failed``. ``error`` is the
+    code of a file that failed as a whole (``not_utf8``, ``malformed``,
+    ``bad_header``, ``no_rows``, ``too_many_rows``, ``expired``, or
+    ``voided``: a moderator voided the upload's matches), else null.
+    ``rows`` holds the rows processed so far: a file that failed partway
+    keeps them.
+    """
+
+    code: str
+    event: str
+    status: ResultsFileStatus
+    error: str | None
+    game_target: int
+    location: str
+    created_at: datetime
+    processed_at: datetime | None
+    recorded: int
+    duplicates: int
+    failed: int
+    rows: list[ResultsRowOut]
+
+
+def results_file_out(results_file: ResultsFile) -> ResultsFileOut:
+    """``results_file`` for the API. Load it with its batch's Event."""
+    rows = [ResultsRowOut.model_validate(row) for row in results_file.report]
+
+    def count(result: ResultRow) -> int:
+        return sum(1 for row in rows if row.result == result)
+
+    event = results_file.submission_batch.event
+    return ResultsFileOut(
+        code=results_file.public_code,
+        event=event.public_code if event is not None else "",
+        status=ResultsFileStatus(results_file.status),
+        error=results_file.error_code or None,
+        game_target=results_file.game_target,
+        location=results_file.location,
+        created_at=results_file.created_at,
+        processed_at=results_file.processed_at,
+        recorded=count(ResultRow.RECORDED),
+        duplicates=count(ResultRow.DUPLICATE),
+        failed=count(ResultRow.FAILED),
+        rows=rows,
     )
