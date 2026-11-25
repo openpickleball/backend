@@ -695,6 +695,13 @@ MATCH_DISPUTE_EXPIRY_DAYS = _days("MATCH_DISPUTE_EXPIRY_DAYS", 30)
 MATCH_DUPLICATE_HOLD_DAYS = _days("MATCH_DUPLICATE_HOLD_DAYS", 14)
 
 
+# Organizer review (#271)
+
+# Days back the Organizer admin's moderator review counts disputes and
+# signal flags on the Organizer's Events' matches. Unset or empty gives 90.
+ORGANIZER_REVIEW_WINDOW_DAYS = _days("ORGANIZER_REVIEW_WINDOW_DAYS", 90)
+
+
 # API throttling (#34, ADR 0030)
 
 # Requests per Account to every first-party operation that needs sign-in,
@@ -704,6 +711,11 @@ API_ACCOUNT_THROTTLE_PER_DAY = _rate("API_ACCOUNT_THROTTLE_PER_DAY", 10_000)
 # Requests per client IP to public operations (none is mounted yet).
 API_CLIENT_IP_THROTTLE_PER_MINUTE = _rate("API_CLIENT_IP_THROTTLE_PER_MINUTE", 60)
 API_CLIENT_IP_THROTTLE_PER_DAY = _rate("API_CLIENT_IP_THROTTLE_PER_DAY", 3_000)
+# Reports per Account per day of Organizers to moderators (#271), the
+# report operation's own throttle, apart from the Account throttle.
+API_ORGANIZER_REPORT_THROTTLE_PER_DAY = _rate(
+    "API_ORGANIZER_REPORT_THROTTLE_PER_DAY", 5
+)
 # The request header the proxy in front of the app sets to the client IP.
 # DigitalOcean App Platform sets do-connecting-ip. X-Forwarded-For is never
 # read: a client can forge it.

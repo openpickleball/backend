@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer review matches: disputes and holds are settled by players and Organizers or expire, and moderators keep organizer verification and the bulk void)
+- Amended by: [ADR 0037](0037-organizer-reports.md) (the `Moderator` group also views Organizer Reports, and moderators close them from the admin)
 - Date: 2026-11-24
 
 ## Context

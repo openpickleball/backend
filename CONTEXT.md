@@ -38,6 +38,9 @@ A person or body that runs events and submits their results. The verified Organi
 **Organizer Member**:
 An Account that acts for an Organizer, with a role: admin or match manager. While the Organizer is verified, a member with either role may create, change, and delete its Events, and submit matches for its Events and change them; a match or Event that names a Club also needs that Club's Club Organizer Grant to the Organizer. This is the only way an Account submits matches other than its own (ADR 0021). An admin member makes and removes the Organizer's Organizer Application Grants. While an Organizer is verified, the Account that verified it cannot be its member. Backend: `clubs.OrganizerMember`.
 
+**Organizer Report**:
+A player's report of a verified Organizer to OPEN Moderators, with one reason from a fixed list and no free text (ADR 0037). An Account has at most one open report per Organizer. A moderator closes a report, or an unverify of the Organizer closes all of them. A report changes nothing by itself: moderators decide only whether the Organizer stays verified, and may void its matches in bulk. The Organizer never learns who reported it. Backend: `clubs.OrganizerReport`.
+
 **Club**:
 A place or group where players play, with a name and an optional city and region. A Club is never verified and is not a trusted submitter: it decides only which Organizers may name it, through Club Organizer Grants (ADR 0021). Backend: `clubs.Club`.
 _Avoid_: venue, team.

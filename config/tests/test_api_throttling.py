@@ -2,8 +2,10 @@
 
 Every operation that needs sign-in shares one per-Account throttle,
 except player search, which keeps only its own ``SearchThrottle`` (ADR
-0018). No public operation is mounted yet; one would need no sign-in and
-have only a client IP throttle. The health checks are never throttled.
+0018), and reporting an Organizer, which keeps only its own
+``OrganizerReportThrottle`` (#271). No public operation is mounted yet;
+one would need no sign-in and have only a client IP throttle. The health
+checks are never throttled.
 A refused request gets a 429 ``ErrorResponse`` with code ``throttled``
 and a ``Retry-After`` header, and the OpenAPI document says so on every
 throttled operation.
@@ -24,6 +26,7 @@ from ninja.operation import Operation
 from openapi_spec_validator import validate
 
 from apps.accounts.tests.factories import UserFactory
+from apps.clubs.api import OrganizerReportThrottle
 from apps.players.api import SearchThrottle
 from config.api import OpenNinjaAPI, api
 from config.auth import account_auth
@@ -38,6 +41,8 @@ HEALTH_OPERATIONS = {"health_live", "health_ready"}
 # Operations anyone may call without sign-in, throttled per client IP.
 # None is mounted yet; the client IP throttle is kept for a later one.
 PUBLIC_OPERATIONS: set[str] = set()
+# Signed-in operations with their own throttle instead of the Account one.
+OWN_THROTTLE_OPERATIONS = {"search_players", "report_organizer"}
 THROTTLED = {"code": "throttled", "message": "Too many requests.", "errors": []}
 
 
@@ -81,8 +86,8 @@ def test_operation_walk_covers_the_api() -> None:
 def test_every_signed_in_operation_shares_the_account_throttle() -> None:
     for operation_id, operation in _by_id().items():
         if (
-            operation_id in HEALTH_OPERATIONS | PUBLIC_OPERATIONS
-            or operation_id == "search_players"
+            operation_id
+            in HEALTH_OPERATIONS | PUBLIC_OPERATIONS | OWN_THROTTLE_OPERATIONS
         ):
             continue
         assert operation.auth_callbacks == account_auth, operation_id
@@ -95,6 +100,15 @@ def test_search_has_only_its_own_throttle() -> None:
 
     assert len(operation.throttle_objects) == 1
     assert isinstance(operation.throttle_objects[0], SearchThrottle)
+    assert not isinstance(operation.throttle_objects[0], AccountThrottle)
+
+
+def test_organizer_report_has_only_its_own_throttle() -> None:
+    operation = _by_id()["report_organizer"]
+
+    assert operation.auth_callbacks == account_auth
+    assert len(operation.throttle_objects) == 1
+    assert isinstance(operation.throttle_objects[0], OrganizerReportThrottle)
     assert not isinstance(operation.throttle_objects[0], AccountThrottle)
 
 
