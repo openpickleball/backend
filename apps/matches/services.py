@@ -12,7 +12,8 @@ submit the match (``apps.matches.permissions``) and raises
 detail and no duplicate error, so it cannot learn whether a match exists.
 Next it checks that a Submission Batch it was given fits the submission
 (``BATCH_REFUSED``), so a bulk void of that batch reaches only matches its
-submitter sent.
+submitter sent. A submission with a batch never confirms a pending exact
+duplicate (ADR 0036): it is refused like any other exact duplicate.
 
 After that check, ``record_match`` runs every model rule on the Match, its
 participants, and its games, so nothing invalid reaches a lock, a lookup,
@@ -1300,16 +1301,19 @@ def record_match(
     #71 or #72); a single submission leaves it empty. It is checked right
     after the permissions and before validation (``check_batch``): a
     batch that does not fit raises ``ValueError`` (``BATCH_REFUSED``) and
-    nothing is written. A pending match that an exact duplicate confirms
-    instead keeps its own batch link, if any.
+    nothing is written. A submission with a batch never confirms a pending
+    exact duplicate: it raises ``DuplicateMatchError`` like any other exact
+    duplicate and writes nothing (ADR 0036), so an upload never confirms a
+    match its rows did not create.
 
     A match with an Event comes from a permitted non-self submitter, one
     with event authority (decision F4, ADR 0021), and is created
     confirmed, with a ``match.confirm`` Audit Event naming the submitter
     and one ``match_confirmed`` signal. A match with a Club and no Event
     is refused with ``MatchPermissionDenied`` (ADR 0021). A self-submission
-    (no Event, no Club, decision F1) is created pending. Such a submitter's exact duplicate of
-    a pending Match confirms that Match the same way instead of raising,
+    (no Event, no Club, decision F1) is created pending. Such a submitter's
+    exact duplicate of a pending Match, sent without a batch, confirms
+    that Match the same way instead of raising,
     and returns it with ``created=False``. A retry of that submission by the
     same submitter returns the same result, with no new Audit Event or
     signal. The submission's external id is not stored on that Match, so
@@ -1331,8 +1335,8 @@ def record_match(
     callers that each record several matches in one outer transaction can
     deadlock, whatever order they sort them in. A batch path (#71, #72) must
     record each match in its own transaction and report a result per
-    match; #71's all-or-nothing mode must get its all-or-nothing result
-    another way.
+    match; an all-or-nothing mode (deferred, ADR 0036) must get its
+    all-or-nothing result another way.
     """
     keys_a = _player_keys(team_a)
     keys_b = _player_keys(team_b)
@@ -1392,7 +1396,14 @@ def record_match(
         lock_draft(draft)
         check_external_id(draft)
         existing = exact_duplicate(draft)
-        if existing is not None and confirms and submitter is not None:
+        # A batch submission never confirms a pending match: it is reported
+        # as a duplicate instead (ADR 0036).
+        if (
+            existing is not None
+            and confirms
+            and submitter is not None
+            and submission_batch is None
+        ):
             # The match may change while this call waits for its row lock
             # (a void, a confirmation). The lineup lock stops any new
             # duplicate from appearing, so one more look is enough.

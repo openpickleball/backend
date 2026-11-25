@@ -28,9 +28,21 @@ from apps.clubs.tests.factories import (
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
 from apps.matches import services
-from apps.matches.models import Match, MatchFormat, MatchImmutable, SubmissionBatch
+from apps.matches.models import (
+    Match,
+    MatchFormat,
+    MatchImmutable,
+    MatchStatus,
+    SubmissionBatch,
+)
 from apps.matches.permissions import MatchPermissionDenied
-from apps.matches.services import BATCH_REFUSED, record_match
+from apps.matches.services import (
+    BATCH_REFUSED,
+    DuplicateKind,
+    DuplicateMatchError,
+    record_match,
+)
+from apps.matches.tests.conftest import SignalLog
 from apps.matches.workflow import edit_match
 from apps.partners.models import PartnerApplication
 from apps.partners.tests.factories import approved_application
@@ -405,3 +417,71 @@ def test_the_batch_link_cannot_change_later(
         match.save(update_fields=update_fields)
 
     assert Match.objects.get(pk=match.pk).submission_batch_id is None
+
+
+# A batch never confirms a pending match (#71, decision 2)
+
+
+def _pending_self_submission(players: Sequence[Player]) -> Match:
+    return _record(players, submitted_by_user=players[0].account)
+
+
+def test_a_batch_exact_duplicate_of_a_pending_match_is_refused(
+    players: list[Player], event: Event, member: User, signals: SignalLog
+) -> None:
+    pending = _pending_self_submission(players)
+    batch = SubmissionBatch.objects.create(submitted_by_user=member, event=event)
+    before = _counts()
+
+    with pytest.raises(DuplicateMatchError) as caught:
+        _record(players, event=event, submitted_by_user=member, submission_batch=batch)
+
+    assert caught.value.kind == DuplicateKind.DUPLICATE_MATCH
+    # The organizer did not submit it and plays in none of it.
+    assert caught.value.existing_code is None
+    assert Match.objects.get(pk=pending.pk).status == MatchStatus.PENDING
+    assert _counts() == before
+    assert signals.confirmed == []
+
+
+def test_an_application_batch_never_confirms_a_pending_match(
+    players: list[Player],
+    event: Event,
+    application: PartnerApplication,
+    signals: SignalLog,
+) -> None:
+    pending = _pending_self_submission(players)
+    batch = SubmissionBatch.objects.create(submitted_by_application=application)
+    before = _counts()
+
+    with pytest.raises(DuplicateMatchError):
+        _record(
+            players,
+            event=event,
+            submitted_by_application=application,
+            submission_batch=batch,
+        )
+
+    assert Match.objects.get(pk=pending.pk).status == MatchStatus.PENDING
+    assert _counts() == before
+    assert signals.confirmed == []
+
+
+def test_without_a_batch_the_same_duplicate_still_confirms(
+    players: list[Player], event: Event, member: User
+) -> None:
+    pending = _pending_self_submission(players)
+
+    recorded = record_match(
+        format=MatchFormat.SINGLES,
+        team_a=players[:1],
+        team_b=players[1:],
+        games=GAMES,
+        played_on=PLAYED_ON,
+        event=event,
+        submitted_by_user=member,
+    )
+
+    assert recorded.created is False
+    assert recorded.match.pk == pending.pk
+    assert Match.objects.get(pk=pending.pk).status == MatchStatus.CONFIRMED
