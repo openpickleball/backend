@@ -22,6 +22,7 @@ With `DJANGO_DEBUG` off, `SECURE_SSL_REDIRECT` is on, and `SecurityMiddleware` a
 - The health checks answer anyone who reaches them, over http and with any Host header. They take no auth and no input, read no session or cookie, and say only "ok" or "fail" per check, never why, so this exposes nothing new. They were already public.
 - A probe answer carries no security headers (HSTS, `X-Frame-Options`, CORS) and sets no cookie. A health GET with an allowed host over https gets them as before.
 - The readiness check still touches the database and the cache on every probe, as before.
+- The readiness check's database bound covers connects only: settings give each database connect a 5 second `connect_timeout`. It does not bound the query. In the deployed setup `DATABASE_URL` names the PgBouncer pool, so when the pool answers but Postgres behind it hangs, `SELECT 1` waits in PgBouncer's queue for up to its `query_wait_timeout` (120 seconds by PgBouncer's default; DigitalOcean's value is unverified), longer than gunicorn's 30 second worker timeout. A query on an open connection that goes silent is not bounded either. In those cases probes can still hold both workers, the liveness check can fail, and App Platform can restart the container for the outage. Bounding the query is left to #66.
 - A new health path, or a change to the health mount, needs the constants changed too. The test fails until they are.
 
 ## Alternatives considered

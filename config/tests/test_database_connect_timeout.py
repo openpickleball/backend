@@ -2,7 +2,7 @@
 
 DigitalOcean's bound connection strings carry only sslmode=require. With
 no connect_timeout, a connect to a Postgres that drops packets waits for
-the operating system's TCP timeout, so a readiness probe holds a gunicorn
+psycopg's own default of 130 seconds, so a readiness probe holds a gunicorn
 worker until gunicorn kills it. Both the default alias and the pooled
 direct alias get a 5 second connect_timeout, which a connect_timeout in
 the URL's query still overrides.

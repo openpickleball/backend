@@ -183,8 +183,9 @@ def _database(url: str, name: str = "DATABASE_URL") -> dict[str, object]:
         )
     # Give up on a connect after 5 seconds, like the cache. Without it, a
     # Postgres that drops packets holds a request (a readiness probe
-    # included) until the operating system's TCP timeout, and gunicorn
+    # included) for psycopg's own default of 130 seconds, and gunicorn
     # kills the worker first. A connect_timeout in the URL's query wins.
+    # It bounds only the connect, not a query on an open connection.
     options = config.setdefault("OPTIONS", {})
     if isinstance(options, dict):
         options.setdefault("connect_timeout", _DATABASE_CONNECT_TIMEOUT)

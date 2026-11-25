@@ -132,7 +132,7 @@ With `DJANGO_DEBUG` off, settings trust the `X-Forwarded-Proto` header to tell h
 
 Staging and production run on DigitalOcean App Platform. Each has one app spec: `.do/staging.yaml` (app `open-backend-staging`) and `.do/production.yaml` (app `open-backend-production`). The two differ only in names, cluster names, and `FRONTEND_URL`, and a test keeps them so. Each spec has:
 
-- `web`: the image's gunicorn on port 8000. Its readiness check is `/api/v1/health/ready`, which stops traffic while the database or cache is down. Its liveness check is `/api/v1/health/live`, which restarts the container only when the process stops answering.
+- `web`: the image's gunicorn on port 8000. Its readiness check is `/api/v1/health/ready`, which stops traffic while the database or cache is down. A database connect gives up after 5 seconds, but a query is not bounded: if the pool answers and Postgres behind it hangs, the check can wait past gunicorn's worker timeout (ADR 0039; bounding it is left to #66). Its liveness check is `/api/v1/health/live`, which restarts the container only when the process stops answering.
 - `worker`: `celery -A config worker -Q ratings,email,webhooks,default -l info --concurrency 2`, every queue.
 - `beat`: `celery -A config beat` with the database scheduler, exactly one instance. During a deploy App Platform may run the old and the new beat together for a short time, so a periodic task can be sent twice. Every task must already be safe to run twice (ADR 0006).
 - `migrate`: a pre-deploy job, `python manage.py migrate`. It runs before each deploy goes live and migrates on the direct connection by itself (ADR 0038). A failed migration stops the deploy.
