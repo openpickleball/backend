@@ -1,7 +1,7 @@
 # 0024. Engine match type, confirmers, and a stored rating format
 
 - Status: Proposed
-- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer confirm self-reported matches, so the every-participant confirmers rule has nothing to apply to)
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer confirm self-reported matches, so the every-participant confirmers rule has nothing to apply to); [ADR 0035](0035-stored-match-type-and-event-changes.md) (the match type is stored on each Match when it is recorded, and the adapter reads it instead of the Event's current kind)
 - Date: 2026-11-23
 
 ## Context
@@ -16,7 +16,7 @@ The project owner decided all three on 2026-11-23 (comment on issue #44).
 
 ## Decision
 
-- **Match type.** A match with an Event has its Event's kind. A match with a Club and no Event is `rec_verified`, because the Club stands behind it. A match with neither is `self_reported` (decision F1). Nothing a submitter sends sets it.
+- **Match type.** A match with an Event has its Event's kind. (Amended by ADR 0035: the type is stored on the Match when it is recorded, so a later change of the Event's kind does not move it.) A match with a Club and no Event is `rec_verified`, because the Club stands behind it. A match with neither is `self_reported` (decision F1). Nothing a submitter sends sets it.
 - **Confirmers.** A match with an Event or a Club sends the players with a confirm decision (`MatchConfirmation`), which the engine does not need for those types. A self-reported match that became confirmed through a moderator action sends every participant as `confirmed_by`: the moderator's decision stands in for the teams. Every other self-reported match sends only the players with a confirm decision.
 - **What counts as a moderator action.** The adapter reads it from the audit log, never from a guess:
   - a `dispute.outcome` Audit Event on the match with the outcome `confirmed`; or

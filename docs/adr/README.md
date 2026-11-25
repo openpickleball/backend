@@ -82,3 +82,4 @@ Add each record here when it merges.
 - [0032. Submission batches and moderator bulk void](0032-submission-batches-and-bulk-void.md) (issue #205)
 - [0033. Audit access changes from the admin and services, with an explicit actor](0033-audit-access-changes-from-the-admin.md) (issue #158)
 - [0034. Match and player issues are settled at the lowest level](0034-lowest-level-resolution.md) (issue #265)
+- [0035. A stored match type, and what may change on an Event with matches](0035-stored-match-type-and-event-changes.md) (issue #163)
