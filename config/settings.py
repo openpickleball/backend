@@ -495,6 +495,9 @@ MIDDLEWARE = [
     # Adds CORS headers to /api/ responses. It must come before
     # CommonMiddleware, which can return a response early.
     "corsheaders.middleware.CorsMiddleware",
+    # Refuses an oversized body on the CSV results upload route before
+    # anything reads it (#71). It must come before CsrfViewMiddleware.
+    "apps.matches.upload_limits.ResultsFileBodyLimitMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
