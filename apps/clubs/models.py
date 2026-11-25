@@ -15,6 +15,8 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
 
+from apps.audit.access import AuditedAccessModel, audited_access
+from apps.audit.models import AuditAction
 from apps.public_ids.codes import CodeType
 from apps.public_ids.models import PublicCodeModel
 
@@ -230,10 +232,12 @@ class Organizer(_CleanedTextModel):
             return super().delete(*args, **kwargs)
 
 
-class OrganizerMember(models.Model):
+@audited_access
+class OrganizerMember(AuditedAccessModel):
     """An Account that acts for an Organizer, with its role.
 
-    While the Organizer is verified, the Account that verified it cannot
+    Each add, change, and removal records one Audit Event
+    (``apps.audit.access``). While the Organizer is verified, the Account that verified it cannot
     be its member, so no one verifies an Organizer they act for.
     ``clean()`` and ``save()`` refuse it. ``bulk_create`` and
     ``QuerySet.update`` skip the check, like any other raw write.
@@ -254,6 +258,11 @@ class OrganizerMember(models.Model):
         max_length=16, choices=MemberRole, error_messages=_CHOICE_MESSAGES
     )
 
+    AUDIT_ADD = AuditAction.ORGANIZER_MEMBER_ADD
+    AUDIT_CHANGE = AuditAction.ORGANIZER_MEMBER_CHANGE
+    AUDIT_REMOVE = AuditAction.ORGANIZER_MEMBER_REMOVE
+    AUDIT_RELATED = ("organizer",)
+
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.UniqueConstraint(
@@ -269,6 +278,15 @@ class OrganizerMember(models.Model):
     def __str__(self) -> str:
         # Never the Account's email (CLAUDE.md, Personal data).
         return f"{self.organizer.public_code} {self.role}"
+
+    def audit_values(self) -> dict[str, Any]:
+        # The Account's row id, never its email; the Organizer's OPEN Code,
+        # never its name (ADR 0009).
+        return {
+            "organizer": self.organizer.public_code,
+            "account": self.account_id,
+            "role": self.role,
+        }
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Save, refusing the Organizer's verifier as a member.
@@ -297,11 +315,14 @@ class OrganizerMember(models.Model):
         return verified_by is not None and verified_by == self.account_id
 
 
-class ClubRole(models.Model):
+@audited_access
+class ClubRole(AuditedAccessModel):
     """An Account's role at a Club.
 
     A Club admin manages the Club's profile and its Club Organizer Grants.
     A Club Role gives no authority to submit or change a match (ADR 0021).
+    Each add, change, and removal records one Audit Event
+    (``apps.audit.access``).
     """
 
     club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="roles")
@@ -313,6 +334,11 @@ class ClubRole(models.Model):
     role = models.CharField(
         max_length=16, choices=ClubRoleKind, error_messages=_CHOICE_MESSAGES
     )
+
+    AUDIT_ADD = AuditAction.CLUB_ROLE_ADD
+    AUDIT_CHANGE = AuditAction.CLUB_ROLE_CHANGE
+    AUDIT_REMOVE = AuditAction.CLUB_ROLE_REMOVE
+    AUDIT_RELATED = ("club",)
 
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [
@@ -330,15 +356,24 @@ class ClubRole(models.Model):
         # Never the Account's email (CLAUDE.md, Personal data).
         return f"{self.club.public_code} {self.role}"
 
+    def audit_values(self) -> dict[str, Any]:
+        # The Account's row id, never its email (ADR 0009).
+        return {
+            "club": self.club.public_code,
+            "account": self.account_id,
+            "role": self.role,
+        }
 
-class ClubOrganizerGrant(models.Model):
+
+@audited_access
+class ClubOrganizerGrant(AuditedAccessModel):
     """A Club's consent for one Organizer to name it (ADR 0021).
 
     ``apps.matches.permissions`` and ``Event.clean()`` use it: a match or
     an Event that names a Club needs a grant from that Club to the
     Event's Organizer. The grant gives consent, not trust: the Organizer
-    must still be verified. A grant change records no Audit Event until
-    #158 lands.
+    must still be verified. Each add, change, and removal records one
+    Audit Event (``apps.audit.access``).
     """
 
     club = models.ForeignKey(
@@ -348,6 +383,11 @@ class ClubOrganizerGrant(models.Model):
         Organizer, on_delete=models.CASCADE, related_name="club_grants"
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    AUDIT_ADD = AuditAction.CLUB_ORGANIZER_GRANT_ADD
+    AUDIT_CHANGE = AuditAction.CLUB_ORGANIZER_GRANT_CHANGE
+    AUDIT_REMOVE = AuditAction.CLUB_ORGANIZER_GRANT_REMOVE
+    AUDIT_RELATED = ("club", "organizer")
 
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [
@@ -360,3 +400,10 @@ class ClubOrganizerGrant(models.Model):
     def __str__(self) -> str:
         # Codes, never a name (CLAUDE.md, Personal data).
         return f"{self.club.public_code} {self.organizer.public_code}"
+
+    def audit_values(self) -> dict[str, Any]:
+        # OPEN Codes, never a name (ADR 0009).
+        return {
+            "club": self.club.public_code,
+            "organizer": self.organizer.public_code,
+        }

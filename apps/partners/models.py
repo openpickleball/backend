@@ -18,6 +18,9 @@ from django.db import models
 from django.db.models import Q
 from oauth2_provider.models import AbstractApplication
 
+from apps.audit.access import AuditedAccessModel, audited_access
+from apps.audit.models import AuditAction
+
 # Written only through update_fields, by the approval service (#29).
 APPROVAL_FIELDS = ("approved_at", "approved_by")
 _ALWAYS_INSERTED = (
@@ -234,13 +237,15 @@ class PartnerApplication(AbstractApplication):
         super().save(*args, **kwargs)
 
 
-class OrganizerApplicationGrant(models.Model):
+@audited_access
+class OrganizerApplicationGrant(AuditedAccessModel):
     """An Organizer's permission for one Partner Application (ADR 0021).
 
     ``apps.matches.permissions`` uses it: an approved application with a
     grant may submit and confirm matches for that Organizer's Events
     while the Organizer is verified, as an application the Organizer owns
-    may. A grant change records no Audit Event until #158 lands.
+    may. Each add, change, and removal records one Audit Event
+    (``apps.audit.access``).
     """
 
     organizer = models.ForeignKey(
@@ -253,6 +258,11 @@ class OrganizerApplicationGrant(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    AUDIT_ADD = AuditAction.ORGANIZER_APPLICATION_GRANT_ADD
+    AUDIT_CHANGE = AuditAction.ORGANIZER_APPLICATION_GRANT_CHANGE
+    AUDIT_REMOVE = AuditAction.ORGANIZER_APPLICATION_GRANT_REMOVE
+    AUDIT_RELATED = ("organizer", "application")
+
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.UniqueConstraint(
@@ -264,3 +274,11 @@ class OrganizerApplicationGrant(models.Model):
     def __str__(self) -> str:
         # Codes, never a name (CLAUDE.md, Personal data).
         return f"{self.organizer.public_code} {self.application.client_id}"
+
+    def audit_values(self) -> dict[str, Any]:
+        # The Organizer's OPEN Code, never its name, and the client id,
+        # never the application's name or secret.
+        return {
+            "organizer": self.organizer.public_code,
+            "application": self.application.client_id,
+        }
