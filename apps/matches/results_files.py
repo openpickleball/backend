@@ -78,6 +78,7 @@ from apps.matches.models import (
     FlagReason,
     GameTarget,
     Match,
+    MatchParticipant,
     MatchStatus,
     ResultsFile,
     ResultsFileStatus,
@@ -334,6 +335,18 @@ def _mark_held(report: list[RowResult]) -> list[RowResult]:
     ]
 
 
+def _name_warnings(row: CsvMatch, display_names: dict[str, str]) -> list[ReportIssue]:
+    """A ``name_mismatch`` warning for each non-blank name that differs from
+    the display name of the player its ID names (by OPEN Code)."""
+    return [
+        ReportIssue([name_column(player)], "name_mismatch", NAME_MISMATCH_MESSAGE)
+        for player in (*row.team_a, *row.team_b)
+        if player.name
+        and player.code in display_names
+        and _name_key(player.name) != _name_key(display_names[player.code])
+    ]
+
+
 def _record_row(
     row: CsvMatch,
     players: dict[str, Player],
@@ -358,12 +371,9 @@ def _record_row(
                 for player in unknown
             ],
         )
-    warnings = [
-        ReportIssue([name_column(player)], "name_mismatch", NAME_MISMATCH_MESSAGE)
-        for player in (*row.team_a, *row.team_b)
-        if player.name
-        and _name_key(player.name) != _name_key(players[player.code].display_name)
-    ]
+    warnings = _name_warnings(
+        row, {code: player.display_name for code, player in players.items()}
+    )
 
     def team(members: tuple[CsvPlayer, ...]) -> list[Player]:
         return [players[member.code] for member in members]
@@ -468,15 +478,27 @@ def fail_for_void(batch_id: int) -> None:
 
 
 def _existing_result(row: CsvMatch, match: Match) -> RowResult:
-    """The result of a row whose match this batch already holds."""
+    """The result of a row whose match this batch already holds.
+
+    Its name warnings are worked out again from the match's own players,
+    whatever their Accounts' state now, so the result is the one the row
+    got when it was recorded.
+    """
+    display_names = dict(
+        MatchParticipant.objects.filter(match_id=match.pk).values_list(
+            "player__public_code", "player__display_name"
+        )
+    )
+    warnings = _name_warnings(row, display_names)
     if match.status == MatchStatus.VOIDED:
         return RowResult(
             row.row,
             row.sequence,
             ResultRow.FAILED,
             issues=[ReportIssue([], VOIDED, VOIDED_MESSAGE)],
+            warnings=warnings,
         )
-    return _recorded(row, match, [])
+    return _recorded(row, match, warnings)
 
 
 def _store(results_file: ResultsFile, result: RowResult) -> None:
