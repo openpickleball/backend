@@ -217,6 +217,19 @@ def test_change_page_is_read_only_and_shows_codes(
     assert "Account" in page
 
 
+def test_change_page_shows_the_stored_match_type(
+    moderator_client: Client, players: list[Player]
+) -> None:
+    _earlier, later = _pair(players)
+
+    page = moderator_client.get(
+        reverse("admin:matches_match_change", args=[later.pk])
+    ).content.decode()
+
+    assert "Match type" in page
+    assert "Self-reported" in page
+
+
 # Approve
 
 

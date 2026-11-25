@@ -171,6 +171,7 @@ class MatchAdmin(admin.ModelAdmin[Match]):
         "review",
         "format",
         "rating_format",
+        "match_type",
         "played_on",
         "played_at",
         "played_at_utc_offset",
