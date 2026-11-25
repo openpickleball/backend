@@ -571,8 +571,10 @@ def create_results_file(
         raise Http404 from None
     except DjangoValidationError as error:
         raise model_validation_error(error, prefix=("form",)) from None
-    stored = ResultsFile.objects.select_related("submission_batch__event").get(
-        pk=results_file.pk
+    stored = (
+        ResultsFile.objects.select_related("submission_batch__event")
+        .defer("content")
+        .get(pk=results_file.pk)
     )
     return Status(202, results_file_out(stored))
 
@@ -593,7 +595,8 @@ def get_results_file(request: HttpRequest, code: ResultsFileCode) -> ResultsFile
     """
     account = request_account(request)
     results_file = get_by_public_code(
-        ResultsFile.objects.select_related("submission_batch__event"), code
+        ResultsFile.objects.select_related("submission_batch__event").defer("content"),
+        code,
     )
     if results_file.submission_batch.submitted_by_user_id != account.pk:
         raise Http404
