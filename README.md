@@ -78,7 +78,7 @@ Run only one beat process. Tests run tasks eagerly, so they need no worker and n
 
 ### Serving like production
 
-To serve the app the way production does, with `DJANGO_DEBUG` off, collect the static files first and then start gunicorn. gunicorn reads `gunicorn.conf.py`, which takes `PORT` (default 8000) and `WEB_CONCURRENCY` (default 2 workers) from the process environment, not from `.env`. With `DJANGO_DEBUG` off, settings redirect plain http to https, so a local request needs the `X-Forwarded-Proto: https` header that the hosting proxy would set, and `DJANGO_ALLOWED_HOSTS` must name the host you request (for example `127.0.0.1`). `FRONTEND_URL` must be https, for example `https://app.example.org`.
+To serve the app the way production does, with `DJANGO_DEBUG` off, collect the static files first and then start gunicorn. gunicorn reads `gunicorn.conf.py`, which takes `PORT` (default 8000) and `WEB_CONCURRENCY` (default 2 workers) from the process environment, not from `.env`. With `DJANGO_DEBUG` off, settings redirect plain http to https, so a local request needs the `X-Forwarded-Proto: https` header that the hosting proxy would set, and `DJANGO_ALLOWED_HOSTS` must name the host you request (for example `127.0.0.1`). The two health checks answer a plain http request with any host (see [App Platform](#app-platform)). `FRONTEND_URL` must be https, for example `https://app.example.org`.
 
 ```bash
 uv run python manage.py collectstatic --noinput
@@ -127,6 +127,73 @@ docker compose --profile pgbouncer up -d --wait
 Then set `DATABASE_URL=postgres://open@localhost:6432/open` and `DIRECT_DATABASE_URL=postgres://open@localhost:5432/open`. PgBouncer routes every database name to the compose Postgres, so the tests run through it too. At the end of such a run, the test databases cannot be dropped, because PgBouncer still holds idle server connections to them: pytest warns and leaves them behind. Drop them from Postgres afterwards with `DROP DATABASE ... WITH (FORCE)`, or restart PgBouncer before the next run.
 
 With `DJANGO_DEBUG` off, settings trust the `X-Forwarded-Proto` header to tell https from http. So run the web container only behind the hosting proxy, which sets that header, and never let clients reach it directly. To test it locally, send `X-Forwarded-Proto: https` with each request, as in [Serving like production](#serving-like-production).
+
+### App Platform
+
+Staging and production run on DigitalOcean App Platform. Each has one app spec: `.do/staging.yaml` (app `open-backend-staging`) and `.do/production.yaml` (app `open-backend-production`). The two differ only in names, cluster names, and `FRONTEND_URL`, and a test keeps them so. Each spec has:
+
+- `web`: the image's gunicorn on port 8000. Its readiness check is `/api/v1/health/ready`, which stops traffic while the database or cache is down. Its liveness check is `/api/v1/health/live`, which restarts the container only when the process stops answering.
+- `worker`: `celery -A config worker -Q ratings,email,webhooks,default -l info --concurrency 2`, every queue.
+- `beat`: `celery -A config beat` with the database scheduler, exactly one instance.
+- `migrate`: a pre-deploy job, `python manage.py migrate`. It runs before each deploy goes live and migrates on the direct connection by itself (ADR 0038). A failed migration stops the deploy.
+- `pg`: a managed Postgres cluster (`open-staging-pg` or `open-production-pg`), database `open`, user `open`.
+- `valkey`: a managed Valkey cluster (`open-staging-valkey` or `open-production-valkey`), the cache and Celery broker (ADR 0006). DigitalOcean's Valkey takes TLS only (`rediss://`).
+
+Every component runs the same image on the smallest instance size, `apps-s-1vcpu-0.5gb`. The variables are set once, at app level, so every component gets them: `DATABASE_URL` is the pool `open-pool` (`${pg.open-pool.DATABASE_URL}`), `DIRECT_DATABASE_URL` the database itself (`${pg.DATABASE_URL}`), `REDIS_URL` the Valkey cluster (`${valkey.DATABASE_URL}`), and `DJANGO_ALLOWED_HOSTS` the app's domain (`${APP_DOMAIN}`). `FRONTEND_URL` is `https://app.openpb.org` in production (#182). Staging has no web app host yet (#183), so its `FRONTEND_URL` is the app's own URL (`${APP_URL}`) until then. `CLIENT_IP_HEADER` stays at its default, `do-connecting-ip`.
+
+The specs hold no secret values. `DJANGO_SECRET_KEY` and `RESEND_API_KEY` are declared as secrets with no value. Set them in the App Platform console, or in a spec exported from the running app, where App Platform shows them encrypted (`EV[...]`). Never commit a value.
+
+App Platform's HTTP health probes reach the container directly, over plain http, with a Host header that `DJANGO_ALLOWED_HOSTS` refuses. `HealthProbeMiddleware` (`config/health_probe.py`, ADR 0039) answers a GET of exactly the two health paths in that case. Every other request keeps the host check and the https redirect.
+
+#### Before the first deploy
+
+The specs do not set these. #62 and #63 do:
+
+- Create the Postgres and Valkey clusters with the cluster names above, in one region, and set the app's `region` to match. The specs leave `region` unset.
+- Create the pool `open-pool` in transaction mode on database `open` for user `open`: `doctl databases pool create <cluster-id> open-pool --size 10 --mode transaction --db open --user open`.
+- Set Valkey's eviction policy to `volatile-lru`: `doctl databases configuration update <cluster-id> --engine valkey --config-json '{"valkey_maxmemory_policy":"volatile-lru"}'`. Valkey holds the cache and the Celery queues. Cache and throttle keys all expire, and queued tasks never do, so `volatile-lru` evicts only cache keys. An `allkeys-*` policy could drop queued tasks, and `noeviction` would make every cache write fail once Valkey is full.
+- Set the two secret values.
+- Give App Platform access to the image on GHCR, and deploy by digest instead of the `main` tag (#63).
+- On the first staging deploy, confirm that `${valkey.DATABASE_URL}` is Valkey's `rediss://` connection string. DigitalOcean documents `DATABASE_URL` for every database and `REDIS_URL` only for its older Redis engine.
+
+#### Pool sizing
+
+One instance each of web, worker, and beat opens at most 5 client connections: web 2 (`WEB_CONCURRENCY`, default 2), worker 2 (`--concurrency 2`), and beat 1. The smallest cluster (1 GiB) allows 25 connections, 3 of them reserved, so 22 are usable. DigitalOcean suggests a pool of about half the usable connections, so `open-pool` has size 10. That leaves room for a second web instance and for the old and new instances running side by side during a deploy. Migrations use one direct connection, outside the pool.
+
+#### Validate a spec
+
+```bash
+doctl apps spec validate --schema-only .do/staging.yaml
+doctl apps spec validate --schema-only .do/production.yaml
+```
+
+`--schema-only` checks the fields locally. A full `doctl apps spec validate`, which also checks the bindings and the instance size, needs an authenticated doctl.
+
+#### Check the client IP header
+
+The per-IP throttle reads the client IP from `do-connecting-ip` (ADR 0030). Until this check passes on staging, no public operation goes live: a client that can set that header itself could spread its requests across any number of throttle buckets.
+
+1. On the staging `web` component, set `GUNICORN_CMD_ARGS` to `--access-logfile - --access-logformat "%({do-connecting-ip}i)s %(r)s %(s)s"` and redeploy. gunicorn applies `GUNICORN_CMD_ARGS` after `gunicorn.conf.py`.
+2. From a machine whose public IP you know, run `curl -sS -o /dev/null -H 'do-connecting-ip: 203.0.113.7' https://<app domain>/api/v1/health/live`.
+3. Read the web runtime logs with `doctl apps logs <app-id> web --type run`. The check passes only if the logged value is your real IP, not `203.0.113.7`.
+4. Remove `GUNICORN_CMD_ARGS` and redeploy, since the line logs client IPs.
+5. Record the result on #61 and #34. If the check fails, no public operation goes live until the setting or the throttle changes.
+
+#### Monthly cost
+
+Prices from DigitalOcean's pricing pages, checked 2026-11-25, per environment:
+
+| Component | Size | Per month |
+| --- | --- | --- |
+| web | `apps-s-1vcpu-0.5gb` (512 MiB, shared CPU) | $5.00 |
+| worker | `apps-s-1vcpu-0.5gb` | $5.00 |
+| beat | `apps-s-1vcpu-0.5gb` | $5.00 |
+| migrate job | `apps-s-1vcpu-0.5gb`, billed per second while it runs | under $0.01 per deploy |
+| Postgres | 1 GiB RAM, 1 vCPU, single node, from 10 GiB storage | $15.15 |
+| Valkey | 1 GiB | $15.00 |
+| Total | | $45.15 |
+
+Staging and production together cost twice that, $90.30. Each $5 container includes 50 GiB of outbound transfer, pooled across the app, and more costs $0.02 per GiB. Running beat inside the worker (`celery worker -B`) would save $5 per environment, but decision Q16 in #1 keeps beat a separate process.
 
 ### CORS
 
