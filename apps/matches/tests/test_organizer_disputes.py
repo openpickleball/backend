@@ -538,3 +538,38 @@ def test_a_member_still_corrects_a_confirmed_match_without_a_reason(
     assert corrected.status == MatchStatus.CONFIRMED
     [audit] = _audits(match, AuditAction.MATCH_EDIT)
     assert audit.reason == ""
+
+
+# as_moderator=False keeps a moderator to the Organizer's rules.
+
+
+def test_a_moderator_without_the_moderator_path_cannot_resolve(
+    players: list[Player], event: Event, moderator: User
+) -> None:
+    match = _disputed(players, event)
+
+    with pytest.raises(MatchActionDenied):
+        resolve_dispute(
+            match,
+            actor=moderator,
+            outcome=MatchStatus.CONFIRMED,
+            reason=REASON,
+            as_moderator=False,
+        )
+    resolve_dispute(
+        match, actor=moderator, outcome=MatchStatus.CONFIRMED, reason=REASON
+    )
+
+    assert _status(match) == MatchStatus.CONFIRMED
+
+
+def test_a_moderator_without_the_moderator_path_cannot_correct(
+    players: list[Player], event: Event, moderator: User
+) -> None:
+    match = _disputed(players, event)
+
+    with pytest.raises(MatchActionDenied):
+        _correct(match, moderator, as_moderator=False)
+    corrected = _correct(match, moderator)
+
+    assert corrected.status == MatchStatus.CONFIRMED
