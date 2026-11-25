@@ -13,10 +13,15 @@ from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditAction, AuditEvent
 from apps.clubs.models import MemberRole
-from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
+from apps.clubs.tests.factories import (
+    ClubFactory,
+    OrganizerMemberFactory,
+    verified_organizer,
+)
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import (
+    FlagReason,
     FlagResolution,
     Match,
     MatchFlag,
@@ -28,6 +33,7 @@ from apps.matches.permissions import MatchActionDenied
 from apps.matches.services import record_match
 from apps.matches.signals import MatchChange
 from apps.matches.tests.conftest import WORKFLOW_PLAYED_ON, SignalLog
+from apps.matches.tests.factories import MatchFactory
 from apps.matches.workflow import (
     MatchStateError,
     confirm_match,
@@ -482,3 +488,26 @@ def test_vouched_at_own_level_for_an_organizer(
     vouch_for_match(earlier, actor=_member(event))
 
     assert vouched_at_own_level(earlier, member)
+
+
+def test_a_legacy_club_only_match_keeps_its_hold(
+    confirmed: Match, players: list[Player]
+) -> None:
+    club_only: Match = MatchFactory.create(
+        club=ClubFactory.create(), participants=False
+    )
+    MatchFlag.objects.create(
+        match=confirmed, duplicate_of=club_only, reason=FlagReason.POSSIBLE_DUPLICATE
+    )
+
+    _vouch_both_teams(confirmed, players)
+
+    assert MatchVouch.objects.filter(match=confirmed).count() == 2
+    assert MatchFlag.objects.get().resolved_at is None
+    assert not confirmed.is_counted()
+
+
+def test_vouched_at_own_level_is_false_with_no_hold(
+    confirmed: Match, players: list[Player]
+) -> None:
+    assert not vouched_at_own_level(confirmed, players[0].account)
