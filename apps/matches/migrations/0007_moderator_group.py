@@ -22,27 +22,32 @@ def create_moderator_group(apps: Apps, schema_editor: BaseDatabaseSchemaEditor) 
     """Create the Moderator group with exactly the moderator permissions.
 
     On a new database the permissions do not exist yet (Django creates
-    them after migrate), so create them first.
+    them after migrate), so create them first. Every query uses migrate's
+    own connection (ADR 0038).
     """
+    alias = schema_editor.connection.alias
     for app_config in apps.get_app_configs():
         # create_permissions skips an app with no models module, and the
         # historical registry's app configs have none: mark them for it.
         app_config.models_module = True  # type: ignore[assignment]
-        create_permissions(app_config, apps=apps, verbosity=0)
+        create_permissions(app_config, apps=apps, verbosity=0, using=alias)
         app_config.models_module = None
     Group = apps.get_model("auth", "Group")
     Permission = apps.get_model("auth", "Permission")
     permissions = [
-        Permission.objects.get(content_type__app_label=app_label, codename=codename)
+        Permission.objects.using(alias).get(
+            content_type__app_label=app_label, codename=codename
+        )
         for app_label, codename in MODERATOR_PERMISSIONS
     ]
-    group, _created = Group.objects.get_or_create(name=MODERATOR_GROUP)
+    group, _created = Group.objects.using(alias).get_or_create(name=MODERATOR_GROUP)
     group.permissions.set(permissions)
 
 
 def delete_moderator_group(apps: Apps, schema_editor: BaseDatabaseSchemaEditor) -> None:
     Group = apps.get_model("auth", "Group")
-    Group.objects.filter(name=MODERATOR_GROUP).delete()
+    alias = schema_editor.connection.alias
+    Group.objects.using(alias).filter(name=MODERATOR_GROUP).delete()
 
 
 class Migration(migrations.Migration):
