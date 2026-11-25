@@ -456,21 +456,23 @@ class OrganizerReportAdmin(admin.ModelAdmin[OrganizerReport]):
             return
         count = 0
         for report in queryset.select_related("organizer").order_by("pk"):
+            # Built here, not from str(report), which names no Organizer.
+            # The OPEN Code only: the name may be a person's.
+            label = f"Report on {report.organizer.public_code}"
             try:
                 if close_report(report, actor=request.user, reason=reason):
                     count += 1
             except NotAllowedToClose:
-                # The OPEN Code only: the name may be a person's.
                 self.message_user(
                     request,
-                    f"{report} was not closed: you may not close it.",
+                    f"{label} was not closed: you may not close it.",
                     level=messages.WARNING,
                 )
             except OrganizerReport.DoesNotExist:
                 # Removed with its Account after the action loaded it.
                 self.message_user(
                     request,
-                    f"{report} was not closed: it no longer exists.",
+                    f"{label} was not closed: it no longer exists.",
                     level=messages.WARNING,
                 )
         if count:

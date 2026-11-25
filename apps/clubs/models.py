@@ -517,8 +517,10 @@ class OrganizerReport(_LinkMessagesModel):
         ]
 
     def __str__(self) -> str:
-        # The Organizer's OPEN Code only: never a name or an email.
-        return f"Report on {self.organizer.public_code}"
+        # The row id only. Django lists cascaded rows by this text (the
+        # Account admin's delete page), so it never names the Organizer the
+        # Account reported, or the reporter.
+        return f"Organizer report {self.pk}"
 
     @property
     def is_open(self) -> bool:
