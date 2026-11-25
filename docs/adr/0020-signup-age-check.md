@@ -1,6 +1,7 @@
 # 0020. An age check before the rest of signup
 
 - Status: Proposed
+- Amended by: [ADR 0039](0039-signup-password-check.md) (a password check, `POST /_allauth/{client}/v1/auth/signup/password-check`, on the same rate limit counter, so a normal signup costs three of its requests)
 - Date: 2026-11-23
 
 ## Context
