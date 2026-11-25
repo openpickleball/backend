@@ -1,7 +1,7 @@
 {% extends "emails/base_message.html" %}
 {% block title %}{% if as_organizer %}A match from your organizer's event is on hold on OPEN{% else %}A match you played in is on hold on OPEN{% endif %}{% endblock title %}
 {% block content %}
-<p style="margin: 0 0 16px;">{% if as_organizer %}A match from one of your organizer's events{% else %}A match you played in{% endif %} has the same teams and date as another match on OPEN, with other scores. Both are held from counting until each is vouched for. {% if as_organizer %}Scores show team A first.{% else %}Scores show your team first.{% endif %}</p>
+<p style="margin: 0 0 16px;">{% if as_organizer %}A match from one of your organizer's events{% else %}A match you played in{% endif %} has the same teams and date as another match on OPEN, with other scores. Both are held from counting until each is vouched for, or the hold ends. {% if as_organizer %}Scores show team A first.{% else %}Scores show your team first.{% endif %}</p>
 <div style="margin: 0 0 16px; padding: 12px 16px; border: 1px solid #dddddd; border-radius: 4px;">
 <p style="margin: 0 0 4px; font-weight: bold;">Match {{ code }}</p>
 <p style="margin: 0 0 4px;">Played {{ played_on|date:"F j, Y" }}</p>
