@@ -34,7 +34,7 @@ as the dispute began, else to pending. A participant of a pending or
 disputed self-reported match (no Event, no Club) corrects it with the
 same two teams (``correct_match``, ``workflow.edit_match`` with
 ``as_player=True``, #267): the old match is voided and the correction is
-pending with the corrector's confirmation. Anyone who did not play in a
+pending with the corrector's confirmation, submitted by the corrector. Anyone who did not play in a
 self-reported match, a participant of a match with an Event, and a
 correction with other teams get the unknown-code 404, checked before any
 team code is read except for the team check itself.
@@ -387,8 +387,8 @@ def correct_match(
 
     Give the corrected match as for a new one, with the same two teams in
     either order. The match is voided and the correction is created
-    pending, with your confirmation, and returned. It counts once a player
-    on the other team confirms it. A scoring type or game target left out
+    pending, submitted by you and with your confirmation, and returned. It
+    counts once a player on the other team confirms it. A scoring type or game target left out
     is the corrected match's, and a missing best-of is inferred from the
     games. Its location, labels, and order come from the corrected match. A
     confirmed match gets 409: dispute it first. Anyone who did not play in

@@ -2136,7 +2136,7 @@
     },
     "/api/v1/matches/{code}/correction": {
       "post": {
-        "description": "Correct a pending or disputed match you played in with no Event.\n\nGive the corrected match as for a new one, with the same two teams in\neither order. The match is voided and the correction is created\npending, with your confirmation, and returned. It counts once a player\non the other team confirms it. A scoring type or game target left out\nis the corrected match's, and a missing best-of is inferred from the\ngames. Its location, labels, and order come from the corrected match. A\nconfirmed match gets 409: dispute it first. Anyone who did not play in\nthe match, a match with an Event or Club, and a correction with other\nteams get 404, as for an unknown code.",
+        "description": "Correct a pending or disputed match you played in with no Event.\n\nGive the corrected match as for a new one, with the same two teams in\neither order. The match is voided and the correction is created\npending, submitted by you and with your confirmation, and returned. It\ncounts once a player on the other team confirms it. A scoring type or game target left out\nis the corrected match's, and a missing best-of is inferred from the\ngames. Its location, labels, and order come from the corrected match. A\nconfirmed match gets 409: dispute it first. Anyone who did not play in\nthe match, a match with an Event or Club, and a correction with other\nteams get 404, as for an unknown code.",
         "operationId": "correct_match",
         "parameters": [
           {
