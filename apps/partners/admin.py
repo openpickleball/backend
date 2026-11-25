@@ -13,6 +13,7 @@ from django.contrib import admin
 from django.http import HttpRequest
 from oauth2_provider.admin import ApplicationAdmin
 
+from apps.audit.admin_access import AccessAuditAdminMixin
 from apps.partners.models import OrganizerApplicationGrant, PartnerApplication
 
 # Every secret is hashed (a check constraint), so the choice is never shown.
@@ -22,7 +23,7 @@ admin.site.unregister(PartnerApplication)
 
 
 @admin.register(PartnerApplication)
-class PartnerApplicationAdmin(ApplicationAdmin):
+class PartnerApplicationAdmin(AccessAuditAdminMixin, ApplicationAdmin):
     list_display = (
         "pk",
         "client_id",
@@ -60,7 +61,9 @@ class PartnerApplicationAdmin(ApplicationAdmin):
 
 
 @admin.register(OrganizerApplicationGrant)
-class OrganizerApplicationGrantAdmin(admin.ModelAdmin[OrganizerApplicationGrant]):
+class OrganizerApplicationGrantAdmin(
+    AccessAuditAdminMixin, admin.ModelAdmin[OrganizerApplicationGrant]
+):
     list_display = ("organizer", "application", "created_at")
     list_select_related = ("organizer", "application")
     raw_id_fields = ("organizer", "application")

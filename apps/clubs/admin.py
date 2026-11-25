@@ -16,6 +16,7 @@ from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
+from apps.audit.admin_access import AccessAuditAdminMixin
 from apps.audit.admin_actions import (
     ReasonActionForm,
     action_reason,
@@ -52,7 +53,7 @@ class ClubRoleInline(admin.TabularInline[ClubRole, Club]):
 
 
 @admin.register(Club)
-class ClubAdmin(admin.ModelAdmin[Club]):
+class ClubAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Club]):
     list_display = ("public_code", "name", "city", "region")
     readonly_fields = ("public_code",)
     search_fields = ("public_code", "name")
@@ -60,7 +61,9 @@ class ClubAdmin(admin.ModelAdmin[Club]):
 
 
 @admin.register(ClubOrganizerGrant)
-class ClubOrganizerGrantAdmin(admin.ModelAdmin[ClubOrganizerGrant]):
+class ClubOrganizerGrantAdmin(
+    AccessAuditAdminMixin, admin.ModelAdmin[ClubOrganizerGrant]
+):
     """A Club's consent for an Organizer to name it (ADR 0021).
 
     Only this admin manages grants until the self-service issues land.
@@ -73,7 +76,7 @@ class ClubOrganizerGrantAdmin(admin.ModelAdmin[ClubOrganizerGrant]):
 
 
 @admin.register(Organizer)
-class OrganizerAdmin(admin.ModelAdmin[Organizer]):
+class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
     list_display = ("public_code", "name", "is_verified")
     readonly_fields = ("public_code", "verified_at", "verified_by")
     search_fields = ("public_code", "name")
