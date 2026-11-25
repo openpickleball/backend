@@ -11,7 +11,9 @@ search (/api/v1/players/search), a player's profile, the rating lookup
 (/api/v1/players/{code}/rating-history) at /api/v1/players/, and at
 /api/v1/me/ the matches awaiting the signed-in player's confirmation, the
 disputed matches of the signed-in Account's verified Organizers' Events,
-and the signed-in Account's own Player.
+and the signed-in Account's own Player, and at /api/v1/organizer/events
+the Events of the signed-in Account's Organizers (list, create, change,
+delete).
 
 Adding an app's endpoints (usually one router per app):
 
@@ -78,6 +80,7 @@ from ninja.openapi.schema import OpenAPISchema
 from ninja.schema import NinjaGenerateJsonSchema
 
 from apps.accounts.api import router as accounts_router
+from apps.events.api import router as events_router
 from apps.matches.api import me_router
 from apps.matches.api import router as matches_router
 from apps.players.api import me_router as players_me_router
@@ -284,3 +287,4 @@ api.add_router("players/", players_router)
 api.add_router("players/", ratings_router)
 api.add_router("me/", me_router)
 api.add_router("me/", players_me_router)
+api.add_router("organizer/", events_router)
