@@ -1,7 +1,7 @@
 # 0029. Moderator review in the admin
 
 - Status: Proposed
-- Amended by: [ADR 0033](0033-lowest-level-resolution.md) (moderators no longer review matches: disputes and holds are settled by players and Organizers or expire, and moderators keep organizer verification and the bulk void)
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer review matches: disputes and holds are settled by players and Organizers or expire, and moderators keep organizer verification and the bulk void)
 - Date: 2026-11-24
 
 ## Context

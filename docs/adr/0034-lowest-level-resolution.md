@@ -1,4 +1,4 @@
-# 0033. Match and player issues are settled at the lowest level
+# 0034. Match and player issues are settled at the lowest level
 
 - Status: Proposed
 - Date: 2026-11-24

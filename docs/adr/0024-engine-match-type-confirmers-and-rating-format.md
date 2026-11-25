@@ -1,7 +1,7 @@
 # 0024. Engine match type, confirmers, and a stored rating format
 
 - Status: Proposed
-- Amended by: [ADR 0033](0033-lowest-level-resolution.md) (moderators no longer confirm self-reported matches, so the every-participant confirmers rule has nothing to apply to)
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer confirm self-reported matches, so the every-participant confirmers rule has nothing to apply to)
 - Date: 2026-11-23
 
 ## Context

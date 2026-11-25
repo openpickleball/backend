@@ -80,5 +80,5 @@ Add each record here when it merges.
 - [0030. API throttling per Account and per client IP](0030-api-throttling.md) (issue #34)
 - [0031. Rating lookup, rating history, and a setting for current ratings](0031-rating-lookup-and-history.md) (issue #53)
 - [0032. Submission batches and moderator bulk void](0032-submission-batches-and-bulk-void.md) (issue #205)
-- [0033. Match and player issues are settled at the lowest level](0033-lowest-level-resolution.md) (issue #265)
 - [0033. Audit access changes in the model, with the request's Account as actor](0033-audit-access-changes-in-the-model.md) (issue #158)
+- [0034. Match and player issues are settled at the lowest level](0034-lowest-level-resolution.md) (issue #265)
