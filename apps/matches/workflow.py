@@ -434,7 +434,11 @@ def _dispute_period(
     withdrawn = MatchConfirmation.objects.filter(
         match_id=match.pk, decision=ConfirmationDecision.WITHDRAW
     ).values("player_id")
-    open_disputes = list(disputes.exclude(player_id__in=withdrawn).order_by("pk"))
+    open_disputes = list(
+        disputes.exclude(player_id__in=withdrawn)
+        .select_related("player")
+        .order_by("pk")
+    )
     return event, open_disputes
 
 
@@ -989,26 +993,27 @@ def _match_events() -> QuerySet[AuditEvent]:
 
 
 def dispute_started_at(match: Match) -> datetime | None:
-    """When the match's open dispute began, or None.
+    """When the match's current disputed period began, or None.
 
-    The time of the match's latest ``match.dispute`` Audit Event, chosen
-    by row order, not time: every change into disputed writes exactly one,
+    The period's open disputes come from ``_dispute_period``. When the
+    first of them (by id) is the period's opening row, the start is the
+    time of the match's latest ``match.dispute`` Audit Event, chosen by
+    row order, not time: every change into disputed writes exactly one,
     and one match's status changes are serialized by its locks, so the
-    highest id is the latest. Times from different tables or hosts are
-    never compared, so a host with a clock behind another cannot hide a
-    dispute. A participant who joins a dispute writes no event, so the
-    period runs from the first open dispute. Withdrawal (#267) must change
-    this helper: with withdrawals, the first open dispute can be later
-    than the moment the match became disputed.
+    highest id is the latest. When the opener withdrew and a later dispute
+    is still open, the start is that row's time (the first open dispute
+    by id). With no event or no open dispute, None. Times are never
+    compared to choose a row, so a host with a clock behind another cannot
+    hide a dispute.
     """
-    started: datetime | None = (
-        _match_events()
-        .filter(action=AuditAction.MATCH_DISPUTE, target_object_id=str(match.pk))
-        .order_by("-pk")
-        .values_list("created_at", flat=True)
-        .first()
-    )
-    return started
+    event, open_disputes = _dispute_period(match)
+    if event is None or not open_disputes:
+        return None
+    first = open_disputes[0]
+    if first.player.account_id == event.actor_user_id:
+        started: datetime = event.created_at
+        return started
+    return first.created_at
 
 
 def expire_disputes_and_holds(now: datetime | None = None) -> int:
@@ -1040,9 +1045,10 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     now = now or timezone.now()
     dispute_cutoff = now - timedelta(days=settings.MATCH_DISPUTE_EXPIRY_DAYS)
     hold_cutoff = now - timedelta(days=settings.MATCH_DUPLICATE_HOLD_DAYS)
-    # A cheap superset: any match.dispute event before the cutoff, which
-    # includes the latest one ``dispute_started_at`` reads. It is checked
-    # for each match under its locks.
+    # A cheap superset: any match.dispute event, or any dispute row, before
+    # the cutoff. ``dispute_started_at`` returns either the latest event's
+    # time or an open dispute row's time, so both are covered. It is
+    # checked for each match under its locks.
     disputed = list(
         Match.objects.filter(status=MatchStatus.DISPUTED)
         .filter(
@@ -1050,6 +1056,13 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
                 _match_events().filter(
                     action=AuditAction.MATCH_DISPUTE,
                     target_object_id=Cast(OuterRef("pk"), output_field=CharField()),
+                    created_at__lt=dispute_cutoff,
+                )
+            )
+            | Exists(
+                MatchConfirmation.objects.filter(
+                    match=OuterRef("pk"),
+                    decision=ConfirmationDecision.DISPUTE,
                     created_at__lt=dispute_cutoff,
                 )
             )
