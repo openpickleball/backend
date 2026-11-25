@@ -278,7 +278,12 @@ def test_create_needs_sign_in() -> None:
     assert response.status_code == 401
 
 
-@pytest.mark.parametrize("club", [UNKNOWN_CLUB, "not a club", UNKNOWN_EVENT])
+# Ids fixed, since the generated codes differ between test workers.
+@pytest.mark.parametrize(
+    "club",
+    [UNKNOWN_CLUB, "not a club", UNKNOWN_EVENT],
+    ids=["unknown", "malformed", "event code"],
+)
 def test_create_with_unknown_or_malformed_club(club: str) -> None:
     organizer = verified_organizer()
     response = _post(_client(_member(organizer)), _body(organizer, club=club))
