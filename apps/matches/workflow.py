@@ -13,7 +13,9 @@ States and transitions:
   Organizer, or an approved application that Organizer owns or granted an
   Organizer Application Grant, confirms a pending match alone.
 - ``dispute_match``: a participant disputes a pending or confirmed match,
-  which becomes disputed.
+  which becomes disputed. After commit, the other team's players and, for
+  an Event match, its verified Organizer's members get a dispute notice
+  (``apps.matches.notices``, #272).
 - ``withdraw_dispute``: a participant withdraws their open dispute (#267).
   Once no dispute is open, the match goes back to confirmed when it was
   confirmed as the dispute began, else to pending. A voided match refuses
@@ -126,6 +128,7 @@ from apps.matches.models import (
     SubmissionBatch,
     Team,
 )
+from apps.matches.notices import schedule_dispute_notices
 from apps.matches.permissions import (
     Actor,
     MatchActionDenied,
@@ -378,7 +381,8 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
     nothing. A voided match raises
     ``MatchStateError``. Only a participant may dispute. A dispute takes no
     reason: Audit Events are append-only, and a participant's free text
-    could hold a name.
+    could hold a name. A match that becomes disputed schedules its dispute
+    notices (``schedule_dispute_notices``), queued after commit.
     """
     _saved(match)
     player = participant_player(actor, match)
@@ -402,6 +406,12 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
             before=before,
             after=snapshot(locked, ["status"]),
             **audit_actor(actor),
+        )
+        schedule_dispute_notices(
+            locked,
+            MatchParticipant.objects.filter(match=locked, player=player)
+            .values_list("team", flat=True)
+            .get(),
         )
         if was_counting:
             match_changed.send(
