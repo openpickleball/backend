@@ -334,3 +334,16 @@ def test_a_report_removed_mid_action_gets_a_warning(
     assert messages == [
         f"Report on {organizer.public_code} was not closed: it no longer exists."
     ]
+
+
+def test_the_list_filters_closed_reports() -> None:
+    organizer = verified_organizer()
+    closed = _report(organizer)
+    client = _client(_moderator())
+    _close(client, [closed], REASON)
+    _report(organizer)
+
+    response = client.get(reverse(CHANGELIST), {"open": "no"})
+
+    shown = [r.pk for r in response.context["cl"].result_list]
+    assert shown == [closed.pk]
