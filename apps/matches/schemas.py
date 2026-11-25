@@ -233,19 +233,20 @@ class MatchOut(Schema):
     ``my_team`` is the viewer's own team, null when the viewer's Player did
     not play in the match. ``my_decision`` is the latest confirm, dispute,
     or withdraw this player recorded on the match, ``none`` when they
-    recorded none or did not play. A repeated decision is not recorded again, so confirming
-    again after a dispute that a moderator or the Event's organizer resolved
-    still shows ``dispute``. An organizer's confirmation is not a player
+    recorded none or did not play. A repeated decision is not recorded
+    again, so confirming again after a dispute that a moderator or the
+    Event's organizer resolved still shows ``dispute``. An organizer's confirmation is not a player
     decision: a player who confirms as a member of the match's Event
     Organizer still shows ``none``. For a participant, ``confirmed_by_team``
     says whether a player on each team recorded a confirmation (a dispute is
-    not a confirmation); it is null for anyone else. A player who
-    confirmed, disputed, then withdrew their dispute shows ``withdraw``,
-    and their confirmation still counts in ``confirmed_by_team``, since a
-    recorded decision is never removed. It counts player confirmations
-    only: a match confirmed by an organizer or a moderator, or a correction,
-    can be confirmed with both false, so read ``status`` for whether the
-    match is confirmed. ``created_at`` is when the match was submitted.
+    not a confirmation); it is null for anyone else. A confirmation still
+    shows in ``confirmed_by_team`` after the same player disputes, and
+    after they withdraw that dispute, since a recorded decision is never
+    removed: a player who confirmed, disputed, then withdrew shows
+    ``withdraw`` while their confirmation stays in ``confirmed_by_team``.
+    It counts player confirmations only: a match confirmed by an organizer
+    or a moderator, or a correction, can be confirmed with both false, so
+    read ``status`` for whether the match is confirmed. ``created_at`` is when the match was submitted.
     """
 
     code: str
