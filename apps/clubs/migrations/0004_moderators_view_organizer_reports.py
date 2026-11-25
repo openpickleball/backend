@@ -14,10 +14,10 @@ MODERATOR_GROUP = "Moderator"
 PERMISSION = ("clubs", "view_organizerreport")
 
 
-def _permissions(apps: Apps, alias: str) -> Any:
+def _permissions(apps: Apps) -> Any:
     Permission = apps.get_model("auth", "Permission")
     app_label, codename = PERMISSION
-    return Permission.objects.using(alias).filter(
+    return Permission.objects.filter(
         content_type__app_label=app_label, codename=codename
     )
 
@@ -27,27 +27,24 @@ def add_permission(apps: Apps, schema_editor: BaseDatabaseSchemaEditor) -> None:
 
     On a new database the permission does not exist yet (Django creates
     permissions after migrate), so create them first, as
-    ``matches.0007_moderator_group`` does. Every query uses migrate's own
-    connection (ADR 0038).
+    ``matches.0007_moderator_group`` does.
     """
-    alias = schema_editor.connection.alias
     for app_config in apps.get_app_configs():
         # create_permissions skips an app with no models module, and the
         # historical registry's app configs have none: mark them for it.
         app_config.models_module = True  # type: ignore[assignment]
-        create_permissions(app_config, apps=apps, verbosity=0, using=alias)
+        create_permissions(app_config, apps=apps, verbosity=0)
         app_config.models_module = None
     Group = apps.get_model("auth", "Group")
-    group, _created = Group.objects.using(alias).get_or_create(name=MODERATOR_GROUP)
-    group.permissions.add(*_permissions(apps, alias))
+    group, _created = Group.objects.get_or_create(name=MODERATOR_GROUP)
+    group.permissions.add(*_permissions(apps))
 
 
 def remove_permission(apps: Apps, schema_editor: BaseDatabaseSchemaEditor) -> None:
     Group = apps.get_model("auth", "Group")
-    alias = schema_editor.connection.alias
-    group = Group.objects.using(alias).filter(name=MODERATOR_GROUP).first()
+    group = Group.objects.filter(name=MODERATOR_GROUP).first()
     if group is not None:
-        group.permissions.remove(*_permissions(apps, alias))
+        group.permissions.remove(*_permissions(apps))
 
 
 class Migration(migrations.Migration):

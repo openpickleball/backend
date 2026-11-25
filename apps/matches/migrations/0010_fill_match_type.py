@@ -11,18 +11,14 @@ def fill_match_type(apps: Apps, schema_editor: BaseDatabaseSchemaEditor) -> None
 
     An Event's kind, rec_verified for a Club with no Event, and
     self_reported for neither (ADR 0024, ADR 0035). The historical model has
-    a plain manager, so the ledger guard does not apply. Every query uses
-    migrate's own connection (ADR 0038).
+    a plain manager, so the ledger guard does not apply.
     """
-    alias = schema_editor.connection.alias
     Match = apps.get_model("matches", "Match")
     Event = apps.get_model("events", "Event")
-    empty = Match.objects.using(alias).filter(match_type__isnull=True)
+    empty = Match.objects.filter(match_type__isnull=True)
     empty.filter(event__isnull=False).update(
         match_type=Subquery(
-            Event.objects.using(alias)
-            .filter(pk=OuterRef("event_id"))
-            .values("kind")[:1]
+            Event.objects.filter(pk=OuterRef("event_id")).values("kind")[:1]
         )
     )
     empty.filter(event__isnull=True, club__isnull=False).update(
