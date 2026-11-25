@@ -18,12 +18,18 @@ closed the others. ``close_report`` locks only the report row, never the
 Organizer, so it cannot form a cycle with them.
 """
 
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, transaction
+from django.db.models import CharField, Count, Q
+from django.db.models.functions import Cast
 from django.utils import timezone
 
-from apps.audit.models import AuditAction
+from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
 from apps.clubs.models import (
     Organizer,
@@ -31,6 +37,7 @@ from apps.clubs.models import (
     OrganizerReport,
     OrganizerReportReason,
 )
+from apps.matches.models import SIGNAL_FLAG_REASONS, Match, MatchFlag, MatchStatus
 from apps.players.models import Player
 
 if TYPE_CHECKING:
@@ -197,4 +204,93 @@ def _close(locked: OrganizerReport, *, actor: "_User", reason: str, rule: str) -
         before=before,
         after={**snapshot(locked, _CLOSED_FIELDS), "rule": rule},
         reason=reason,
+    )
+
+
+@dataclass(frozen=True)
+class OrganizerReview:
+    """What a moderator sees about one Organizer (#271).
+
+    The open reports, oldest first, and counts over the ``window_days``
+    days since ``since`` of what happened to disputes on the matches of
+    the Organizer's Events, read from their Audit Events: disputes opened
+    (``match.dispute``), withdrawn (``match.dispute_withdraw``), resolved
+    as confirmed or voided (``dispute.outcome``), and expired
+    (``match.expire`` by the dispute rule), and the flags on those
+    matches whose reason is a signal (``SIGNAL_FLAG_REASONS``).
+    """
+
+    window_days: int
+    since: datetime
+    open_reports: list[OrganizerReport]
+    disputes_opened: int
+    disputes_withdrawn: int
+    disputes_confirmed: int
+    disputes_voided: int
+    disputes_expired: int
+    signal_flags: int
+
+
+def organizer_review(
+    organizer: Organizer, *, now: datetime | None = None
+) -> OrganizerReview:
+    """The moderator review of ``organizer``, as of ``now`` (default: now).
+
+    Only matches of Events whose Organizer is ``organizer`` count; a
+    self-reported match or another Organizer's never does. Reads only:
+    it locks and writes nothing.
+    """
+    window_days: int = settings.ORGANIZER_REVIEW_WINDOW_DAYS
+    since = (now or timezone.now()) - timedelta(days=window_days)
+    matches = Match.objects.filter(event__organizer_id=organizer.pk)
+    # target_object_id is text, so compare with the Matches' ids as text.
+    match_ids = matches.annotate(text_id=Cast("pk", output_field=CharField())).values(
+        "text_id"
+    )
+    counts = AuditEvent.objects.filter(
+        target_content_type=ContentType.objects.get_for_model(Match),
+        target_object_id__in=match_ids,
+        created_at__gte=since,
+    ).aggregate(
+        opened=Count("pk", filter=Q(action=AuditAction.MATCH_DISPUTE)),
+        withdrawn=Count("pk", filter=Q(action=AuditAction.MATCH_DISPUTE_WITHDRAW)),
+        confirmed=Count(
+            "pk",
+            filter=Q(
+                action=AuditAction.DISPUTE_OUTCOME,
+                after__status=MatchStatus.CONFIRMED,
+            ),
+        ),
+        voided=Count(
+            "pk",
+            filter=Q(
+                action=AuditAction.DISPUTE_OUTCOME,
+                after__status=MatchStatus.VOIDED,
+            ),
+        ),
+        expired=Count(
+            "pk",
+            filter=Q(action=AuditAction.MATCH_EXPIRE, after__rule="dispute"),
+        ),
+    )
+    signal_flags = MatchFlag.objects.filter(
+        match__in=matches,
+        reason__in=SIGNAL_FLAG_REASONS,
+        created_at__gte=since,
+    ).count()
+    open_reports = list(
+        OrganizerReport.objects.filter(
+            organizer_id=organizer.pk, closed_at__isnull=True
+        ).order_by("created_at", "pk")
+    )
+    return OrganizerReview(
+        window_days=window_days,
+        since=since,
+        open_reports=open_reports,
+        disputes_opened=counts["opened"],
+        disputes_withdrawn=counts["withdrawn"],
+        disputes_confirmed=counts["confirmed"],
+        disputes_voided=counts["voided"],
+        disputes_expired=counts["expired"],
+        signal_flags=signal_flags,
     )
