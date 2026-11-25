@@ -24,7 +24,7 @@ Match or Submission Batch names cannot be deleted (409).
 from typing import TYPE_CHECKING, Annotated, Any
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError, QuerySet
 from django.http import Http404, HttpRequest
 from ninja import Field, Router, Schema, Status
@@ -166,8 +166,14 @@ def create_organizer_event(
             save_event(event, actor=account)
     except DjangoValidationError as error:
         raise model_validation_error(error) from None
+    except IntegrityError:
+        # Foreign keys are checked at commit: the Organizer or Club was
+        # deleted after save_event's checks. Caught outside the
+        # transaction, which rolled back with the Audit Event.
+        raise HttpError(409, NOT_SAVED_MESSAGE) from None
     except ValueError:
-        # The Organizer or Club was deleted meanwhile.
+        # Defensive: save_event refuses a related record or Event that is
+        # not stored. Never a 500.
         raise HttpError(409, NOT_SAVED_MESSAGE) from None
     return Status(201, event_out(event))
 
