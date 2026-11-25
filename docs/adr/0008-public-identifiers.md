@@ -1,6 +1,7 @@
 # 0008. Public identifiers: OPEN Codes
 
 - Status: Accepted
+- Amended by: [ADR 0036](0036-csv-results-files.md) (prefix `F`, length 8, for a Results File)
 - Date: 2026-11-14
 
 ## Context

@@ -1,6 +1,7 @@
 # 0032. Submission batches and moderator bulk void
 
 - Status: Proposed
+- Amended by: [ADR 0036](0036-csv-results-files.md) (a batch never confirms a pending duplicate, which closes the gap below; each bulk void first fails the pending Results Files in its scope)
 - Date: 2026-11-24
 
 ## Context
@@ -26,7 +27,7 @@ A match from a trusted submitter counts as soon as it is recorded (ADR 0012, ADR
 
 - A whole upload can be undone in one action, and a replay then gives the ratings from before it.
 - **Gap: a correction leaves the batch.** A correction made by `edit_match` does not join its match's batch, as #205 asks. The batch void finds the corrected match already voided and skips it, while the correction still counts. Today only the moderator admin calls `edit_match`, so this is a moderator's own choice. The submitter scope does reach such corrections, since a correction keeps the original submitter. If editing opens to other actors, the batch void may need to follow `corrects` forward.
-- **Gap: a confirmed duplicate stays confirmed.** A batch match that exactly duplicates a pending match confirms that match instead of creating one (ADR 0013). The pending match keeps its own submitter and its own batch link, if any, so the batch void does not reach it, and when another submitter recorded it, neither does the submitter void. Only its `match.confirm` Audit Event names the batch's submitter. #71 and #72 decide whether a batch path may confirm this way.
+- **Gap: a confirmed duplicate stays confirmed.** A batch match that exactly duplicates a pending match confirms that match instead of creating one (ADR 0013). The pending match keeps its own submitter and its own batch link, if any, so the batch void does not reach it, and when another submitter recorded it, neither does the submitter void. Only its `match.confirm` Audit Event names the batch's submitter. #71 and #72 decide whether a batch path may confirm this way. Closed by ADR 0036: a batch submission never confirms a pending match.
 - **A run reads its list of matches once.** Matches recorded while it runs are left for the next run, and the page's count can differ from the result.
 - **The admin runs the whole loop in one web request.** A very large scope can pass the server's request timeout. The voids done so far stay, but that run records no `match.bulk_void` event. Running it again finishes the rest.
 - An Account, Partner Application, Event, or Club that a batch names cannot be hard-deleted, even when the batch is empty. Account deletion (#116) must plan for this.
