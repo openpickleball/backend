@@ -1040,9 +1040,13 @@ class MatchFlag(_LinkMessagesModel):
     ``counted()`` matches (``counted_engine_matches``).
 
     The hold period (ADR 0034): a flag still open after
-    ``MATCH_DUPLICATE_HOLD_DAYS`` whose ``duplicate_of`` is confirmed makes
-    the daily ``expire_disputes_and_holds`` void its ``match`` (the newer
-    one). That ends its hold on the earlier one, which counts again unless
+    ``MATCH_DUPLICATE_HOLD_DAYS`` whose earlier match is confirmed makes
+    the daily ``expire_disputes_and_holds`` void its newer match. The
+    earlier one is ``duplicate_of``, except that a correction keeps its
+    original's place while its chain keeps the same teams and date: each
+    side ranks by the first match of its own same-teams-and-date chain
+    (through ``corrects``), and the one recorded first is the earlier one.
+    That ends the hold on the earlier one, which counts again unless
     another open flag still holds it. A hold against a pending or disputed
     earlier match never ends this way. The flag itself stays open.
 
