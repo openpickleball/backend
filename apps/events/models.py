@@ -18,7 +18,7 @@ match type and takes no per-event weight (openpickleball/engine#30), so
 any weight applied here would be rating math outside the engine
 (CLAUDE.md, hard rule 2).
 
-#125 adds the Event API.
+The organizer Event API is in ``apps/events/api.py`` (#125).
 """
 
 import datetime

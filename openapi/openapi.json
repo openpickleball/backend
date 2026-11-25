@@ -164,6 +164,145 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "EventCreateIn": {
+        "additionalProperties": false,
+        "description": "A new Event for a verified Organizer the signed-in Account is a\nmember of.\n\n``organizer`` and ``club`` are OPEN Codes, in any case, with or\nwithout hyphens. The Club, when named, must have granted the\nOrganizer a Club Organizer Grant (ADR 0021).",
+        "properties": {
+          "club": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Club"
+          },
+          "end_date": {
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organizer": {
+            "title": "Organizer",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizer",
+          "name",
+          "kind",
+          "start_date",
+          "end_date"
+        ],
+        "title": "EventCreateIn",
+        "type": "object"
+      },
+      "EventKind": {
+        "description": "The match type of matches recorded with an Event.\n\nEach Match stores the kind it was recorded with, so a kind change\nreaches only matches recorded after it (ADR 0035).\n\nThe values are the engine's ``open_engine.MatchType`` values.\n``self_reported`` is left out: self-reported matches have no Event\n(decision F1 in #1). Never add a value the engine lacks.",
+        "enum": [
+          "tournament",
+          "league",
+          "rec_verified"
+        ],
+        "title": "EventKind",
+        "type": "string"
+      },
+      "EventOut": {
+        "description": "An Event, with its Organizer and Club named by OPEN Code.",
+        "properties": {
+          "club": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Club"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "end_date": {
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organizer": {
+            "title": "Organizer",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "kind",
+          "organizer",
+          "club",
+          "start_date",
+          "end_date"
+        ],
+        "title": "EventOut",
+        "type": "object"
+      },
+      "EventUpdateIn": {
+        "additionalProperties": false,
+        "description": "Changes to an Event. Only the fields sent change; null is refused.\n\n``kind`` may change at any time and reaches only matches recorded\nafter it (ADR 0035). ``name``, ``start_date``, and ``end_date`` change\nonly while no match names the Event. The organizer and club cannot be\nchanged here.",
+        "properties": {
+          "end_date": {
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventKind"
+              }
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "title": "EventUpdateIn",
+        "type": "object"
+      },
       "FieldError": {
         "description": "One invalid input: where it is, what kind of error, and a message.\n\n`existing_code` is the earlier match's OPEN code. Only a duplicate match\nitem has it, and only when the submitter may know that match.",
         "properties": {
@@ -539,6 +678,27 @@
           "privacy"
         ],
         "title": "MyPlayerOut",
+        "type": "object"
+      },
+      "PagedEventOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EventOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "PagedEventOut",
         "type": "object"
       },
       "PagedMatchOut": {
@@ -2535,6 +2695,420 @@
         "summary": "Create My Player",
         "tags": [
           "players"
+        ]
+      }
+    },
+    "/api/v1/organizer/events": {
+      "get": {
+        "description": "The Events of every Organizer the signed-in Account is a member of.\n\nEither role, verified or not. Newest start date first.",
+        "operationId": "list_organizer_events",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedEventOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Organizer Events",
+        "tags": [
+          "events"
+        ]
+      },
+      "post": {
+        "description": "Create an Event for a verified Organizer the Account is a member of.\n\n403 for any other Organizer, an unknown one included. A Club must have\ngranted the Organizer a Club Organizer Grant (422 on ``club``).",
+        "operationId": "create_organizer_event",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create Organizer Event",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/organizer/events/{code}": {
+      "delete": {
+        "description": "Delete an Event. 409 when a match or an upload names it.",
+        "operationId": "delete_organizer_event",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a event. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "E-7K3M-QX9S"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a event. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "E-7K3M-QX9S"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Delete Organizer Event",
+        "tags": [
+          "events"
+        ]
+      },
+      "patch": {
+        "description": "Change an Event's name, kind, or dates. Only the fields sent change.\n\nThe kind may change at any time and reaches only matches recorded\nafter it. The name and dates change only while no match names the\nEvent (409 otherwise); sending the stored value is not a change.",
+        "operationId": "update_organizer_event",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a event. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "E-7K3M-QX9S"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a event. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "E-7K3M-QX9S"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Organizer Event",
+        "tags": [
+          "events"
         ]
       }
     },

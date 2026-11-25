@@ -50,7 +50,6 @@ from typing import TYPE_CHECKING, Annotated, ClassVar, TypedDict
 
 from allauth.account.models import EmailAddress
 from django.contrib.sessions.backends.base import SessionBase, UpdateError
-from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Case, IntegerField, Q, QuerySet, Value, When
@@ -99,7 +98,7 @@ from apps.players.signup import (
 )
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
-from config.api_errors import ErrorResponse
+from config.api_errors import ErrorResponse, model_validation_error
 from config.auth import account_auth, auth_session
 from config.throttling import (
     DAY,
@@ -359,30 +358,6 @@ def _is_duplicate_player(error: DjangoValidationError) -> bool:
     return any(item.code == "unique" for item in found)
 
 
-def _body_errors(
-    error: DjangoValidationError, prefix: tuple[str, ...] = ("body",)
-) -> NinjaValidationError:
-    """A model ``ValidationError`` as the API's 422, located under ``prefix``.
-
-    The model's messages are fixed text, never a submitted value
-    (``apps.players.models``), and only they are copied.
-    """
-    by_field = (
-        error.error_dict
-        if hasattr(error, "error_dict")
-        else {NON_FIELD_ERRORS: error.error_list}
-    )
-    items: list[dict[str, object]] = []
-    for name, field_errors in by_field.items():
-        loc = prefix if name == NON_FIELD_ERRORS else (*prefix, name)
-        for item in field_errors:
-            items.extend(
-                {"loc": loc, "type": item.code or "invalid", "msg": message}
-                for message in item
-            )
-    return NinjaValidationError(items)
-
-
 class _NewProfile(TypedDict):
     """``create_player``'s values besides the Account."""
 
@@ -560,7 +535,7 @@ def create_my_player(
             raise HttpError(409, ALREADY_HAS_PLAYER_MESSAGE) from None
         if _is_refused_age(error):
             raise _refuse(request, session) from None
-        raise _body_errors(error) from None
+        raise model_validation_error(error) from None
     _take_hold(request, session, account)
     return Status(201, my_player_out(player, player.privacy))
 
@@ -610,12 +585,12 @@ def update_my_player(request: HttpRequest, payload: PlayerUpdateIn) -> MyPlayerO
                 try:
                     update_profile(player=player, actor=account, changes=profile)
                 except DjangoValidationError as error:
-                    raise _body_errors(error) from None
+                    raise model_validation_error(error) from None
             if privacy:
                 try:
                     update_privacy(player=player, actor=account, changes=privacy)
                 except DjangoValidationError as error:
-                    raise _body_errors(error, ("body", "privacy")) from None
+                    raise model_validation_error(error, ("body", "privacy")) from None
     except NotOwnPlayer:
         # The Account was deactivated meanwhile: as if it had no Player.
         raise Http404 from None

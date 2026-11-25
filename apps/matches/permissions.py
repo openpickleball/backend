@@ -33,6 +33,11 @@ with an Event. A match with a Club and no Event is refused for every
 actor, since no Organizer stands behind it and it has no Match Type. A
 match with neither needs self-submission.
 
+``can_manage_events`` decides who may create, change, and delete an
+Organizer's Events through the API (#125): an Account that is a member
+(either role) of that Organizer while it is verified, the same Account
+rule as event authority. An application may not.
+
 ``can_change_match`` covers actors other than moderators. An application
 may change only a match it submitted, while it is approved. An Account
 may change a match whose Event's verified Organizer it is a member of. A
@@ -304,6 +309,24 @@ def can_change_match(actor: Actor, match: Match) -> bool:
         Match.objects.filter(pk=match.pk).values_list("event_id", flat=True).first()
     )
     return _account_event_authority(account, event_id)
+
+
+def can_manage_events(actor: Actor, organizer_id: int) -> bool:
+    """True when ``actor`` may create, change, and delete the Organizer's Events.
+
+    An active Account that is a member (either role) of ``organizer_id``
+    while that Organizer is verified (ADR 0021, #125). An application, a
+    Club admin, and anyone else may not. Verification, membership, and
+    ``is_active`` are read from the database by id.
+    """
+    account = _account(actor)
+    if account is None:
+        return False
+    if not Organizer.objects.filter(
+        pk=organizer_id, verified_at__isnull=False
+    ).exists():
+        return False
+    return _account_acts_for(account, organizer_id)
 
 
 MODERATE_PERMISSION = "matches.moderate_match"

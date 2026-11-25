@@ -57,6 +57,8 @@ DEBUG is off so Django's own 500 handling applies.
 from collections.abc import Mapping
 from typing import Any
 
+from django.core.exceptions import NON_FIELD_ERRORS
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404, HttpRequest, HttpResponse
 from ninja import NinjaAPI, Schema
 from ninja.errors import AuthenticationError, HttpError, ValidationError
@@ -141,6 +143,32 @@ def _field_errors(error: Mapping[str, Any]) -> list[FieldError]:
             message=str(error.get("msg", "")),
         )
     ]
+
+
+def model_validation_error(
+    error: DjangoValidationError, prefix: tuple[str, ...] = ("body",)
+) -> ValidationError:
+    """A model ``ValidationError`` as the API's 422, located under ``prefix``.
+
+    Each field's errors go under ``(*prefix, field)``; non-field errors under
+    ``prefix``. Only the model's own messages are copied, so a model whose
+    messages could repeat a submitted value must override them first
+    (CLAUDE.md, API).
+    """
+    by_field = (
+        error.error_dict
+        if hasattr(error, "error_dict")
+        else {NON_FIELD_ERRORS: error.error_list}
+    )
+    items: list[dict[str, object]] = []
+    for name, field_errors in by_field.items():
+        loc = prefix if name == NON_FIELD_ERRORS else (*prefix, name)
+        for item in field_errors:
+            items.extend(
+                {"loc": loc, "type": item.code or "invalid", "msg": message}
+                for message in item
+            )
+    return ValidationError(items)
 
 
 def _respond(
