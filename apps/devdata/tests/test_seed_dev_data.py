@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import CommandError, call_command
 from pytest_django.fixtures import Settings
 
-from apps.clubs.models import Club, Organizer
+from apps.clubs.models import Club, ClubOrganizerGrant, Organizer
 from apps.events.models import Event
 from apps.matches.models import Match, MatchFlag, MatchStatus
 from apps.players.models import Player
@@ -55,6 +55,15 @@ def test_seeds_empty_database() -> None:
         assert match.games.exists()
     assert Match.objects.filter(event__isnull=False).exists()
     assert Match.objects.filter(club__isnull=False).exists()
+    # ADR 0021: a match with a Club has an Event, and the Club granted the
+    # Event's Organizer.
+    assert not Match.objects.filter(club__isnull=False, event__isnull=True).exists()
+    for match in Match.objects.filter(club__isnull=False).select_related("event"):
+        assert match.event is not None
+        assert match.club_id is not None
+        assert ClubOrganizerGrant.objects.filter(
+            club_id=match.club_id, organizer_id=match.event.organizer_id
+        ).exists()
 
 
 @pytest.mark.django_db

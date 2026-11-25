@@ -20,12 +20,14 @@ from apps.audit.models import AuditEvent
 from apps.clubs.models import Club
 from apps.clubs.tests.factories import (
     ClubFactory,
+    ClubOrganizerGrantFactory,
     ClubRoleFactory,
     OrganizerMemberFactory,
     verified_organizer,
 )
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
+from apps.matches import services
 from apps.matches.models import Match, MatchFormat, MatchImmutable, SubmissionBatch
 from apps.matches.permissions import MatchPermissionDenied
 from apps.matches.services import BATCH_REFUSED, record_match
@@ -145,30 +147,67 @@ def test_a_batch_with_no_event_accepts_any_event(
     assert match.submission_batch_id == batch.pk
 
 
-def test_a_batch_with_no_club_accepts_any_club(players: list[Player]) -> None:
+def _granting_club(event: Event) -> Club:
+    """A Club that granted ``event``'s Organizer (ADR 0021)."""
     club: Club = ClubFactory.create()
-    account: User = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=account)
-    batch = SubmissionBatch.objects.create(submitted_by_user=account)
+    ClubOrganizerGrantFactory.create(club=club, organizer=event.organizer)
+    return club
+
+
+def test_a_batch_with_no_club_accepts_any_club(
+    players: list[Player], event: Event, member: User
+) -> None:
+    club = _granting_club(event)
+    batch = SubmissionBatch.objects.create(submitted_by_user=member)
 
     match = _record(
-        players, club=club, submitted_by_user=account, submission_batch=batch
+        players,
+        event=event,
+        club=club,
+        submitted_by_user=member,
+        submission_batch=batch,
     )
 
     assert match.submission_batch_id == batch.pk
 
 
-def test_a_batch_with_the_same_club_is_accepted(players: list[Player]) -> None:
+def test_a_batch_with_the_same_club_is_accepted(
+    players: list[Player], event: Event, member: User
+) -> None:
+    club = _granting_club(event)
+    batch = SubmissionBatch.objects.create(submitted_by_user=member, club=club)
+
+    match = _record(
+        players,
+        event=event,
+        club=club,
+        submitted_by_user=member,
+        submission_batch=batch,
+    )
+
+    assert match.submission_batch_id == batch.pk
+
+
+def test_a_club_only_batch_match_is_refused_before_the_batch_check(
+    players: list[Player], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ADR 0021: a match with a Club and no Event is refused, so the batch
+    # is never looked at.
     club: Club = ClubFactory.create()
     account: User = UserFactory.create()
     ClubRoleFactory.create(club=club, account=account)
     batch = SubmissionBatch.objects.create(submitted_by_user=account, club=club)
 
-    match = _record(
-        players, club=club, submitted_by_user=account, submission_batch=batch
-    )
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("reached the batch check")
 
-    assert match.submission_batch_id == batch.pk
+    monkeypatch.setattr(services, "check_batch", fail)
+    before = _counts()
+
+    with pytest.raises(MatchPermissionDenied):
+        _record(players, club=club, submitted_by_user=account, submission_batch=batch)
+
+    assert _counts() == before
 
 
 # Refusals
@@ -269,15 +308,19 @@ def test_a_batch_with_an_event_is_refused_for_a_match_without_one(
     _assert_refused(players, submitted_by_user=account, submission_batch=batch)
 
 
-def test_a_batch_for_another_club_is_refused(players: list[Player]) -> None:
-    club: Club = ClubFactory.create()
-    other: Club = ClubFactory.create()
-    account: User = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=account)
-    batch = SubmissionBatch.objects.create(submitted_by_user=account, club=other)
+def test_a_batch_for_another_club_is_refused(
+    players: list[Player], event: Event, member: User
+) -> None:
+    club = _granting_club(event)
+    other = _granting_club(event)
+    batch = SubmissionBatch.objects.create(submitted_by_user=member, club=other)
 
     _assert_refused(
-        players, club=club, submitted_by_user=account, submission_batch=batch
+        players,
+        event=event,
+        club=club,
+        submitted_by_user=member,
+        submission_batch=batch,
     )
 
 

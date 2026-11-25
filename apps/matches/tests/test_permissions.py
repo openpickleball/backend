@@ -1,7 +1,10 @@
 """Who may create a Match, and who may change one (#79).
 
 Table-driven: every actor kind against every match shape (event only,
-club only, event and club, neither), for both functions. Made-up data only.
+club only, event and club, neither), for both functions. Only a verified
+Organizer is trusted (ADR 0021): a Club Role gives nothing, a match with a
+Club and no Event is refused, and a match with a Club needs that Club's
+grant to the Event's Organizer. Made-up data only.
 """
 
 import dataclasses
@@ -14,10 +17,11 @@ from django.contrib.auth.models import AnonymousUser
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.models import Club, MemberRole, Organizer
+from apps.clubs.models import Club, ClubOrganizerGrant, MemberRole, Organizer
 from apps.clubs.services import unverify_organizer
 from apps.clubs.tests.factories import (
     ClubFactory,
+    ClubOrganizerGrantFactory,
     ClubRoleFactory,
     OrganizerFactory,
     OrganizerMemberFactory,
@@ -35,9 +39,9 @@ from apps.matches.permissions import (
     check_can_create_match,
 )
 from apps.matches.tests.factories import MatchFactory
-from apps.partners.models import PartnerApplication
+from apps.partners.models import OrganizerApplicationGrant, PartnerApplication
 from apps.partners.tests.factories import (
-    ClubApplicationGrantFactory,
+    OrganizerApplicationGrantFactory,
     PartnerApplicationFactory,
     approved_application,
 )
@@ -55,7 +59,7 @@ SHAPES = (EVENT, CLUB, EVENT_CLUB, NEITHER)
 
 @dataclass
 class Scene:
-    """A verified Organizer's Event, a Club, and two Players."""
+    """A verified Organizer's Event, a Club that granted it, and two Players."""
 
     organizer: Organizer
     event: Event
@@ -80,13 +84,19 @@ class Scene:
         return made
 
 
+def _granting_club(organizer: Organizer) -> Club:
+    club: Club = ClubFactory.create()
+    ClubOrganizerGrantFactory.create(club=club, organizer=organizer)
+    return club
+
+
 @pytest.fixture
 def scene() -> Scene:
     organizer = verified_organizer()
     return Scene(
         organizer=organizer,
         event=EventFactory.create(organizer=organizer),
-        club=ClubFactory.create(),
+        club=_granting_club(organizer),
         players=[PlayerFactory.create(), PlayerFactory.create()],
     )
 
@@ -102,9 +112,9 @@ def _member(scene: Scene, role: str = MemberRole.MATCH_MANAGER) -> User:
     return account
 
 
-def _club_role(scene: Scene, role: str = MemberRole.MATCH_MANAGER) -> User:
+def _club_admin(scene: Scene) -> User:
     account = _account()
-    ClubRoleFactory.create(club=scene.club, account=account, role=role)
+    ClubRoleFactory.create(club=scene.club, account=account)
     return account
 
 
@@ -114,7 +124,7 @@ def _every_role(scene: Scene) -> User:
     OrganizerMemberFactory.create(
         organizer=scene.organizer, account=account, role=MemberRole.ADMIN
     )
-    ClubRoleFactory.create(club=scene.club, account=account, role=MemberRole.ADMIN)
+    ClubRoleFactory.create(club=scene.club, account=account)
     return account
 
 
@@ -134,7 +144,9 @@ def _application(
         else PartnerApplicationFactory.create(organizer=owner)
     )
     if granted:
-        ClubApplicationGrantFactory.create(club=scene.club, application=application)
+        OrganizerApplicationGrantFactory.create(
+            organizer=scene.organizer, application=application
+        )
     return application
 
 
@@ -144,24 +156,21 @@ ActorBuilder = Callable[[Scene], Actor]
 CREATE_TABLE: dict[str, tuple[ActorBuilder, frozenset[str]]] = {
     "organizer_admin": (
         lambda s: _member(s, MemberRole.ADMIN),
-        frozenset({EVENT}),
+        frozenset({EVENT, EVENT_CLUB}),
     ),
     "organizer_match_manager": (
         lambda s: _member(s, MemberRole.MATCH_MANAGER),
-        frozenset({EVENT}),
+        frozenset({EVENT, EVENT_CLUB}),
     ),
-    "club_admin": (lambda s: _club_role(s, MemberRole.ADMIN), frozenset({CLUB})),
-    "club_match_manager": (
-        lambda s: _club_role(s, MemberRole.MATCH_MANAGER),
-        frozenset({CLUB}),
-    ),
+    # ADR 0021: a Club Role gives no submission authority.
+    "club_admin": (_club_admin, frozenset()),
     "organizer_member_with_club_role": (
         lambda s: _with_club_role(s, _member(s)),
-        frozenset({EVENT, CLUB, EVENT_CLUB}),
+        frozenset({EVENT, EVENT_CLUB}),
     ),
     "participant": (lambda s: s.players[0].account, frozenset({NEITHER})),
     "unrelated_account": (lambda s: _account(), frozenset()),
-    "every_role_and_plays": (_every_role, frozenset(SHAPES)),
+    "every_role_and_plays": (_every_role, frozenset({EVENT, EVENT_CLUB, NEITHER})),
     "inactive_every_role_and_plays": (
         lambda s: _inactive(_every_role(s)),
         frozenset(),
@@ -169,15 +178,15 @@ CREATE_TABLE: dict[str, tuple[ActorBuilder, frozenset[str]]] = {
     "anonymous": (lambda s: AnonymousUser(), frozenset()),
     "application_owned": (
         lambda s: _application(s, owned=True, granted=False),
-        frozenset({EVENT}),
+        frozenset({EVENT, EVENT_CLUB}),
     ),
     "application_granted": (
         lambda s: _application(s, owned=False, granted=True),
-        frozenset({CLUB}),
+        frozenset({EVENT, EVENT_CLUB}),
     ),
     "application_owned_and_granted": (
         lambda s: _application(s, owned=True, granted=True),
-        frozenset({EVENT, CLUB, EVENT_CLUB}),
+        frozenset({EVENT, EVENT_CLUB}),
     ),
     "unapproved_application_owned_and_granted": (
         lambda s: _application(s, owned=True, granted=True, approved=False),
@@ -193,6 +202,14 @@ CREATE_TABLE: dict[str, tuple[ActorBuilder, frozenset[str]]] = {
 def _with_club_role(scene: Scene, account: User) -> User:
     ClubRoleFactory.create(club=scene.club, account=account)
     return account
+
+
+@pytest.mark.parametrize("kind", sorted(CREATE_TABLE))
+def test_a_club_only_match_is_refused_for_every_actor(scene: Scene, kind: str) -> None:
+    # ADR 0021: a match with a Club and no Event has no Organizer behind it.
+    build, _permitted = CREATE_TABLE[kind]
+
+    assert not can_create_match(build(scene), scene.submission(CLUB))
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -230,7 +247,7 @@ def unverified_scene() -> Scene:
     return Scene(
         organizer=organizer,
         event=EventFactory.create(organizer=organizer),
-        club=ClubFactory.create(),
+        club=_granting_club(organizer),
         players=[PlayerFactory.create(), PlayerFactory.create()],
     )
 
@@ -241,6 +258,7 @@ UNVERIFIED_ACTORS: dict[str, ActorBuilder] = {
     "organizer_member_with_club_role": lambda s: _with_club_role(s, _member(s)),
     "every_role_and_plays": _every_role,
     "application_owned": lambda s: _application(s, owned=True, granted=False),
+    "application_granted": lambda s: _application(s, owned=False, granted=True),
     "application_owned_and_granted": (
         lambda s: _application(s, owned=True, granted=True)
     ),
@@ -297,17 +315,11 @@ CHANGE_TABLE: dict[str, tuple[ActorBuilder, frozenset[str]]] = {
         lambda s: _member(s, MemberRole.MATCH_MANAGER),
         frozenset({EVENT, EVENT_CLUB}),
     ),
-    "club_admin": (
-        lambda s: _club_role(s, MemberRole.ADMIN),
-        frozenset({CLUB, EVENT_CLUB}),
-    ),
-    "club_match_manager": (
-        lambda s: _club_role(s, MemberRole.MATCH_MANAGER),
-        frozenset(),
-    ),
+    # ADR 0021: a Club admin may not change a match.
+    "club_admin": (_club_admin, frozenset()),
     "participant": (lambda s: s.players[0].account, frozenset()),
     "unrelated_account": (lambda s: _account(), frozenset()),
-    "every_role_and_plays": (_every_role, frozenset({EVENT, CLUB, EVENT_CLUB})),
+    "every_role_and_plays": (_every_role, frozenset({EVENT, EVENT_CLUB})),
     "inactive_every_role_and_plays": (
         lambda s: _inactive(_every_role(s)),
         frozenset(),
@@ -393,6 +405,131 @@ def test_an_application_never_changes_a_match_it_did_not_submit(
 def test_an_unexpected_actor_type_cannot_change(scene: Scene) -> None:
     for shape in SHAPES:
         assert not can_change_match(object(), scene.match(shape))  # type: ignore[arg-type]
+
+
+# ADR 0021: Organizer Application Grants and Club Organizer Grants.
+
+
+def _event_club_submission(scene: Scene, club: Club) -> MatchSubmission:
+    return MatchSubmission(
+        event=scene.event,
+        club=club,
+        player_ids=frozenset(p.pk for p in scene.players),
+    )
+
+
+def test_a_grant_from_another_organizer_gives_nothing(scene: Scene) -> None:
+    application = approved_application()
+    OrganizerApplicationGrantFactory.create(
+        organizer=verified_organizer(), application=application
+    )
+
+    assert not can_create_match(application, scene.submission(EVENT))
+
+
+def test_an_application_grant_is_read_from_the_database(scene: Scene) -> None:
+    application = _application(scene, owned=False, granted=True)
+    assert can_create_match(application, scene.submission(EVENT))
+    OrganizerApplicationGrant.objects.filter(application=application).delete()
+
+    assert not can_create_match(application, scene.submission(EVENT))
+
+
+def test_an_owned_application_is_refused_once_its_organizer_is_unverified(
+    scene: Scene,
+) -> None:
+    application = _application(scene, owned=True, granted=True)
+    verifier = scene.organizer.verified_by
+    assert verifier is not None
+    unverify_organizer(scene.organizer, actor=verifier)
+
+    assert not can_create_match(application, scene.submission(EVENT))
+
+
+@pytest.mark.parametrize("kind", ["member", "owned", "granted"])
+def test_a_club_that_did_not_grant_the_organizer_is_refused(
+    scene: Scene, kind: str
+) -> None:
+    actor: Actor = (
+        _member(scene)
+        if kind == "member"
+        else _application(scene, owned=kind == "owned", granted=kind == "granted")
+    )
+    ungranted = ClubFactory.create()
+    other_grant = ClubFactory.create()
+    ClubOrganizerGrantFactory.create(club=other_grant, organizer=verified_organizer())
+
+    assert can_create_match(actor, _event_club_submission(scene, scene.club))
+    assert not can_create_match(actor, _event_club_submission(scene, ungranted))
+    # A grant to a different Organizer is not consent for this one.
+    assert not can_create_match(actor, _event_club_submission(scene, other_grant))
+
+
+def test_a_club_grant_is_read_from_the_database(scene: Scene) -> None:
+    account = _member(scene)
+    ClubOrganizerGrant.objects.filter(club=scene.club).delete()
+
+    assert not can_create_match(account, scene.submission(EVENT_CLUB))
+
+
+def test_the_event_s_stored_club_must_have_granted_too(scene: Scene) -> None:
+    account = _member(scene)
+    ungranted = ClubFactory.create()
+    event = EventFactory.create(organizer=scene.organizer, club=ungranted)
+
+    # The match's own club granted, the Event's stored club did not.
+    assert not can_create_match(
+        account,
+        MatchSubmission(event=event, club=scene.club, player_ids=frozenset()),
+    )
+    # The Event's club alone, with no match club, is checked too.
+    assert not can_create_match(
+        account, MatchSubmission(event=event, club=None, player_ids=frozenset())
+    )
+
+
+def test_the_match_club_must_have_granted_even_when_the_event_s_did(
+    scene: Scene,
+) -> None:
+    account = _member(scene)
+    event = EventFactory.create(organizer=scene.organizer, club=scene.club)
+
+    assert can_create_match(
+        account, MatchSubmission(event=event, club=None, player_ids=frozenset())
+    )
+    assert not can_create_match(
+        account,
+        MatchSubmission(event=event, club=ClubFactory.create(), player_ids=frozenset()),
+    )
+
+
+def test_the_event_s_club_is_read_from_the_database(scene: Scene) -> None:
+    account = _member(scene)
+    ungranted = ClubFactory.create()
+    event = EventFactory.create(organizer=scene.organizer, club=ungranted)
+    # The in-memory Event claims the granted Club; the stored one did not grant.
+    event.club = scene.club
+
+    assert not can_create_match(
+        account, MatchSubmission(event=event, club=None, player_ids=frozenset())
+    )
+
+
+def test_an_unsaved_event_is_refused(scene: Scene) -> None:
+    account = _member(scene)
+    unsaved = Event(organizer=scene.organizer, kind=scene.event.kind)
+
+    assert not can_create_match(
+        account, MatchSubmission(event=unsaved, club=None, player_ids=frozenset())
+    )
+
+
+def test_a_granted_application_never_changes_a_match_it_did_not_submit(
+    scene: Scene,
+) -> None:
+    application = _application(scene, owned=False, granted=True)
+    for shape in (EVENT, EVENT_CLUB):
+        assert not can_change_match(application, scene.match(shape))
 
 
 # AC 4: no rule reads payment status or entitlements.

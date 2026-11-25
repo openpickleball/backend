@@ -1,7 +1,9 @@
 """Match type and confirmers for the engine (#44, ADR 0024).
 
 A match with an Event is its kind; with a Club and no Event it is
-``rec_verified``; with neither it is self-reported. A self-reported match
+``rec_verified`` (ADR 0024: such a match can no longer be recorded since
+ADR 0021, so these tests write one as a raw ledger row); with neither it
+is self-reported. A self-reported match
 a moderator confirmed (a dispute ruled confirmed, or a moderator's
 correction created confirmed) sends every participant as
 ``confirmed_by``, read from the audit log. Every other match sends only
@@ -19,7 +21,13 @@ from pytest_django import DjangoAssertNumQueries
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.clubs.models import Club
-from apps.clubs.tests.factories import ClubFactory, ClubRoleFactory
+from apps.clubs.tests.factories import (
+    ClubFactory,
+    OrganizerMemberFactory,
+    verified_organizer,
+)
+from apps.events.models import Event
+from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus
 from apps.matches.services import record_match
 from apps.matches.tests.factories import raw_update
@@ -67,10 +75,23 @@ def club() -> Club:
     return made
 
 
-def _club_manager(club: Club) -> User:
-    account: User = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=account)
-    return account
+def _organizer_member() -> tuple[User, Event]:
+    """A member of a verified Organizer, and an Event of that Organizer."""
+    organizer = verified_organizer()
+    member = OrganizerMemberFactory.create(organizer=organizer)
+    account: User = member.account
+    return account, EventFactory.create(organizer=organizer)
+
+
+def _club_ledger_match(players: list[Player], club: Club) -> Match:
+    """A confirmed match with a Club and no Event, as a raw ledger row.
+
+    ``record_match`` refuses such a match since ADR 0021, so the row is
+    written as one already in the Ledger would be (ADR 0024).
+    """
+    match = _submit(players)
+    raw_update(match, club=club, status=MatchStatus.CONFIRMED)
+    return _fresh(match)
 
 
 def _codes(players: list[Player]) -> frozenset[str]:
@@ -81,8 +102,6 @@ def _submit(
     players: list[Player],
     *,
     games: list[tuple[int, int]] = GAMES,
-    club: Club | None = None,
-    submitter: User | None = None,
 ) -> Match:
     return record_match(
         format=MatchFormat.DOUBLES,
@@ -90,8 +109,7 @@ def _submit(
         team_b=players[2:],
         games=games,
         played_on=PLAYED_ON,
-        submitted_by_user=submitter or players[0].account,
-        club=club,
+        submitted_by_user=players[0].account,
     ).match
 
 
@@ -127,7 +145,7 @@ def _listed(match: Match) -> open_engine.Match:
 def test_a_club_match_with_no_event_is_rec_verified(
     players: list[Player], club: Club
 ) -> None:
-    match = _submit(players, club=club, submitter=_club_manager(club))
+    match = _club_ledger_match(players, club)
 
     converted = to_engine_match(_fresh(match))
 
@@ -243,11 +261,12 @@ def test_a_pending_correction_confirmed_by_both_teams_sends_the_confirmers(
     assert _listed(corrected) == converted
 
 
-def test_a_club_duplicate_of_a_pending_self_submission_keeps_its_confirmers(
-    players: list[Player], club: Club
+def test_an_event_duplicate_of_a_pending_self_submission_keeps_its_confirmers(
+    players: list[Player],
 ) -> None:
     pending = _submit(players)
     confirm_match(pending, actor=players[0].account)
+    submitter, event = _organizer_member()
 
     recorded = record_match(
         format=MatchFormat.DOUBLES,
@@ -255,14 +274,15 @@ def test_a_club_duplicate_of_a_pending_self_submission_keeps_its_confirmers(
         team_b=players[2:],
         games=GAMES,
         played_on=PLAYED_ON,
-        submitted_by_user=_club_manager(club),
-        club=club,
+        submitted_by_user=submitter,
+        event=event,
     )
 
     assert not recorded.created
     assert recorded.match.pk == pending.pk
     match = _fresh(pending)
     assert match.status == MatchStatus.CONFIRMED
+    assert match.event_id is None
     assert match.club_id is None
     converted = to_engine_match(match)
     assert converted.match_type is open_engine.MatchType.SELF_REPORTED
@@ -276,7 +296,7 @@ def test_a_club_duplicate_of_a_pending_self_submission_keeps_its_confirmers(
 def test_a_club_dispute_ruled_confirmed_sends_only_the_confirmers(
     players: list[Player], club: Club, moderator: User
 ) -> None:
-    match = _submit(players, club=club, submitter=_club_manager(club))
+    match = _club_ledger_match(players, club)
     dispute_match(match, actor=players[2].account)
     resolve_dispute(
         match, actor=moderator, outcome=MatchStatus.CONFIRMED, reason="Checked it."

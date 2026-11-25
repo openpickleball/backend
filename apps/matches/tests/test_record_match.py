@@ -1,9 +1,10 @@
 """``record_match``: validation, then exact and near duplicate detection.
 
-Every submitter here is permitted (#79): the Account fixtures hold a Club
-Role at one Club, the application is approved with that Club's grant, and
-``_record`` submits at that Club. A Player's own Account submits with no
-Club, as a self-submission. Made-up players and accounts only.
+Every submitter here is permitted (#79): the Account fixtures are members
+of one verified Organizer, the application is approved with that
+Organizer's grant, and ``_record`` submits under that Organizer's Event
+(ADR 0021). A Player's own Account submits with no Event, as a
+self-submission. Made-up players and accounts only.
 """
 
 from collections.abc import Sequence
@@ -15,8 +16,10 @@ from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.models import Club, ClubRole
-from apps.clubs.tests.factories import ClubFactory, ClubRoleFactory
+from apps.clubs.models import OrganizerMember
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
+from apps.events.models import Event
+from apps.events.tests.factories import EventFactory
 from apps.matches.models import (
     BestOf,
     FlagReason,
@@ -40,9 +43,9 @@ from apps.matches.services import (
     record_match,
 )
 from apps.matches.tests.factories import raw_update
-from apps.partners.models import ClubApplicationGrant, PartnerApplication
+from apps.partners.models import OrganizerApplicationGrant, PartnerApplication
 from apps.partners.tests.factories import (
-    ClubApplicationGrantFactory,
+    OrganizerApplicationGrantFactory,
     approved_application,
 )
 from apps.players.models import Player
@@ -64,38 +67,39 @@ def _players(count: int) -> list[Player]:
 
 
 @pytest.fixture
-def club() -> Club:
-    made: Club = ClubFactory.create()
+def event() -> Event:
+    """An Event of a verified Organizer."""
+    made: Event = EventFactory.create(organizer=verified_organizer())
     return made
 
 
-def _club_account(club: Club) -> User:
-    """An Account with a Club Role at ``club``, so it may submit there."""
+def _event_account(event: Event) -> User:
+    """A member of ``event``'s Organizer, so it may submit there."""
     made: User = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=made)
+    OrganizerMemberFactory.create(organizer=event.organizer, account=made)
     return made
 
 
-def _granted_application(club: Club) -> PartnerApplication:
-    """An approved application with ``club``'s grant."""
+def _granted_application(event: Event) -> PartnerApplication:
+    """An approved application with the grant of ``event``'s Organizer."""
     made = approved_application()
-    ClubApplicationGrantFactory.create(club=club, application=made)
+    OrganizerApplicationGrantFactory.create(organizer=event.organizer, application=made)
     return made
 
 
 @pytest.fixture
-def user(club: Club) -> User:
-    return _club_account(club)
+def user(event: Event) -> User:
+    return _event_account(event)
 
 
 @pytest.fixture
-def other_user(club: Club) -> User:
-    return _club_account(club)
+def other_user(event: Event) -> User:
+    return _event_account(event)
 
 
 @pytest.fixture
-def application(club: Club) -> PartnerApplication:
-    return _granted_application(club)
+def application(event: Event) -> PartnerApplication:
+    return _granted_application(event)
 
 
 @pytest.fixture
@@ -108,14 +112,14 @@ def team_b() -> list[Player]:
     return _players(2)
 
 
-def _permitted_club(submitter: User | PartnerApplication) -> Club | None:
-    """The Club where ``submitter`` may submit, or None for a Player's own
+def _permitted_event(submitter: User | PartnerApplication) -> Event | None:
+    """An Event where ``submitter`` may submit, or None for a Player's own
     Account, which self-submits."""
     if isinstance(submitter, User):
-        role = ClubRole.objects.filter(account=submitter).first()
-        return role.club if role else None
-    grant = ClubApplicationGrant.objects.filter(application=submitter).first()
-    return grant.club if grant else None
+        member = OrganizerMember.objects.filter(account=submitter).first()
+        return member.organizer.events.first() if member else None
+    grant = OrganizerApplicationGrant.objects.filter(application=submitter).first()
+    return grant.organizer.events.first() if grant else None
 
 
 def _record(
@@ -131,7 +135,7 @@ def _record(
         "team_b": team_b,
         "games": GAMES,
         "played_on": PLAYED_ON,
-        "club": _permitted_club(submitter),
+        "event": _permitted_event(submitter),
     }
     if isinstance(submitter, User):
         values["submitted_by_user"] = submitter
@@ -603,13 +607,13 @@ def test_external_id_wins_over_an_exact_duplicate(
 
 
 def test_another_application_may_reuse_an_external_id(
-    club: Club,
+    event: Event,
     application: PartnerApplication,
     team_a: list[Player],
     team_b: list[Player],
 ) -> None:
     _record(team_a, team_b, submitter=application, external_id="ext-1")
-    other = _granted_application(club)
+    other = _granted_application(event)
 
     second = _record(_players(2), _players(2), submitter=other, external_id="ext-1")
 

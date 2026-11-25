@@ -1226,11 +1226,12 @@ def record_match(
     nothing is written. A pending match that an exact duplicate confirms
     instead keeps its own batch link, if any.
 
-    A match with an Event or a Club comes from a permitted non-self
-    submitter (decision F4) and is created confirmed, with a
-    ``match.confirm`` Audit Event naming the submitter and one
-    ``match_confirmed`` signal. A self-submission (no Event, no Club,
-    decision F1) is created pending. Such a submitter's exact duplicate of
+    A match with an Event comes from a permitted non-self submitter, one
+    with event authority (decision F4, ADR 0021), and is created
+    confirmed, with a ``match.confirm`` Audit Event naming the submitter
+    and one ``match_confirmed`` signal. A match with a Club and no Event
+    is refused with ``MatchPermissionDenied`` (ADR 0021). A self-submission
+    (no Event, no Club, decision F1) is created pending. Such a submitter's exact duplicate of
     a pending Match confirms that Match the same way instead of raising,
     and returns it with ``created=False``. A retry of that submission by the
     same submitter returns the same result, with no new Audit Event or
@@ -1293,7 +1294,9 @@ def record_match(
         sequence=sequence,
         submission_batch=submission_batch,
     )
-    confirms = event is not None or club is not None
+    # A permitted submission with an Event comes from a submitter with event
+    # authority. One with a Club and no Event was refused above (ADR 0021).
+    confirms = event is not None
     submitter: Actor | None = submitted_by_user or submitted_by_application
 
     with transaction.atomic():

@@ -17,7 +17,8 @@ from django.urls import reverse
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.clubs.models import MemberRole
-from apps.clubs.tests.factories import ClubFactory, ClubRoleFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
+from apps.events.tests.factories import EventFactory
 from apps.matches import admin as matches_admin
 from apps.matches.models import Match, MatchFormat, MatchStatus
 from apps.matches.permissions import MODERATOR_GROUP
@@ -37,9 +38,13 @@ def players() -> list[Player]:
     return [PlayerFactory.create() for _ in range(4)]
 
 
-def _club_match(players: list[Player], admin: User) -> Match:
-    club = ClubFactory.create()
-    ClubRoleFactory.create(club=club, account=admin, role=MemberRole.ADMIN)
+def _event_match(players: list[Player], admin: User) -> Match:
+    """A confirmed match of an Event whose verified Organizer ``admin`` runs."""
+    organizer = verified_organizer()
+    OrganizerMemberFactory.create(
+        organizer=organizer, account=admin, role=MemberRole.ADMIN
+    )
+    event = EventFactory.create(organizer=organizer)
     return record_match(
         format=MatchFormat.DOUBLES,
         team_a=players[:2],
@@ -47,7 +52,7 @@ def _club_match(players: list[Player], admin: User) -> Match:
         games=((11, 7), (11, 9)),
         played_on=PLAYED_ON,
         submitted_by_user=admin,
-        club=club,
+        event=event,
     ).match
 
 
@@ -55,14 +60,14 @@ def test_reason_refused_is_a_value_error() -> None:
     assert issubclass(ReasonRefused, ValueError)
 
 
-def test_a_club_admin_giving_a_reason_gets_reason_refused(
+def test_an_organizer_admin_giving_a_reason_gets_reason_refused(
     players: list[Player],
 ) -> None:
-    club_admin: User = UserFactory.create()
-    match = _club_match(players, club_admin)
+    organizer_admin: User = UserFactory.create()
+    match = _event_match(players, organizer_admin)
 
     with pytest.raises(ReasonRefused, match=r"Only a moderator may give a reason\."):
-        void_match(match, actor=club_admin, reason=REASON)
+        void_match(match, actor=organizer_admin, reason=REASON)
 
     assert Match.objects.get(pk=match.pk).status == MatchStatus.CONFIRMED
 
@@ -84,7 +89,7 @@ def test_another_value_error_in_an_action_is_not_hidden(
     players: list[Player],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    match = _club_match(players, UserFactory.create())
+    match = _event_match(players, UserFactory.create())
     monkeypatch.setattr(matches_admin, "void_match", _raise_other)
 
     with pytest.raises(ValueError, match="other"):
@@ -103,7 +108,7 @@ def test_another_value_error_on_the_edit_page_is_not_hidden(
     players: list[Player],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    match = _club_match(players, UserFactory.create())
+    match = _event_match(players, UserFactory.create())
     monkeypatch.setattr(matches_admin, "edit_match", _raise_other)
 
     with pytest.raises(ValueError, match="other"):

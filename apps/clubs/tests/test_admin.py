@@ -11,9 +11,16 @@ from django.utils import timezone
 
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditAction, AuditEvent
-from apps.clubs.models import Club, MemberRole, Organizer, OrganizerMember
+from apps.clubs.models import (
+    Club,
+    ClubOrganizerGrant,
+    MemberRole,
+    Organizer,
+    OrganizerMember,
+)
 from apps.clubs.tests.factories import (
     ClubFactory,
+    ClubOrganizerGrantFactory,
     ClubRoleFactory,
     OrganizerFactory,
     OrganizerMemberFactory,
@@ -101,6 +108,47 @@ def test_change_forms_load_with_inlines(superuser_client: Client) -> None:
     assert "members-TOTAL_FORMS" in organizer_page.content.decode()
     assert club_page.status_code == 200
     assert "roles-TOTAL_FORMS" in club_page.content.decode()
+
+
+def test_club_role_inline_offers_only_admin(superuser_client: Client) -> None:
+    role = ClubRoleFactory.create()
+
+    page = superuser_client.get(
+        reverse("admin:clubs_club_change", args=[role.club.pk])
+    ).content.decode()
+
+    assert 'value="admin"' in page
+    assert "match_manager" not in page
+
+
+def test_club_organizer_grant_admin_pages_load(superuser_client: Client) -> None:
+    grant = ClubOrganizerGrantFactory.create()
+
+    changelist = superuser_client.get(
+        reverse("admin:clubs_cluborganizergrant_changelist")
+    )
+    add = superuser_client.get(reverse("admin:clubs_cluborganizergrant_add"))
+    change = superuser_client.get(
+        reverse("admin:clubs_cluborganizergrant_change", args=[grant.pk])
+    )
+
+    assert changelist.status_code == 200
+    assert str(grant) in changelist.content.decode()
+    assert add.status_code == 200
+    assert change.status_code == 200
+
+
+def test_club_organizer_grant_admin_adds_a_grant(superuser_client: Client) -> None:
+    club = ClubFactory.create()
+    organizer = OrganizerFactory.create()
+
+    response = superuser_client.post(
+        reverse("admin:clubs_cluborganizergrant_add"),
+        {"club": str(club.pk), "organizer": str(organizer.pk)},
+    )
+
+    assert response.status_code == 302
+    assert ClubOrganizerGrant.objects.filter(club=club, organizer=organizer).exists()
 
 
 def test_change_form_cannot_set_verification(

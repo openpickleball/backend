@@ -16,7 +16,8 @@ from django.db import connection
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.tests.factories import ClubFactory, ClubRoleFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
+from apps.events.tests.factories import EventFactory
 from apps.matches import services
 from apps.matches.models import Match, MatchFormat, MatchStatus, Team
 from apps.matches.services import MatchDraft, _lineup_lock_key, record_match
@@ -60,9 +61,9 @@ def test_a_duplicate_voided_before_its_lock_is_not_cited(
         return found
 
     monkeypatch.setattr(services, "exact_duplicate", racing)
-    club = ClubFactory.create()
+    event = EventFactory.create(organizer=verified_organizer())
     account: User = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=account)
+    OrganizerMemberFactory.create(organizer=event.organizer, account=account)
     stored = Match.objects.get(pk=pending.pk)
 
     recorded = record_match(
@@ -72,7 +73,7 @@ def test_a_duplicate_voided_before_its_lock_is_not_cited(
         games=[(g.team_a_score, g.team_b_score) for g in stored.games.all()],
         played_on=stored.played_on,
         submitted_by_user=account,
-        club=club,
+        event=event,
     )
 
     assert raced == [pending.pk]

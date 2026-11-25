@@ -14,13 +14,16 @@ import pytest
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditAction, AuditEvent
-from apps.clubs.models import MemberRole
+from apps.clubs.models import ClubRoleKind, MemberRole
 from apps.clubs.tests.factories import (
     ClubFactory,
+    ClubOrganizerGrantFactory,
     ClubRoleFactory,
     OrganizerMemberFactory,
+    verified_organizer,
 )
 from apps.events.models import Event
+from apps.events.tests.factories import EventFactory
 from apps.matches.models import (
     ConfirmationDecision,
     FlagReason,
@@ -49,7 +52,7 @@ from apps.matches.workflow import (
     void_match,
 )
 from apps.partners.tests.factories import (
-    ClubApplicationGrantFactory,
+    OrganizerApplicationGrantFactory,
     approved_application,
 )
 from apps.players.models import Player
@@ -199,7 +202,7 @@ def test_a_club_admin_cannot_confirm(signals: SignalLog) -> None:
     club = ClubFactory.create()
     match: Match = MatchFactory.create(club=club)
     admin = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=admin, role=MemberRole.ADMIN)
+    ClubRoleFactory.create(club=club, account=admin, role=ClubRoleKind.ADMIN)
 
     with pytest.raises(MatchActionDenied):
         confirm_match(match, actor=admin)
@@ -371,16 +374,20 @@ def test_an_event_member_voids_an_event_match(event: Event) -> None:
     assert _status(match) == MatchStatus.VOIDED
 
 
-def test_a_club_match_manager_cannot_void() -> None:
+@pytest.mark.parametrize("with_event", [False, True])
+def test_a_club_admin_cannot_void(event: Event, with_event: bool) -> None:
+    # ADR 0021: a Club admin may not void a match, even at its own Club.
     club = ClubFactory.create()
-    match: Match = MatchFactory.create(club=club)
-    manager = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=manager)
+    ClubOrganizerGrantFactory.create(club=club, organizer=event.organizer)
+    match: Match = MatchFactory.create(club=club, event=event if with_event else None)
+    raw_update(match, status=MatchStatus.CONFIRMED)
+    admin = UserFactory.create()
+    ClubRoleFactory.create(club=club, account=admin, role=ClubRoleKind.ADMIN)
 
     with pytest.raises(MatchActionDenied):
-        void_match(match, actor=manager)
+        void_match(match, actor=admin)
 
-    assert _status(match) == MatchStatus.PENDING
+    assert _status(match) == MatchStatus.CONFIRMED
 
 
 def test_a_voided_match_cannot_be_voided_again(pending: Match, moderator: User) -> None:
@@ -514,12 +521,15 @@ def test_an_edit_that_duplicates_another_match_rolls_back(
     assert signals.changed == []
 
 
-def test_an_edit_keeps_the_application_and_external_id(signals: SignalLog) -> None:
+def test_an_edit_keeps_the_application_and_external_id(
+    event: Event, signals: SignalLog
+) -> None:
     application = approved_application()
-    club = ClubFactory.create()
-    ClubApplicationGrantFactory.create(club=club, application=application)
+    OrganizerApplicationGrantFactory.create(
+        organizer=event.organizer, application=application
+    )
     match: Match = MatchFactory.create(
-        by_application=True, submitted_by_application=application, club=club
+        by_application=True, submitted_by_application=application, event=event
     )
     raw_update(match, status=MatchStatus.CONFIRMED)
 
@@ -599,16 +609,14 @@ def test_an_unsaved_match_is_refused(players: list[Player]) -> None:
 
 def _held_pair(players: list[Player]) -> tuple[Match, Match]:
     """Two confirmed near duplicates, each holding the other."""
-    club = ClubFactory.create()
-    account = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=account)
+    event = EventFactory.create(organizer=verified_organizer())
     values: dict[str, Any] = {
         "format": MatchFormat.DOUBLES,
         "team_a": players[:2],
         "team_b": players[2:],
         "played_on": PLAYED_ON,
-        "submitted_by_user": account,
-        "club": club,
+        "submitted_by_user": _member(event),
+        "event": event,
     }
     first = record_match(games=GAMES, **values).match
     second = record_match(games=OTHER_GAMES, **values).match

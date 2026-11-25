@@ -5,7 +5,8 @@ A score above the field's limit, an external id the model refuses, or a
 missing submitter is a ``MatchValidationError``, never a database error and
 never ``DuplicateMatchError``. The external id check uses the cleaned value.
 Each submitter is permitted (#79): a Player's own Account, or an approved
-application with a Club's grant, submitting at that Club. Made-up data only.
+application with a verified Organizer's grant, submitting under that
+Organizer's Event (ADR 0021). Made-up data only.
 """
 
 from datetime import date, datetime, timedelta, timezone
@@ -13,8 +14,9 @@ from typing import Any
 
 import pytest
 
-from apps.clubs.models import Club
-from apps.clubs.tests.factories import ClubFactory
+from apps.clubs.tests.factories import verified_organizer
+from apps.events.models import Event
+from apps.events.tests.factories import EventFactory
 from apps.matches.models import Game, Match, MatchFlag, MatchFormat, MatchParticipant
 from apps.matches.services import (
     DuplicateKind,
@@ -24,7 +26,7 @@ from apps.matches.services import (
 )
 from apps.partners.models import PartnerApplication
 from apps.partners.tests.factories import (
-    ClubApplicationGrantFactory,
+    OrganizerApplicationGrantFactory,
     approved_application,
 )
 from apps.players.models import Player
@@ -42,15 +44,16 @@ def teams() -> tuple[list[Player], list[Player]]:
 
 
 @pytest.fixture
-def club() -> Club:
-    made: Club = ClubFactory.create()
+def event() -> Event:
+    """An Event of a verified Organizer (ADR 0021)."""
+    made: Event = EventFactory.create(organizer=verified_organizer())
     return made
 
 
-def _granted_application(club: Club) -> PartnerApplication:
-    """An approved application with ``club``'s grant (#79)."""
+def _granted_application(event: Event) -> PartnerApplication:
+    """An approved application with the grant of ``event``'s Organizer."""
     made = approved_application()
-    ClubApplicationGrantFactory.create(club=club, application=made)
+    OrganizerApplicationGrantFactory.create(organizer=event.organizer, application=made)
     return made
 
 
@@ -101,10 +104,12 @@ def test_score_above_the_field_limit_is_a_validation_error(
 
 
 def test_padded_external_id_repeats_the_stored_one(
-    teams: tuple[list[Player], list[Player]], club: Club
+    teams: tuple[list[Player], list[Player]], event: Event
 ) -> None:
-    application = _granted_application(club)
-    _record(teams, submitted_by_application=application, external_id="ext-1", club=club)
+    application = _granted_application(event)
+    _record(
+        teams, submitted_by_application=application, external_id="ext-1", event=event
+    )
     before = _counts()
 
     with pytest.raises(DuplicateMatchError) as error:
@@ -112,7 +117,7 @@ def test_padded_external_id_repeats_the_stored_one(
             teams,
             submitted_by_application=application,
             external_id=" ext-1",
-            club=club,
+            event=event,
         )
 
     assert error.value.kind == DuplicateKind.DUPLICATE_EXTERNAL_ID
@@ -120,9 +125,9 @@ def test_padded_external_id_repeats_the_stored_one(
 
 
 def test_external_id_with_a_nul_is_a_validation_error(
-    teams: tuple[list[Player], list[Player]], club: Club
+    teams: tuple[list[Player], list[Player]], event: Event
 ) -> None:
-    application = _granted_application(club)
+    application = _granted_application(event)
     before = _counts()
 
     with pytest.raises(MatchValidationError) as error:
@@ -130,7 +135,7 @@ def test_external_id_with_a_nul_is_a_validation_error(
             teams,
             submitted_by_application=application,
             external_id="a\x00b",
-            club=club,
+            event=event,
         )
 
     assert _fields(error.value) == {"external_id"}
@@ -138,19 +143,21 @@ def test_external_id_with_a_nul_is_a_validation_error(
 
 
 def test_external_id_that_is_not_text_is_a_validation_error(
-    teams: tuple[list[Player], list[Player]], club: Club
+    teams: tuple[list[Player], list[Player]], event: Event
 ) -> None:
-    application = _granted_application(club)
+    application = _granted_application(event)
     _record(
         ([PlayerFactory.create()], [PlayerFactory.create()]),
         submitted_by_application=application,
         external_id="123",
-        club=club,
+        event=event,
     )
     before = _counts()
 
     with pytest.raises(MatchValidationError) as error:
-        _record(teams, submitted_by_application=application, external_id=123, club=club)
+        _record(
+            teams, submitted_by_application=application, external_id=123, event=event
+        )
 
     assert _fields(error.value) == {"external_id"}
     assert _counts() == before

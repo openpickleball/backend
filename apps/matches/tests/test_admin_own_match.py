@@ -18,7 +18,9 @@ from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditEvent
 from apps.clubs.models import MemberRole
-from apps.clubs.tests.factories import ClubFactory, ClubRoleFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
+from apps.events.models import Event
+from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus
 from apps.matches.permissions import MODERATOR_GROUP, MatchActionDenied
 from apps.matches.services import record_match
@@ -122,14 +124,22 @@ def test_void_a_match_they_played_in_is_refused(
     assert AuditEvent.objects.count() == events
 
 
-def test_void_with_club_authority_still_shows_only_the_fixed_text(
+def _member_event(account: User) -> Event:
+    """An Event of a verified Organizer that ``account`` is an admin of."""
+    organizer = verified_organizer()
+    OrganizerMemberFactory.create(
+        organizer=organizer, account=account, role=MemberRole.ADMIN
+    )
+    event: Event = EventFactory.create(organizer=organizer)
+    return event
+
+
+def test_void_with_event_authority_still_shows_only_the_fixed_text(
     client: Client, playing_moderator: User, players: list[Player]
 ) -> None:
     """The fallback path may allow the change but refuses the reason:
     the message is still the fixed denied text, never a 500."""
-    club = ClubFactory.create()
-    ClubRoleFactory.create(club=club, account=playing_moderator, role=MemberRole.ADMIN)
-    match = _confirmed(players, club=club)
+    match = _confirmed(players, event=_member_event(playing_moderator))
     events = AuditEvent.objects.count()
     client.force_login(playing_moderator)
 
@@ -140,17 +150,13 @@ def test_void_with_club_authority_still_shows_only_the_fixed_text(
     assert AuditEvent.objects.count() == events
 
 
-@pytest.mark.parametrize("with_club", [False, True])
+@pytest.mark.parametrize("with_event", [False, True])
 def test_edit_page_post_shows_the_fixed_text(
-    client: Client, playing_moderator: User, players: list[Player], with_club: bool
+    client: Client, playing_moderator: User, players: list[Player], with_event: bool
 ) -> None:
     extra: dict[str, object] = {}
-    if with_club:
-        club = ClubFactory.create()
-        ClubRoleFactory.create(
-            club=club, account=playing_moderator, role=MemberRole.ADMIN
-        )
-        extra["club"] = club
+    if with_event:
+        extra["event"] = _member_event(playing_moderator)
     match = _confirmed(players, **extra)
     events = AuditEvent.objects.count()
     client.force_login(playing_moderator)

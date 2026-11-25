@@ -5,7 +5,7 @@ from django.contrib.auth.models import AnonymousUser, Permission
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.models import MemberRole
+from apps.clubs.models import ClubRoleKind, MemberRole
 from apps.clubs.tests.factories import (
     ClubFactory,
     ClubRoleFactory,
@@ -22,7 +22,9 @@ from apps.matches.permissions import (
     participant_player,
 )
 from apps.matches.tests.factories import MatchFactory
+from apps.partners.models import OrganizerApplicationGrant
 from apps.partners.tests.factories import (
+    OrganizerApplicationGrantFactory,
     PartnerApplicationFactory,
     approved_application,
 )
@@ -131,9 +133,44 @@ def test_a_club_admin_without_event_authority_may_not() -> None:
     club = ClubFactory.create()
     match: Match = MatchFactory.create(club=club)
     account = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=account, role=MemberRole.ADMIN)
+    ClubRoleFactory.create(club=club, account=account, role=ClubRoleKind.ADMIN)
 
     assert not can_confirm_as_organizer(account, match)
+
+
+def test_a_granted_approved_application_may_confirm() -> None:
+    # ADR 0021: an Organizer Application Grant acts like ownership.
+    match = _event_match()
+    assert match.event is not None
+    application = approved_application()
+    OrganizerApplicationGrantFactory.create(
+        organizer=match.event.organizer, application=application
+    )
+
+    assert can_confirm_as_organizer(application, match)
+    OrganizerApplicationGrant.objects.filter(application=application).delete()
+    assert not can_confirm_as_organizer(application, match)
+
+
+def test_an_unverified_organizer_s_granted_application_may_not() -> None:
+    match = _event_match(verified=False)
+    assert match.event is not None
+    application = approved_application()
+    OrganizerApplicationGrantFactory.create(
+        organizer=match.event.organizer, application=application
+    )
+
+    assert not can_confirm_as_organizer(application, match)
+
+
+def test_an_application_granted_by_another_organizer_may_not() -> None:
+    match = _event_match()
+    application = approved_application()
+    OrganizerApplicationGrantFactory.create(
+        organizer=verified_organizer(), application=application
+    )
+
+    assert not can_confirm_as_organizer(application, match)
 
 
 def test_no_one_confirms_as_organizer_without_an_event(match: Match) -> None:

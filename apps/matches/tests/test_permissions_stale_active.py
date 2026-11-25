@@ -7,9 +7,10 @@ from dataclasses import dataclass
 import pytest
 
 from apps.accounts.models import User
-from apps.clubs.models import Club, MemberRole
+from apps.clubs.models import Club, ClubRoleKind, MemberRole
 from apps.clubs.tests.factories import (
     ClubFactory,
+    ClubOrganizerGrantFactory,
     ClubRoleFactory,
     OrganizerMemberFactory,
     verified_organizer,
@@ -53,7 +54,9 @@ def stale() -> Stale:
     OrganizerMemberFactory.create(
         organizer=organizer, account=account, role=MemberRole.ADMIN
     )
-    ClubRoleFactory.create(club=club, account=account, role=MemberRole.ADMIN)
+    ClubRoleFactory.create(club=club, account=account, role=ClubRoleKind.ADMIN)
+    # The Club consents, so only is_active refuses the event_club shape.
+    ClubOrganizerGrantFactory.create(club=club, organizer=organizer)
     User.objects.filter(pk=account.pk).update(is_active=False)
     assert account.is_active
     return Stale(

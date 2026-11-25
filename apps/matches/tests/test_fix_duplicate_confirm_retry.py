@@ -16,14 +16,15 @@ import pytest
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditAction, AuditEvent
-from apps.clubs.models import Club
-from apps.clubs.tests.factories import ClubFactory, ClubRoleFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
+from apps.events.models import Event
+from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus
 from apps.matches.services import DuplicateMatchError, RecordedMatch, record_match
 from apps.matches.tests.conftest import SignalLog
 from apps.partners.models import PartnerApplication
 from apps.partners.tests.factories import (
-    ClubApplicationGrantFactory,
+    OrganizerApplicationGrantFactory,
     approved_application,
 )
 from apps.players.models import Player
@@ -41,8 +42,9 @@ def two_players() -> list[Player]:
 
 
 @pytest.fixture
-def club() -> Club:
-    made: Club = ClubFactory.create()
+def event() -> Event:
+    """An Event of a verified Organizer (ADR 0021: the trusted submitter)."""
+    made: Event = EventFactory.create(organizer=verified_organizer())
     return made
 
 
@@ -57,15 +59,17 @@ def _record(players: Sequence[Player], **values: Any) -> RecordedMatch:
     )
 
 
-def _club_account(club: Club) -> User:
+def _event_account(event: Event) -> User:
     account: User = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=account)
+    OrganizerMemberFactory.create(organizer=event.organizer, account=account)
     return account
 
 
-def _granted(club: Club) -> PartnerApplication:
+def _granted(event: Event) -> PartnerApplication:
     application = approved_application()
-    ClubApplicationGrantFactory.create(club=club, application=application)
+    OrganizerApplicationGrantFactory.create(
+        organizer=event.organizer, application=application
+    )
     return application
 
 
@@ -76,13 +80,13 @@ def _confirms(match: Match) -> int:
 
 
 def test_an_application_retry_returns_the_confirmed_match(
-    two_players: list[Player], club: Club, signals: SignalLog
+    two_players: list[Player], event: Event, signals: SignalLog
 ) -> None:
     pending = _record(two_players, submitted_by_user=two_players[0].account).match
-    application = _granted(club)
+    application = _granted(event)
     values: dict[str, Any] = {
         "submitted_by_application": application,
-        "club": club,
+        "event": event,
         "external_id": "made-up-1",
     }
     first = _record(two_players, **values)
@@ -98,13 +102,13 @@ def test_an_application_retry_returns_the_confirmed_match(
 
 
 def test_an_account_retry_returns_the_confirmed_match(
-    two_players: list[Player], club: Club, signals: SignalLog
+    two_players: list[Player], event: Event, signals: SignalLog
 ) -> None:
     pending = _record(two_players, submitted_by_user=two_players[0].account).match
-    account = _club_account(club)
-    _record(two_players, submitted_by_user=account, club=club)
+    account = _event_account(event)
+    _record(two_players, submitted_by_user=account, event=event)
 
-    retry = _record(two_players, submitted_by_user=account, club=club)
+    retry = _record(two_players, submitted_by_user=account, event=event)
 
     assert not retry.created
     assert retry.match.pk == pending.pk
@@ -113,10 +117,10 @@ def test_an_account_retry_returns_the_confirmed_match(
 
 
 def test_another_submitter_is_still_refused(
-    two_players: list[Player], club: Club
+    two_players: list[Player], event: Event
 ) -> None:
     _record(two_players, submitted_by_user=two_players[0].account)
-    _record(two_players, submitted_by_user=_club_account(club), club=club)
+    _record(two_players, submitted_by_user=_event_account(event), event=event)
 
     with pytest.raises(DuplicateMatchError):
-        _record(two_players, submitted_by_user=_club_account(club), club=club)
+        _record(two_players, submitted_by_user=_event_account(event), event=event)

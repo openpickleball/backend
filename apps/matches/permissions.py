@@ -8,33 +8,38 @@ when it is saved and active. An application counts only when it
 is approved. Sandbox status (#74) and scopes (#28) are not checked here.
 Anything else (an anonymous user, another type) is refused.
 
-Event authority, for a match with an Event:
+A verified Organizer is the only trusted submitter (ADR 0021, amending
+ADR 0012). Event authority over an Event:
 
-- an Account that is a member (any role) of the Event's Organizer, while
-  that Organizer is verified;
-- an application that the Event's Organizer owns, while that Organizer is
+- an Account that is a member (either role) of the Event's Organizer,
+  while that Organizer is verified;
+- an application that the Event's Organizer owns, or that the Organizer
+  granted an Organizer Application Grant, while that Organizer is
   verified.
 
-Club authority, for a match with a Club:
+A Club Role gives no authority to submit or change a match.
 
-- an Account with any Club Role at the Club (admin or match manager);
-- an application the Club granted (a Club Application Grant).
+Club consent: a match that names a Club, or whose Event names one, needs a
+Club Organizer Grant from each such Club to the Event's Organizer. The
+grant is consent, not trust: the Organizer must still be verified. Both
+Clubs are read from the database (the Event's by the Event's id).
 
 Self-submission, for a match with no Event and no Club (decision F1): an
 Account whose Player plays in the match. An application may never
 self-submit.
 
-``can_create_match`` needs event authority for a match with an Event and
-club authority for a match with a Club, so a match with both needs both.
-A match with neither needs self-submission.
+``can_create_match`` needs event authority and club consent for a match
+with an Event. A match with a Club and no Event is refused for every
+actor, since no Organizer stands behind it and it has no Match Type. A
+match with neither needs self-submission.
 
 ``can_change_match`` covers actors other than moderators. An application
 may change only a match it submitted, while it is approved. An Account
-may change a match whose Event's verified Organizer it is a member of, or
-a match at a Club where it holds the admin Club Role. A match manager, a
-self-submitter, and a participant may not. Moderators act through the
-change services in ``apps.matches.workflow`` (from #40's admin), not
-through this function.
+may change a match whose Event's verified Organizer it is a member of. A
+Club admin, a self-submitter, and a participant may not. An edit also
+needs ``can_create_match`` for the corrected match (``edit_match``).
+Moderators act through the change services in ``apps.matches.workflow``
+(from #40's admin), not through this function.
 
 The confirmation workflow (#26, ``apps.matches.workflow``) adds:
 
@@ -43,11 +48,12 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   dispute it. The first-party API also uses it to decide who may read one
   match (``get_match``).
 - ``can_confirm_as_organizer``: event authority over the stored match's
-  Event (as above). Such an actor's confirmation confirms a pending match
-  alone. Club authority alone does not, through ``confirm_match``. But
-  ``record_match``'s duplicate path does confirm one: any permitted
-  submitter of a match with an Event or a Club, a Club's included, whose
-  exact duplicate matches a pending match confirms it (user decision).
+  Event (as above, a granted application included). Such an actor's
+  confirmation confirms a pending match alone. ``record_match``'s
+  duplicate path confirms one too: a permitted submitter of a match with
+  an Event, so one with event authority and the Clubs' consent, whose
+  exact duplicate matches a pending match confirms it (ADR 0013, ADR
+  0021).
 - ``is_moderator``: an active Account with the ``matches.moderate_match``
   permission. A moderator may void and edit any match, resolve disputes,
   resolve flags, and approve matches, except a match they played in.
@@ -68,9 +74,10 @@ such input (hard rule 7).
 
 Each rule reads roles, grants, verification, approval, and an Account's
 ``is_active`` from the database by id, never from an in-memory instance,
-so a stale instance cannot pass. An unsaved actor is refused. The reads take no row locks: a role removed while a submission is in flight
-can let that one submission through. Locking role rows would serialize
-unrelated submissions, so this is accepted.
+so a stale instance cannot pass. An unsaved actor, Event, or Club is
+refused. The reads take no row locks: a role or grant removed while a
+submission is in flight can let that one submission through. Locking role
+and grant rows would serialize unrelated submissions, so this is accepted.
 """
 
 from collections.abc import Collection
@@ -81,9 +88,10 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from oauth2_provider.models import get_application_model
 
-from apps.clubs.models import Club, ClubRole, MemberRole, Organizer, OrganizerMember
+from apps.clubs.models import Club, ClubOrganizerGrant, Organizer, OrganizerMember
 from apps.events.models import Event
 from apps.matches.models import Match, MatchParticipant
+from apps.partners.models import OrganizerApplicationGrant
 from apps.players.models import Player
 
 if TYPE_CHECKING:
@@ -162,13 +170,18 @@ def _verified_organizer_id(event_id: int | None) -> int | None:
     return organizer_id
 
 
+def _account_acts_for(account: "_User", organizer_id: int) -> bool:
+    """True when ``account`` is a member (either role) of ``organizer_id``."""
+    return OrganizerMember.objects.filter(
+        organizer_id=organizer_id, account=account
+    ).exists()
+
+
 def _account_event_authority(account: "_User", event_id: int | None) -> bool:
     organizer_id = _verified_organizer_id(event_id)
     if organizer_id is None:
         return False
-    return OrganizerMember.objects.filter(
-        organizer_id=organizer_id, account=account
-    ).exists()
+    return _account_acts_for(account, organizer_id)
 
 
 def _application_event_authority(
@@ -177,29 +190,37 @@ def _application_event_authority(
     organizer_id = _verified_organizer_id(event_id)
     if organizer_id is None:
         return False
-    return (
+    return _application_acts_for(application, organizer_id)
+
+
+def _application_acts_for(application: "PartnerApplication", organizer_id: int) -> bool:
+    """True when ``organizer_id`` owns ``application`` or granted it an
+    Organizer Application Grant (ADR 0021). Read from the database."""
+    if (
         type(application)
         .objects.filter(pk=application.pk, organizer_id=organizer_id)
         .exists()
-    )
-
-
-def _account_club_authority(
-    account: "_User", club_id: int | None, roles: tuple[str, ...]
-) -> bool:
-    if club_id is None:
-        return False
-    return ClubRole.objects.filter(
-        club_id=club_id, account=account, role__in=roles
+    ):
+        return True
+    return OrganizerApplicationGrant.objects.filter(
+        organizer_id=organizer_id, application_id=application.pk
     ).exists()
 
 
-def _application_club_authority(
-    application: "PartnerApplication", club_id: int | None
-) -> bool:
-    if club_id is None:
-        return False
-    return application.club_grants.filter(club_id=club_id).exists()
+def _clubs_consent(organizer_id: int, club_ids: Collection[int | None]) -> bool:
+    """True when every Club in ``club_ids`` granted ``organizer_id`` a Club
+    Organizer Grant (ADR 0021). Consent is independent of the actor and of
+    verification; ``None`` entries name no Club.
+    """
+    named: set[int] = {club_id for club_id in club_ids if club_id is not None}
+    if not named:
+        return True
+    granted = set(
+        ClubOrganizerGrant.objects.filter(
+            organizer_id=organizer_id, club_id__in=named
+        ).values_list("club_id", flat=True)
+    )
+    return granted == named
 
 
 def can_create_match(actor: Actor, submission: MatchSubmission) -> bool:
@@ -209,26 +230,45 @@ def can_create_match(actor: Actor, submission: MatchSubmission) -> bool:
     """
     event, club = submission.event, submission.club
     account = _account(actor)
-    if account is not None:
-        if event is None and club is None:
-            return Player.objects.filter(
+    application = None if account is not None else _application(actor)
+    if account is None and application is None:
+        return False
+    if event is None:
+        if club is not None:
+            # A Club and no Event: no Organizer stands behind it (ADR 0021).
+            return False
+        # A self-submission (decision F1). An application never self-submits.
+        return (
+            account is not None
+            and Player.objects.filter(
                 account=account, pk__in=submission.player_ids
             ).exists()
-        if event is not None and not _account_event_authority(account, event.pk):
-            return False
-        return club is None or _account_club_authority(
-            account, club.pk, tuple(MemberRole.values)
         )
-    application = _application(actor)
-    if application is not None:
-        if event is None and club is None:
-            return False
-        if event is not None and not _application_event_authority(
-            application, event.pk
-        ):
-            return False
-        return club is None or _application_club_authority(application, club.pk)
-    return False
+    if event.pk is None or (club is not None and club.pk is None):
+        return False
+    # One read of the Event decides both checks, so an Event moved to
+    # another Organizer mid-check cannot pass authority on one Organizer
+    # and consent on another.
+    stored = (
+        Event.objects.filter(
+            pk=event.pk,
+            organizer__in=Organizer.objects.filter(verified_at__isnull=False),
+        )
+        .values("organizer_id", "club_id")
+        .first()
+    )
+    if stored is None:
+        return False
+    organizer_id: int = stored["organizer_id"]
+    authorized = (
+        _account_acts_for(account, organizer_id)
+        if account is not None
+        else application is not None
+        and _application_acts_for(application, organizer_id)
+    )
+    return authorized and _clubs_consent(
+        organizer_id, (stored["club_id"], club.pk if club is not None else None)
+    )
 
 
 def check_can_create_match(actor: Actor, submission: MatchSubmission) -> None:
@@ -253,13 +293,10 @@ def can_change_match(actor: Actor, match: Match) -> bool:
     account = _account(actor)
     if account is None or match.pk is None:
         return False
-    stored = Match.objects.filter(pk=match.pk).values("event_id", "club_id").first()
-    if stored is None:
-        return False
-    event_id, club_id = stored["event_id"], stored["club_id"]
-    if _account_event_authority(account, event_id):
-        return True
-    return _account_club_authority(account, club_id, (MemberRole.ADMIN,))
+    event_id: int | None = (
+        Match.objects.filter(pk=match.pk).values_list("event_id", flat=True).first()
+    )
+    return _account_event_authority(account, event_id)
 
 
 MODERATE_PERMISSION = "matches.moderate_match"
@@ -306,8 +343,10 @@ def can_confirm_as_organizer(actor: Actor, match: Match) -> bool:
     """True when ``actor`` has event authority over the stored match's Event.
 
     That is a member (either role) of the Event's Organizer while it is
-    verified, or an approved application that Organizer owns. A match with
-    no Event has no organizer to confirm it.
+    verified, or an approved application that Organizer owns or granted an
+    Organizer Application Grant. A match with no Event has no organizer to
+    confirm it. Club consent is not checked: confirming files nothing new
+    under a Club's name.
     """
     if match.pk is None:
         return False
