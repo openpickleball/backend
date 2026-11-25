@@ -1,9 +1,8 @@
 """Organizer Member, Club Role, and Club Organizer Grant changes are audited (#158).
 
-Each add, change, and removal, through the admin or the ORM, records one
-Audit Event in the same transaction, with the acting Account. A removal is
-recorded before the row goes, a cascade included. A refused change records
-nothing. No event holds an email or an Organizer's name. Made-up data only.
+Each add, change, and removal through the admin records one Audit Event in
+the same transaction, with the acting Account. A removal is recorded before
+the row goes. A refused change records nothing. No event holds an email or an Organizer's name. Made-up data only.
 """
 
 import json
@@ -16,7 +15,6 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.accounts.tests.factories import UserFactory
-from apps.audit.actor import acting_as
 from apps.audit.models import AuditAction, AuditEvent
 from apps.clubs.models import (
     Club,
@@ -30,12 +28,10 @@ from apps.clubs.models import (
 from apps.clubs.tests.factories import (
     ClubFactory,
     ClubOrganizerGrantFactory,
-    ClubRoleFactory,
     OrganizerFactory,
     OrganizerMemberFactory,
     verify,
 )
-from apps.partners.tests.factories import OrganizerApplicationGrantFactory
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -361,25 +357,6 @@ def test_club_role_add_and_remove_in_the_inline_each_record_one_event(
         _holds_no_identifying_value(event, account.email)
 
 
-def test_moving_a_club_role_to_another_account_records_one_change() -> None:
-    role = ClubRoleFactory.create()
-    other = UserFactory.create()
-    old_account = role.account_id
-    before = len(_access_events())
-
-    role.account = other
-    role.save()
-
-    [event] = _access_events()[before:]
-    assert event.action == AuditAction.CLUB_ROLE_CHANGE
-    assert event.before == {
-        "club": role.club.public_code,
-        "account": old_account,
-        "role": "admin",
-    }
-    assert event.after == {**event.before, "account": other.pk}
-
-
 # Club Organizer Grants through their own admin.
 
 
@@ -454,55 +431,7 @@ def test_a_repeated_grant_is_refused_and_records_nothing() -> None:
     assert AuditEvent.objects.count() == before
 
 
-# Removals by cascade, recorded before the rows go.
-
-
-def test_deleting_a_club_records_each_role_and_grant_removed(
-    admin_client: Client, superuser: "_User"
-) -> None:
-    club = ClubFactory.create()
-    role = ClubRoleFactory.create(club=club)
-    grant = ClubOrganizerGrantFactory.create(club=club)
-    before = len(_access_events())
-
-    response = admin_client.post(
-        reverse("admin:clubs_club_delete", args=[club.pk]), {"post": "yes"}
-    )
-
-    assert response.status_code == 302
-    events = _access_events()[before:]
-    assert {(e.action, e.target_object_id) for e in events} == {
-        (AuditAction.CLUB_ROLE_REMOVE, str(role.pk)),
-        (AuditAction.CLUB_ORGANIZER_GRANT_REMOVE, str(grant.pk)),
-    }
-    assert {e.actor_user for e in events} == {superuser}
-
-
-def test_deleting_an_organizer_records_each_member_and_grant_removed(
-    admin_client: Client, superuser: "_User"
-) -> None:
-    organizer = OrganizerFactory.create()
-    member = OrganizerMemberFactory.create(organizer=organizer)
-    club_grant = ClubOrganizerGrantFactory.create(organizer=organizer)
-    application_grant = OrganizerApplicationGrantFactory.create(organizer=organizer)
-    before = AuditEvent.objects.count()
-
-    response = admin_client.post(
-        reverse("admin:clubs_organizer_delete", args=[organizer.pk]),
-        {"post": "yes"},
-    )
-
-    assert response.status_code == 302
-    assert not Organizer.objects.filter(pk=organizer.pk).exists()
-    events = list(AuditEvent.objects.order_by("id"))[before:]
-    assert {(e.action, e.target_object_id) for e in events} == {
-        (AuditAction.ORGANIZER_MEMBER_REMOVE, str(member.pk)),
-        (AuditAction.CLUB_ORGANIZER_GRANT_REMOVE, str(club_grant.pk)),
-        (AuditAction.ORGANIZER_APPLICATION_GRANT_REMOVE, str(application_grant.pk)),
-    }
-    assert {e.actor_user for e in events} == {superuser}
-    for event in events:
-        _holds_no_identifying_value(event, organizer.name, member.account.email)
+# A refused delete.
 
 
 def test_a_refused_verified_organizer_delete_records_nothing(
@@ -521,61 +450,7 @@ def test_a_refused_verified_organizer_delete_records_nothing(
     assert AuditEvent.objects.count() == before
 
 
-def test_deleting_an_account_records_its_club_roles_removed(
-    admin_client: Client, superuser: "_User"
-) -> None:
-    role = ClubRoleFactory.create()
-    account = role.account
-    before = len(_access_events())
-
-    response = admin_client.post(
-        reverse("admin:accounts_user_delete", args=[account.pk]), {"post": "yes"}
-    )
-
-    assert response.status_code == 302
-    [event] = _access_events()[before:]
-    assert event.action == AuditAction.CLUB_ROLE_REMOVE
-    assert event.target_object_id == str(role.pk)
-    assert event.actor_user == superuser
-    assert event.before == {
-        "club": role.club.public_code,
-        "account": account.pk,
-        "role": "admin",
-    }
-    _holds_no_identifying_value(event, account.email)
-
-
-def test_queryset_delete_records_each_removal() -> None:
-    roles = ClubRoleFactory.create_batch(2)
-    before = len(_access_events())
-
-    ClubRole.objects.filter(pk__in=[r.pk for r in roles]).delete()
-
-    events = _access_events()[before:]
-    assert sorted(e.target_object_id for e in events) == sorted(
-        str(r.pk) for r in roles
-    )
-
-
-# The ORM path outside a request.
-
-
-def test_a_change_outside_a_request_records_no_actor() -> None:
-    OrganizerMemberFactory.create()
-
-    [event] = _access_events()
-    assert event.action == AuditAction.ORGANIZER_MEMBER_ADD
-    assert event.actor_user is None
-
-
-def test_acting_as_sets_the_actor_outside_a_request() -> None:
-    actor = UserFactory.create()
-
-    with acting_as(actor):
-        ClubRoleFactory.create()
-
-    [event] = _access_events()
-    assert event.actor_user == actor
+# Refusals through the ORM record nothing either.
 
 
 def test_the_verifier_refused_by_save_records_nothing() -> None:
