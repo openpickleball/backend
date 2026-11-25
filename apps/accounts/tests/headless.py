@@ -172,6 +172,20 @@ class HeadlessSession:
             "auth/signup/age-check", {k: v for k, v in data.items() if v is not ...}
         )
 
+    def password_check(self, **fields: object) -> Any:
+        """The signup password check (#289), with ``SESSION_EMAIL`` and
+        ``PASSWORD`` unless ``fields`` replace them. A field set to ``...``
+        is left out."""
+        data: dict[str, object] = {
+            "email": SESSION_EMAIL,
+            "password": PASSWORD,
+            **fields,
+        }
+        return self.post(
+            "auth/signup/password-check",
+            {k: v for k, v in data.items() if v is not ...},
+        )
+
     def store(self) -> SessionBase:
         if self.base == BROWSER:
             return self.client.session
