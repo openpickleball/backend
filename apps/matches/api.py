@@ -372,17 +372,17 @@ def correct_disputed_match(
 ) -> MatchOut:
     """Settle a dispute on your Event's match by correcting it.
 
-    For a member of the verified organizer that ran the match's Event,
-    who plays neither in the match nor in the correction. The correction
-    also needs the consent of every Club the match names to your
-    organizer; without it you get 404 as well. The disputed match is
-    voided and the correction, given as for a new match, is created
-    confirmed and returned. A scoring type or game target left out is the
-    disputed match's, and a missing best-of is inferred from the games.
-    Its location, labels, and order come from the disputed match. The reason is required and is kept in the
-    match's audit log, which cannot be erased, so do not name a player in
-    it. A match that is not disputed gets 409. Anyone else gets 404, as
-    for an unknown code.
+    For a member of the verified organizer that ran the match's Event, who
+    plays neither in the match nor in the correction. The correction also
+    needs the consent of every Club the match names to your organizer;
+    without it you get 404 as well. The disputed match is voided and the
+    correction, given as for a new match, is created confirmed and returned.
+    A scoring type or game target left out is the disputed match's, and a
+    missing best-of is inferred from the games. Its location, labels, and
+    order come from the disputed match. The reason is required and is kept
+    in the match's audit log, which cannot be erased, so do not name a
+    player in it. A match that is not disputed gets 409. Anyone else gets
+    404, as for an unknown code.
     """
     account, match = _settled_match(request, code)
     teams = _resolve_teams(payload)

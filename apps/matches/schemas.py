@@ -176,9 +176,9 @@ class DisputeCorrectionIn(MatchCreateIn):
     """The Organizer's correction of a disputed match, and why.
 
     The fields are ``create_match``'s, except that a scoring type or game
-    target left out is the disputed match's; a missing best-of is
-    inferred from the games. The reason is stored in the match's audit log, which cannot be erased, so
-    it should not name a player.
+    target left out is the disputed match's; a missing best-of is inferred
+    from the games. The reason is stored in the match's audit log, which
+    cannot be erased, so it should not name a player.
     """
 
     reason: ReasonText
@@ -222,18 +222,16 @@ class MatchOut(Schema):
     this player recorded on the match, ``none`` when they recorded none or
     did not play. A repeated decision is not recorded again, so confirming
     again after a dispute that a moderator or the Event's organizer resolved
-    still shows
-    ``dispute``. An organizer's confirmation is not a player decision: a
-    player who confirms as a member of the match's Event Organizer still
-    shows ``none``. For a participant, ``confirmed_by_team`` says whether
-    a player on each team recorded a confirmation (a dispute is not a
-    confirmation); it is null for anyone else. A confirmation still shows
-    in ``confirmed_by_team`` after the same player disputes, since a
+    still shows ``dispute``. An organizer's confirmation is not a player
+    decision: a player who confirms as a member of the match's Event
+    Organizer still shows ``none``. For a participant, ``confirmed_by_team``
+    says whether a player on each team recorded a confirmation (a dispute is
+    not a confirmation); it is null for anyone else. A confirmation still
+    shows in ``confirmed_by_team`` after the same player disputes, since a
     recorded decision is never withdrawn. It counts player confirmations
-    only: a match confirmed by an organizer or a moderator, or a
-    correction, can be confirmed with both false, so read ``status`` for
-    whether the match is confirmed. ``created_at`` is when the match was
-    submitted.
+    only: a match confirmed by an organizer or a moderator, or a correction,
+    can be confirmed with both false, so read ``status`` for whether the
+    match is confirmed. ``created_at`` is when the match was submitted.
     """
 
     code: str

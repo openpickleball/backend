@@ -348,11 +348,11 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
     ``match.dispute`` Audit Event, and a match that was counting sends
     ``match_changed`` with ``change=dispute``. A disputed match only gains
     the participant's dispute row. A participant disputes a match at most
-    once: a repeat (also after a moderator or the Event's Organizer
-    resolved the dispute as confirmed) does nothing. A voided match raises ``MatchStateError``.
-    Only a participant may dispute. A dispute takes no reason: Audit
-    Events are append-only, and a participant's free text could hold a
-    name.
+    once: a repeat (also after a moderator or the Event's Organizer resolved
+    the dispute as confirmed) does nothing. A voided match raises
+    ``MatchStateError``. Only a participant may dispute. A dispute takes no
+    reason: Audit Events are append-only, and a participant's free text
+    could hold a name.
     """
     _saved(match)
     player = participant_player(actor, match)
