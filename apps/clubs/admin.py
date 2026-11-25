@@ -99,7 +99,13 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
     action_form = ReasonActionForm
 
     def _shows_review(self, request: HttpRequest, obj: Organizer | None) -> bool:
-        return obj is not None and self.has_verify_permission(request)
+        # Never to a member of the Organizer: its open reports would tell
+        # the Organizer it was reported, and when.
+        return (
+            obj is not None
+            and self.has_verify_permission(request)
+            and not _is_member(request, obj.pk)
+        )
 
     def get_readonly_fields(
         self, request: HttpRequest, obj: Organizer | None = None
@@ -322,6 +328,19 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
             self.message_user(request, f"{count} organizer(s) {done}.")
 
 
+def _member_organizer_ids(request: HttpRequest) -> QuerySet[OrganizerMember, Any]:
+    """The Organizers the signed-in Account is a member of, as a subquery."""
+    return OrganizerMember.objects.filter(account_id=request.user.pk).values(
+        "organizer_id"
+    )
+
+
+def _is_member(request: HttpRequest, organizer_id: int) -> bool:
+    return OrganizerMember.objects.filter(
+        account_id=request.user.pk, organizer_id=organizer_id
+    ).exists()
+
+
 class OpenReportFilter(admin.SimpleListFilter):
     """Open (not closed) or closed reports."""
 
@@ -358,6 +377,17 @@ class OrganizerReportAdmin(admin.ModelAdmin[OrganizerReport]):
     actions = ("close_selected",)
     action_form = ReasonActionForm
 
+    def get_queryset(self, request: HttpRequest) -> QuerySet[OrganizerReport]:
+        """Every report except those on an Organizer the viewer is a member
+        of, so a member never reaches who reported it: not in the list, the
+        change page, or the close action.
+        """
+        return (
+            super()
+            .get_queryset(request)
+            .exclude(organizer_id__in=_member_organizer_ids(request))
+        )
+
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
@@ -386,7 +416,9 @@ class OrganizerReportAdmin(admin.ModelAdmin[OrganizerReport]):
             "created_at",
             "closed_at",
         )
-        if self.has_verify_permission(request):
+        if self.has_verify_permission(request) and (
+            obj is None or not _is_member(request, obj.organizer_id)
+        ):
             fields += ("reporter_player",)
         return fields
 
