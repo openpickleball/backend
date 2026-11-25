@@ -17,14 +17,21 @@ from django.test import Client
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditAction, AuditEvent
-from apps.clubs.models import MemberRole
+from apps.clubs.models import ClubRoleKind, MemberRole
 from apps.clubs.services import unverify_organizer
-from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
+from apps.clubs.tests.factories import (
+    ClubFactory,
+    ClubOrganizerGrantFactory,
+    ClubRoleFactory,
+    OrganizerMemberFactory,
+    verified_organizer,
+)
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
+from apps.matches import workflow
 from apps.matches.models import Match, MatchFormat, MatchStatus
 from apps.matches.services import record_match
-from apps.matches.workflow import dispute_match
+from apps.matches.workflow import confirm_match, dispute_match
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 from apps.public_ids.codes import CodeType, generate
@@ -369,6 +376,9 @@ def test_a_correction_with_a_blank_reason_is_a_422(
     )
 
     assert response.status_code == 422
+    assert response.json()["errors"] == [
+        {"field": "body.reason", "code": "blank", "message": "Give a reason."}
+    ]
     assert Match.objects.count() == count
     assert _status(disputed) == MatchStatus.DISPUTED
 
@@ -449,3 +459,106 @@ def test_the_operations_are_documented() -> None:
         "resolve_match_dispute",
         "correct_disputed_match",
     } <= ids
+
+
+# More refused actors on both operations (#269 review).
+
+
+def _both_refused(account: User, match: Match, players: list[Player]) -> None:
+    client = signed_in(account)
+    _same_404(
+        _resolve(client, match.public_code, "confirmed"),
+        _resolve(client, UNKNOWN_MATCH, "confirmed"),
+    )
+    body = _correction(players)
+    _same_404(
+        _correct(client, match.public_code, body),
+        _correct(client, UNKNOWN_MATCH, body),
+    )
+    assert _status(match) == MatchStatus.DISPUTED
+
+
+def test_a_club_admin_of_the_matchs_club_gets_404(
+    players: list[Player], event: Event
+) -> None:
+    club = ClubFactory.create()
+    ClubOrganizerGrantFactory.create(club=club, organizer=event.organizer)
+    match = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=GAMES,
+        played_on=PLAYED_ON,
+        submitted_by_user=_member(event),
+        event=event,
+        club=club,
+    ).match
+    dispute_match(match, actor=players[0].account)
+    club_admin: User = UserFactory.create()
+    ClubRoleFactory.create(club=club, account=club_admin, role=ClubRoleKind.ADMIN)
+
+    _both_refused(club_admin, match, players)
+
+
+def test_a_member_of_an_organizer_unverified_after_the_dispute_gets_404(
+    players: list[Player], event: Event, disputed: Match
+) -> None:
+    member = _member(event)
+    verifier: User = UserFactory.create()
+    verifier.user_permissions.add(
+        Permission.objects.get(
+            content_type__app_label="clubs", codename="verify_organizer"
+        )
+    )
+    unverify_organizer(event.organizer, actor=verifier, reason=REASON)
+
+    _both_refused(member, disputed, players)
+
+
+def test_a_self_reported_match_gets_404(players: list[Player], event: Event) -> None:
+    match = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=GAMES,
+        played_on=PLAYED_ON,
+        submitted_by_user=players[0].account,
+    ).match
+    confirm_match(match, actor=players[0].account)
+    confirm_match(match, actor=players[2].account)
+    dispute_match(match, actor=players[0].account)
+
+    for account in (_member(event), players[1].account):
+        _both_refused(account, match, players)
+
+
+def test_a_dispute_settled_during_the_correction_is_a_409(
+    players: list[Player],
+    event: Event,
+    disputed: Match,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_edit = workflow.edit_match
+    other = _member(event)
+
+    def settled_first(match: Match, **kwargs: Any) -> Match:
+        # Another member resolves the dispute after the view read the
+        # match as disputed and before the edit reads it.
+        workflow.resolve_dispute(
+            match, actor=other, outcome=MatchStatus.CONFIRMED, reason=REASON
+        )
+        return real_edit(match, **kwargs)
+
+    monkeypatch.setattr(workflow, "edit_match", settled_first)
+    count = Match.objects.count()
+
+    response = _correct(
+        signed_in(_member(event)), disputed.public_code, _correction(players)
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "conflict"
+    assert Match.objects.count() == count
+    # The stand-in resolve ran inside the view's transaction, so the 409
+    # rolled it back too.
+    assert _status(disputed) == MatchStatus.DISPUTED
