@@ -27,8 +27,8 @@ States and transitions:
 - ``expire_disputes_and_holds``: voids a disputed match whose first open
   dispute is older than ``MATCH_DISPUTE_EXPIRY_DAYS``, and the newer match
   (``match``) of a possible duplicate flag open for longer than
-  ``MATCH_DUPLICATE_HOLD_DAYS``, so the earlier one counts again (ADR
-  0034).
+  ``MATCH_DUPLICATE_HOLD_DAYS`` whose earlier match is confirmed, so the
+  earlier one counts again (ADR 0034).
 - ``resolve_flags``: a moderator closes every open flag that involves a
   match, as approved or dismissed, with a reason. It changes no Match:
   a resolved flag stops holding its matches from counting.
@@ -848,8 +848,10 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     (``dispute_started_at``) is older than ``MATCH_DISPUTE_EXPIRY_DAYS``.
     The hold rule then voids the ``match`` (the newer one) of each open
     possible duplicate flag older than ``MATCH_DUPLICATE_HOLD_DAYS`` whose
-    two matches are not voided, so the earlier match counts again and
-    sends ``release``. The flag stays open: only ``resolve_flags`` resolves
+    earlier match (``duplicate_of``) is confirmed and whose newer match is
+    not voided, so the earlier match counts again and sends ``release``. A
+    hold against a pending or disputed earlier match never voids the newer
+    one under this rule. The flag stays open: only ``resolve_flags`` resolves
     flags, and a voided match holds nothing.
 
     Each match is voided in its own transaction, as
@@ -901,14 +903,19 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
 
 
 def _expired_holds(cutoff: datetime) -> QuerySet[MatchFlag]:
-    """Open possible duplicate flags older than ``cutoff`` that still hold."""
+    """Open possible duplicate flags older than ``cutoff`` the hold rule ends.
+
+    Only a flag whose earlier match (``duplicate_of``) is confirmed (the
+    maintainer's decision on #268 and #265): a hold against a pending or
+    disputed earlier match never voids the newer one, or a player's own
+    pending self-submission could void a verified Organizer's result.
+    """
     return MatchFlag.objects.filter(
         reason=FlagReason.POSSIBLE_DUPLICATE,
         resolved_at__isnull=True,
         created_at__lt=cutoff,
-    ).exclude(
-        Q(match__status=MatchStatus.VOIDED) | Q(duplicate_of__status=MatchStatus.VOIDED)
-    )
+        duplicate_of__status=MatchStatus.CONFIRMED,
+    ).exclude(match__status=MatchStatus.VOIDED)
 
 
 def _lock_for_expiry(pk: int, status: Q) -> Match | None:
