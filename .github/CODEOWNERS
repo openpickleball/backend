@@ -29,6 +29,10 @@
 # which decide which Organizers may name a club.
 /apps/clubs/ @openpickleball/maintainers
 
+# Events: an Event's organizer decides who may submit its counted matches,
+# and its kind sets the match type of matches recorded afterwards.
+/apps/events/ @openpickleball/maintainers
+
 # Partner Applications (OAuth clients), their approval, and Organizer
 # Application Grants, which decide which applications act for an Organizer.
 /apps/partners/ @openpickleball/maintainers
