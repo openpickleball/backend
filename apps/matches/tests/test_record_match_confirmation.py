@@ -125,19 +125,12 @@ def test_an_event_and_club_submission_is_created_confirmed(
     assert audit.actor_application is None
     assert audit.before is None
     assert audit.after == {"status": MatchStatus.CONFIRMED}
-    assert AuditEvent.objects.count() == 1 + _setup_events()
+    assert AuditEvent.objects.count() == 1 + _verification_events()
     assert signals.confirmed == [match.pk]
 
 
-def _setup_events() -> int:
-    # The verification, membership, and grant the fixtures made.
-    return AuditEvent.objects.filter(
-        action__in=[
-            AuditAction.ORGANIZER_VERIFY,
-            AuditAction.ORGANIZER_MEMBER_ADD,
-            AuditAction.CLUB_ORGANIZER_GRANT_ADD,
-        ]
-    ).count()
+def _verification_events() -> int:
+    return AuditEvent.objects.filter(action=AuditAction.ORGANIZER_VERIFY).count()
 
 
 def test_an_application_event_submission_is_created_confirmed(
@@ -183,11 +176,12 @@ def test_a_club_only_duplicate_no_longer_confirms_a_pending_self_submission(
     # ADR 0021: club authority is gone, so a Club admin's club-only
     # resubmission is refused instead of confirming the pending match.
     pending = _self_submit(players, games=tuple((b, a) for a, b in GAMES)).match
-    club_admin = _club_account(club)
     events = AuditEvent.objects.count()
 
     with pytest.raises(MatchPermissionDenied) as error:
-        _record(list(reversed(players)), submitted_by_user=club_admin, club=club)
+        _record(
+            list(reversed(players)), submitted_by_user=_club_account(club), club=club
+        )
 
     assert str(error.value) == MatchPermissionDenied.message
     assert Match.objects.get(pk=pending.pk).status == MatchStatus.PENDING
@@ -231,11 +225,10 @@ def test_a_permitted_duplicate_of_another_status_is_refused(
 ) -> None:
     earlier = _self_submit(players).match
     raw_update(earlier, status=status)
-    member = _event_member(event)
     events = AuditEvent.objects.count()
 
     with pytest.raises(DuplicateMatchError):
-        _record(players, submitted_by_user=member, event=event)
+        _record(players, submitted_by_user=_event_member(event), event=event)
 
     assert Match.objects.get(pk=earlier.pk).status == status
     assert AuditEvent.objects.count() == events
