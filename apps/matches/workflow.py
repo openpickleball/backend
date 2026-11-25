@@ -14,6 +14,9 @@ States and transitions:
   Organizer Application Grant, confirms a pending match alone.
 - ``dispute_match``: a participant disputes a pending or confirmed match,
   which becomes disputed.
+- ``withdraw_dispute``: a participant withdraws their open dispute (#267).
+  Once no dispute is open, the match goes back to confirmed when it was
+  confirmed as the dispute began, else to pending.
 - ``resolve_dispute``: the match's Event's verified Organizer
   (``settles_dispute``: a member whose Player is not in the match's
   correction chain, or the approved application that submitted the match
@@ -317,8 +320,9 @@ def confirm_match(match: Match, *, actor: Actor) -> Match:
     match alone; for a confirmed match it does nothing. A participant adds
     their confirmation to a pending or confirmed match, and a pending match
     becomes confirmed once each team has one. A repeat does nothing. A
-    disputed or voided match raises ``MatchStateError``: disputes go to a
-    moderator. Anyone else gets ``MatchActionDenied``. An actor who is
+    disputed or voided match raises ``MatchStateError``: a disputed match
+    is settled by withdrawing every open dispute (``withdraw_dispute``), by
+    the Event's Organizer, or by a moderator. Anyone else gets ``MatchActionDenied``. An actor who is
     both organizer and participant takes the organizer path.
     """
     _saved(match)
@@ -352,7 +356,8 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
     ``match_changed`` with ``change=dispute``. A disputed match only gains
     the participant's dispute row. A participant disputes a match at most
     once: a repeat (also after a moderator or the Event's Organizer resolved
-    the dispute as confirmed) does nothing. A voided match raises
+    the dispute as confirmed, and after the participant withdrew it) does
+    nothing. A voided match raises
     ``MatchStateError``. Only a participant may dispute. A dispute takes no
     reason: Audit Events are append-only, and a participant's free text
     could hold a name.
@@ -387,6 +392,102 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
                 change=MatchChange.DISPUTE,
                 earliest_date=locked.played_on,
             )
+        return locked
+
+
+def _dispute_period(
+    match: Match,
+) -> tuple[AuditEvent | None, list[MatchConfirmation]]:
+    """The current disputed period's ``match.dispute`` event and open disputes.
+
+    The period starts at the match's latest ``match.dispute`` Audit Event
+    (by id: every change into disputed writes exactly one). Its actor is
+    the Account whose Player wrote the period's first dispute row, the
+    opening row. The open disputes are the match's dispute rows from the
+    opening row on, by id, whose player has not withdrawn, in id order.
+    Rows before the opening row belong to an earlier period that a
+    resolution settled, so they are never open again. With no event or no
+    opening row (rows written outside the services), every dispute row not
+    withdrawn counts, so the match stays disputed (fail closed).
+
+    Only ids are compared, never times. One match's rows are written under
+    its row lock, so id order is insertion order.
+    """
+    event = (
+        _match_events()
+        .filter(action=AuditAction.MATCH_DISPUTE, target_object_id=str(match.pk))
+        .order_by("-pk")
+        .first()
+    )
+    disputes = MatchConfirmation.objects.filter(
+        match_id=match.pk, decision=ConfirmationDecision.DISPUTE
+    )
+    opening_pk: int | None = None
+    if event is not None and event.actor_user_id is not None:
+        opening_pk = (
+            disputes.filter(player__account_id=event.actor_user_id)
+            .values_list("pk", flat=True)
+            .first()
+        )
+    if opening_pk is not None:
+        disputes = disputes.filter(pk__gte=opening_pk)
+    withdrawn = MatchConfirmation.objects.filter(
+        match_id=match.pk, decision=ConfirmationDecision.WITHDRAW
+    ).values("player_id")
+    open_disputes = list(disputes.exclude(player_id__in=withdrawn).order_by("pk"))
+    return event, open_disputes
+
+
+def withdraw_dispute(match: Match, *, actor: Actor) -> Match:
+    """A participant withdraws their open dispute of ``match`` (#267).
+
+    The withdrawal is a new ``withdraw`` row; the dispute row stays. The
+    match stays disputed while another dispute of the current period is
+    open, with no Audit Event and no signal. When the last open dispute is
+    withdrawn, the match goes back to confirmed when it was confirmed as
+    the period began (the ``match.dispute`` event's ``before``), else to
+    pending, with one ``match.dispute_withdraw`` Audit Event. Back to
+    confirmed sends ``match_confirmed``; back to pending sends nothing.
+
+    A withdrawn dispute is still the player's one dispute: disputing again
+    changes nothing, and so does a repeat withdrawal. Only a participant
+    may withdraw (``MatchActionDenied``). A participant with no open
+    dispute in the current period, and a match that is not disputed, get
+    ``MatchStateError``.
+    """
+    _saved(match)
+    player = participant_player(actor, match)
+    if player is None:
+        raise MatchActionDenied
+    with transaction.atomic():
+        locked = _lock(match)
+        if MatchConfirmation.objects.filter(
+            match=locked, player=player, decision=ConfirmationDecision.WITHDRAW
+        ).exists():
+            return locked
+        if locked.status != MatchStatus.DISPUTED:
+            raise MatchStateError
+        event, open_disputes = _dispute_period(locked)
+        if not any(row.player_id == player.pk for row in open_disputes):
+            raise MatchStateError
+        _record_decision(locked, player, ConfirmationDecision.WITHDRAW)
+        if any(row.player_id != player.pk for row in open_disputes):
+            return locked
+        if event is not None:
+            was_confirmed = (event.before or {}).get("status") == MatchStatus.CONFIRMED
+        else:
+            was_confirmed = _both_teams_confirmed(locked)
+        status = MatchStatus.CONFIRMED if was_confirmed else MatchStatus.PENDING
+        before = _set_status(locked, status)
+        record_event(
+            action=AuditAction.MATCH_DISPUTE_WITHDRAW,
+            target=locked,
+            before=before,
+            after=snapshot(locked, ["status"]),
+            **audit_actor(actor),
+        )
+        if status == MatchStatus.CONFIRMED:
+            match_confirmed.send(sender=Match, match=locked)
         return locked
 
 

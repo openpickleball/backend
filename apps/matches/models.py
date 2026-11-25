@@ -923,13 +923,15 @@ class ConfirmationDecision(models.TextChoices):
 
     CONFIRM = "confirm", "Confirm"
     DISPUTE = "dispute", "Dispute"
+    WITHDRAW = "withdraw", "Withdraw dispute"
 
 
 class MatchConfirmation(_LinkMessagesModel, _InsertOnlyModel):
-    """One participant's confirmation or dispute of a Match (#26).
+    """One participant's confirmation, dispute, or withdrawal of a Match (#26).
 
-    See CONTEXT.md, Confirmation. A Player confirms a Match at most once and
-    disputes it at most once. Only the workflow services in
+    See CONTEXT.md, Confirmation. A Player confirms a Match at most once,
+    disputes it at most once, and withdraws that dispute at most once
+    (#267). A withdrawal is its own row: the dispute row stays. Only the workflow services in
     ``apps.matches.workflow`` write these rows. Like the other ledger rows,
     a row is inserted once and never changed or deleted.
     """

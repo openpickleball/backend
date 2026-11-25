@@ -10,6 +10,7 @@ from apps.audit.models import AuditAction
     [
         ("MATCH_CONFIRM", "match.confirm"),
         ("MATCH_DISPUTE", "match.dispute"),
+        ("MATCH_DISPUTE_WITHDRAW", "match.dispute_withdraw"),
         ("MATCH_VOID", "match.void"),
         ("MATCH_EXPIRE", "match.expire"),
         ("MATCH_EDIT", "match.edit"),
