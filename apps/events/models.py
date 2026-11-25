@@ -5,6 +5,12 @@ Club that granted that Organizer a Club Organizer Grant (ADR 0021), over a
 span of dates. Its ``kind`` is the match type its matches
 count as. Self-reported matches have no Event (decision F1 in #1).
 
+Each Match stores the kind as its match type when it is recorded, so the
+kind may change at any time and the change reaches only matches recorded
+after it. The organizer decides who may submit the Event's counted
+matches, so it cannot change once any Match (in any status) names the
+Event (ADR 0035).
+
 An Event has no weight of its own. The engine weights a match only by its
 match type and takes no per-event weight (openpickleball/engine#30), so
 any weight applied here would be rating math outside the engine
@@ -14,10 +20,10 @@ any weight applied here would be rating math outside the engine
 """
 
 import datetime
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, Q
 
 from apps.clubs.models import ClubOrganizerGrant, _CleanedTextModel
@@ -33,6 +39,7 @@ _DATES_ORDER = "The end date cannot be before the start date."
 _ORGANIZER_MESSAGES = {"invalid": "Choose an existing organizer."}
 _CLUB_MESSAGES = {"invalid": "Choose an existing club."}
 _CLUB_NOT_GRANTED = "This club has not allowed the organizer to name it."
+ORGANIZER_LOCKED = "This event has matches, so its organizer cannot change."
 
 
 class EventKind(models.TextChoices):
@@ -96,6 +103,24 @@ class Event(_CleanedTextModel):
         # The OPEN Code, never the name, for one rule with Club and Organizer.
         return self.public_code
 
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Save, refusing an organizer change once a Match names the Event.
+
+        When the stored organizer differs from this instance's, the Event
+        row is locked with a plain ``FOR UPDATE`` before the check, so a
+        concurrent organizer change waits, and so does a Match insert
+        whose deferred foreign key check (``FOR KEY SHARE``) runs at its
+        commit. The check counts Matches in every status, voided ones
+        included. Raw writes (``QuerySet.update``, raw SQL) skip it.
+        """
+        if self._state.adding or self.pk is None:
+            super().save(*args, **kwargs)
+            return
+        with transaction.atomic():
+            if self._organizer_changes(lock=True) and self._has_matches():
+                raise ValidationError({"organizer": ORGANIZER_LOCKED})
+            super().save(*args, **kwargs)
+
     def clean(self) -> None:
         # Django runs clean() even when a field failed, so a date may still
         # be the raw input here. A form clears a date that failed first
@@ -109,6 +134,36 @@ class Event(_CleanedTextModel):
             raise ValidationError({"end_date": _DATES_ORDER})
         if self._club_needs_grant():
             raise ValidationError({"club": _CLUB_NOT_GRANTED})
+        if (
+            not self._state.adding
+            and self._organizer_changes(lock=False)
+            and self._has_matches()
+        ):
+            raise ValidationError({"organizer": ORGANIZER_LOCKED})
+
+    def _organizer_changes(self, *, lock: bool) -> bool:
+        """True when the stored organizer differs from this instance's.
+
+        Reads the stored row, without a lock first. With ``lock``, a
+        change locks the row ``FOR UPDATE`` and reads it again, so only an
+        organizer change takes the lock.
+        """
+        if self.pk is None or not isinstance(self.organizer_id, int):
+            # Field validation reports a missing or invalid link.
+            return False
+        rows = Event._base_manager.filter(pk=self.pk)
+        stored = rows.values_list("organizer_id", flat=True).first()
+        if stored is None or stored == self.organizer_id:
+            return False
+        if not lock:
+            return True
+        locked = rows.select_for_update().values_list("organizer_id", flat=True).first()
+        return locked is not None and locked != self.organizer_id
+
+    def _has_matches(self) -> bool:
+        """True when any Match, in any status, names this Event."""
+        # The reverse relation, since apps.matches imports this module.
+        return bool(self.matches.exists())
 
     def _club_needs_grant(self) -> bool:
         """True when the Club has not granted the Organizer (ADR 0021).
