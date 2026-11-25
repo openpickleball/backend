@@ -54,6 +54,13 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   an Event, so one with event authority and the Clubs' consent, whose
   exact duplicate matches a pending match confirms it (ADR 0013, ADR
   0021).
+- ``settles_dispute``: the Event's verified Organizer settling a dispute
+  (ADR 0034): an actor ``can_change_match`` allows that also passes
+  ``can_confirm_as_organizer``, and, for an Account, has no Player in the
+  match's correction chain or, for a correction, in the new teams (the
+  rule ``moderates`` applies to moderators). Such an actor resolves a
+  dispute or corrects a disputed match, with a required reason. A match
+  with no Event has no Organizer level.
 - ``is_moderator``: an active Account with the ``matches.moderate_match``
   permission. A moderator may void and edit any match, resolve disputes,
   resolve flags, and approve matches, except a match they played in.
