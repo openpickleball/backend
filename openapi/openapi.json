@@ -2685,7 +2685,7 @@
     },
     "/api/v1/matches/{code}/vouch": {
       "post": {
-        "description": "Vouch that a held match is not a duplicate of the other match.\n\nA match recorded with the same teams and date as another, with other\nscores, is held from counting along with that match until each one is\nvouched for at its own level. A match with an Event is vouched for by\na member of the verified organizer that ran it, who did not play in\nit. A match with no Event is vouched for by one player of each team.\nOnce both matches are vouched for, both count again when confirmed.\nThe response is this match only: the other match is never named. A\nvouch cannot be undone. Vouching again changes nothing. A voided\nmatch, and a match nothing holds, get 409. Anyone else gets 404, as\nfor an unknown code.",
+        "description": "Vouch that a held match is not a duplicate of the other match.\n\nA match recorded with the same teams and date as another, with other\nscores, is held from counting along with that match until each one is\nvouched for at its own level. A match with an Event is vouched for by\na member of the verified organizer that ran it whose player is in no\nmatch of the match's correction chain. A match with no Event is\nvouched for by one player of each team. A match with a club and no\nEvent has no level: nobody vouches for it, and a hold against it ends\nonly when a match is voided or the hold period ends. Once both\nmatches are vouched for, each counts again once it is confirmed and\nno other open hold keeps it. The response is this match only: the\nother match is never named. A vouch cannot be undone. Vouching again\nwhile the hold is open changes nothing. A voided match, and a match\nnothing holds (a released one included), get 409. Anyone else gets\n404, as for an unknown code.",
         "operationId": "vouch_for_match",
         "parameters": [
           {
@@ -3020,7 +3020,7 @@
     },
     "/api/v1/me/matches/holds": {
       "get": {
-        "description": "The held matches you may vouch for, newest first.\n\nLists each match that is not voided and that a possible duplicate\nhold keeps from counting, when you may vouch for it: a match with no\nEvent you played in, or a match of an Event run by a verified\norganizer you are a member of and did not play in. ``vouched`` says\nwhether your side has vouched for it already. The other match of the\nhold is never named. A match leaves the list once the hold ends.",
+        "description": "The held matches you may vouch for, newest first.\n\nLists each match that is not voided and that a possible duplicate\nhold keeps from counting, when you may vouch for it: a match with no\nEvent you played in, or a match of an Event run by a verified\norganizer you are a member of, when your player is in no match of its\ncorrection chain. A match with a club and no Event is never listed:\nnobody vouches for it. ``vouched`` says\nwhether your side has vouched for it already. The other match of the\nhold is never named. A match leaves the list once the hold ends.",
         "operationId": "list_my_holds",
         "parameters": [
           {

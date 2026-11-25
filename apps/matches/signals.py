@@ -21,8 +21,9 @@ affect), and ``change``, a ``MatchChange``:
 - ``hold``: a match that was counting is now held by a new possible
   duplicate flag;
 - ``release``: a match held by a possible duplicate flag counts again,
-  because the match that held it was voided or because a moderator
-  resolved the flag (``resolve_flags``, also through ``approve_match``).
+  because the match that held it was voided, because a moderator
+  resolved the flag (``resolve_flags``, also through ``approve_match``),
+  or because both its matches were vouched for (``vouch_for_match``).
 
 The workflow sends at most one ``match_changed`` per match per call.
 

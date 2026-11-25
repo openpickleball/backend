@@ -1381,8 +1381,8 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     That ends the flag's hold on the earlier match, which counts again,
     and sends ``release``, unless another open flag still holds it. A hold
     against a pending or disputed earlier match never voids the newer one
-    under this rule. The flag stays open: only ``resolve_flags`` resolves
-    flags, and a voided match holds nothing.
+    under this rule. The flag stays open: only ``resolve_flags`` and
+    ``vouch_for_match`` resolve flags, and a voided match holds nothing.
 
     Each match is voided in its own transaction, as
     ``expire_unconfirmed_matches`` does: lineup lock tried, never waited

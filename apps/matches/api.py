@@ -597,13 +597,17 @@ def vouch_for_match(request: HttpRequest, code: MatchCode) -> MatchOut:
     A match recorded with the same teams and date as another, with other
     scores, is held from counting along with that match until each one is
     vouched for at its own level. A match with an Event is vouched for by
-    a member of the verified organizer that ran it, who did not play in
-    it. A match with no Event is vouched for by one player of each team.
-    Once both matches are vouched for, both count again when confirmed.
-    The response is this match only: the other match is never named. A
-    vouch cannot be undone. Vouching again changes nothing. A voided
-    match, and a match nothing holds, get 409. Anyone else gets 404, as
-    for an unknown code.
+    a member of the verified organizer that ran it whose player is in no
+    match of the match's correction chain. A match with no Event is
+    vouched for by one player of each team. A match with a club and no
+    Event has no level: nobody vouches for it, and a hold against it ends
+    only when a match is voided or the hold period ends. Once both
+    matches are vouched for, each counts again once it is confirmed and
+    no other open hold keeps it. The response is this match only: the
+    other match is never named. A vouch cannot be undone. Vouching again
+    while the hold is open changes nothing. A voided match, and a match
+    nothing holds (a released one included), get 409. Anyone else gets
+    404, as for an unknown code.
     """
     # The service checks ``vouch_level`` before it reads anything, and
     # ``_change`` turns its refusal into the unknown-code 404.
@@ -622,7 +626,9 @@ def list_my_holds(request: HttpRequest) -> QuerySet[Match]:
     Lists each match that is not voided and that a possible duplicate
     hold keeps from counting, when you may vouch for it: a match with no
     Event you played in, or a match of an Event run by a verified
-    organizer you are a member of and did not play in. ``vouched`` says
+    organizer you are a member of, when your player is in no match of its
+    correction chain. A match with a club and no Event is never listed:
+    nobody vouches for it. ``vouched`` says
     whether your side has vouched for it already. The other match of the
     hold is never named. A match leaves the list once the hold ends.
     """

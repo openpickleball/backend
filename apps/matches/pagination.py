@@ -2,7 +2,8 @@
 
 Shared by a player's match history (``apps/players/api.py``), the
 matches awaiting the signed-in player's confirmation, and the held
-matches the signed-in Account may vouch for (``apps/matches/api.py``). It lives here, not in either API module,
+matches the signed-in Account may vouch for (both in
+``apps/matches/api.py``). It lives here, not in either API module,
 because ``apps.players.api`` imports ``apps.matches.api``.
 """
 

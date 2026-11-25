@@ -259,8 +259,9 @@ class MatchQuerySet(LedgerQuerySet["Match"]):
         ``possible_duplicate`` flag links it, as ``match`` or as
         ``duplicate_of``, to a match that is not voided. This is ADR 0011's
         hold, refined so that a voided match (expired or corrected) stops
-        holding the other one, and a flag a moderator resolved holds
-        nothing (``apps.matches.workflow.resolve_flags``).
+        holding the other one, and a resolved flag holds nothing (a
+        moderator's ``apps.matches.workflow.resolve_flags``, or vouches
+        through ``vouch_for_match``).
         """
         flags = MatchFlag.objects.filter(
             reason=FlagReason.POSSIBLE_DUPLICATE, resolved_at__isnull=True
@@ -993,9 +994,9 @@ class FlagReason(models.TextChoices):
 
 
 class FlagResolution(models.TextChoices):
-    """How a moderator closed a flag (#40).
+    """How a flag was closed (#40): by a moderator, or by vouches (#270).
 
-    ``approved``: the flagged result stands. ``dismissed``: the flag was
+    ``approved``: the flagged result stands. Vouching always approves. ``dismissed``: the flag was
     not a real concern. Either way the flag stops holding its matches.
     """
 
@@ -1004,7 +1005,7 @@ class FlagResolution(models.TextChoices):
 
 
 class MatchFlag(_LinkMessagesModel):
-    """A reason to hold a Match for moderator review (#40).
+    """A reason to hold a Match from counting until it is resolved (#40).
 
     See CONTEXT.md, Flagged Match. ``record_match()`` creates a
     ``possible_duplicate`` flag for each earlier Match that is not voided,
@@ -1013,7 +1014,7 @@ class MatchFlag(_LinkMessagesModel):
     Match in the ledger.
 
     An open ``possible_duplicate`` flag holds both its ``match`` and its
-    ``duplicate_of`` from counting until a moderator resolves it, whatever
+    ``duplicate_of`` from counting until it is resolved, whatever
     the new Match's status or submitter (ADR 0011). The one refinement
     (``MatchQuerySet.counted``): a voided match, expired or corrected, no
     longer holds the other one. The engine adapter counts only
