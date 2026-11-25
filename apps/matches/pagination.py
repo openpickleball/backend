@@ -1,8 +1,8 @@
 """Limit and offset paging of match lists, newest first.
 
-Shared by a player's match history (``apps/players/api.py``) and the
-matches awaiting the signed-in player's confirmation
-(``apps/matches/api.py``). It lives here, not in either API module,
+Shared by a player's match history (``apps/players/api.py``), the
+matches awaiting the signed-in player's confirmation, and the held
+matches the signed-in Account may vouch for (``apps/matches/api.py``). It lives here, not in either API module,
 because ``apps.players.api`` imports ``apps.matches.api``.
 """
 
@@ -14,7 +14,8 @@ from ninja import Field, Schema
 from ninja.pagination import LimitOffsetPagination
 
 from apps.matches.models import Match
-from apps.matches.schemas import match_out
+from apps.matches.schemas import HoldOut, match_out
+from apps.matches.workflow import vouched_at_own_level
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -53,5 +54,33 @@ class MatchHistoryPagination(LimitOffsetPagination):
         viewer = cast("_User", request.auth)  # type: ignore[attr-defined]
         page[self.items_attribute] = [
             match_out(match, viewer) for match in page[self.items_attribute]
+        ]
+        return page
+
+
+class HoldPagination(MatchHistoryPagination):
+    """``MatchHistoryPagination`` whose items are ``HoldOut``.
+
+    Each page's matches become a ``HoldOut``: the match as the signed-in
+    Account sees it, and whether the Account's level has vouched for it.
+    """
+
+    def paginate_queryset(
+        self,
+        queryset: QuerySet[Match],
+        pagination: Any,
+        request: HttpRequest,
+        **params: Any,
+    ) -> Any:
+        page = LimitOffsetPagination.paginate_queryset(
+            self, queryset, pagination, request, **params
+        )
+        viewer = cast("_User", request.auth)  # type: ignore[attr-defined]
+        page[self.items_attribute] = [
+            HoldOut(
+                match=match_out(match, viewer),
+                vouched=vouched_at_own_level(match, viewer),
+            )
+            for match in page[self.items_attribute]
         ]
         return page

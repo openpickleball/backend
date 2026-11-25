@@ -391,6 +391,24 @@
         "title": "GameTarget",
         "type": "integer"
       },
+      "HoldOut": {
+        "description": "A held match the signed-in Account may vouch for (#270, ADR 0034).\n\n``match`` is the match as the Account sees it. The other match of each\npossible duplicate flag that holds it is never named. ``vouched`` is\ntrue when the Account's own level has vouched for this match on every\nopen flag that holds it: for an Event match, its organizer; for a\nmatch with no Event, a player on the Account's team.",
+        "properties": {
+          "match": {
+            "$ref": "#/components/schemas/MatchOut"
+          },
+          "vouched": {
+            "title": "Vouched",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "match",
+          "vouched"
+        ],
+        "title": "HoldOut",
+        "type": "object"
+      },
       "Input": {
         "properties": {
           "limit": {
@@ -776,6 +794,27 @@
           "count"
         ],
         "title": "PagedEventOut",
+        "type": "object"
+      },
+      "PagedHoldOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HoldOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "PagedHoldOut",
         "type": "object"
       },
       "PagedMatchOut": {
@@ -2644,6 +2683,126 @@
         ]
       }
     },
+    "/api/v1/matches/{code}/vouch": {
+      "post": {
+        "description": "Vouch that a held match is not a duplicate of the other match.\n\nA match recorded with the same teams and date as another, with other\nscores, is held from counting along with that match until each one is\nvouched for at its own level. A match with an Event is vouched for by\na member of the verified organizer that ran it, who did not play in\nit. A match with no Event is vouched for by one player of each team.\nOnce both matches are vouched for, both count again when confirmed.\nThe response is this match only: the other match is never named. A\nvouch cannot be undone. Vouching again changes nothing. A voided\nmatch, and a match nothing holds, get 409. Anyone else gets 404, as\nfor an unknown code.",
+        "operationId": "vouch_for_match",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "M-7K3M-QX9R-D2KR"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "M-7K3M-QX9R-D2KR"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Vouch For Match",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
     "/api/v1/matches/{code}/withdraw-dispute": {
       "post": {
         "description": "Withdraw your dispute of a match you played in.\n\nThe match stays disputed while another player's dispute is open. Once\nno dispute is open, it is confirmed again when it was confirmed before\nthe dispute, else pending, and a confirmed match counts again. Your\ndispute still counts as your one dispute, so disputing again changes\nnothing. Withdrawing again changes nothing unless the match was voided\nmeanwhile. A voided match, and a match you have no open dispute on,\nget 409. Anyone who did not play in the match gets 404, as\nfor an unknown code.",
@@ -2854,6 +3013,101 @@
           }
         ],
         "summary": "List Matches Awaiting Confirmation",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
+    "/api/v1/me/matches/holds": {
+      "get": {
+        "description": "The held matches you may vouch for, newest first.\n\nLists each match that is not voided and that a possible duplicate\nhold keeps from counting, when you may vouch for it: a match with no\nEvent you played in, or a match of an Event run by a verified\norganizer you are a member of and did not play in. ``vouched`` says\nwhether your side has vouched for it already. The other match of the\nhold is never named. A match leaves the list once the hold ends.",
+        "operationId": "list_my_holds",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedHoldOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List My Holds",
         "tags": [
           "matches"
         ]

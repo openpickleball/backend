@@ -359,6 +359,20 @@ def match_out(match: Match, viewer: "_User | None") -> MatchOut:
     )
 
 
+class HoldOut(Schema):
+    """A held match the signed-in Account may vouch for (#270, ADR 0034).
+
+    ``match`` is the match as the Account sees it. The other match of each
+    possible duplicate flag that holds it is never named. ``vouched`` is
+    true when the Account's own level has vouched for this match on every
+    open flag that holds it: for an Event match, its organizer; for a
+    match with no Event, a player on the Account's team.
+    """
+
+    match: MatchOut
+    vouched: bool
+
+
 # CSV results files (#71)
 
 
