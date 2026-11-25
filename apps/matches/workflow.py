@@ -24,6 +24,11 @@ States and transitions:
   duplicate checks, and flags. Only a moderator edits a disputed match.
 - ``expire_unconfirmed_matches``: with ``MATCH_CONFIRMATION_EXPIRY_DAYS``
   set, voids pending matches older than that.
+- ``expire_disputes_and_holds``: voids a disputed match whose first open
+  dispute is older than ``MATCH_DISPUTE_EXPIRY_DAYS``, and the newer match
+  (``match``) of a possible duplicate flag open for longer than
+  ``MATCH_DUPLICATE_HOLD_DAYS``, so the earlier one counts again (ADR
+  0034).
 - ``resolve_flags``: a moderator closes every open flag that involves a
   match, as approved or dismissed, with a reason. It changes no Match:
   a resolved flag stops holding its matches from counting.
@@ -67,7 +72,7 @@ Expiry only tries the lineup lock and skips a match it cannot get.
 """
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
@@ -80,7 +85,7 @@ from django.db.models import Exists, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 from oauth2_provider.models import get_application_model
 
-from apps.audit.models import AuditAction
+from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
 from apps.matches.models import (
     ConfirmationDecision,
@@ -148,7 +153,7 @@ class ExpiryFailed(RuntimeError):
 
     def __init__(self, failed: int) -> None:
         self.failed = failed
-        super().__init__(f"{failed} unconfirmed matches could not be expired.")
+        super().__init__(f"{failed} matches could not be expired.")
 
 
 def _lock_row(match: Match) -> Match:
@@ -428,17 +433,29 @@ def _check_reason(moderator: bool, reason: str) -> None:
 
 
 def _void(
-    locked: Match, *, action: AuditAction, actor: Actor | None, reason: str
+    locked: Match,
+    *,
+    action: AuditAction,
+    actor: Actor | None,
+    reason: str,
+    rule: str | None = None,
 ) -> None:
-    """Void a locked match, audit it, and send its signals."""
+    """Void a locked match, audit it, and send its signals.
+
+    ``rule``, when given, names the expiry rule in the Audit Event's
+    ``after``.
+    """
     was_counting = locked.is_counted()
     linked = _counting(_linked(locked))
     before = _set_status(locked, MatchStatus.VOIDED)
+    after = snapshot(locked, ["status"])
+    if rule is not None:
+        after["rule"] = rule
     record_event(
         action=action,
         target=locked,
         before=before,
-        after=snapshot(locked, ["status"]),
+        after=after,
         reason=reason,
         **audit_actor(actor),
     )
@@ -739,11 +756,29 @@ def expire_unconfirmed_matches(now: datetime | None = None) -> int:
         .order_by("pk")
         .values_list("pk", flat=True)
     )
+    expired, failed = _expire_each(candidates, lambda pk: _expire_one(pk, cutoff))
+    if expired:
+        logger.info("Expired %d unconfirmed matches.", expired)
+    if failed:
+        raise ExpiryFailed(failed)
+    return expired
+
+
+def _expire_each(
+    pks: Iterable[int], expire_one: Callable[[int], bool]
+) -> tuple[int, int]:
+    """Run ``expire_one`` on each match id. Returns (expired, failed).
+
+    Each call runs its own transaction. A match that fails rolls back
+    alone and is logged by id only; the others still expire. The task's
+    soft time limit (``SoftTimeLimitExceeded``) is not a failed match: it
+    stops the run at once, keeping the matches already expired.
+    """
     expired = 0
     failed = 0
-    for pk in candidates:
+    for pk in pks:
         try:
-            if _expire_one(pk, cutoff):
+            if expire_one(pk):
                 expired += 1
         except SoftTimeLimitExceeded:
             # Out of time: stop cleanly. Matches already expired stay
@@ -754,11 +789,7 @@ def expire_unconfirmed_matches(now: datetime | None = None) -> int:
             # text could hold anything. The other matches still expire.
             failed += 1
             logger.error("Could not expire match %s.", pk)
-    if expired:
-        logger.info("Expired %d unconfirmed matches.", expired)
-    if failed:
-        raise ExpiryFailed(failed)
-    return expired
+    return expired, failed
 
 
 def _expire_one(pk: int, cutoff: datetime) -> bool:
@@ -776,6 +807,160 @@ def _expire_one(pk: int, cutoff: datetime) -> bool:
         if locked is None:
             return False
         _void(locked, action=AuditAction.MATCH_EXPIRE, actor=None, reason="")
+        return True
+
+
+def dispute_started_at(match: Match) -> datetime | None:
+    """When the match's first open dispute was made, or None.
+
+    A dispute is open when no dispute resolution (a ``dispute.outcome``
+    Audit Event) for the match comes after it: a resolution settles every
+    dispute made before it, and a participant who disputes later starts a
+    new period. Withdrawal (#267) must also leave out withdrawn disputes
+    here, since the dispute expiry rule reads only this.
+    """
+    resolved = (
+        AuditEvent.objects.filter(
+            target_content_type__app_label=Match._meta.app_label,
+            target_content_type__model=Match._meta.model_name,
+            target_object_id=str(match.pk),
+            action=AuditAction.DISPUTE_OUTCOME,
+        )
+        .order_by("-created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    disputes = MatchConfirmation.objects.filter(
+        match_id=match.pk, decision=ConfirmationDecision.DISPUTE
+    )
+    if resolved is not None:
+        disputes = disputes.filter(created_at__gt=resolved)
+    started: datetime | None = (
+        disputes.order_by("created_at").values_list("created_at", flat=True).first()
+    )
+    return started
+
+
+def expire_disputes_and_holds(now: datetime | None = None) -> int:
+    """Void unsettled disputes and possible duplicate holds (ADR 0034).
+
+    The dispute rule voids a disputed match whose first open dispute
+    (``dispute_started_at``) is older than ``MATCH_DISPUTE_EXPIRY_DAYS``.
+    The hold rule then voids the ``match`` (the newer one) of each open
+    possible duplicate flag older than ``MATCH_DUPLICATE_HOLD_DAYS`` whose
+    two matches are not voided, so the earlier match counts again and
+    sends ``release``. The flag stays open: only ``resolve_flags`` resolves
+    flags, and a voided match holds nothing.
+
+    Each match is voided in its own transaction, as
+    ``expire_unconfirmed_matches`` does: lineup lock tried, never waited
+    for, then the row lock with skip locked, then the rule checked again.
+    One ``match.expire`` Audit Event, no actor, whose ``after`` names the
+    rule. Running twice is safe. Returns how many matches were voided. A
+    match that fails is logged by id and skipped; after both rules ran,
+    the run raises ``ExpiryFailed`` with how many failed.
+    """
+    now = now or timezone.now()
+    dispute_cutoff = now - timedelta(days=settings.MATCH_DISPUTE_EXPIRY_DAYS)
+    hold_cutoff = now - timedelta(days=settings.MATCH_DUPLICATE_HOLD_DAYS)
+    # A cheap superset: any dispute made before the cutoff. The open
+    # dispute's start is checked for each match under its locks.
+    disputed = list(
+        Match.objects.filter(status=MatchStatus.DISPUTED)
+        .filter(
+            Exists(
+                MatchConfirmation.objects.filter(
+                    match=OuterRef("pk"),
+                    decision=ConfirmationDecision.DISPUTE,
+                    created_at__lt=dispute_cutoff,
+                )
+            )
+        )
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    expired, failed = _expire_each(
+        disputed, lambda pk: _expire_dispute(pk, dispute_cutoff)
+    )
+    held = list(
+        _expired_holds(hold_cutoff)
+        .order_by("match_id")
+        .values_list("match_id", flat=True)
+        .distinct()
+    )
+    held_expired, held_failed = _expire_each(
+        held, lambda pk: _expire_hold(pk, hold_cutoff)
+    )
+    expired += held_expired
+    failed += held_failed
+    if expired:
+        logger.info("Expired %d disputed or held matches.", expired)
+    if failed:
+        raise ExpiryFailed(failed)
+    return expired
+
+
+def _expired_holds(cutoff: datetime) -> QuerySet[MatchFlag]:
+    """Open possible duplicate flags older than ``cutoff`` that still hold."""
+    return MatchFlag.objects.filter(
+        reason=FlagReason.POSSIBLE_DUPLICATE,
+        resolved_at__isnull=True,
+        created_at__lt=cutoff,
+    ).exclude(
+        Q(match__status=MatchStatus.VOIDED) | Q(duplicate_of__status=MatchStatus.VOIDED)
+    )
+
+
+def _lock_for_expiry(pk: int, status: Q) -> Match | None:
+    """Try the match's lineup lock, then its row lock, never waiting.
+
+    Returns None when either is held elsewhere or the match's status fails
+    ``status``. Call inside a transaction.
+    """
+    if not try_advisory_lock(stored_lineup_lock_key(Match(pk=pk))):
+        return None
+    locked: Match | None = (
+        Match.objects.select_for_update(skip_locked=True).filter(status, pk=pk).first()
+    )
+    return locked
+
+
+def _expire_dispute(pk: int, cutoff: datetime) -> bool:
+    """Void one match whose open dispute began before ``cutoff``."""
+    with transaction.atomic():
+        locked = _lock_for_expiry(pk, Q(status=MatchStatus.DISPUTED))
+        if locked is None:
+            return False
+        started = dispute_started_at(locked)
+        if started is None or started >= cutoff:
+            return False
+        _void(
+            locked,
+            action=AuditAction.MATCH_EXPIRE,
+            actor=None,
+            reason="",
+            rule="dispute",
+        )
+        return True
+
+
+def _expire_hold(pk: int, cutoff: datetime) -> bool:
+    """Void the newer match of a possible duplicate flag held past ``cutoff``.
+
+    The lineup lock also covers the flag's earlier match (the same teams
+    and date), so its status cannot change meanwhile.
+    """
+    with transaction.atomic():
+        locked = _lock_for_expiry(pk, ~Q(status=MatchStatus.VOIDED))
+        if locked is None or not _expired_holds(cutoff).filter(match=locked).exists():
+            return False
+        _void(
+            locked,
+            action=AuditAction.MATCH_EXPIRE,
+            actor=None,
+            reason="",
+            rule="duplicate_hold",
+        )
         return True
 
 

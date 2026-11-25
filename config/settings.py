@@ -644,6 +644,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=3, minute=0),
         "options": {"expire_seconds": 3600},
     },
+    # Voids a disputed match past MATCH_DISPUTE_EXPIRY_DAYS and the newer
+    # match of a possible duplicate flag past MATCH_DUPLICATE_HOLD_DAYS
+    # (#268, ADR 0034). A run missed for more than an hour is dropped.
+    "expire-disputes-and-holds": {
+        "task": "apps.matches.tasks.expire_disputes_and_holds",
+        "schedule": crontab(hour=3, minute=30),
+        "options": {"expire_seconds": 3600},
+    },
     # Deletes queued emails older than three days and queues stuck ones
     # again (ADR 0016). A run missed for 15 minutes is dropped.
     "sweep-queued-emails": {
