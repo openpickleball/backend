@@ -44,6 +44,11 @@ pending files first (``fail_for_submitter_void``). A run in flight either
 committed a row before that (the void sees its match) or sees the file
 failed at its next row and stops.
 
+A failed file's stored row results describe the state when processing
+stopped. A bulk void fails the file and then voids the rows' matches, so
+those rows still read ``recorded``: the file's ``voided`` error is what
+tells the uploader.
+
 Processing is safe to run twice, even at once: runs take the file lock
 row by row, and the final report is stored only while the file is still
 pending.
@@ -444,7 +449,8 @@ def _finish(
     Sets the status (failed when ``error_code`` is set, else done), empties
     the file, and stores ``report``, or keeps the row results already
     stored when ``report`` is None. Either way the held-match warning is
-    applied to the stored rows (``_mark_held``).
+    applied to the stored rows (``_mark_held``). The stored rows describe
+    the state at this moment: nothing updates them afterward.
     """
     with transaction.atomic():
         results_file = (
@@ -474,7 +480,9 @@ def fail_for_void(batch_id: int) -> None:
 
     ``apps.matches.workflow.void_submission_batch`` calls it, in its own
     transaction, before it reads or voids any match, so no run records a
-    row of the file afterward. The row results stored so far are kept.
+    row of the file afterward. The row results stored so far are kept as
+    they are: the void then voids their matches, so they still read
+    ``recorded``, and the file's ``voided`` error tells the uploader.
     """
     results_file_id = (
         ResultsFile.objects.filter(submission_batch_id=batch_id)
@@ -512,8 +520,10 @@ def _existing_result(row: CsvMatch, match: Match) -> RowResult:
     """The result of a row whose match this batch already holds.
 
     Its name warnings are worked out again from the match's own players,
-    whatever their Accounts' state now, so the result is the one the row
-    got when it was recorded.
+    whatever their Accounts' state now, against their current display
+    names. So the result matches the one the row got when it was recorded
+    unless a player's display name changed in between, which changes the
+    warning.
     """
     display_names = dict(
         MatchParticipant.objects.filter(match_id=match.pk).values_list(
