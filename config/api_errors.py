@@ -44,6 +44,9 @@ A request that an operation's `auth` does not authenticate (ninja's
 `AuthenticationError`, see `config/auth.py`) returns 401 with code
 "unauthorized", fixed text, and no items.
 
+An `HttpError` takes its code from its status: 413 (a file over an
+upload's size limit) is "too_large".
+
 A request a throttle refuses (ninja's `Throttled`, an `HttpError`, see
 `config/throttling.py`) returns 429 with code "throttled", ninja's fixed
 text, and no items. ninja sets the `Retry-After` header.

@@ -39,6 +39,10 @@ Each Match stores its match type when it is recorded: the Event's kind,
 Club links, and the ledger guard keeps it from changing, so a later change
 of the Event's kind moves only matches recorded after it. A correction
 copies the type of the match it corrects.
+
+A ``ResultsFile`` is an uploaded CSV results file and its report (#71). It
+is not a ledger row and has no ledger guard: only
+``apps.matches.results_files`` creates and changes it.
 """
 
 import datetime

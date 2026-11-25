@@ -53,6 +53,14 @@ transaction, and ``confirm_match`` takes the lineup lock ``record_match``
 already holds, then the row lock of a match no other transaction can see
 yet, so the lock order stays the same and nothing can wait on it.
 
+An Organizer's CSV results upload (#71) is on ``organizer_router``,
+mounted at /api/v1/organizer/. A member of the Event's verified Organizer
+(``permissions.can_manage_events``) uploads a file
+(``create_results_file``), which ``apps.matches.results_files`` stores and
+a worker processes, and reads its report (``get_results_file``). Anyone
+else, and an unknown Event or file, gets the same 404. Only the uploader
+reads a report.
+
 No rule reads payment status: every player may submit and confirm every
 match (hard rule 7).
 """
