@@ -26,16 +26,19 @@ their own:
 
 A failure while building or queuing notices is logged with the match's
 row id and the error class only, and never fails the change, which has
-already committed.
+already committed. It is caught per recipient and per held match, so one
+failed notice never drops the others.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 
 from apps.clubs.models import OrganizerMember
@@ -78,6 +81,30 @@ def _failed(match_pk: int, exc: Exception) -> int:
         "Could not queue notices for match %s (%s).", match_pk, type(exc).__name__
     )
     return 0
+
+
+def _queue_one(
+    match_pk: int,
+    template: str,
+    build: Callable[[], EmailMultiAlternatives | None],
+) -> bool:
+    """Build and queue one recipient's notice; True when one was queued.
+
+    ``build`` returns None when the recipient gets no notice. A failure is
+    logged by ``_failed`` and does not stop the other recipients.
+    """
+    # The broad catch is safe: the change has committed, and one
+    # recipient's notice is never worth dropping the others' over. Only
+    # the class is logged, since an error's text can quote an address.
+    try:
+        message = build()
+        if message is None:
+            return False
+        queue_email(message, template=template)
+    except Exception as exc:
+        _failed(match_pk, exc)
+        return False
+    return True
 
 
 def send_dispute_notices(match_pk: int, disputer_team: str) -> int:
@@ -147,30 +174,47 @@ def _send_dispute_notices(match_pk: int, disputer_team: str) -> int:
     if started is None:
         return 0
     ends_on = _ends_on(started, settings.MATCH_DISPUTE_EXPIRY_DAYS)
-    sent: set[int] = set()
+    seen: set[int] = set()
+    count = 0
     for participant in _participants(match):
         account = participant.player.account
         if participant.team == disputer_team or not account.is_active:
             continue
-        if account.pk in sent:
+        if account.pk in seen:
             continue
-        message = render_dispute_notice(
-            account, match, team=participant.team, ends_on=ends_on
+        seen.add(account.pk)
+        count += _queue_one(
+            match.pk,
+            DISPUTE_NOTICE,
+            partial(
+                render_dispute_notice,
+                account,
+                match,
+                team=participant.team,
+                ends_on=ends_on,
+            ),
         )
-        queue_email(message, template=DISPUTE_NOTICE)
-        sent.add(account.pk)
     for member in _organizer_members(match):
-        if member.pk in sent or not settles_dispute(member, match):
+        if member.pk in seen:
             continue
-        message = render_dispute_notice(member, match, team=None, ends_on=ends_on)
-        queue_email(message, template=DISPUTE_NOTICE)
-        sent.add(member.pk)
-    return len(sent)
+        seen.add(member.pk)
+        count += _queue_one(
+            match.pk,
+            DISPUTE_NOTICE,
+            partial(_organizer_dispute_notice, member, match, ends_on),
+        )
+    return count
+
+
+def _organizer_dispute_notice(
+    member: "_User", match: Match, ends_on: date
+) -> EmailMultiAlternatives | None:
+    if not settles_dispute(member, match):
+        return None
+    return render_dispute_notice(member, match, team=None, ends_on=ends_on)
 
 
 def _send_hold_notices(new_match_pk: int) -> int:
-    from apps.matches.workflow import _open_holds_of
-
     flags = MatchFlag.objects.filter(
         match_id=new_match_pk,
         reason=FlagReason.POSSIBLE_DUPLICATE,
@@ -185,24 +229,34 @@ def _send_hold_notices(new_match_pk: int) -> int:
             targets.append(earlier)
     count = 0
     for target_pk in targets:
-        match = Match.objects.filter(pk=target_pk).first()
-        if match is None or match.status == MatchStatus.VOIDED:
-            continue
-        holds = _open_holds_of(match)
-        if target_pk != new_match_pk and holds.exclude(pk__in=flag_pks).exists():
-            # An older open flag already held this earlier match, and its
-            # recipients were told when that hold began. Telling them again
-            # for every new near duplicate would grow with the square of
-            # the submissions.
-            continue
-        holding = list(
-            holds.filter(pk__in=flag_pks).values_list("created_at", flat=True)
-        )
-        if not holding:
-            continue
-        ends_on = _ends_on(max(holding), settings.MATCH_DUPLICATE_HOLD_DAYS)
-        count += _send_holds_for(match, ends_on)
+        # The broad catch is safe for the same reasons as in _queue_one:
+        # one held match's failure never drops the other held matches.
+        try:
+            count += _send_hold_target(target_pk, new_match_pk, flag_pks)
+        except Exception as exc:
+            _failed(target_pk, exc)
     return count
+
+
+def _send_hold_target(target_pk: int, new_match_pk: int, flag_pks: list[int]) -> int:
+    """The hold notices for one match a flag of this submission holds."""
+    from apps.matches.workflow import _open_holds_of
+
+    match = Match.objects.filter(pk=target_pk).first()
+    if match is None or match.status == MatchStatus.VOIDED:
+        return 0
+    holds = _open_holds_of(match)
+    if target_pk != new_match_pk and holds.exclude(pk__in=flag_pks).exists():
+        # An older open flag already held this earlier match, and its
+        # recipients were told when that hold began. Telling them again
+        # for every new near duplicate would grow with the square of
+        # the submissions.
+        return 0
+    holding = list(holds.filter(pk__in=flag_pks).values_list("created_at", flat=True))
+    if not holding:
+        return 0
+    ends_on = _ends_on(max(holding), settings.MATCH_DUPLICATE_HOLD_DAYS)
+    return _send_holds_for(match, ends_on)
 
 
 def _send_holds_for(match: Match, ends_on: date) -> int:
@@ -214,18 +268,26 @@ def _send_holds_for(match: Match, ends_on: date) -> int:
         teams.setdefault(account.pk, participant.team)
         candidates.append(account)
     candidates += _organizer_members(match)
-    sent: set[int] = set()
+    seen: set[int] = set()
+    count = 0
     for account in candidates:
-        if account.pk in sent or not account.is_active:
+        if account.pk in seen or not account.is_active:
             continue
-        if vouch_level(account, match) is None:
-            continue
-        message = render_hold_notice(
-            account, match, team=teams.get(account.pk), ends_on=ends_on
+        seen.add(account.pk)
+        count += _queue_one(
+            match.pk,
+            HOLD_NOTICE,
+            partial(_hold_notice, account, match, teams.get(account.pk), ends_on),
         )
-        queue_email(message, template=HOLD_NOTICE)
-        sent.add(account.pk)
-    return len(sent)
+    return count
+
+
+def _hold_notice(
+    account: "_User", match: Match, team: str | None, ends_on: date
+) -> EmailMultiAlternatives | None:
+    if vouch_level(account, match) is None:
+        return None
+    return render_hold_notice(account, match, team=team, ends_on=ends_on)
 
 
 def _ends_on(start: datetime, days: int) -> date:

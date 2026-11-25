@@ -266,11 +266,12 @@ def test_a_notice_failure_never_fails_the_dispute(
 
     assert Match.objects.get(pk=confirmed.pk).status == MatchStatus.DISPUTED
     assert mail.outbox == []
-    [record] = [r for r in caplog.records if r.name == "apps.matches.notices"]
-    assert record.getMessage() == (
+    records = [r for r in caplog.records if r.name == "apps.matches.notices"]
+    # One line for each of the two recipients on the other team.
+    assert [r.getMessage() for r in records] == [
         f"Could not queue notices for match {confirmed.pk} (RuntimeError)."
-    )
-    assert record.exc_info is None
+    ] * 2
+    assert all(r.exc_info is None for r in records)
     assert "made-up secret text" not in caplog.text
 
 
