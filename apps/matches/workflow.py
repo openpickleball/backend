@@ -14,14 +14,19 @@ States and transitions:
   Organizer Application Grant, confirms a pending match alone.
 - ``dispute_match``: a participant disputes a pending or confirmed match,
   which becomes disputed.
-- ``resolve_dispute``: a moderator resolves a disputed match as confirmed
-  or voided, with a reason.
+- ``resolve_dispute``: the match's Event's verified Organizer
+  (``settles_dispute``: a member whose Player is not in the match's
+  correction chain, or the approved application that submitted the match
+  and still acts for that Organizer, ADR 0034), or a moderator, resolves
+  a disputed match as confirmed or voided, with a required reason.
 - ``void_match``: a moderator, or an actor ``can_change_match`` allows,
   voids a match in any other status.
 - ``edit_match``: the same actors void a match and create its correction
   (``corrects`` links it to the old one) in one transaction, through the
   creation core ``record_match`` uses: validation, model rules, locks,
-  duplicate checks, and flags. Only a moderator edits a disputed match.
+  duplicate checks, and flags. Only a moderator, or the Event's verified
+  Organizer settling the dispute with a required reason, edits a
+  disputed match.
 - ``expire_unconfirmed_matches``: with ``MATCH_CONFIRMATION_EXPIRY_DAYS``
   set, voids pending matches older than that.
 - ``expire_disputes_and_holds``: voids a disputed match whose first open
@@ -111,6 +116,7 @@ from apps.matches.permissions import (
     is_moderator,
     moderates,
     participant_player,
+    settles_dispute,
 )
 from apps.matches.services import (
     advisory_lock,
@@ -342,11 +348,11 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
     ``match.dispute`` Audit Event, and a match that was counting sends
     ``match_changed`` with ``change=dispute``. A disputed match only gains
     the participant's dispute row. A participant disputes a match at most
-    once: a repeat (also after a moderator resolved the dispute as
-    confirmed) does nothing. A voided match raises ``MatchStateError``.
-    Only a participant may dispute. A dispute takes no reason: Audit
-    Events are append-only, and a participant's free text could hold a
-    name.
+    once: a repeat (also after a moderator or the Event's Organizer resolved
+    the dispute as confirmed) does nothing. A voided match raises
+    ``MatchStateError``. Only a participant may dispute. A dispute takes no
+    reason: Audit Events are append-only, and a participant's free text
+    could hold a name.
     """
     _saved(match)
     player = participant_player(actor, match)
@@ -357,7 +363,8 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
         if locked.status == MatchStatus.VOIDED:
             raise MatchStateError
         # A participant disputes a match once. A repeat, even after a
-        # moderator resolved the dispute as confirmed, changes nothing.
+        # moderator or the Event's Organizer resolved the dispute as
+        # confirmed, changes nothing.
         added = _record_decision(locked, player, ConfirmationDecision.DISPUTE)
         if not added or locked.status == MatchStatus.DISPUTED:
             return locked
@@ -380,20 +387,37 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
         return locked
 
 
-def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) -> Match:
-    """A moderator resolves a disputed match as confirmed or voided.
+_DISPUTE_REASON_REQUIRED = "Give a reason for the dispute outcome."
 
-    ``reason`` is required. Records one ``dispute.outcome`` Audit Event. A
-    confirmed outcome sends ``match_confirmed``; a voided one sends
-    ``release`` for each match it no longer holds.
+
+def resolve_dispute(
+    match: Match,
+    *,
+    actor: Actor,
+    outcome: str,
+    reason: str,
+    as_moderator: bool = True,
+) -> Match:
+    """Resolve a disputed match as confirmed or voided.
+
+    For the match's Event's verified Organizer (``settles_dispute``: a
+    member whose Player is not in the match's correction chain, or the
+    approved application that submitted the match and still acts for that
+    Organizer, ADR 0034), or a moderator (``moderates``). ``reason`` is
+    required. Records one ``dispute.outcome`` Audit Event. A confirmed
+    outcome sends ``match_confirmed``; a voided one sends ``release`` for
+    each match it no longer holds. With ``as_moderator=False`` (the
+    Organizer's API operations) the moderator path is never taken: only
+    ``settles_dispute`` lets the actor resolve.
     """
     _saved(match)
-    if not moderates(actor, match):
+    moderator = as_moderator and moderates(actor, match)
+    if not (moderator or settles_dispute(actor, match)):
         raise MatchActionDenied
     if outcome not in _RESOLUTIONS:
         raise ValueError("Resolve a dispute as confirmed or voided.")
     if not reason.strip():
-        raise ValueError("Give a reason for the dispute outcome.")
+        raise ValueError(_DISPUTE_REASON_REQUIRED)
     with transaction.atomic():
         locked = _lock(match)
         if locked.status != MatchStatus.DISPUTED:
@@ -414,21 +438,25 @@ def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) ->
         return locked
 
 
-_REASON_REFUSED = "Only a moderator may give a reason."
+_REASON_REFUSED = (
+    "Only a moderator, or an organizer settling a dispute, may give a reason."
+)
 
 
 class ReasonRefused(ValueError):
-    """An actor not acting as moderator gave a reason. Fixed text."""
+    """An actor not acting as moderator, nor as the Organizer settling a
+    dispute, gave a reason. Fixed text."""
 
     def __init__(self) -> None:
         super().__init__(_REASON_REFUSED)
 
 
 def _check_reason(moderator: bool, reason: str) -> None:
-    """Refuse a non-moderator's reason with fixed text.
+    """Refuse the reason of an actor who may not give one, with fixed text.
 
     Audit Events are append-only, so free text that could hold a name is
-    stored only from moderators.
+    stored only from moderators and from the Event's verified Organizer
+    settling a dispute (ADR 0034). ``moderator`` is True for either.
     """
     if not moderator and reason.strip():
         raise ReasonRefused
@@ -476,8 +504,9 @@ def void_match(match: Match, *, actor: Actor, reason: str = "") -> Match:
 
     Any status but voided becomes voided, with one ``match.void`` Audit
     Event. Only a moderator may give a ``reason``; anyone else giving one
-    gets ``ValueError``. A match that was counting sends ``match_changed`` with
-    ``change=void``, and each match it no longer holds gets ``release``.
+    gets ``ReasonRefused``. A match that was counting sends
+    ``match_changed`` with ``change=void``, and each match it no longer
+    holds gets ``release``.
     """
     _saved(match)
     # A moderator who played in the match falls back to the other rules.
@@ -512,25 +541,36 @@ def edit_match(
     event_label: str = "",
     bracket_label: str = "",
     sequence: int = 0,
+    as_moderator: bool = True,
 ) -> Match:
     """Void ``match`` and create its correction. Returns the new match.
 
     For a moderator, or an actor ``can_change_match`` allows that may also
     submit the correction (``can_create_match`` for the old match's Event
-    and Club and the new players), checked before any validation; only a
-    moderator edits a disputed match, and a voided one raises
-    ``MatchStateError``. The correction keeps the old match's submitter,
-    external id, Event, and Club, links to it through ``corrects``, and is
-    confirmed when the old one was confirmed or disputed, else pending. It
-    goes through validation, the model rules, and the duplicate checks
+    and Club and the new players), checked before any validation. Only a
+    moderator, or the Event's verified Organizer settling the dispute
+    (``settles_dispute`` with the new players, ADR 0034), edits a disputed
+    match; anyone else gets ``MatchStateError``, as for a voided match.
+    With ``as_moderator=False`` (the Organizer's API operations) the
+    moderator path is never taken, so only the non-moderator rules apply.
+
+    The correction keeps the old match's submitter, external id, Event,
+    and Club, links to it through ``corrects``, and is confirmed when the
+    old one was confirmed or disputed, else pending. It goes through
+    validation, the model rules, and the duplicate checks
     (``MatchValidationError``, ``DuplicateMatchError``), and any error
     rolls everything back. One ``match.edit`` Audit Event on the old match
-    records it (no separate ``match.void``). Only a moderator may give a
-    ``reason``; anyone else giving one gets ``ValueError``. Signals: ``match_changed``
-    with ``change=edit`` for an old match that was counting (the earlier
-    of the two dates), else ``match_confirmed`` for a confirmed
-    correction, and ``hold`` or ``release`` for each other match whose
-    counting changed.
+    records it (no separate ``match.void``).
+
+    Only a moderator, or the settling Organizer, may give a ``reason``;
+    anyone else giving one gets ``ReasonRefused``. The settling Organizer
+    must give one (``ValueError``), and a match that is no longer disputed
+    under the lock refuses it (``MatchStateError``).
+
+    Signals: ``match_changed`` with ``change=edit`` for an old match that
+    was counting (the earlier of the two dates), else ``match_confirmed``
+    for a confirmed correction, and ``hold`` or ``release`` for each other
+    match whose counting changed.
     """
     _saved(match)
     new_player_ids = [
@@ -540,7 +580,9 @@ def edit_match(
     ]
     # A moderator who played in the match, or who puts their own Player in
     # the correction, falls back to the other rules.
-    moderator = moderates(actor, match, new_player_ids=new_player_ids)
+    # With as_moderator=False (the Organizer's API operations) only the
+    # non-moderator rules apply, whoever the actor is.
+    moderator = as_moderator and moderates(actor, match, new_player_ids=new_player_ids)
     if not (moderator or can_change_match(actor, match)):
         raise MatchActionDenied
     stored = Match.objects.select_related(
@@ -560,7 +602,17 @@ def edit_match(
         )
         if not can_create_match(actor, submission):
             raise MatchActionDenied
-    _check_reason(moderator, reason)
+    # The Event's verified Organizer settling a dispute (ADR 0034) gives a
+    # reason, as a moderator does. The status read here only decides
+    # whether a reason may be given; it is checked again under the lock.
+    settles = (
+        not moderator
+        and stored.status == MatchStatus.DISPUTED
+        and settles_dispute(actor, match, new_player_ids=new_player_ids)
+    )
+    _check_reason(moderator or settles, reason)
+    if settles and not reason.strip():
+        raise ValueError(_DISPUTE_REASON_REQUIRED)
     draft = draft_match(
         format=format,
         team_a=team_a,
@@ -587,7 +639,10 @@ def edit_match(
         locked = _lock_row(match)
         if locked.status == MatchStatus.VOIDED:
             raise MatchStateError
-        if locked.status == MatchStatus.DISPUTED and not moderator:
+        # Only a moderator or the settling Organizer edits a disputed match.
+        # A match no longer disputed under the lock refuses the settling
+        # Organizer's reason: a reason is taken only to settle a dispute.
+        if not moderator and (locked.status == MatchStatus.DISPUTED) != settles:
             raise MatchStateError
         old_status = MatchStatus(locked.status)
         was_counting = locked.is_counted()

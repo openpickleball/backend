@@ -4,12 +4,14 @@
 /api/v1/openapi.json and the interactive docs at /api/v1/docs. The health
 router (`config/health.py`) is mounted at /api/v1/health/, the signed-in
 Account at /api/v1/accounts/, match submission, reading one match,
-confirmation, and dispute at /api/v1/matches/, a player's match history and player
+confirmation, dispute, and the Organizer's dispute resolution and
+correction at /api/v1/matches/, a player's match history and player
 search (/api/v1/players/search), a player's profile, the rating lookup
 (/api/v1/players/{code}/ratings), and a player's rating history
 (/api/v1/players/{code}/rating-history) at /api/v1/players/, and at
-/api/v1/me/ the matches awaiting the signed-in player's confirmation and
-the signed-in Account's own Player.
+/api/v1/me/ the matches awaiting the signed-in player's confirmation, the
+disputed matches of the signed-in Account's verified Organizers' Events,
+and the signed-in Account's own Player.
 
 Adding an app's endpoints (usually one router per app):
 

@@ -14,6 +14,7 @@ No confirmation row is shown, and nothing names who confirmed or
 disputed, though a participant can sometimes infer it (ADR 0015).
 """
 
+import unicodedata
 from collections.abc import Callable
 from datetime import date, datetime
 from enum import StrEnum
@@ -21,7 +22,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from django.db.models import Prefetch, QuerySet
 from ninja import Schema
-from pydantic import BeforeValidator, Field
+from pydantic import AfterValidator, BeforeValidator, Field
 from pydantic_core import PydanticCustomError
 
 from apps.matches.models import (
@@ -113,6 +114,76 @@ class MatchCreateIn(Schema):
     game_target: GameTarget | None = None
 
 
+MAX_REASON_LENGTH = 1000
+# Control characters and lone surrogates, as Player search refuses them.
+# Postgres refuses a NUL in text, which would be a 500. A typed reason may
+# hold line breaks and tabs.
+_REASON_REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
+_REASON_ALLOWED_CONTROLS = frozenset({"\n", "\r", "\t"})
+
+
+def _reason(value: object) -> object:
+    """Refuse a blank, overlong, or control-character reason with fixed text.
+
+    The messages never repeat the value: a reason is free text, and the
+    422 response returns each message to the client.
+    """
+    if isinstance(value, str):
+        if any(
+            unicodedata.category(char) in _REASON_REFUSED_CATEGORIES
+            and char not in _REASON_ALLOWED_CONTROLS
+            for char in value
+        ):
+            raise PydanticCustomError(
+                "invalid", "The reason has a character not allowed."
+            )
+        if not value.strip():
+            raise PydanticCustomError("blank", "Give a reason.")
+        if len(value) > MAX_REASON_LENGTH:
+            raise PydanticCustomError(
+                "too_long",
+                f"Enter a reason of at most {MAX_REASON_LENGTH} characters.",
+            )
+    return value
+
+
+ReasonText = Annotated[
+    str,
+    AfterValidator(_reason),
+    Field(json_schema_extra={"minLength": 1, "maxLength": MAX_REASON_LENGTH}),
+]
+
+
+class DisputeOutcome(StrEnum):
+    """How the Event's Organizer settles a dispute."""
+
+    CONFIRMED = "confirmed"
+    VOIDED = "voided"
+
+
+class DisputeResolutionIn(Schema):
+    """The Organizer's decision on a disputed match, and why.
+
+    The reason is stored in the match's audit log, which cannot be
+    erased, so it should not name a player.
+    """
+
+    outcome: DisputeOutcome
+    reason: ReasonText
+
+
+class DisputeCorrectionIn(MatchCreateIn):
+    """The Organizer's correction of a disputed match, and why.
+
+    The fields are ``create_match``'s, except that a scoring type or game
+    target left out is the disputed match's; a missing best-of is inferred
+    from the games. The reason is stored in the match's audit log, which
+    cannot be erased, so it should not name a player.
+    """
+
+    reason: ReasonText
+
+
 class ParticipantOut(Schema):
     """A player in a match. ``code`` is null for a Private player."""
 
@@ -150,18 +221,17 @@ class MatchOut(Schema):
     not play in the match. ``my_decision`` is the latest confirm or dispute
     this player recorded on the match, ``none`` when they recorded none or
     did not play. A repeated decision is not recorded again, so confirming
-    again after a dispute that a moderator resolved still shows
-    ``dispute``. An organizer's confirmation is not a player decision: a
-    player who confirms as a member of the match's Event Organizer still
-    shows ``none``. For a participant, ``confirmed_by_team`` says whether
-    a player on each team recorded a confirmation (a dispute is not a
-    confirmation); it is null for anyone else. A confirmation still shows
-    in ``confirmed_by_team`` after the same player disputes, since a
+    again after a dispute that a moderator or the Event's organizer resolved
+    still shows ``dispute``. An organizer's confirmation is not a player
+    decision: a player who confirms as a member of the match's Event
+    Organizer still shows ``none``. For a participant, ``confirmed_by_team``
+    says whether a player on each team recorded a confirmation (a dispute is
+    not a confirmation); it is null for anyone else. A confirmation still
+    shows in ``confirmed_by_team`` after the same player disputes, since a
     recorded decision is never withdrawn. It counts player confirmations
-    only: a match confirmed by an organizer or a moderator, or a
-    correction, can be confirmed with both false, so read ``status`` for
-    whether the match is confirmed. ``created_at`` is when the match was
-    submitted.
+    only: a match confirmed by an organizer or a moderator, or a correction,
+    can be confirmed with both false, so read ``status`` for whether the
+    match is confirmed. ``created_at`` is when the match was submitted.
     """
 
     code: str

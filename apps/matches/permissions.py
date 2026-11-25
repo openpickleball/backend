@@ -54,6 +54,13 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   an Event, so one with event authority and the Clubs' consent, whose
   exact duplicate matches a pending match confirms it (ADR 0013, ADR
   0021).
+- ``settles_dispute``: the Event's verified Organizer settling a dispute
+  (ADR 0034): an actor ``can_change_match`` allows that also passes
+  ``can_confirm_as_organizer``, and, for an Account, has no Player in the
+  match's correction chain or, for a correction, in the new teams (the
+  rule ``moderates`` applies to moderators). Such an actor resolves a
+  dispute or corrects a disputed match, with a required reason. A match
+  with no Event has no Organizer level.
 - ``is_moderator``: an active Account with the ``matches.moderate_match``
   permission. A moderator may void and edit any match, resolve disputes,
   resolve flags, and approve matches, except a match they played in.
@@ -413,10 +420,44 @@ def moderates(
     account = _account(actor)
     if account is None:
         return False
+    return not _plays_in(account.pk, match.pk, new_player_ids)
+
+
+def _plays_in(account_pk: int, match_pk: int, new_player_ids: Collection[int]) -> bool:
+    """True when the Account has a Player in any match of ``match_pk``'s
+    correction chain or among ``new_player_ids``. Read from the database."""
     if MatchParticipant.objects.filter(
-        match_id__in=_correction_chain(match.pk), player__account_id=account.pk
+        match_id__in=_correction_chain(match_pk), player__account_id=account_pk
     ).exists():
-        return False
-    return not Player.objects.filter(
-        pk__in=list(new_player_ids), account_id=account.pk
+        return True
+    return Player.objects.filter(
+        pk__in=list(new_player_ids), account_id=account_pk
     ).exists()
+
+
+def settles_dispute(
+    actor: Actor, match: Match, *, new_player_ids: Collection[int] = ()
+) -> bool:
+    """True when ``actor`` settles a dispute on the saved ``match`` as its
+    Event's verified Organizer (ADR 0034, the level after the players).
+
+    That is an actor ``can_change_match`` allows (a member of the Event's
+    verified Organizer, or the approved application that submitted the
+    match) that also has event authority over the match's Event
+    (``can_confirm_as_organizer``), so an application whose Organizer is no
+    longer verified, or whose grant was removed, is refused. A member whose
+    Account has a Player in any match of the match's correction chain or,
+    for a correction, among ``new_player_ids`` is refused, the rule
+    ``moderates`` applies to moderators; another member is not. A match
+    with no Event has no Organizer level. The match's status is not
+    checked here. Everything is read from the database by ids.
+    """
+    if match.pk is None:
+        return False
+    if not (can_change_match(actor, match) and can_confirm_as_organizer(actor, match)):
+        return False
+    account = _account(actor)
+    if account is None:
+        # An application: it has no Player.
+        return True
+    return not _plays_in(account.pk, match.pk, new_player_ids)

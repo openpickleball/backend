@@ -1,7 +1,8 @@
 """A refused reason has its own error class, and the admin catches only it (#40).
 
 ``ReasonRefused`` (a ``ValueError``) is what the workflow raises when an
-actor who is not acting as moderator gives a reason. The admin turns only
+actor who is not acting as moderator, nor as the Event's Organizer
+settling a dispute (ADR 0034), gives a reason. The admin turns only
 that, and ``MatchActionDenied``, into the fixed "not allowed" text; any
 other ``ValueError`` is not hidden behind it. Made-up data only.
 """
@@ -66,7 +67,10 @@ def test_an_organizer_admin_giving_a_reason_gets_reason_refused(
     organizer_admin: User = UserFactory.create()
     match = _event_match(players, organizer_admin)
 
-    with pytest.raises(ReasonRefused, match=r"Only a moderator may give a reason\."):
+    with pytest.raises(
+        ReasonRefused,
+        match=r"Only a moderator, or an organizer settling a dispute, may give a reason\.",
+    ):
         void_match(match, actor=organizer_admin, reason=REASON)
 
     assert Match.objects.get(pk=match.pk).status == MatchStatus.CONFIRMED

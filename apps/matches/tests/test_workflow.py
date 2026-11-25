@@ -56,6 +56,7 @@ from apps.partners.tests.factories import (
     approved_application,
 )
 from apps.players.models import Player
+from apps.players.tests.factories import PlayerFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -311,7 +312,7 @@ def test_a_resolution_is_confirmed_or_voided(
         resolve_dispute(disputed, actor=moderator, outcome=outcome, reason=REASON)
 
 
-def test_only_a_moderator_resolves(disputed: Match, players: list[Player]) -> None:
+def test_a_participant_cannot_resolve(disputed: Match, players: list[Player]) -> None:
     with pytest.raises(MatchActionDenied):
         resolve_dispute(
             disputed,
@@ -431,7 +432,7 @@ def _edit(match: Match, actor: Any, **overrides: Any) -> Match:
         "team_b": teams[Team.B],
         "games": OTHER_GAMES,
         "played_on": stored.played_on,
-        # Only a moderator may give a reason (review finding L).
+        # Only a moderator may give a reason here (review finding L).
         "reason": REASON if is_moderator(actor) else "",
     }
     values.update(overrides)
@@ -548,14 +549,39 @@ def test_a_voided_match_cannot_be_edited(pending: Match, moderator: User) -> Non
         _edit(pending, moderator)
 
 
-def test_only_a_moderator_edits_a_disputed_match(event: Event, moderator: User) -> None:
+def test_a_moderator_or_the_organizer_edits_a_disputed_match(
+    event: Event, moderator: User
+) -> None:
+    match: Match = MatchFactory.create(event=event)
+    raw_update(match, status=MatchStatus.DISPUTED)
+    member = _member(event)
+    playing = _member(event, role=MemberRole.ADMIN)
+    PlayerFactory.create(account=playing)
+
+    # The settling Organizer gives a reason (ADR 0034).
+    with pytest.raises(ValueError, match="Give a reason"):
+        _edit(match, member, games=((11, 3),))
+    # A member whose own Player is in the correction does not settle it.
+    with pytest.raises(MatchStateError):
+        _edit(
+            match,
+            playing,
+            games=((11, 3),),
+            team_a=[Player.objects.get(account=playing)],
+        )
+
+    corrected = _edit(match, moderator, games=((11, 3),))
+    assert corrected.status == MatchStatus.CONFIRMED
+
+
+def test_the_organizer_correction_of_a_disputed_match_is_confirmed(
+    event: Event,
+) -> None:
     match: Match = MatchFactory.create(event=event)
     raw_update(match, status=MatchStatus.DISPUTED)
 
-    with pytest.raises(MatchStateError):
-        _edit(match, _member(event), games=((11, 3),))
+    corrected = _edit(match, _member(event), games=((11, 3),), reason=REASON)
 
-    corrected = _edit(match, moderator, games=((11, 3),))
     assert corrected.status == MatchStatus.CONFIRMED
 
 

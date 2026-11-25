@@ -27,6 +27,17 @@ code, so the response never reveals that the match exists (ADR 0008).
 A participant whose change the match's status does not allow still gets
 409.
 
+The Event's verified Organizer settles a dispute on its match (ADR 0034):
+``resolve_match_dispute`` resolves it as confirmed or voided, and
+``correct_disputed_match`` voids it and records a confirmed correction,
+each with a required reason (``workflow.resolve_dispute`` and
+``workflow.edit_match``). Both refuse anyone ``permissions.settles_dispute``
+refuses, a member whose Player plays in the match included, with the
+unknown-code 404, before any team code is read. A moderator who is not a
+member is refused the same way: moderators review matches in the admin
+(ADR 0029). The disputed matches of the signed-in Account's verified
+Organizers' Events are at /api/v1/me/matches/organizer-disputes.
+
 The matches awaiting the signed-in player's confirmation are at
 /api/v1/me/matches/awaiting-confirmation (``me_router``): pending matches
 the player played in that nobody on their team has confirmed yet
@@ -56,14 +67,22 @@ from ninja import Router, Status
 from ninja.pagination import paginate
 
 from apps.matches import workflow
-from apps.matches.models import Match
+from apps.matches.models import Match, MatchStatus
 from apps.matches.pagination import MatchHistoryPagination
 from apps.matches.permissions import (
     MatchActionDenied,
     MatchPermissionDenied,
     participant_player,
+    settles_dispute,
 )
-from apps.matches.schemas import MatchCreateIn, MatchOut, match_out, with_match_details
+from apps.matches.schemas import (
+    DisputeCorrectionIn,
+    DisputeResolutionIn,
+    MatchCreateIn,
+    MatchOut,
+    match_out,
+    with_match_details,
+)
 from apps.matches.services import MatchIssue, MatchValidationError, record_match
 from apps.players.models import Player
 from apps.public_ids.api import PublicCodePath, get_by_public_code
@@ -283,13 +302,159 @@ def confirm_match(request: HttpRequest, code: MatchCode) -> MatchOut:
     openapi_extra=_CHANGE_OPENAPI,
 )
 def dispute_match(request: HttpRequest, code: MatchCode) -> MatchOut:
-    """Dispute a match you played in. A moderator then reviews it.
+    """Dispute a match you played in.
+
+    A disputed match stops counting. For a match with an Event, the
+    Event's organizer then settles it.
 
     Disputing again changes nothing. A voided match cannot be disputed
     (409). Anyone who did not play in the match gets 404, as for an
     unknown code.
     """
     return _change(request, code, workflow.dispute_match)
+
+
+def _settled_match(request: HttpRequest, code: str) -> tuple["_User", Match]:
+    """The signed-in Account and the match it settles a dispute on.
+
+    Anyone who may not settle a dispute on the match as its Event's
+    verified Organizer (``settles_dispute``) gets the unknown-code 404,
+    before anything else is read. A moderator who is not a member gets it
+    too: moderators review matches in the admin (ADR 0029).
+    """
+    account = request_account(request)
+    match = get_by_public_code(Match.objects.all(), code)
+    if not settles_dispute(account, match):
+        raise Http404
+    return account, match
+
+
+@router.post(
+    "/{code}/resolve-dispute",
+    response=_CHANGE_RESPONSES,
+    operation_id="resolve_match_dispute",
+    openapi_extra=_CHANGE_OPENAPI,
+)
+def resolve_match_dispute(
+    request: HttpRequest, code: MatchCode, payload: DisputeResolutionIn
+) -> MatchOut:
+    """Settle a dispute on your Event's match as confirmed or voided.
+
+    For a member of the verified organizer that ran the match's Event,
+    who did not play in the match. The reason is required and is kept in
+    the match's audit log, which cannot be erased, so do not name a
+    player in it. A confirmed match counts again. A match that is not
+    disputed gets 409. Anyone else gets 404, as for an unknown code.
+    """
+    account, match = _settled_match(request, code)
+    try:
+        with transaction.atomic():
+            workflow.resolve_dispute(
+                match,
+                actor=account,
+                outcome=payload.outcome,
+                reason=payload.reason,
+                as_moderator=False,
+            )
+    except MatchActionDenied:
+        raise Http404 from None
+    return match_out(_loaded(match), account)
+
+
+@router.post(
+    "/{code}/dispute-correction",
+    response=_CHANGE_RESPONSES,
+    operation_id="correct_disputed_match",
+    openapi_extra=_CHANGE_OPENAPI,
+)
+def correct_disputed_match(
+    request: HttpRequest, code: MatchCode, payload: DisputeCorrectionIn
+) -> MatchOut:
+    """Settle a dispute on your Event's match by correcting it.
+
+    For a member of the verified organizer that ran the match's Event, who
+    plays neither in the match nor in the correction. The correction also
+    needs the consent of every Club the match names to your organizer;
+    without it you get 404 as well. The disputed match is voided and the
+    correction, given as for a new match, is created confirmed and returned.
+    A scoring type or game target left out is the disputed match's, and a
+    missing best-of is inferred from the games. Its location, labels, and
+    order come from the disputed match. The reason is required and is kept
+    in the match's audit log, which cannot be erased, so do not name a
+    player in it. A match that is not disputed gets 409. Anyone else gets
+    404, as for an unknown code.
+    """
+    account, match = _settled_match(request, code)
+    teams = _resolve_teams(payload)
+    new_player_ids = [player.pk for team in teams.values() for player in team]
+    if not settles_dispute(account, match, new_player_ids=new_player_ids):
+        raise Http404
+    if match.status != MatchStatus.DISPUTED:
+        raise workflow.MatchStateError
+    same_day = payload.played_on == match.played_on
+    try:
+        with transaction.atomic():
+            corrected = workflow.edit_match(
+                match,
+                actor=account,
+                reason=payload.reason,
+                format=payload.format,
+                team_a=teams["team_a"],
+                team_b=teams["team_b"],
+                games=[(game.team_a, game.team_b) for game in payload.games],
+                played_on=payload.played_on,
+                best_of=payload.best_of,
+                # An omitted setting is the disputed match's, not the
+                # default for a new match. best_of is inferred as usual.
+                game_target=(
+                    payload.game_target
+                    if payload.game_target is not None
+                    else match.game_target
+                ),
+                scoring_type=(
+                    payload.scoring_type
+                    if payload.scoring_type is not None
+                    else match.scoring_type
+                ),
+                played_at=match.played_at if same_day else None,
+                played_at_utc_offset=(match.played_at_utc_offset if same_day else None),
+                location=match.location,
+                event_label=match.event_label,
+                bracket_label=match.bracket_label,
+                sequence=match.sequence,
+                as_moderator=False,
+            )
+    except MatchActionDenied:
+        raise Http404 from None
+    except workflow.ReasonRefused:
+        # Checked above under no lock: the match stopped being disputed
+        # before the edit read it.
+        raise workflow.MatchStateError from None
+    except MatchValidationError as error:
+        raise _in_body(error) from None
+    return match_out(_loaded(corrected), account)
+
+
+@me_router.get(
+    "/matches/organizer-disputes",
+    response={200: list[MatchOut]},
+    operation_id="list_organizer_disputes",
+)
+@paginate(MatchHistoryPagination)
+def list_organizer_disputes(request: HttpRequest) -> QuerySet[Match]:
+    """The disputed matches of your organizers' Events, newest first.
+
+    Lists every disputed match of an Event run by a verified organizer
+    you are a member of. Anyone else gets an empty page. A match leaves
+    the list once its dispute is settled or ends.
+    """
+    viewer = request_account(request)
+    disputed = Match.objects.filter(
+        status=MatchStatus.DISPUTED,
+        event__organizer__verified_at__isnull=False,
+        event__organizer__members__account=viewer,
+    ).distinct()
+    return with_match_details(disputed).order_by("-played_on", "-created_at", "-pk")
 
 
 @me_router.get(

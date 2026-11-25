@@ -1,6 +1,7 @@
 # 0015. First-party match endpoints
 
 - Status: Proposed
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (#269: a member of the Event's verified Organizer reads the disputed matches of its Events, and settles one through its own operations, which return the match or its correction and answer 409 for a match that is not disputed)
 - Date: 2026-11-17
 
 ## Context
