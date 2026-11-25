@@ -20,9 +20,9 @@ their own:
   match's Organizer members, a self-reported match's players, nobody for
   a club-only match). A voided match, or one no open flag of this
   submission still holds, gets nothing. An earlier match that an older
-  open flag (one not written by this submission, its other match not
-  voided) already held gets nothing either: its recipients were told
-  when that hold began. The new match is always notified.
+  open flag (written before this submission's flags, by id, its other
+  match not voided) already held gets nothing either: its recipients were
+  told when that hold began. The new match is always notified.
 
 A failure while building or queuing notices is logged with the match's
 row id and the error class only, and never fails the change, which has
@@ -246,11 +246,13 @@ def _send_hold_target(target_pk: int, new_match_pk: int, flag_pks: list[int]) ->
     if match is None or match.status == MatchStatus.VOIDED:
         return 0
     holds = _open_holds_of(match)
-    if target_pk != new_match_pk and holds.exclude(pk__in=flag_pks).exists():
+    if target_pk != new_match_pk and holds.filter(pk__lt=min(flag_pks)).exists():
         # An older open flag already held this earlier match, and its
         # recipients were told when that hold began. Telling them again
         # for every new near duplicate would grow with the square of
-        # the submissions.
+        # the submissions. Only flags older than this submission's count
+        # (flag ids are insertion order): a newer flag's callback skips
+        # this match because of ours, so ours must still tell them.
         return 0
     holding = list(holds.filter(pk__in=flag_pks).values_list("created_at", flat=True))
     if not holding:
