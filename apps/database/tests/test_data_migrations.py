@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from django.db import migrations
 from django.db.migrations.loader import MigrationLoader
-from django.db.utils import ConnectionDoesNotExist
+from django.utils.connection import ConnectionDoesNotExist
 
 MISSING_ALIAS = "no_such_alias"
 
@@ -31,7 +31,8 @@ def _run_python_functions() -> Iterator[tuple[str, Any, Any]]:
             apps = loader.project_state((app_label, name), at_end=False).apps
             for function in (operation.code, operation.reverse_code):
                 if function is not None and function is not migrations.RunPython.noop:
-                    yield f"{app_label}.{name}.{function.__name__}", function, apps
+                    label = getattr(function, "__name__", repr(function))
+                    yield f"{app_label}.{name}.{label}", function, apps
 
 
 FUNCTIONS = list(_run_python_functions())
