@@ -10,8 +10,8 @@ States and transitions:
 - ``confirm_match``: a participant records their confirmation. A pending
   match becomes confirmed once at least one player of each team has
   confirmed it. A member (either role) of the match's Event's verified
-  Organizer, or an approved application that Organizer owns, confirms a
-  pending match alone.
+  Organizer, or an approved application that Organizer owns or granted an
+  Organizer Application Grant, confirms a pending match alone.
 - ``dispute_match``: a participant disputes a pending or confirmed match,
   which becomes disputed.
 - ``resolve_dispute``: a moderator resolves a disputed match as confirmed

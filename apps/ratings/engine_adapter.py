@@ -18,9 +18,9 @@ Converting a Match (``to_engine_match``):
   engine feeds the category matches into overall doubles itself.
 - The match type is the Event's kind. A Match with a Club and no Event is
   ``rec_verified``, and one with neither is self-reported (decision F1 in
-  #1, ADR 0024). Submitted input never chooses it. Since ADR 0021 no new
-  Match with a Club and no Event can be recorded, so that mapping covers
-  only matches already in the Ledger.
+  #1, ADR 0024). Submitted input never chooses it. Since ADR 0021 no
+  submission can create a Match with a Club and no Event, so that mapping
+  covers only matches already in the Ledger and their corrections.
 - The game format is the scoring type and game target, win by 2, no cap
   (``validate_match``'s rules). Games are ordered by game number.
 - ``played_at`` keeps its instant, in a ``datetime.timezone`` of the stored
@@ -275,7 +275,8 @@ def to_engine_match(match: Match) -> open_engine.Match:
 
     # Only the Event, then the Club, decide the match type, never
     # submitted input (ADR 0024). A Club with no Event is only a match
-    # already in the Ledger: none can be recorded since ADR 0021.
+    # already in the Ledger, or its correction: none can be submitted since
+    # ADR 0021.
     event = match.event
     if event is not None:
         match_type = _look_up(_MATCH_TYPES, event.kind, "event kind", code)
