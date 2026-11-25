@@ -15,7 +15,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
 
-from apps.audit.access import AuditedAccessModel, audited_access
+from apps.audit.access import AuditedAccessModel
 from apps.audit.models import AuditAction
 from apps.public_ids.codes import CodeType
 from apps.public_ids.models import PublicCodeModel
@@ -232,7 +232,6 @@ class Organizer(_CleanedTextModel):
             return super().delete(*args, **kwargs)
 
 
-@audited_access
 class OrganizerMember(AuditedAccessModel):
     """An Account that acts for an Organizer, with its role.
 
@@ -315,7 +314,6 @@ class OrganizerMember(AuditedAccessModel):
         return verified_by is not None and verified_by == self.account_id
 
 
-@audited_access
 class ClubRole(AuditedAccessModel):
     """An Account's role at a Club.
 
@@ -365,7 +363,6 @@ class ClubRole(AuditedAccessModel):
         }
 
 
-@audited_access
 class ClubOrganizerGrant(AuditedAccessModel):
     """A Club's consent for one Organizer to name it (ADR 0021).
 

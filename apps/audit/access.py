@@ -2,9 +2,9 @@
 
 Organizer Members, Club Roles, Club Organizer Grants, and Organizer
 Application Grants decide who may submit counted matches (CLAUDE.md, hard
-rule 8). A model that inherits ``AuditedAccessModel`` and is decorated with
-``audited_access`` records one Audit Event for each add, change, and
-removal, in the same transaction as the change:
+rule 8). A concrete model that inherits ``AuditedAccessModel`` records one
+Audit Event for each add, change, and removal, in the same transaction as
+the change:
 
 - ``save()`` locks and reads the stored row, saves, reads it again, and
   records an add (no stored row) or a change (the values differ). A save
@@ -26,8 +26,11 @@ Raw writes skip all of this: ``bulk_create``, ``QuerySet.update``,
 
 from typing import Any, ClassVar
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.base_user import AbstractBaseUser
 from django.db import models, transaction
-from django.db.models.signals import pre_delete
+from django.db.models.signals import class_prepared, pre_delete
+from django.dispatch import receiver
 
 from apps.audit.actor import current_actor
 from apps.audit.models import AuditAction
@@ -51,7 +54,8 @@ class AuditedAccessModel(models.Model):
             before = None if stored is None else stored.audit_values()
             super().save(*args, **kwargs)
             saved = _stored(self, lock=False)
-            assert saved is not None
+            if saved is None:
+                raise RuntimeError("The saved row could not be read back.")
             after = saved.audit_values()
             if before is None:
                 _record(self, self.AUDIT_ADD, before=None, after=after)
@@ -82,6 +86,7 @@ def _record(
     *,
     before: dict[str, Any] | None,
     after: dict[str, Any] | None,
+    origin: object = None,
 ) -> None:
     # Imported here: apps.audit.services imports django-oauth-toolkit's
     # models, which must not load while the models that use this module do.
@@ -90,10 +95,34 @@ def _record(
     record_event(
         action=action,
         target=target,
-        actor=current_actor(),
+        actor=_actor(origin),
         before=before,
         after=after,
     )
+
+
+def _actor(origin: object) -> AbstractBaseUser | None:
+    """The current actor, unless the delete removes that Account itself.
+
+    An Account deleting itself cascades to its Club Roles and its
+    applications' grants. An event naming it as actor would point at a
+    row that is gone at commit, and the audit foreign key would refuse
+    the whole delete, so that event has no actor. Its ``before`` still
+    holds the Account's row id.
+    """
+    actor = current_actor()
+    if actor is None or origin is None:
+        return actor
+    account_model = get_user_model()
+    if isinstance(origin, account_model) and origin.pk == actor.pk:
+        return None
+    if (
+        isinstance(origin, models.QuerySet)
+        and origin.model is account_model
+        and origin.filter(pk=actor.pk).exists()
+    ):
+        return None
+    return actor
 
 
 def _record_removal(
@@ -102,24 +131,35 @@ def _record_removal(
     """Record a removal before the row is deleted.
 
     Runs inside the delete's transaction, so the event and the delete
-    commit together. A row already gone records nothing.
+    commit together. A row already gone records nothing. ``origin`` is
+    what the delete started from (Django sends it), so an Account's own
+    delete is recognized (``_actor``).
     """
     stored = _stored(instance, lock=True)
     if stored is None:
         return
-    _record(stored, sender.AUDIT_REMOVE, before=stored.audit_values(), after=None)
-
-
-def audited_access[M: AuditedAccessModel](model: type[M]) -> type[M]:
-    """Class decorator: record the removal of ``model``'s rows.
-
-    Connected per model, never for every sender: a receiver for every
-    model would stop Django's fast delete for all of them.
-    """
-    pre_delete.connect(
-        _record_removal,
-        sender=model,
-        weak=False,
-        dispatch_uid=f"audit-access-removal-{model._meta.label_lower}",
+    _record(
+        stored,
+        sender.AUDIT_REMOVE,
+        before=stored.audit_values(),
+        after=None,
+        origin=kwargs.get("origin"),
     )
-    return model
+
+
+@receiver(class_prepared)
+def _connect_removal(sender: type[models.Model], **kwargs: Any) -> None:
+    """Record the removal of every concrete ``AuditedAccessModel``'s rows.
+
+    Connected per model as each class is built, never for every sender:
+    a receiver for every model would stop Django's fast delete for all of
+    them. A proxy model gets its own receiver, since Django sends
+    ``pre_delete`` with the proxy as sender.
+    """
+    if issubclass(sender, AuditedAccessModel) and not sender._meta.abstract:
+        pre_delete.connect(
+            _record_removal,
+            sender=sender,
+            weak=False,
+            dispatch_uid=f"audit-access-removal-{sender._meta.label_lower}",
+        )

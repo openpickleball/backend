@@ -18,7 +18,7 @@ from django.db import models
 from django.db.models import Q
 from oauth2_provider.models import AbstractApplication
 
-from apps.audit.access import AuditedAccessModel, audited_access
+from apps.audit.access import AuditedAccessModel
 from apps.audit.models import AuditAction
 
 # Written only through update_fields, by the approval service (#29).
@@ -237,7 +237,6 @@ class PartnerApplication(AbstractApplication):
         super().save(*args, **kwargs)
 
 
-@audited_access
 class OrganizerApplicationGrant(AuditedAccessModel):
     """An Organizer's permission for one Partner Application (ADR 0021).
 
