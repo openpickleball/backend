@@ -3,6 +3,8 @@
 # Start Postgres and Valkey:   docker compose up -d --wait
 # Also run the app (optional): docker compose --profile web up -d --wait
 #   (the app, a Celery worker, and beat; beat waits until migrate has run)
+# Also run PgBouncer (optional): docker compose --profile pgbouncer up -d --wait
+#   (transaction mode on 127.0.0.1:6432, like a managed pool; ADR 0038)
 # Stop, keeping local data:    docker compose down
 # Stop and delete local data:  docker compose down -v
 #
@@ -94,9 +96,12 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       # The settings read the mounted .env with the same parser as on the
-      # host. These two win over it because they are in the process
-      # environment, and they point at the services inside the network.
+      # host. These three win over it because they are in the process
+      # environment. The URLs point at the services inside the network, and
+      # an empty DIRECT_DATABASE_URL keeps the app out of pooled mode even
+      # when .env holds the pgbouncer profile's lines (ADR 0038).
       DATABASE_URL: postgres://open@db:5432/open
+      DIRECT_DATABASE_URL: ""
       REDIS_URL: redis://cache:6379/0
     command: ["sh", "-c", "uv sync --locked && uv run python manage.py runserver 0.0.0.0:8000"]
     ports:
@@ -136,6 +141,7 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       DATABASE_URL: postgres://open@db:5432/open
+      DIRECT_DATABASE_URL: ""
       REDIS_URL: redis://cache:6379/0
     command: uv run --no-sync celery -A config worker -Q ratings,email,webhooks,default -l info
     depends_on:
@@ -159,6 +165,7 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       DATABASE_URL: postgres://open@db:5432/open
+      DIRECT_DATABASE_URL: ""
       REDIS_URL: redis://cache:6379/0
     command:
       - sh
