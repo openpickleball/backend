@@ -1,0 +1,35 @@
+# An allowlist: only what the image needs reaches the build context.
+*
+!apps
+!config
+!templates
+!manage.py
+!gunicorn.conf.py
+!pyproject.toml
+!uv.lock
+!.python-version
+!LICENSE
+
+# Never send these, even inside an allowed directory. Secrets and local
+# data follow .gitignore (a test checks it).
+**/.env
+**/.env.*
+**/secrets
+**/*.pem
+**/*.key
+**/*.sqlite
+**/*.sqlite3
+**/*.db
+**/*.dump
+
+# Bytecode and tool caches.
+**/__pycache__
+**/*.py[cod]
+**/.coverage
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+
+# Tests need dev packages, which the image does not have.
+**/tests
