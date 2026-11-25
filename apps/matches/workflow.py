@@ -111,6 +111,7 @@ from apps.matches.permissions import (
     is_moderator,
     moderates,
     participant_player,
+    settles_dispute,
 )
 from apps.matches.services import (
     advisory_lock,
@@ -380,20 +381,27 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
         return locked
 
 
-def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) -> Match:
-    """A moderator resolves a disputed match as confirmed or voided.
+_DISPUTE_REASON_REQUIRED = "Give a reason for the dispute outcome."
 
-    ``reason`` is required. Records one ``dispute.outcome`` Audit Event. A
-    confirmed outcome sends ``match_confirmed``; a voided one sends
-    ``release`` for each match it no longer holds.
+
+def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) -> Match:
+    """Resolve a disputed match as confirmed or voided.
+
+    For the match's Event's verified Organizer (``settles_dispute``: a
+    member whose Player is not in the match's correction chain, or the
+    approved application that submitted the match and still acts for that
+    Organizer, ADR 0034), or a moderator (``moderates``). ``reason`` is
+    required. Records one ``dispute.outcome`` Audit Event. A confirmed
+    outcome sends ``match_confirmed``; a voided one sends ``release`` for
+    each match it no longer holds.
     """
     _saved(match)
-    if not moderates(actor, match):
+    if not (moderates(actor, match) or settles_dispute(actor, match)):
         raise MatchActionDenied
     if outcome not in _RESOLUTIONS:
         raise ValueError("Resolve a dispute as confirmed or voided.")
     if not reason.strip():
-        raise ValueError("Give a reason for the dispute outcome.")
+        raise ValueError(_DISPUTE_REASON_REQUIRED)
     with transaction.atomic():
         locked = _lock(match)
         if locked.status != MatchStatus.DISPUTED:
