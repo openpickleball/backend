@@ -18,7 +18,7 @@ Organizer Members, Club Roles, Club Organizer Grants, and Organizer Application 
 
 ## Consequences
 
-- Every admin path that changes these rows records an event, and the actor is always the Account that acted.
+- Every admin path that changes these rows records an event, and the actor is the Account that acted, except in a delete that removes that Account itself, where every event of that delete has no actor.
 - The ORM, the shell, and code that skips `apps.audit.access` change these rows with no event. Code review keeps new writers on the functions.
 - Any staff Account that changes one of these rows becomes an actor, so it cannot be hard-deleted (`AuditEvent.actor_user` uses `PROTECT`). #116 plans for this.
 - A new admin that saves these rows, or deletes a row that cascades to them, adds `AccessAuditAdminMixin`.
