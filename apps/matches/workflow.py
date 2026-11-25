@@ -760,14 +760,14 @@ def expire_unconfirmed_matches(now: datetime | None = None) -> int:
     if expired:
         logger.info("Expired %d unconfirmed matches.", expired)
     if failed:
-        raise ExpiryFailed(failed)
+        raise ExpiryFailed(len(failed))
     return expired
 
 
 def _expire_each(
     pks: Iterable[int], expire_one: Callable[[int], bool]
-) -> tuple[int, int]:
-    """Run ``expire_one`` on each match id. Returns (expired, failed).
+) -> tuple[int, list[int]]:
+    """Run ``expire_one`` on each match id. Returns (expired, failed ids).
 
     Each call runs its own transaction. A match that fails rolls back
     alone and is logged by id only; the others still expire. The task's
@@ -775,7 +775,7 @@ def _expire_each(
     stops the run at once, keeping the matches already expired.
     """
     expired = 0
-    failed = 0
+    failed: list[int] = []
     for pk in pks:
         try:
             if expire_one(pk):
@@ -787,7 +787,7 @@ def _expire_each(
         except Exception:
             # Its transaction has rolled back. Log the id only: the error's
             # text could hold anything. The other matches still expire.
-            failed += 1
+            failed.append(pk)
             logger.error("Could not expire match %s.", pk)
     return expired, failed
 
@@ -884,12 +884,16 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     expired, failed = _expire_each(
         disputed, lambda pk: _expire_dispute(pk, dispute_cutoff)
     )
-    held = list(
-        _expired_holds(hold_cutoff)
+    # A match the dispute pass failed is not tried again, so it counts and
+    # is logged once.
+    held = [
+        pk
+        for pk in _expired_holds(hold_cutoff)
         .order_by("match_id")
         .values_list("match_id", flat=True)
         .distinct()
-    )
+        if pk not in failed
+    ]
     held_expired, held_failed = _expire_each(
         held, lambda pk: _expire_hold(pk, hold_cutoff)
     )
@@ -898,7 +902,7 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     if expired:
         logger.info("Expired %d disputed or held matches.", expired)
     if failed:
-        raise ExpiryFailed(failed)
+        raise ExpiryFailed(len(failed))
     return expired
 
 
