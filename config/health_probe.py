@@ -2,9 +2,11 @@
 
 DigitalOcean App Platform sends its HTTP health probes straight to the
 container, over plain http, with a Host header that ALLOWED_HOSTS refuses
-(empty, or the instance IP). Django answers such a request with 400
-(DisallowedHost), and with SECURE_SSL_REDIRECT on it redirects plain http
-to https, so the readiness check would fail and a deploy never go live.
+(empty, or the instance IP). With SECURE_SSL_REDIRECT on,
+SecurityMiddleware answers plain http first: building its redirect asks
+for the host, so a refused host raises DisallowedHost (400), and an
+allowed host gets a redirect to https. Either way the readiness check
+would fail and a deploy never go live.
 The platform offers no way to set the probe's Host header. ADR 0039
 records the decision.
 

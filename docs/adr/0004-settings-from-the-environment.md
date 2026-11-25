@@ -1,6 +1,7 @@
 # 0004. Settings from the environment, secure by default
 
 - Status: Proposed
+- Amended by: [ADR 0039](0039-health-probes-from-the-platform.md) (a plain-http GET of the two health paths is answered directly, without the redirect, so App Platform's probes reach the health checks)
 - Date: 2026-11-11
 
 ## Context

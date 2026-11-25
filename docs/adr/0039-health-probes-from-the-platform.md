@@ -7,7 +7,7 @@
 
 DigitalOcean App Platform checks the `web` component with HTTP health probes (issue #61): a readiness check that stops traffic and a liveness check that restarts the container. The probes go straight to the container, not through the platform's edge. They come over plain http, and their Host header is empty or the instance's own IP address, which `ALLOWED_HOSTS` refuses. App Platform offers no way to set the probe's Host header.
 
-With `DJANGO_DEBUG` off, Django refuses such a request in two ways. `CommonMiddleware` asks for the host and gets `DisallowedHost`, which Django answers with 400. Before that, `SecurityMiddleware` redirects plain http to https (`SECURE_SSL_REDIRECT`), which the probe reads as a failure. Either way the readiness check fails and a deploy never goes live. Django's `DisallowedHost` log line also quotes the refused host on every probe.
+With `DJANGO_DEBUG` off, `SECURE_SSL_REDIRECT` is on, and `SecurityMiddleware` answers plain http first. To build its redirect it asks for the host, so a refused host raises `DisallowedHost`, which Django answers with 400. An allowed host over plain http gets a redirect to https, which the probe reads as a failure too. Either way the readiness check fails and a deploy never goes live. Django's `DisallowedHost` log line also quotes the refused host on every probe.
 
 ## Decision
 
@@ -18,6 +18,7 @@ With `DJANGO_DEBUG` off, Django refuses such a request in two ways. `CommonMiddl
 
 ## Consequences
 
+- This amends ADR 0004's consequence that a plain-http health probe gets a redirect and that the health check issue must exempt its path. The two health paths answer a plain-http probe directly. Every other path is still redirected.
 - The health checks answer anyone who reaches them, over http and with any Host header. They take no auth and no input, read no session or cookie, and say only "ok" or "fail" per check, never why, so this exposes nothing new. They were already public.
 - A probe answer carries no security headers (HSTS, `X-Frame-Options`, CORS) and sets no cookie. A health GET with an allowed host over https gets them as before.
 - The readiness check still touches the database and the cache on every probe, as before.

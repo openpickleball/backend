@@ -1040,6 +1040,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 if not DEBUG:
     # Trust X-Forwarded-Proto only because the app runs behind a proxy that
     # sets it (DigitalOcean App Platform). Never serve the app directly.
+    # The one exception: config/health_probe.py reads SECURE_SSL_REDIRECT
+    # and is_secure(), and answers the two health paths to the platform's
+    # direct plain-http probes (ADR 0039).
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
