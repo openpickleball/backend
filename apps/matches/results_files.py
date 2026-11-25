@@ -23,9 +23,26 @@ is emptied once processing ends (done or failed), and the sweep
 (``sweep_results_files``) fails a file still pending after
 ``PENDING_EXPIRY`` and empties it.
 
-Processing is safe to run twice: a row whose match this batch already
-recorded with the same sequence is reported as recorded again, and the
-report is stored only while the file is still pending.
+Each row runs in its own transaction, in this lock order: the Results
+File row (``FOR UPDATE``), then, inside ``record_match()``, the Event row
+(``FOR KEY SHARE``) and the advisory locks. Under the file lock the row
+stops the whole run when the file is no longer pending, looks for a
+Match of this batch with the row's sequence in any status (a voided one
+included), calls ``record_match()`` only when there is none, and stores
+the row's result in the file's report, keyed by sequence. So results
+survive a run that stops, and a rerun never records a row twice: a row
+whose match exists is reported as recorded, or as ``voided`` when a
+moderator voided it.
+
+A moderator's bulk void of the batch (``void_submission_batch``) first
+fails a pending file as ``voided`` (``fail_for_void``) under the same
+file lock, keeping the row results stored so far, and only then voids
+the matches. A run in flight either committed a row before that (the
+void sees its match) or sees the file failed at its next row and stops.
+
+Processing is safe to run twice, even at once: runs take the file lock
+row by row, and the final report is stored only while the file is still
+pending.
 
 Nothing here reads payment status (CLAUDE.md, hard rule 7). Nothing is
 logged but row ids and error classes: the file holds names and IDs.
@@ -62,6 +79,7 @@ from apps.matches.models import (
     GameTarget,
     Match,
     MatchFlag,
+    MatchStatus,
     ResultsFile,
     ResultsFileStatus,
     SubmissionBatch,
@@ -71,8 +89,10 @@ from apps.matches.services import (
     BATCH_REFUSED,
     DuplicateMatchError,
     MatchValidationError,
-    record_match,
     share_lock_event,
+)
+from apps.matches.services import (
+    record_match as record_match,  # Patched by tests.
 )
 from apps.players.models import Player
 
@@ -87,7 +107,9 @@ MAX_ROWS: Final = 1000
 # A file still pending this long after upload fails as ``expired``.
 PENDING_EXPIRY: Final = timedelta(days=3)
 # A pending file queued this long ago is queued again by the sweep. Longer
-# than the task's hard time limit, so a run still going is never doubled.
+# than the task's hard time limit, so a run that started when it was
+# queued has ended. A run that waited in the queue first can still overlap
+# a copy queued again; that is safe (see the module docstring).
 REQUEUE_AFTER: Final = timedelta(minutes=35)
 
 AGE_CONFIRMATION_REQUIRED: Final = (
@@ -97,6 +119,9 @@ FILE_TOO_LARGE: Final = "The file is too large."
 
 TOO_MANY_ROWS: Final = "too_many_rows"
 EXPIRED: Final = "expired"
+VOIDED: Final = "voided"
+
+VOIDED_MESSAGE: Final = "A moderator voided this row's match."
 
 NAME_MISMATCH_MESSAGE: Final = "This name does not match the player's display name."
 POSSIBLE_DUPLICATE_MESSAGE: Final = (
@@ -301,12 +326,13 @@ def _record_row(
     row: CsvMatch,
     players: dict[str, Player],
     *,
-    results_file: ResultsFile,
+    location: str,
     batch: SubmissionBatch,
     uploader: "_User | None",
     event: Event | None,
 ) -> RowResult:
-    """Record one parsed row, or say why not."""
+    """Record one parsed row, or say why not. Call it under the file lock,
+    with no match of this batch at the row's sequence."""
     unknown = [
         player for player in (*row.team_a, *row.team_b) if player.code not in players
     ]
@@ -347,24 +373,12 @@ def _record_row(
             scoring_type=row.scoring_type,
             submitted_by_user=uploader,
             event=event,
-            location=results_file.location,
+            location=location,
             event_label=row.event_label,
             sequence=row.sequence,
             submission_batch=batch,
         )
     except DuplicateMatchError as error:
-        earlier = (
-            Match.objects.filter(
-                public_code=error.existing_code,
-                submission_batch_id=batch.pk,
-                sequence=row.sequence,
-            ).first()
-            if error.existing_code is not None
-            else None
-        )
-        if earlier is not None:
-            # This row, recorded by an earlier run of this file.
-            return _recorded(row, earlier, warnings)
         return RowResult(
             row.row,
             row.sequence,
@@ -392,31 +406,131 @@ def _record_row(
 
 
 def _finish(
-    results_file_id: int, *, report: list[RowResult], error_code: str = ""
+    results_file_id: int,
+    *,
+    report: list[RowResult] | None,
+    error_code: str = "",
 ) -> None:
-    """Store the report and empty the file, once, while it is still pending."""
+    """End processing, once, while the file is still pending.
+
+    Sets the status (failed when ``error_code`` is set, else done), empties
+    the file, and stores ``report``, or keeps the row results already
+    stored when ``report`` is None.
+    """
     with transaction.atomic():
         results_file = (
-            ResultsFile.objects.select_for_update().filter(pk=results_file_id).first()
+            ResultsFile.objects.select_for_update()
+            .defer("content")
+            .filter(pk=results_file_id)
+            .first()
         )
         if results_file is None or results_file.status != ResultsFileStatus.PENDING:
             return
-        results_file.report = [result.as_json() for result in report]
+        fields = ["status", "error_code", "content", "processed_at"]
+        if report is not None:
+            results_file.report = [result.as_json() for result in report]
+            fields.append("report")
         results_file.status = (
             ResultsFileStatus.FAILED if error_code else ResultsFileStatus.DONE
         )
         results_file.error_code = error_code
         results_file.content = b""
         results_file.processed_at = timezone.now()
-        results_file.save(
-            update_fields=[
-                "report",
-                "status",
-                "error_code",
-                "content",
-                "processed_at",
-            ]
+        results_file.save(update_fields=fields)
+
+
+def fail_for_void(batch_id: int) -> None:
+    """Fail the batch's Results File as ``voided``, if it is still pending.
+
+    ``apps.matches.workflow.void_submission_batch`` calls it, in its own
+    transaction, before it reads or voids any match, so no run records a
+    row of the file afterward. The row results stored so far are kept.
+    """
+    results_file_id = (
+        ResultsFile.objects.filter(submission_batch_id=batch_id)
+        .values_list("pk", flat=True)
+        .first()
+    )
+    if results_file_id is not None:
+        _finish(results_file_id, report=None, error_code=VOIDED)
+
+
+def _existing_result(row: CsvMatch, match: Match) -> RowResult:
+    """The result of a row whose match this batch already holds."""
+    if match.status == MatchStatus.VOIDED:
+        return RowResult(
+            row.row,
+            row.sequence,
+            ResultRow.FAILED,
+            issues=[ReportIssue([], VOIDED, VOIDED_MESSAGE)],
         )
+    return _recorded(row, match, [])
+
+
+def _store(results_file: ResultsFile, result: RowResult) -> None:
+    """Put ``result`` in the file's stored report, in place of any result
+    with the same sequence."""
+    report = [
+        stored
+        for stored in results_file.report
+        if stored.get("sequence") != result.sequence
+    ]
+    report.append(result.as_json())
+    report.sort(key=lambda stored: int(stored["sequence"]))
+    results_file.report = report
+    results_file.save(update_fields=["report"])
+
+
+def _process_row(
+    results_file_id: int,
+    row: CsvMatch | CsvRowError,
+    players: dict[str, Player],
+    *,
+    batch: SubmissionBatch,
+    location: str,
+) -> RowResult | None:
+    """Process one row under the file's lock and store its result.
+
+    Returns None, writing nothing, when the file is no longer pending: the
+    run stops.
+    """
+    with transaction.atomic():
+        results_file = (
+            ResultsFile.objects.select_for_update()
+            .defer("content")
+            .filter(pk=results_file_id)
+            .first()
+        )
+        if results_file is None or results_file.status != ResultsFileStatus.PENDING:
+            return None
+        if isinstance(row, CsvRowError):
+            result = RowResult(
+                row.row,
+                row.sequence,
+                ResultRow.FAILED,
+                issues=[_issue(issue) for issue in row.issues],
+            )
+        else:
+            existing = (
+                Match.objects.filter(
+                    submission_batch_id=batch.pk, sequence=row.sequence
+                )
+                .order_by("pk")
+                .first()
+            )
+            if existing is not None:
+                result = _existing_result(row, existing)
+            else:
+                result = _record_row(
+                    row,
+                    players,
+                    location=location,
+                    batch=batch,
+                    uploader=batch.submitted_by_user,
+                    event=batch.event,
+                )
+        _store(results_file, result)
+    return result
 
 
 def process_results_file(results_file_id: int) -> None:
@@ -425,11 +539,13 @@ def process_results_file(results_file_id: int) -> None:
     Does nothing for a missing file or one no longer pending. A file the
     parser cannot read fails with the parser's code, and one with more
     than ``MAX_ROWS`` match rows fails with ``too_many_rows``, before any
-    row is recorded. Each row is recorded in its own transaction: never
-    call this inside an outer ``transaction.atomic()``, since
-    ``record_match()``'s advisory locks last until the outermost
-    transaction ends. Any other error propagates and leaves the file
-    pending, for the sweep to queue again.
+    row is recorded. Each row runs in its own transaction (see the module
+    docstring): never call this inside an outer ``transaction.atomic()``,
+    since ``record_match()``'s advisory locks last until the outermost
+    transaction ends. The run stops at the first row that finds the file
+    no longer pending. Any other error propagates and leaves the file
+    pending, with the row results stored so far, for the sweep to queue
+    again.
     """
     results_file = (
         ResultsFile.objects.select_related(
@@ -455,26 +571,16 @@ def process_results_file(results_file_id: int) -> None:
     players = _players(parsed.rows)
     report: list[RowResult] = []
     for row in parsed.rows:
-        if isinstance(row, CsvRowError):
-            report.append(
-                RowResult(
-                    row.row,
-                    row.sequence,
-                    ResultRow.FAILED,
-                    issues=[_issue(issue) for issue in row.issues],
-                )
-            )
-            continue
-        report.append(
-            _record_row(
-                row,
-                players,
-                results_file=results_file,
-                batch=batch,
-                uploader=batch.submitted_by_user,
-                event=batch.event,
-            )
+        result = _process_row(
+            results_file_id,
+            row,
+            players,
+            batch=batch,
+            location=results_file.location,
         )
+        if result is None:
+            return
+        report.append(result)
     _finish(results_file_id, report=report)
 
 

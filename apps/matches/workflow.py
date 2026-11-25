@@ -1255,13 +1255,21 @@ def void_submission_batch(
     ``matches.moderate_match``) gets ``MatchActionDenied`` before anything
     is read or written. Then a blank ``reason``, and a batch that is
     unsaved, built in memory, or has no stored row, raise ``ValueError``
-    (fixed text), before any match is read or voided. The matches are found by the batch link
+    (fixed text), before any match is read or voided. Next, in its own
+    transaction, the batch's Results File, when it has one still pending
+    (a CSV upload, #71), fails as ``voided`` under its row lock, keeping
+    its row results (``apps.matches.results_files.fail_for_void``), so no
+    run of that file records a row afterward. The matches are found by the batch link
     (``submission_batch_matches``), never by time. See ``_bulk_void`` for
     how each is voided and what is recorded.
     """
+    # Imported here: results_files imports the services this module uses.
+    from apps.matches.results_files import fail_for_void
+
     _check_bulk(actor, reason)
     if not _stored(batch, SubmissionBatch):
         raise ValueError(_UNSAVED_BATCH)
+    fail_for_void(batch.pk)
     return _bulk_void(
         submission_batch_matches(batch),
         actor=actor,
