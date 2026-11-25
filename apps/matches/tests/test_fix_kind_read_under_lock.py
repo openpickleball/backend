@@ -1,10 +1,12 @@
-"""The stored match type is the Event's kind read under the share lock (#163).
+"""A new match stores the Event's kind read under the share lock (#163).
 
 ``draft_match`` reads the kind before the write transaction. A kind change
-that commits in between must reach the match: the write transaction reads
-the kind again after ``hold_event``'s share lock. The change here is a raw
-write made just before the lock, so it lands exactly in that gap. Made-up
-data only.
+that commits in between must reach a match ``record_match`` records: only
+``record_match`` reads the kind again after ``hold_event``'s share lock. A
+correction (``edit_match``) copies the type of the match it corrects
+instead, so the same kind change never reaches it (the maintainer's
+decision on #163). The change here is a raw write made just before the
+lock, so it lands exactly in that gap. Made-up data only.
 """
 
 from datetime import date
@@ -84,7 +86,7 @@ def test_record_match_stores_the_kind_read_under_the_lock(
     assert _stored_type(match) == MatchType.TOURNAMENT
 
 
-def test_edit_match_stores_the_kind_read_under_the_lock(
+def test_edit_match_keeps_the_old_match_type_over_a_kind_change(
     monkeypatch: pytest.MonkeyPatch, players: list[Player], event: Event
 ) -> None:
     account = _member(event)
@@ -111,4 +113,4 @@ def test_edit_match_stores_the_kind_read_under_the_lock(
     )
 
     assert _stored_type(original) == MatchType.LEAGUE
-    assert _stored_type(correction) == MatchType.TOURNAMENT
+    assert _stored_type(correction) == MatchType.LEAGUE
