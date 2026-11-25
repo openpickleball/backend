@@ -491,6 +491,10 @@ OAUTH2_PROVIDER = {
 }
 
 MIDDLEWARE = [
+    # Answers App Platform's health probes, which arrive over plain http
+    # with a Host that ALLOWED_HOSTS refuses (ADR 0039). It must come
+    # first, ahead of the https redirect and the host check.
+    "config.health_probe.HealthProbeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Serves the collected static files. It must come right after
     # SecurityMiddleware and only answers STATIC_URL paths.
