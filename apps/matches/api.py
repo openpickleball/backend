@@ -605,9 +605,9 @@ def vouch_for_match(request: HttpRequest, code: MatchCode) -> MatchOut:
     matches are vouched for, each counts again once it is confirmed and
     no other open hold keeps it. The response is this match only: the
     other match is never named. A vouch cannot be undone. Vouching again
-    while the hold is open records no new vouch. A voided match, and a match
-    nothing holds (a released one included), get 409. Anyone else gets
-    404, as for an unknown code.
+    records nothing new unless another hold has opened on the match since.
+    A voided match, and a match nothing holds (a released one included),
+    get 409. Anyone else gets 404, as for an unknown code.
     """
     # The service checks ``vouch_level`` before it reads anything, and
     # ``_change`` turns its refusal into the unknown-code 404.
