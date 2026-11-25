@@ -89,7 +89,7 @@ With `DJANGO_DEBUG` off, the admin and the API docs page return an error until `
 
 ### Production image
 
-The `Dockerfile` builds the image production runs. It installs only the runtime packages from `uv.lock`, collects the static files at build time, and runs as a non-root user. The image has no uv, git, tests, or dev packages. `.dockerignore` lets only the app's files into the build, so a `.env` in your checkout never reaches the image. Pass every setting as an environment variable when you run it.
+The `Dockerfile` builds the image production runs. It installs only the runtime packages from `uv.lock`, collects the static files at build time, and runs as a non-root user. The image has no uv, git, tests, or dev packages. `.dockerignore` lets only the app's files into the build, so a `.env`, key, or local database in your checkout never reaches the image. Pass every setting as an environment variable when you run it.
 
 ```bash
 docker build -t open-backend .
@@ -105,6 +105,8 @@ docker run --rm --env-file prod.env open-backend celery -A config beat -l info
 ```
 
 Here `prod.env` is a file of settings you keep outside the repository. Run one beat process only.
+
+With `DJANGO_DEBUG` off, settings trust the `X-Forwarded-Proto` header to tell https from http. So run the web container only behind the hosting proxy, which sets that header, and never let clients reach it directly. To test it locally, send `X-Forwarded-Proto: https` with each request, as in [Serving like production](#serving-like-production).
 
 ### CORS
 

@@ -280,7 +280,7 @@ uv run python manage.py export_openapi_schema --check      # CI fails when opena
 uv run pre-commit run --all-files
 ```
 
-`.github/workflows/ci.yml` runs on every pull request and every push to `main`, in four jobs: `lint` (`ruff check`, `ruff format --check`, and the pre-commit hygiene hooks), `types` (`mypy .`), and `test` (`manage.py check`, `makemigrations --check --dry-run`, `export_openapi_schema --check`, and `pytest -n auto` with the coverage floor, against a Postgres service), and `image` (builds the `Dockerfile` with a planted `.env`, then checks that the image runs as a non-root user, holds no `.env`, uv, git, or dev package, has the collected static files, and passes `manage.py check`). The job names are meant to be required status checks on `main` alongside `sign-off`, so a change that renames a job must also update the `main` ruleset.
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`, in four jobs: `lint` (`ruff check`, `ruff format --check`, and the pre-commit hygiene hooks), `types` (`mypy .`), `test` (`manage.py check`, `makemigrations --check --dry-run`, `export_openapi_schema --check`, and `pytest -n auto` with the coverage floor, against a Postgres service), and `image` (builds the `Dockerfile` with a planted `.env` and local database, then checks that the image runs as a non-root user, holds neither of them and no uv, git, or dev package, carries `LICENSE`, has the collected static files, and passes `manage.py check`). The job names are meant to be required status checks on `main` alongside `sign-off`, so a change that renames a job must also update the `main` ruleset.
 
 ## Documentation
 
