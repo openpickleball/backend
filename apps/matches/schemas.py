@@ -117,6 +117,15 @@ class MatchCreateIn(Schema):
     game_target: GameTarget | None = None
 
 
+class MatchCorrectionIn(MatchCreateIn):
+    """A player's correction of a self-reported match (#267).
+
+    The same fields as a submission. The teams must be the match's own two
+    teams, in either order. A missing game target or scoring type is the
+    corrected match's, and a missing best-of is inferred from the games.
+    """
+
+
 MAX_REASON_LENGTH = 1000
 # Control characters and lone surrogates, as Player search refuses them.
 # Postgres refuses a NUL in text, which would be a 500. A typed reason may
@@ -207,6 +216,7 @@ class MyDecision(StrEnum):
 
     CONFIRM = "confirm"
     DISPUTE = "dispute"
+    WITHDRAW = "withdraw"
     NONE = "none"
 
 
@@ -229,9 +239,10 @@ class MatchOut(Schema):
     decision: a player who confirms as a member of the match's Event
     Organizer still shows ``none``. For a participant, ``confirmed_by_team``
     says whether a player on each team recorded a confirmation (a dispute is
-    not a confirmation); it is null for anyone else. A confirmation still
-    shows in ``confirmed_by_team`` after the same player disputes, since a
-    recorded decision is never withdrawn. It counts player confirmations
+    not a confirmation); it is null for anyone else. A player who withdrew
+    their dispute shows ``withdraw``. A confirmation still shows in
+    ``confirmed_by_team`` after the same player disputes or withdraws a
+    dispute, since a recorded decision is never removed. It counts player confirmations
     only: a match confirmed by an organizer or a moderator, or a correction,
     can be confirmed with both false, so read ``status`` for whether the
     match is confirmed. ``created_at`` is when the match was submitted.
