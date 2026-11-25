@@ -552,13 +552,15 @@ DATABASES = {
 # possibly different server connection, so nothing may keep session state:
 # Django closes each connection after its request or task, and never opens
 # a server-side cursor (a named cursor lives on one server connection).
-DIRECT_DATABASE_URL = _raw("DIRECT_DATABASE_URL").strip()
+# A private name: an uppercase one would make the raw URL, password
+# included, a Django setting, shown by diffsettings and the DEBUG error page.
+_direct_url = _raw("DIRECT_DATABASE_URL").strip()
 
 # URL options that keep state on one server connection, or that put a
 # second pool in front of PgBouncer. Pooled mode refuses them.
 _POOLED_REFUSED_OPTIONS = ("prepare_threshold", "assume_role", "pool")
 
-if DIRECT_DATABASE_URL:
+if _direct_url:
     _pool_options = DATABASES["default"].get("OPTIONS")
     for _option in _POOLED_REFUSED_OPTIONS:
         if isinstance(_pool_options, dict) and _option in _pool_options:
@@ -568,7 +570,7 @@ if DIRECT_DATABASE_URL:
             )
     DATABASES["default"]["CONN_MAX_AGE"] = 0
     DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
-    _direct = _database(DIRECT_DATABASE_URL, "DIRECT_DATABASE_URL")
+    _direct = _database(_direct_url, "DIRECT_DATABASE_URL")
     _direct["CONN_MAX_AGE"] = 0
     # Tests use one test database, reached through default.
     _direct["TEST"] = {"MIRROR": "default"}
