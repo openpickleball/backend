@@ -14,9 +14,11 @@ search (/api/v1/players/search), a player's profile, the rating lookup
 disputed matches of the signed-in Account's verified Organizers' Events,
 and the signed-in Account's own Player, at /api/v1/organizer/events
 the Events of the signed-in Account's Organizers (list, create, change,
-delete), and at /api/v1/organizer/ the CSV results upload
+delete), at /api/v1/organizer/ the CSV results upload
 (/api/v1/organizer/events/{code}/results-files) and its report
-(/api/v1/organizer/results-files/{code}).
+(/api/v1/organizer/results-files/{code}), and at /api/v1/organizers/ a
+report of a verified Organizer to OPEN Moderators
+(/api/v1/organizers/{code}/reports).
 
 Adding an app's endpoints (usually one router per app):
 
@@ -64,7 +66,8 @@ a different 422 schema. Every operation with `auth` (such as
 Throttles (ADR 0030): a router whose operations need sign-in passes
 `throttle=config.throttling.account_throttle` next to its `auth`, so they
 share one per-Account budget. An operation's own `throttle=` replaces its
-router's: player search keeps only its `SearchThrottle`. A public
+router's: player search keeps only its `SearchThrottle`, and reporting
+an Organizer only its `OrganizerReportThrottle`. A public
 operation (`auth=None`; none is mounted yet) would have only a
 `config.throttling.ClientIPThrottle`. The health
 checks are never throttled. Every operation with a throttle documents a
@@ -84,6 +87,7 @@ from ninja.openapi.schema import OpenAPISchema
 from ninja.schema import NinjaGenerateJsonSchema
 
 from apps.accounts.api import router as accounts_router
+from apps.clubs.api import router as organizers_router
 from apps.events.api import router as events_router
 from apps.matches.api import me_router
 from apps.matches.api import organizer_router as matches_organizer_router
@@ -294,3 +298,4 @@ api.add_router("me/", me_router)
 api.add_router("me/", players_me_router)
 api.add_router("organizer/", events_router)
 api.add_router("organizer/", matches_organizer_router)
+api.add_router("organizers/", organizers_router)

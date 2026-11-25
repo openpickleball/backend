@@ -775,6 +775,56 @@
         "title": "MyPlayerOut",
         "type": "object"
       },
+      "OrganizerReportIn": {
+        "additionalProperties": false,
+        "description": "A report of a verified Organizer to OPEN Moderators.\n\n``reason`` is one of the listed reasons. There is no free text.",
+        "properties": {
+          "reason": {
+            "$ref": "#/components/schemas/OrganizerReportReason"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "OrganizerReportIn",
+        "type": "object"
+      },
+      "OrganizerReportOut": {
+        "description": "The report just made: the Organizer's OPEN Code, the reason, and\nwhen it was made. It never names the reporter.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "organizer": {
+            "title": "Organizer",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/OrganizerReportReason"
+          }
+        },
+        "required": [
+          "organizer",
+          "reason",
+          "created_at"
+        ],
+        "title": "OrganizerReportOut",
+        "type": "object"
+      },
+      "OrganizerReportReason": {
+        "description": "Why an Account reports an Organizer to OPEN Moderators (#271).\n\nNo free text: a report holds one of these and nothing the reporter\nwrote.",
+        "enum": [
+          "wrong_results",
+          "fake_matches",
+          "ignores_disputes",
+          "misuses_player_data",
+          "other"
+        ],
+        "title": "OrganizerReportReason",
+        "type": "string"
+      },
       "PagedEventOut": {
         "properties": {
           "count": {
@@ -4227,6 +4277,126 @@
         "summary": "Get Results File",
         "tags": [
           "matches"
+        ]
+      }
+    },
+    "/api/v1/organizers/{code}/reports": {
+      "post": {
+        "description": "Report a verified Organizer to OPEN Moderators.\n\nFor a signed-in Account with a Player. 404 for an Organizer that is\nunknown or not verified, and for an Account with no Player; 409 while\nthe Account's earlier report on it is open. Limited per Account to a\nfew reports a day; past that the answer is 429 with a Retry-After\nheader. The Organizer never learns who reported it.",
+        "operationId": "report_organizer",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "G-7K3M-QX9Q"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "G-7K3M-QX9Q"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizerReportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerReportOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Report Organizer Operation",
+        "tags": [
+          "organizers"
         ]
       }
     },
