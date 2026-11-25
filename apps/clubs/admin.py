@@ -388,6 +388,14 @@ class OrganizerReportAdmin(admin.ModelAdmin[OrganizerReport]):
             .exclude(organizer_id__in=_member_organizer_ids(request))
         )
 
+    def lookup_allowed(self, lookup: str, value: str, request: HttpRequest) -> bool:
+        """Refuse every lookup on the reporter (Django answers 400), so no
+        one lists the reports one Account made by its row id.
+        """
+        if lookup.startswith("reporter"):
+            return False
+        return super().lookup_allowed(lookup, value, request)
+
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
