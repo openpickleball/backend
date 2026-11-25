@@ -107,13 +107,15 @@ class Event(_CleanedTextModel):
         """Save, refusing an organizer change once a Match names the Event.
 
         When the stored organizer differs from this instance's, the Event
-        row is locked with a plain ``FOR UPDATE`` before the check, so a
-        concurrent organizer change waits, and so does a Match insert
-        whose deferred foreign key check (``FOR KEY SHARE``) runs at its
-        commit. A submission whose transaction has not reached its commit
-        is not seen, so it can still land after the change (a known race,
-        like an unverify during a submission). The check counts Matches in
-        every status, voided ones included. Raw writes
+        row is locked with a plain ``FOR UPDATE`` before the check. Every
+        Match write transaction for an Event (``record_match`` and
+        ``edit_match``, through ``apps.matches.services.hold_event``) first
+        takes ``FOR KEY SHARE`` on the row and checks the submitter again,
+        so the two serialize: this save waits until an in-flight
+        submission commits and then sees its Match and refuses, or the
+        submission waits until this save commits and is judged against the
+        new organizer. A concurrent organizer change waits too. The check
+        counts Matches in every status, voided ones included. Raw writes
         (``QuerySet.update``, raw SQL) skip it.
         """
         if self._state.adding or self.pk is None:

@@ -67,7 +67,7 @@ no such input (CLAUDE.md, hard rule 7).
 
 import hashlib
 import json
-from collections.abc import Hashable, Sequence
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
@@ -995,6 +995,33 @@ def stored_lineup_lock_key(match: Match) -> int:
     return _lineup_lock_key(teams[Team.A], teams[Team.B], played_on.get())
 
 
+def hold_event(event: "Event | None", recheck: Callable[[], None]) -> None:
+    """Share-lock the Event row, then run the authority check again.
+
+    Call first inside the write transaction, before ``lock_draft`` and any
+    lookup, lock, or write. ``FOR KEY SHARE`` conflicts with the
+    ``FOR UPDATE`` that ``Event.save()`` takes to change the organizer, so
+    the two serialize: either the organizer change waits until this match
+    commits (and then sees it and refuses), or this call waits until the
+    change commits and ``recheck`` judges the submitter against the new
+    organizer. ``recheck`` raises the caller's fixed-text refusal. The
+    lock lasts until the outermost transaction ends; nothing takes the
+    Event row lock after a Match lock. With no Event, it runs ``recheck``
+    alone.
+    """
+    if event is not None and event.pk is not None:
+        pk_column = event._meta.pk.column
+        assert pk_column is not None
+        quote = connection.ops.quote_name
+        table, column = quote(event._meta.db_table), quote(pk_column)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT 1 FROM {table} WHERE {column} = %s FOR KEY SHARE",
+                [event.pk],
+            )
+    recheck()
+
+
 def lock_draft(draft: MatchDraft, *, also: Sequence[int] = ()) -> None:
     """Take the draft's advisory locks: its external id's, then the lineups'.
 
@@ -1271,6 +1298,11 @@ def record_match(
     ``match_changed`` with ``change=hold``. Signals are sent inside the
     transaction (``apps.matches.signals``).
 
+    For a match with an Event, the write transaction first share-locks the
+    Event row and checks every submitter again (``hold_event``), so an
+    organizer change made after the first check is caught before any
+    lookup, lock, or write, with the same ``MatchPermissionDenied``.
+
     Call it in its own transaction, never several times inside one outer
     ``transaction.atomic()``. Its advisory locks (an external id lock, then
     a lineup lock) last until the outermost transaction ends, so two
@@ -1288,10 +1320,14 @@ def record_match(
     submission = MatchSubmission(
         event=event, club=club, player_ids=frozenset(keys_a + keys_b)
     )
-    if submitted_by_user is not None:
-        check_can_create_match(submitted_by_user, submission)
-    if submitted_by_application is not None:
-        check_can_create_match(submitted_by_application, submission)
+
+    def check_submitters() -> None:
+        if submitted_by_user is not None:
+            check_can_create_match(submitted_by_user, submission)
+        if submitted_by_application is not None:
+            check_can_create_match(submitted_by_application, submission)
+
+    check_submitters()
     if submission_batch is not None:
         check_batch(
             submission_batch,
@@ -1328,6 +1364,9 @@ def record_match(
     submitter: Actor | None = submitted_by_user or submitted_by_application
 
     with transaction.atomic():
+        # Holds the Event's organizer fixed until commit, and checks the
+        # submitters again under that lock (ADR 0035).
+        hold_event(event, check_submitters)
         lock_draft(draft)
         check_external_id(draft)
         existing = exact_duplicate(draft)
