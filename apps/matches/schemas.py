@@ -363,8 +363,9 @@ class ResultsIssueOut(Schema):
 class ResultsRowOut(Schema):
     """One match row's result. ``row`` is the CSV record number and
     ``sequence`` the row's place among the match rows. ``match`` is the
-    Match's OPEN Code: the recorded match, or, for a duplicate, the earlier
-    match when the uploader may know it."""
+    Match's OPEN Code: the recorded match, the row's match that was voided
+    later (issue code ``voided``), or, for a duplicate, the earlier match
+    when the uploader may know it."""
 
     row: int
     sequence: int

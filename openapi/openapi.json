@@ -1506,7 +1506,7 @@
         "type": "object"
       },
       "ResultsRowOut": {
-        "description": "One match row's result. ``row`` is the CSV record number and\n``sequence`` the row's place among the match rows. ``match`` is the\nMatch's OPEN Code: the recorded match, or, for a duplicate, the earlier\nmatch when the uploader may know it.",
+        "description": "One match row's result. ``row`` is the CSV record number and\n``sequence`` the row's place among the match rows. ``match`` is the\nMatch's OPEN Code: the recorded match, the row's match that was voided\nlater (issue code ``voided``), or, for a duplicate, the earlier match\nwhen the uploader may know it.",
         "properties": {
           "issues": {
             "items": {

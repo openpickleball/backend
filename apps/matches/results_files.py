@@ -31,8 +31,9 @@ Match of this batch with the row's sequence in any status (a voided one
 included), calls ``record_match()`` only when there is none, and stores
 the row's result in the file's report, keyed by sequence. So results
 survive a run that stops, and a rerun never records a row twice: a row
-whose match exists is reported as recorded, or as ``voided`` when a
-moderator voided it.
+whose match exists is reported as recorded, or as ``voided``, with the
+voided match's code, when it was voided (by a moderator or a
+correction).
 
 A moderator's bulk void of the batch (``void_submission_batch``) first
 fails a pending file as ``voided`` (``fail_for_void``) under the same
@@ -121,7 +122,7 @@ TOO_MANY_ROWS: Final = "too_many_rows"
 EXPIRED: Final = "expired"
 VOIDED: Final = "voided"
 
-VOIDED_MESSAGE: Final = "A moderator voided this row's match."
+VOIDED_MESSAGE: Final = "This row's match was voided."
 
 NAME_MISMATCH_MESSAGE: Final = "This name does not match the player's display name."
 POSSIBLE_DUPLICATE_MESSAGE: Final = (
@@ -495,6 +496,7 @@ def _existing_result(row: CsvMatch, match: Match) -> RowResult:
             row.row,
             row.sequence,
             ResultRow.FAILED,
+            match=match.public_code,
             issues=[ReportIssue([], VOIDED, VOIDED_MESSAGE)],
             warnings=warnings,
         )
