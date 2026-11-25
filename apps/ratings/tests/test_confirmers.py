@@ -28,7 +28,7 @@ from apps.clubs.tests.factories import (
 )
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
-from apps.matches.models import Match, MatchFormat, MatchStatus
+from apps.matches.models import Match, MatchFormat, MatchStatus, MatchType
 from apps.matches.services import record_match
 from apps.matches.tests.factories import raw_update
 from apps.matches.workflow import (
@@ -90,7 +90,12 @@ def _club_ledger_match(players: list[Player], club: Club) -> Match:
     written as one already in the Ledger would be (ADR 0024).
     """
     match = _submit(players)
-    raw_update(match, club=club, status=MatchStatus.CONFIRMED)
+    raw_update(
+        match,
+        club=club,
+        match_type=MatchType.REC_VERIFIED,
+        status=MatchStatus.CONFIRMED,
+    )
     return _fresh(match)
 
 

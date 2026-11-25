@@ -98,6 +98,7 @@ from apps.matches.models import (
     ScoringType,
     SubmissionBatch,
     Team,
+    source_match_type,
 )
 from apps.matches.permissions import Actor, MatchSubmission, check_can_create_match
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
@@ -173,6 +174,32 @@ def _stored_rating_format(
     return derive_rating_format(
         format, [stored[key] for key in keys_a], [stored[key] for key in keys_b]
     )
+
+
+def _stored_match_type(event: "Event | None", club: "Club | None") -> str:
+    """The match type to store, from the Event's kind as stored now.
+
+    ``rec_verified`` for a Club with no Event and ``self_reported`` for
+    neither (ADR 0024, ADR 0035). The kind is read from the database by
+    id, never from the instance. An Event whose row is gone (or an unsaved
+    one) gets the instance's kind here, so the model rules that run next
+    (``_clean_all``) report the missing Event as a ``MatchValidationError``.
+    """
+    from_source = source_match_type(
+        has_event=event is not None, has_club=club is not None
+    )
+    if event is None:
+        assert from_source is not None
+        return str(from_source)
+    stored = None
+    if event.pk is not None:
+        stored = (
+            type(event)
+            ._base_manager.filter(pk=event.pk)
+            .values_list("kind", flat=True)
+            .first()
+        )
+    return str(event.kind if stored is None else stored)
 
 
 @dataclass(frozen=True)
@@ -917,6 +944,7 @@ def draft_match(
     match = Match(
         format=validated.format,
         rating_format=_stored_rating_format(validated.format, keys_a, keys_b),
+        match_type=_stored_match_type(event, club),
         played_on=validated.played_on,
         best_of=validated.best_of,
         game_target=validated.game_target,
