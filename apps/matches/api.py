@@ -65,6 +65,17 @@ transaction, and ``confirm_match`` takes the lineup lock ``record_match``
 already holds, then the row lock of a match no other transaction can see
 yet, so the lock order stays the same and nothing can wait on it.
 
+A possible duplicate flag holds both its matches from counting until
+each is vouched for at its own level (ADR 0034, #270):
+``vouch_for_match`` (``workflow.vouch_for_match``) lets the Event's
+verified Organizer vouch for an Event match (``permissions.settles_dispute``)
+and a player vouch for a self-reported match. Anyone else gets the
+unknown-code 404 before the match's status or flags are read. Once both
+matches of a flag are vouched for, the flag is resolved and both count
+again when confirmed. The held matches the signed-in Account may vouch
+for are at /api/v1/me/matches/holds. Neither operation names the other
+match of a flag: an Account may not know it (ADR 0011).
+
 An Organizer's CSV results upload (#71) is on ``organizer_router``,
 mounted at /api/v1/organizer/. A member of the Event's verified Organizer
 (``permissions.can_manage_events``) uploads a file
@@ -99,7 +110,7 @@ from apps.matches.models import (
     MatchStatus,
     ResultsFile,
 )
-from apps.matches.pagination import MatchHistoryPagination
+from apps.matches.pagination import HoldPagination, MatchHistoryPagination
 from apps.matches.permissions import (
     MatchActionDenied,
     MatchPermissionDenied,
@@ -112,6 +123,7 @@ from apps.matches.permissions import (
 from apps.matches.schemas import (
     DisputeCorrectionIn,
     DisputeResolutionIn,
+    HoldOut,
     MatchCorrectionIn,
     MatchCreateIn,
     MatchOut,
@@ -571,6 +583,59 @@ def correct_disputed_match(
     except MatchValidationError as error:
         raise _in_body(error) from None
     return match_out(_loaded(corrected), account)
+
+
+@router.post(
+    "/{code}/vouch",
+    response=_CHANGE_RESPONSES,
+    operation_id="vouch_for_match",
+    openapi_extra=_CHANGE_OPENAPI,
+)
+def vouch_for_match(request: HttpRequest, code: MatchCode) -> MatchOut:
+    """Vouch that a held match is not a duplicate of the other match.
+
+    A match recorded with the same teams and date as another, with other
+    scores, is held from counting along with that match until each one is
+    vouched for at its own level. A match with an Event is vouched for by
+    a member of the verified organizer that ran it whose player is in no
+    match of the match's correction chain. A match with no Event is
+    vouched for by one player of each team. A match with a club and no
+    Event has no level: nobody vouches for it, and a hold against it ends
+    only when a match is voided or the hold period ends. Once both
+    matches are vouched for, each counts again once it is confirmed and
+    no other open hold keeps it. The response is this match only: the
+    other match is never named. A vouch cannot be undone. Vouching again
+    records nothing new unless another hold has opened on the match since.
+    A voided match, and a match nothing holds (a released one included),
+    get 409. Anyone else gets 404, as for an unknown code.
+    """
+    # The service checks ``vouch_level`` before it reads anything, and
+    # ``_change`` turns its refusal into the unknown-code 404.
+    return _change(request, code, workflow.vouch_for_match)
+
+
+@me_router.get(
+    "/matches/holds",
+    response={200: list[HoldOut]},
+    operation_id="list_my_holds",
+)
+@paginate(HoldPagination)
+def list_my_holds(request: HttpRequest) -> QuerySet[Match]:
+    """The held matches you may vouch for, newest first.
+
+    Lists each match that is not voided and that a possible duplicate
+    hold keeps from counting, when you may vouch for it: a match with no
+    Event you played in, or a match of an Event run by a verified
+    organizer you are a member of, when your player is in no match of its
+    correction chain. A match with a club and no Event is never listed:
+    nobody vouches for it. ``vouched`` says
+    whether your side has vouched for it already. The other match of the
+    hold is never named. A match leaves the list once the hold ends.
+    """
+    viewer = request_account(request)
+    return with_match_details(workflow.vouchable_holds(viewer)).order_by(
+        "-played_on", "-created_at", "-pk"
+    )
 
 
 @me_router.get(
