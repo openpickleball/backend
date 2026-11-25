@@ -30,6 +30,9 @@ VERIFICATION_FIELDS = ("verified_at", "verified_by")
 # The permission to verify and unverify an Organizer, which also lets a
 # moderator close Organizer Reports (apps.clubs.reports).
 VERIFY_PERMISSION = "clubs.verify_organizer"
+# The permission to view Organizer Reports in the admin (the Moderator
+# group holds it). The Organizer page's moderator review needs it too.
+REPORT_VIEW_PERMISSION = "clubs.view_organizerreport"
 _VERIFIER_MEMBER = "The account that verified this organizer cannot be its member."
 VERIFIED_DELETE_MESSAGE = "A verified organizer cannot be deleted: unverify it first."
 # Control characters (Postgres cannot store NUL) and lone surrogates

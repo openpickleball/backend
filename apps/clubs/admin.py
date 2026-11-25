@@ -7,10 +7,13 @@ reason (``ReasonActionForm``), which goes into the Audit Event.
 
 Organizer Reports (#271) are read-only here. A moderator closes open
 ones with the close action, which needs a typed reason and calls
-``apps.clubs.reports.close_report``. The reporter is shown only to
-Accounts with ``clubs.verify_organizer``, and only as their Player's OPEN
-Code. The Organizer change page shows those Accounts a read-only
-"Moderator review" section from ``organizer_review``.
+``apps.clubs.reports.close_report``. The report admin leaves out every
+report on an Organizer the viewer is a member of. The reporter is shown
+only to Accounts with ``clubs.verify_organizer``, and only as their
+Player's OPEN Code. The Organizer change page shows a read-only
+"Moderator review" section from ``organizer_review`` to Accounts with
+both ``clubs.verify_organizer`` and ``clubs.view_organizerreport`` that
+are not members of that Organizer.
 """
 
 from collections.abc import Callable, Sequence
@@ -32,6 +35,7 @@ from apps.audit.admin_actions import (
     reason_problem,
 )
 from apps.clubs.models import (
+    REPORT_VIEW_PERMISSION,
     VERIFY_PERMISSION,
     Club,
     ClubOrganizerGrant,
@@ -52,7 +56,6 @@ from apps.players.models import Player
 BLANK_REASON = "Give a reason to verify or unverify organizers."
 BLANK_CLOSE_REASON = "Give a reason to close reports."
 REVIEW_FIELD = "moderator_review"
-REPORT_VIEW_PERMISSION = "clubs.view_organizerreport"
 
 
 class OrganizerMemberInline(admin.TabularInline[OrganizerMember, Organizer]):
@@ -367,9 +370,12 @@ class OpenReportFilter(admin.SimpleListFilter):
 class OrganizerReportAdmin(admin.ModelAdmin[OrganizerReport]):
     """Reports of verified Organizers to moderators (#271). Read-only.
 
-    The reporter's Account is never shown: ``User.__str__`` is its email.
+    Reports on an Organizer the viewer is a member of are left out of the
+    list, the change page, and the close action (``get_queryset``). The
+    reporter's Account is never shown: ``User.__str__`` is its email.
     Accounts with ``clubs.verify_organizer`` see the reporter's Player's
-    OPEN Code; others see no reporter at all.
+    OPEN Code; others see no reporter at all. No lookup on the reporter
+    is allowed.
     """
 
     list_display = ("organizer_code", "reason", "created_at", "is_open")
