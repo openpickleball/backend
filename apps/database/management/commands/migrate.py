@@ -2,16 +2,19 @@
 
 In pooled mode (DIRECT_DATABASE_URL set) settings add a ``direct``
 database alias. A schema change should not go through a pool in
-transaction mode. So when ``--database`` is not given, this command
-points the ``default`` connection at the direct database for its own
-process, then migrates ``default``. Every migration, data migration, and
-post_migrate handler that uses the default alias then runs on the direct
-connection, with no edits to any migration.
+transaction mode. So ``manage.py migrate`` from the command line (the
+deploy job), with ``--database`` not given, points the ``default``
+connection at the direct database for its own process, then migrates
+``default``. Every migration, data migration, and post_migrate handler
+that uses the default alias then runs on the direct connection, with no
+edits to any migration.
 
-An explicit ``--database`` is honored as given and rebinds nothing: the
-test runner always passes one, and ``--database default`` by hand goes
-through the pool. Without a pool there is no ``direct`` alias and
-nothing changes.
+An in-process ``call_command("migrate")`` never rebinds: in a test run's
+parallel workers the direct alias is not mirrored, and the rebind is
+never undone. It migrates ``default``, or the ``--database`` it names.
+An explicit ``--database`` is honored as given too: ``--database
+default`` by hand goes through the pool. Without a pool there is no
+``direct`` alias and nothing changes.
 """
 
 import copy
@@ -57,9 +60,16 @@ class Command(migrate.Command):
         # None tells "not given" apart from an explicit --database default.
         parser.set_defaults(database=None)
 
+    # True only for manage.py migrate, set in run_from_argv.
+    from_command_line = False
+
+    def run_from_argv(self, argv: list[str]) -> None:
+        self.from_command_line = True
+        super().run_from_argv(argv)
+
     def execute(self, *args: Any, **options: Any) -> str | None:
         # Before execute's system checks, which connect to the database.
-        if rebinds_default(options["database"]):
+        if self.from_command_line and rebinds_default(options["database"]):
             point_default_at_direct()
         if options["database"] is None:
             options["database"] = DEFAULT_DB_ALIAS
