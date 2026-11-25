@@ -11,7 +11,7 @@ The people closest to a match know the most about it: its players, and for a mat
 
 ## Decision
 
-This amends ADR 0011 (who ends a duplicate hold), ADR 0013 (who resolves a dispute), ADR 0024 (the confirmers of a self-reported match a moderator confirmed), and ADR 0029 (what moderators do in the admin).
+This amends ADR 0011 (who ends a duplicate hold), ADR 0013 (who resolves a dispute), ADR 0015 (an Organizer's members read and settle its Events' disputed matches, #269), ADR 0024 (the confirmers of a self-reported match a moderator confirmed), and ADR 0029 (what moderators do in the admin).
 
 - **Levels.** A match or player issue goes to the lowest level that can settle it:
   1. The players in the match.
