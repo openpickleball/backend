@@ -7,12 +7,12 @@ references the old one. The workflow services in ``apps.matches.workflow``
 make every change, with their Audit Events.
 
 The ORM guards the ledger (``MatchImmutable``): no Match, Match
-Participant, Game, Match Confirmation, or Submission Batch can be deleted;
-an existing Match can be saved only with ``update_fields=["status"]``; the
-other four are inserted once and never saved again; and
-``QuerySet.update``, ``delete``, ``bulk_update``, and an upsert through
-``bulk_create`` raise on all five, through the default and the base
-manager. Raw SQL and raw saves
+Participant, Game, Match Confirmation, Match Vouch, or Submission Batch
+can be deleted; an existing Match can be saved only with
+``update_fields=["status"]``; the other five are inserted once and never
+saved again; and ``QuerySet.update``, ``delete``, ``bulk_update``, and an
+upsert through ``bulk_create`` raise on all six, through the default and
+the base manager. Raw SQL and raw saves
 (``loaddata``) are not guarded.
 
 These models enforce only what a database constraint can: the allowed
@@ -118,11 +118,13 @@ _PLAYER_MESSAGES = {"invalid": "Choose an existing player."}
 _USER_MESSAGES = {"invalid": "Choose an existing account."}
 _APPLICATION_MESSAGES = {"invalid": "Choose an existing partner application."}
 _BATCH_MESSAGES = {"invalid": "Choose an existing submission batch."}
+_FLAG_MESSAGES = {"invalid": "Choose an existing flag."}
 
 _ONE_SUBMITTER = "A match has exactly one submitter: an account or an application."
 _BATCH_ONE_SUBMITTER = (
     "A submission batch has exactly one submitter: an account or an application."
 )
+_ONE_VOUCHER = "A vouch has exactly one voucher: an account or an application."
 _EXTERNAL_ID_NEEDS_APPLICATION = (
     "Only a match submitted by a partner application can have an external ID."
 )
@@ -166,7 +168,8 @@ class MatchImmutable(RuntimeError):
 
     message: ClassVar[str] = (
         "The match ledger is append-only: a match, its players, its games, "
-        "its confirmations, and submission batches cannot be changed or deleted."
+        "its confirmations, its vouches, and submission batches cannot be "
+        "changed or deleted."
     )
 
     def __init__(self) -> None:
@@ -287,6 +290,10 @@ class MatchConfirmationQuerySet(LedgerQuerySet["MatchConfirmation"]):
 
 class SubmissionBatchQuerySet(LedgerQuerySet["SubmissionBatch"]):
     """Submission Batches, with the ledger guard."""
+
+
+class MatchVouchQuerySet(LedgerQuerySet["MatchVouch"]):
+    """Match Vouches, with the ledger guard."""
 
 
 class MatchFormat(models.TextChoices):
@@ -1023,11 +1030,18 @@ class MatchFlag(_LinkMessagesModel):
     another open flag still holds it. A hold against a pending or disputed
     earlier match never ends this way. The flag itself stays open.
 
-    A moderator resolves a flag through
-    ``apps.matches.workflow.resolve_flags``, which sets ``resolution`` and
-    ``resolved_at`` together (a check constraint). Both are empty while the
-    flag is open. A flag row is never deleted. The resolver and reason are
-    in its Audit Event, not on the flag.
+    The parties end a hold by vouching (ADR 0034,
+    ``apps.matches.workflow.vouch_for_match``): each match of the flag is
+    vouched for at its own level, an Event match by its Event's verified
+    Organizer and a self-reported match by one player of each team. Each
+    vouch is a ``MatchVouch`` row. Once both matches are vouched for, the
+    flag is resolved as approved.
+
+    A flag is resolved by vouching or by a moderator
+    (``apps.matches.workflow.resolve_flags``), which set ``resolution``
+    and ``resolved_at`` together (a check constraint). Both are empty while
+    the flag is open. A flag row is never deleted. The resolver and reason
+    are in its Audit Event, not on the flag.
     """
 
     match = models.ForeignKey(
@@ -1103,6 +1117,84 @@ class MatchFlag(_LinkMessagesModel):
     def __str__(self) -> str:
         # The match code and reason, never a name.
         return f"{self.match.public_code} flag {self.reason}"
+
+
+class MatchVouch(_LinkMessagesModel, _InsertOnlyModel):
+    """One voucher's statement that a held match is not a duplicate (#270).
+
+    See CONTEXT.md, Flagged Match, and ADR 0034. A vouch names an open
+    ``possible_duplicate`` flag, one of its two matches, and the voucher:
+    an Account (a player of a self-reported match, or a member of an Event
+    match's verified Organizer) or a Partner Application (the one that
+    submitted an Event match). Exactly one of ``account`` and
+    ``application`` is set. A voucher vouches for a match on a flag at
+    most once. Only ``apps.matches.workflow.vouch_for_match`` writes these
+    rows, and checks that ``match`` is one of the flag's two matches. Like
+    the other ledger rows, a vouch is inserted once and never changed or
+    deleted (``MatchImmutable``).
+    """
+
+    flag = models.ForeignKey(
+        MatchFlag,
+        on_delete=models.PROTECT,
+        related_name="vouches",
+        error_messages=_FLAG_MESSAGES,
+    )
+    match = models.ForeignKey(
+        Match,
+        on_delete=models.PROTECT,
+        related_name="vouches",
+        error_messages=_MATCH_MESSAGES,
+    )
+    account = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="match_vouches",
+        error_messages=_USER_MESSAGES,
+    )
+    application = models.ForeignKey(
+        settings.OAUTH2_PROVIDER_APPLICATION_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="match_vouches",
+        error_messages=_APPLICATION_MESSAGES,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = MatchVouchQuerySet.as_manager()
+
+    class Meta:
+        verbose_name_plural = "match vouches"
+        base_manager_name = "objects"
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.CheckConstraint(
+                condition=(Q(account__isnull=False) & Q(application__isnull=True))
+                | (Q(account__isnull=True) & Q(application__isnull=False)),
+                name="matches_matchvouch_one_voucher",
+                violation_error_message=_ONE_VOUCHER,
+            ),
+            models.UniqueConstraint(
+                fields=("flag", "match", "account"),
+                condition=Q(account__isnull=False),
+                name="matches_matchvouch_account_once",
+                violation_error_message="This account already vouched for this match.",
+            ),
+            models.UniqueConstraint(
+                fields=("flag", "match", "application"),
+                condition=Q(application__isnull=False),
+                name="matches_matchvouch_application_once",
+                violation_error_message=(
+                    "This application already vouched for this match."
+                ),
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # The match code, never the voucher: an Account's __str__ is its email.
+        return f"{self.match.public_code} vouch"
 
 
 # A Results File's location is stored on each of its matches.

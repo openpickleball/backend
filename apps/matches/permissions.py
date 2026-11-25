@@ -73,6 +73,14 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   other team confirms it. A player never corrects a match with an Event,
   and never changes who played. The match's status is checked by
   ``edit_match``, not here.
+- ``vouch_level``: the level at which an actor vouches for a match held
+  by a possible duplicate flag (ADR 0034, #270). An Event match is
+  vouched for by its Event's verified Organizer, with the actors and
+  conflict rule of ``settles_dispute`` (``VouchLevel.ORGANIZER``). A
+  self-reported match is vouched for by its players
+  (``participant_player``, ``VouchLevel.PLAYER``). A legacy club-only
+  match, and an Event match whose Organizer is not verified, have no
+  level: nobody vouches for them.
 - ``is_moderator``: an active Account with the ``matches.moderate_match``
   permission. A moderator may void and edit any match, resolve disputes,
   resolve flags, and approve matches, except a match they played in.
@@ -101,6 +109,7 @@ and grant rows would serialize unrelated submissions, so this is accepted.
 
 from collections.abc import Collection
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from django.contrib.auth import get_user_model
@@ -544,3 +553,32 @@ def corrects_as_player(
     if len(wanted) != 2 or wanted != _stored_teams(match.pk):
         return None
     return player
+
+
+class VouchLevel(StrEnum):
+    """The level at which an actor vouches for a held match (ADR 0034)."""
+
+    ORGANIZER = "organizer"
+    PLAYER = "player"
+
+
+def vouch_level(actor: Actor, match: Match) -> VouchLevel | None:
+    """The level at which ``actor`` vouches for the saved ``match``, or None.
+
+    ``ORGANIZER`` for a match with an Event when ``settles_dispute``
+    allows the actor: a member of the Event's verified Organizer whose
+    Player is not in the match's correction chain, or the approved
+    application that submitted the match and still acts for that
+    Organizer. ``PLAYER`` for a self-reported match (no Event, no Club)
+    when the actor is a participant (``participant_player``). None for
+    everyone else, and for every actor on a legacy club-only match. The
+    match's status and flags are not checked here. Everything is read from
+    the database by ids.
+    """
+    if match.pk is None:
+        return None
+    if settles_dispute(actor, match):
+        return VouchLevel.ORGANIZER
+    if participant_player(actor, match) is not None and _self_reported(match):
+        return VouchLevel.PLAYER
+    return None

@@ -46,6 +46,13 @@ States and transitions:
   keeps the same teams and date. That ends the flag's hold on the
   earlier match, which counts again unless another open flag still holds
   it (ADR 0034).
+- ``vouch_for_match``: an actor says a match held by a possible duplicate
+  flag is not a duplicate (ADR 0034, #270), at the match's own level
+  (``vouch_level``): an Event match by its Event's verified Organizer, a
+  self-reported match by one player of each team. Each vouch is a
+  ``MatchVouch`` row with a ``match.vouch`` Audit Event. A flag whose two
+  matches are both vouched for is resolved as approved, through the same
+  flag row code as ``resolve_flags``. It changes no Match.
 - ``resolve_flags``: a moderator closes every open flag that involves a
   match, as approved or dismissed, with a reason. It changes no Match:
   a resolved flag stops holding its matches from counting.
@@ -114,6 +121,7 @@ from apps.matches.models import (
     MatchFlag,
     MatchParticipant,
     MatchStatus,
+    MatchVouch,
     SubmissionBatch,
     Team,
 )
@@ -130,6 +138,7 @@ from apps.matches.permissions import (
     moderates,
     participant_player,
     settles_dispute,
+    vouch_level,
 )
 from apps.matches.services import (
     advisory_lock,
@@ -918,6 +927,41 @@ def _moderates_with_linked(actor: Actor, match: Match) -> bool:
     return all(moderates(actor, other) for other in _linked(match))
 
 
+def _resolve_flag_rows(
+    flags: Sequence[MatchFlag],
+    *,
+    outcome: FlagResolution,
+    reason: str,
+    actor: Actor,
+    rule: str | None = None,
+) -> None:
+    """Resolve locked open flags as ``outcome``, one Audit Event each.
+
+    Sets ``resolution`` and ``resolved_at`` (one time for all of them) and
+    writes one ``match.flag_resolve`` Audit Event per flag, with
+    ``reason``. ``rule``, when given, names why in the event's ``after``
+    (``vouched`` for ``vouch_for_match``). The caller holds the locks and
+    sends the count change signals.
+    """
+    now = timezone.now()
+    for flag in flags:
+        before = snapshot(flag, ["resolution", "resolved_at"])
+        flag.resolution = outcome
+        flag.resolved_at = now
+        flag.save(update_fields=["resolution", "resolved_at"])
+        after = snapshot(flag, ["resolution", "resolved_at"])
+        if rule is not None:
+            after["rule"] = rule
+        record_event(
+            action=AuditAction.MATCH_FLAG_RESOLVE,
+            target=flag,
+            before=before,
+            after=after,
+            reason=reason,
+            **audit_actor(actor),
+        )
+
+
 def resolve_flags(match: Match, *, actor: Actor, outcome: str, reason: str) -> int:
     """A moderator resolves every open flag that involves ``match``.
 
@@ -950,22 +994,205 @@ def resolve_flags(match: Match, *, actor: Actor, outcome: str, reason: str) -> i
         if not flags:
             return 0
         counting = _counting([locked, *_linked(locked)])
-        now = timezone.now()
-        for flag in flags:
-            before = snapshot(flag, ["resolution", "resolved_at"])
-            flag.resolution = FlagResolution(outcome)
-            flag.resolved_at = now
-            flag.save(update_fields=["resolution", "resolved_at"])
-            record_event(
-                action=AuditAction.MATCH_FLAG_RESOLVE,
-                target=flag,
-                before=before,
-                after=snapshot(flag, ["resolution", "resolved_at"]),
-                reason=reason,
-                **audit_actor(actor),
-            )
+        _resolve_flag_rows(
+            flags, outcome=FlagResolution(outcome), reason=reason, actor=actor
+        )
         _send_count_changes(counting)
         return len(flags)
+
+
+def _open_holds_of(match: Match) -> QuerySet[MatchFlag]:
+    """The open possible duplicate flags that hold ``match`` and whose
+    other match is not voided: the flags a vouch for ``match`` covers."""
+    return (
+        MatchFlag.objects.filter(
+            Q(match=match) | Q(duplicate_of=match),
+            reason=FlagReason.POSSIBLE_DUPLICATE,
+            resolved_at__isnull=True,
+        )
+        .exclude(
+            Q(match=match, duplicate_of__status=MatchStatus.VOIDED)
+            | Q(duplicate_of=match, match__status=MatchStatus.VOIDED)
+        )
+        .order_by("pk")
+    )
+
+
+def _other_side(flag: MatchFlag, match_pk: int) -> int:
+    other = flag.duplicate_of_id if flag.match_id == match_pk else flag.match_id
+    assert other is not None
+    return other
+
+
+def _flag_vouched(flag: MatchFlag, match_pk: int) -> bool:
+    """True when match ``match_pk`` of ``flag`` is vouched for at its level.
+
+    Levels are decided per match, from the stored match: an Event match
+    by any vouch row (only its Organizer's actors write one), a
+    self-reported match by vouches from Accounts whose Players play on
+    each team, and a legacy club-only match never.
+    """
+    links = Match.objects.filter(pk=match_pk).values("event_id", "club_id").get()
+    vouches = MatchVouch.objects.filter(flag=flag, match_id=match_pk)
+    if links["event_id"] is not None:
+        return vouches.exists()
+    if links["club_id"] is not None:
+        return False
+    teams = set(
+        MatchParticipant.objects.filter(
+            match_id=match_pk,
+            player__account_id__in=vouches.filter(account__isnull=False).values(
+                "account_id"
+            ),
+        ).values_list("team", flat=True)
+    )
+    return teams >= {Team.A, Team.B}
+
+
+def vouch_for_match(match: Match, *, actor: Actor) -> Match:
+    """``actor`` vouches that ``match`` is not a duplicate (ADR 0034, #270).
+
+    For an actor ``vouch_level`` allows: an Event match is vouched for by
+    its Event's verified Organizer (``settles_dispute``), a self-reported
+    match by its players. Anyone else gets ``MatchActionDenied`` first.
+    Under the match's lineup and row locks, a voided match, and a match
+    that no open possible duplicate flag holds (one whose other match is
+    not voided), raise ``MatchStateError``.
+
+    The vouch covers every open flag that holds the match: for each one the
+    actor has not vouched on yet, it writes one ``MatchVouch`` row and one
+    ``match.vouch`` Audit Event. A flag opened later needs a new vouch. A
+    flag is resolved as approved (``_resolve_flag_rows``, rule
+    ``vouched``, no reason) once both its matches are vouched for at their
+    own levels (``_flag_vouched``), and each match that counts again sends
+    ``release``. A repeat vouch writes nothing. A vouch takes no text: the
+    audit log cannot be erased. Returns the locked match.
+    """
+    _saved(match)
+    level = vouch_level(actor, match)
+    if level is None:
+        raise MatchActionDenied
+    voucher: dict[str, object] = (
+        {"application": actor}
+        if isinstance(actor, get_application_model())
+        else {"account": actor}
+    )
+    with transaction.atomic():
+        # Flags link only matches with the same lineup and date, so the
+        # match's lineup lock covers the other match of every flag.
+        locked = _lock(match)
+        if locked.status == MatchStatus.VOIDED:
+            raise MatchStateError
+        flags = list(_open_holds_of(locked).select_for_update(of=("self",)))
+        if not flags:
+            raise MatchStateError
+        counting = _counting([locked, *_linked(locked)])
+        completed: list[MatchFlag] = []
+        for flag in flags:
+            if MatchVouch.objects.filter(flag=flag, match=locked, **voucher).exists():
+                continue
+            row = MatchVouch.objects.create(flag=flag, match=locked, **voucher)
+            record_event(
+                action=AuditAction.MATCH_VOUCH,
+                target=row,
+                after={
+                    "flag": flag.pk,
+                    "match": locked.public_code,
+                    "level": str(level),
+                },
+                **audit_actor(actor),
+            )
+            if _flag_vouched(flag, locked.pk) and _flag_vouched(
+                flag, _other_side(flag, locked.pk)
+            ):
+                completed.append(flag)
+        if completed:
+            _resolve_flag_rows(
+                completed,
+                outcome=FlagResolution.APPROVED,
+                reason="",
+                actor=actor,
+                rule="vouched",
+            )
+        _send_count_changes(counting)
+        return locked
+
+
+def vouched_at_own_level(match: Match, account: "_User") -> bool:
+    """True when ``account``'s level has vouched for ``match`` on every
+    open flag that holds it. Read only.
+
+    For an Event match, any vouch on the flag for it (only its Organizer's
+    actors write one). For a self-reported match, a vouch from a player
+    on ``account``'s own team. False when no open flag holds the match.
+    """
+    flags = list(_open_holds_of(match))
+    if not flags:
+        return False
+    stored = Match.objects.filter(pk=match.pk).values("event_id").get()
+    team = (
+        MatchParticipant.objects.filter(match_id=match.pk, player__account=account)
+        .values_list("team", flat=True)
+        .first()
+    )
+    teammates = MatchParticipant.objects.filter(match_id=match.pk, team=team).values(
+        "player__account_id"
+    )
+    for flag in flags:
+        vouches = MatchVouch.objects.filter(flag=flag, match_id=match.pk)
+        if stored["event_id"] is None:
+            if team is None:
+                return False
+            vouches = vouches.filter(account_id__in=teammates)
+        if not vouches.exists():
+            return False
+    return True
+
+
+def vouchable_holds(account: "_User") -> QuerySet[Match]:
+    """The held matches ``account`` may vouch for. Read only.
+
+    Matches that are not voided and that an open possible duplicate flag
+    holds (its other match not voided), that ``account`` may vouch for
+    (``vouch_level``): self-reported matches its Player plays in, and
+    Event matches of verified Organizers it is a member of, under the
+    conflict rule. The rule is applied to each candidate in Python, since
+    it reads the correction chain.
+    """
+    open_flags = MatchFlag.objects.filter(
+        reason=FlagReason.POSSIBLE_DUPLICATE, resolved_at__isnull=True
+    )
+    held = Exists(
+        open_flags.filter(match=OuterRef("pk")).exclude(
+            duplicate_of__status=MatchStatus.VOIDED
+        )
+    ) | Exists(
+        open_flags.filter(duplicate_of=OuterRef("pk")).exclude(
+            match__status=MatchStatus.VOIDED
+        )
+    )
+    candidates = (
+        Match.objects.exclude(status=MatchStatus.VOIDED)
+        .filter(held)
+        .filter(
+            Q(
+                event__isnull=True,
+                club__isnull=True,
+                participants__player__account=account,
+            )
+            | Q(
+                event__organizer__verified_at__isnull=False,
+                event__organizer__members__account=account,
+            )
+        )
+        .distinct()
+    )
+    allowed = [
+        candidate.pk
+        for candidate in candidates
+        if vouch_level(account, candidate) is not None
+    ]
+    return Match.objects.filter(pk__in=allowed)
 
 
 def approve_match(match: Match, *, actor: Actor, reason: str) -> bool:
