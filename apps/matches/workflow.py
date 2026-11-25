@@ -31,10 +31,12 @@ States and transitions:
   set, voids pending matches older than that.
 - ``expire_disputes_and_holds``: voids a disputed match whose first open
   dispute is older than ``MATCH_DISPUTE_EXPIRY_DAYS``, and the newer match
-  (``match``) of a possible duplicate flag open for longer than
-  ``MATCH_DUPLICATE_HOLD_DAYS`` whose earlier match is confirmed. That
-  ends the flag's hold on the earlier match, which counts again unless
-  another open flag still holds it (ADR 0034).
+  of a possible duplicate flag open for longer than
+  ``MATCH_DUPLICATE_HOLD_DAYS`` whose earlier match is confirmed. A
+  correction keeps its original's place in that order while its chain
+  keeps the same teams and date. That ends the flag's hold on the
+  earlier match, which counts again unless another open flag still holds
+  it (ADR 0034).
 - ``resolve_flags``: a moderator closes every open flag that involves a
   match, as approved or dismissed, with a reason. It changes no Match:
   a resolved flag stops holding its matches from counting.
@@ -902,14 +904,18 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
 
     The dispute rule voids a disputed match whose first open dispute
     (``dispute_started_at``) is older than ``MATCH_DISPUTE_EXPIRY_DAYS``.
-    The hold rule then voids the ``match`` (the newer one) of each open
-    possible duplicate flag older than ``MATCH_DUPLICATE_HOLD_DAYS`` whose
-    earlier match (``duplicate_of``) is confirmed and whose newer match is
-    not voided. That ends the flag's hold on the earlier match, which
-    counts again, and sends ``release``, unless another open flag still
-    holds it. A hold against a pending or disputed earlier match never
-    voids the newer one under this rule. The flag stays open: only
-    ``resolve_flags`` resolves flags, and a voided match holds nothing.
+    The hold rule then voids the newer match of each open possible
+    duplicate flag older than ``MATCH_DUPLICATE_HOLD_DAYS`` whose earlier
+    match is confirmed and whose newer match is not voided. Which match is
+    newer is decided by ``_hold_sides``: a correction keeps its
+    original's place while its chain keeps the same teams and date, so the
+    flag's ``match`` is usually the newer one, but not when it corrects a
+    match with the same teams and date recorded before ``duplicate_of``.
+    That ends the flag's hold on the earlier match, which counts again,
+    and sends ``release``, unless another open flag still holds it. A hold
+    against a pending or disputed earlier match never voids the newer one
+    under this rule. The flag stays open: only ``resolve_flags`` resolves
+    flags, and a voided match holds nothing.
 
     Each match is voided in its own transaction, as
     ``expire_unconfirmed_matches`` does: lineup lock tried, never waited
@@ -944,14 +950,7 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     )
     # A match the dispute pass failed is not tried again, so it counts and
     # is logged once.
-    held = [
-        pk
-        for pk in _expired_holds(hold_cutoff)
-        .order_by("match_id")
-        .values_list("match_id", flat=True)
-        .distinct()
-        if pk not in failed
-    ]
+    held = [pk for pk in _expired_hold_targets(hold_cutoff) if pk not in failed]
     held_expired, held_failed = _expire_each(
         held, lambda pk: _expire_hold(pk, hold_cutoff)
     )
@@ -964,20 +963,147 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     return expired
 
 
-def _expired_holds(cutoff: datetime) -> QuerySet[MatchFlag]:
-    """Open possible duplicate flags older than ``cutoff`` the hold rule ends.
+def _open_holds(cutoff: datetime) -> QuerySet[MatchFlag]:
+    """Open possible duplicate flags older than ``cutoff``, neither side voided.
 
-    Only a flag whose earlier match (``duplicate_of``) is confirmed (the
-    maintainer's decision on #268 and #265): a hold against a pending or
-    disputed earlier match never voids the newer one, or a player's own
-    pending self-submission could void a verified Organizer's result.
+    The hold rule may end these; ``_hold_target`` decides which, if any.
     """
     return MatchFlag.objects.filter(
         reason=FlagReason.POSSIBLE_DUPLICATE,
         resolved_at__isnull=True,
         created_at__lt=cutoff,
-        duplicate_of__status=MatchStatus.CONFIRMED,
-    ).exclude(match__status=MatchStatus.VOIDED)
+    ).exclude(
+        Q(match__status=MatchStatus.VOIDED) | Q(duplicate_of__status=MatchStatus.VOIDED)
+    )
+
+
+_Lineup = tuple[frozenset[frozenset[int]], date | None]
+
+
+def _lineup(pk: int) -> _Lineup:
+    """The stored teams (in either order) and date of match ``pk``.
+
+    A match with no participants has no teams, and ``_place`` never walks
+    back from one (fail closed). ``record_match()`` never makes one.
+    """
+    played_on: date | None = (
+        Match.objects.filter(pk=pk).values_list("played_on", flat=True).first()
+    )
+    teams: dict[str, set[int]] = {}
+    for player_id, team in MatchParticipant.objects.filter(match_id=pk).values_list(
+        "player_id", "team"
+    ):
+        teams.setdefault(team, set()).add(player_id)
+    return frozenset(frozenset(players) for players in teams.values()), played_on
+
+
+def _place(pk: int, places: dict[int, int]) -> int:
+    """The hold rule's place of match ``pk``: the id it ranks by.
+
+    A correction keeps its original's place only while its chain keeps
+    the same teams (in either order) and date (maintainer's decisions on
+    #268). So this follows ``corrects`` back from ``pk`` and stops at the
+    first step whose lineup or ``played_on`` differs from ``pk``'s, or at
+    the match that corrects nothing, and returns that match's id. An edit
+    that moves a match onto another lineup or date gets no old place, so
+    it cannot take an earlier place than a result already recorded there.
+    Ids are given in the order matches are recorded, so a lower place is
+    the earlier result. ``corrects``, teams, dates, and ids never change,
+    so no lock is needed to read them. ``places`` caches answers for one
+    run.
+    """
+    if pk in places:
+        return places[pk]
+    lineup = _lineup(pk)
+    current = pk
+    seen = {pk}
+    while True:
+        previous: int | None = (
+            Match.objects.filter(pk=current)
+            .values_list("corrects_id", flat=True)
+            .first()
+        )
+        if (
+            previous is None
+            or previous in seen
+            or not lineup[0]
+            or _lineup(previous) != lineup
+        ):
+            break
+        seen.add(previous)
+        current = previous
+    places[pk] = current
+    return current
+
+
+@dataclass(frozen=True)
+class _Hold:
+    """One open possible duplicate flag's two matches and their statuses."""
+
+    match_id: int
+    match_status: str
+    duplicate_of_id: int
+    duplicate_of_status: str
+
+
+def _holds(flags: QuerySet[MatchFlag]) -> list[_Hold]:
+    return [
+        _Hold(*row)
+        for row in flags.values_list(
+            "match_id", "match__status", "duplicate_of_id", "duplicate_of__status"
+        )
+    ]
+
+
+def _hold_sides(hold: _Hold, places: dict[int, int]) -> tuple[int, int]:
+    """The flag's (earlier, newer) match ids for the hold rule.
+
+    Each side ranks by its place (``_place``): the first match of its own
+    correction chain with the same teams and date. The lower place is the
+    earlier match. The flag's ``duplicate_of`` was recorded before its
+    ``match``, so without a correction, and for equal places,
+    ``duplicate_of`` is the earlier one. A correction of a match with the
+    same teams and date recorded before ``duplicate_of``'s place is the
+    earlier one, so the hold rule never voids it for having been
+    corrected.
+    """
+    if _place(hold.match_id, places) < _place(hold.duplicate_of_id, places):
+        return hold.match_id, hold.duplicate_of_id
+    return hold.duplicate_of_id, hold.match_id
+
+
+def _hold_target(hold: _Hold, places: dict[int, int]) -> int | None:
+    """The id of the match the hold rule voids for ``hold``, or None.
+
+    The newer match (``_hold_sides``), and only when the earlier one is
+    confirmed (the maintainer's decision on #268 and #265): a hold
+    against a pending or disputed earlier match never voids the newer
+    one, or a player's own pending self-submission could void a verified
+    Organizer's result. ``hold`` comes from ``_open_holds``, so neither
+    side is voided.
+    """
+    earlier, newer = _hold_sides(hold, places)
+    statuses = {
+        hold.match_id: hold.match_status,
+        hold.duplicate_of_id: hold.duplicate_of_status,
+    }
+    if statuses[earlier] != MatchStatus.CONFIRMED:
+        return None
+    return newer
+
+
+def _expired_hold_targets(cutoff: datetime) -> list[int]:
+    """Ids of the matches the hold rule voids now, in id order. Read only.
+
+    Checked again for each match under its locks (``_expire_hold``).
+    """
+    places: dict[int, int] = {}
+    targets = {
+        target
+        for hold in _holds(_open_holds(cutoff))
+        if (target := _hold_target(hold, places)) is not None
+    }
+    return sorted(targets)
 
 
 def _lock_for_expiry(pk: int, status: Q) -> Match | None:
@@ -1016,12 +1142,19 @@ def _expire_dispute(pk: int, cutoff: datetime) -> bool:
 def _expire_hold(pk: int, cutoff: datetime) -> bool:
     """Void the newer match of a possible duplicate flag held past ``cutoff``.
 
-    The lineup lock also covers the flag's earlier match (the same teams
-    and date), so its status cannot change meanwhile.
+    The match may be either side of the flag (``_hold_sides``). The lineup
+    lock also covers the flag's other match (the same teams and date), so
+    its status cannot change meanwhile.
     """
     with transaction.atomic():
         locked = _lock_for_expiry(pk, ~Q(status=MatchStatus.VOIDED))
-        if locked is None or not _expired_holds(cutoff).filter(match=locked).exists():
+        if locked is None:
+            return False
+        holds = _holds(
+            _open_holds(cutoff).filter(Q(match=locked) | Q(duplicate_of=locked))
+        )
+        places: dict[int, int] = {}
+        if not any(_hold_target(hold, places) == locked.pk for hold in holds):
             return False
         _void(
             locked,
