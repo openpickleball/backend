@@ -389,7 +389,14 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
 _DISPUTE_REASON_REQUIRED = "Give a reason for the dispute outcome."
 
 
-def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) -> Match:
+def resolve_dispute(
+    match: Match,
+    *,
+    actor: Actor,
+    outcome: str,
+    reason: str,
+    as_moderator: bool = True,
+) -> Match:
     """Resolve a disputed match as confirmed or voided.
 
     For the match's Event's verified Organizer (``settles_dispute``: a
@@ -398,10 +405,13 @@ def resolve_dispute(match: Match, *, actor: Actor, outcome: str, reason: str) ->
     Organizer, ADR 0034), or a moderator (``moderates``). ``reason`` is
     required. Records one ``dispute.outcome`` Audit Event. A confirmed
     outcome sends ``match_confirmed``; a voided one sends ``release`` for
-    each match it no longer holds.
+    each match it no longer holds. With ``as_moderator=False`` (the
+    Organizer's API operations) the moderator path is never taken: only
+    ``settles_dispute`` lets the actor resolve.
     """
     _saved(match)
-    if not (moderates(actor, match) or settles_dispute(actor, match)):
+    moderator = as_moderator and moderates(actor, match)
+    if not (moderator or settles_dispute(actor, match)):
         raise MatchActionDenied
     if outcome not in _RESOLUTIONS:
         raise ValueError("Resolve a dispute as confirmed or voided.")
@@ -525,6 +535,7 @@ def edit_match(
     event_label: str = "",
     bracket_label: str = "",
     sequence: int = 0,
+    as_moderator: bool = True,
 ) -> Match:
     """Void ``match`` and create its correction. Returns the new match.
 
@@ -533,21 +544,27 @@ def edit_match(
     and Club and the new players), checked before any validation. Only a
     moderator, or the Event's verified Organizer settling the dispute
     (``settles_dispute`` with the new players, ADR 0034), edits a disputed
-    match; anyone else gets ``MatchStateError``, as for a voided match. The correction keeps the old match's submitter,
-    external id, Event, and Club, links to it through ``corrects``, and is
-    confirmed when the old one was confirmed or disputed, else pending. It
-    goes through validation, the model rules, and the duplicate checks
+    match; anyone else gets ``MatchStateError``, as for a voided match.
+    With ``as_moderator=False`` (the Organizer's API operations) the
+    moderator path is never taken, so only the non-moderator rules apply.
+
+    The correction keeps the old match's submitter, external id, Event,
+    and Club, links to it through ``corrects``, and is confirmed when the
+    old one was confirmed or disputed, else pending. It goes through
+    validation, the model rules, and the duplicate checks
     (``MatchValidationError``, ``DuplicateMatchError``), and any error
     rolls everything back. One ``match.edit`` Audit Event on the old match
-    records it (no separate ``match.void``). Only a moderator, or the
-    settling Organizer, may give a ``reason``; anyone else giving one gets
-    ``ReasonRefused``. The settling Organizer must give one (``ValueError``),
-    and a match that is no longer disputed under the lock refuses it
-    (``MatchStateError``). Signals: ``match_changed``
-    with ``change=edit`` for an old match that was counting (the earlier
-    of the two dates), else ``match_confirmed`` for a confirmed
-    correction, and ``hold`` or ``release`` for each other match whose
-    counting changed.
+    records it (no separate ``match.void``).
+
+    Only a moderator, or the settling Organizer, may give a ``reason``;
+    anyone else giving one gets ``ReasonRefused``. The settling Organizer
+    must give one (``ValueError``), and a match that is no longer disputed
+    under the lock refuses it (``MatchStateError``).
+
+    Signals: ``match_changed`` with ``change=edit`` for an old match that
+    was counting (the earlier of the two dates), else ``match_confirmed``
+    for a confirmed correction, and ``hold`` or ``release`` for each other
+    match whose counting changed.
     """
     _saved(match)
     new_player_ids = [
@@ -557,7 +574,9 @@ def edit_match(
     ]
     # A moderator who played in the match, or who puts their own Player in
     # the correction, falls back to the other rules.
-    moderator = moderates(actor, match, new_player_ids=new_player_ids)
+    # With as_moderator=False (the Organizer's API operations) only the
+    # non-moderator rules apply, whoever the actor is.
+    moderator = as_moderator and moderates(actor, match, new_player_ids=new_player_ids)
     if not (moderator or can_change_match(actor, match)):
         raise MatchActionDenied
     stored = Match.objects.select_related(

@@ -350,7 +350,11 @@ def resolve_match_dispute(
     try:
         with transaction.atomic():
             workflow.resolve_dispute(
-                match, actor=account, outcome=payload.outcome, reason=payload.reason
+                match,
+                actor=account,
+                outcome=payload.outcome,
+                reason=payload.reason,
+                as_moderator=False,
             )
     except MatchActionDenied:
         raise Http404 from None
@@ -405,6 +409,7 @@ def correct_disputed_match(
                 event_label=match.event_label,
                 bracket_label=match.bracket_label,
                 sequence=match.sequence,
+                as_moderator=False,
             )
     except MatchActionDenied:
         raise Http404 from None
