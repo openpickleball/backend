@@ -117,23 +117,25 @@ def _notice(
     if not scores:
         name = "dispute" if prefix == DISPUTE_NOTICE else "hold"
         raise ValueError(f"A {name} notice needs a match with games.")
-    context = {
+    context: dict[str, object] = {
         "code": str(match.public_code),
         "played_on": match.played_on,
         "scores": scores,
         "url": match_url(match),
         "ends_on": ends_on,
         "as_organizer": team is None,
+    }
+    if prefix == DISPUTE_NOTICE:
         # Read from the stored match, so the email offers only what
         # someone can do: the Event's verified Organizer settles a
-        # dispute, and the players correct a self-reported match.
-        "organizer_level": Match.objects.filter(
+        # dispute, and the players correct a self-reported match. Only
+        # the dispute notice uses them.
+        context["organizer_level"] = Match.objects.filter(
             pk=match.pk, event__organizer__verified_at__isnull=False
-        ).exists(),
-        "self_reported": Match.objects.filter(
+        ).exists()
+        context["self_reported"] = Match.objects.filter(
             pk=match.pk, event__isnull=True, club__isnull=True
-        ).exists(),
-    }
+        ).exists()
     return render_email(prefix, account.email, context)
 
 
