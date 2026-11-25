@@ -559,7 +559,8 @@ def edit_match(
     For a match with an Event, the write transaction first share-locks the
     Event row and checks a non-moderator again (``hold_event``), so an
     organizer change made after the first check refuses the edit with
-    ``MatchActionDenied`` before any lock or write.
+    ``MatchActionDenied`` before any lock or write. The correction keeps
+    the old match's stored match type, never the Event's current kind.
 
     The correction keeps the old match's submitter, external id, Event,
     and Club, links to it through ``corrects``, and is confirmed when the
@@ -643,9 +644,10 @@ def edit_match(
         sequence=sequence,
     )
     with transaction.atomic():
-        # Holds the Event fixed until commit, checks the editor again, and
-        # takes the kind under that lock (ADR 0035).
-        hold_event(draft, check_editor)
+        # Holds the Event fixed until commit and checks the editor again.
+        # The correction keeps the old match's type (the maintainer's
+        # decision on #163).
+        hold_event(draft, check_editor, keep_type_of=stored)
         lock_draft(draft, also=[stored_lineup_lock_key(stored)])
         locked = _lock_row(match)
         if locked.status == MatchStatus.VOIDED:

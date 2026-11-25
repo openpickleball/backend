@@ -2,7 +2,8 @@
 
 The type is the Event's kind, read from the database, ``rec_verified`` for
 a Club with no Event, and ``self_reported`` for neither. It never changes
-afterward, so a later change of the Event's kind moves only new matches.
+afterward, so a later change of the Event's kind moves only new matches,
+and a correction keeps the type of the match it corrects.
 Made-up data only.
 """
 
@@ -10,6 +11,7 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
+import open_engine
 import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -34,6 +36,7 @@ from apps.matches.tests.factories import MatchFactory, raw_update
 from apps.matches.workflow import edit_match
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
+from apps.ratings.engine_adapter import to_engine_match
 
 pytestmark = pytest.mark.django_db
 
@@ -128,7 +131,7 @@ def test_a_kind_change_moves_only_new_matches(
     assert _stored_type(second) == MatchType.LEAGUE
 
 
-def test_a_correction_takes_the_event_kind_at_correction_time(
+def test_a_correction_keeps_the_type_of_the_match_it_corrects(
     players: list[Player], event: Event
 ) -> None:
     account = _member(event)
@@ -148,7 +151,9 @@ def test_a_correction_takes_the_event_kind_at_correction_time(
     )
 
     assert _stored_type(original) == MatchType.TOURNAMENT
-    assert _stored_type(correction) == MatchType.REC_VERIFIED
+    assert _stored_type(correction) == MatchType.TOURNAMENT
+    engine_match = to_engine_match(Match.objects.get(pk=correction.pk))
+    assert engine_match.match_type is open_engine.MatchType.TOURNAMENT
 
 
 def test_a_correction_of_a_club_match_is_rec_verified(

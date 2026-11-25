@@ -995,8 +995,13 @@ def stored_lineup_lock_key(match: Match) -> int:
     return _lineup_lock_key(teams[Team.A], teams[Team.B], played_on.get())
 
 
-def hold_event(draft: MatchDraft, recheck: Callable[[], None]) -> None:
-    """Share-lock the draft's Event row, check authority again, take its kind.
+def hold_event(
+    draft: MatchDraft,
+    recheck: Callable[[], None],
+    *,
+    keep_type_of: Match | None = None,
+) -> None:
+    """Share-lock the draft's Event row, check authority again, set the type.
 
     Call first inside the write transaction, before ``lock_draft`` and any
     lookup, lock, or write. ``FOR KEY SHARE`` conflicts with the
@@ -1005,9 +1010,13 @@ def hold_event(draft: MatchDraft, recheck: Callable[[], None]) -> None:
     organizer change then sees the match and refuses), or this call waits
     until the change commits and is judged against the stored Event.
     ``recheck`` raises the caller's fixed-text refusal. Then the draft's
-    match type is read again from the Event's kind as stored under the
-    lock, so a kind change committed after ``draft_match`` reaches this
-    match (ADR 0035). The lock lasts until the outermost transaction ends;
+    match type is set. For a new match it is read again from the Event's
+    kind as stored under the lock, so a kind change committed after
+    ``draft_match`` reaches this match (ADR 0035). For a correction
+    (``keep_type_of``, the match it corrects) it is that match's stored
+    type: a correction never changes a match's type (the maintainer's
+    decision on #163). The correction has the old match's Event and Club,
+    so the copied type always fits them. The lock lasts until the outermost transaction ends;
     nothing takes the Event row lock after a Match lock. With no Event, it
     runs ``recheck`` alone.
     """
@@ -1024,7 +1033,15 @@ def hold_event(draft: MatchDraft, recheck: Callable[[], None]) -> None:
                 [event.pk],
             )
     recheck()
-    match.match_type = _stored_match_type(event, match.club)
+    if keep_type_of is None:
+        match.match_type = _stored_match_type(event, match.club)
+    else:
+        # The ledger guard keeps a saved match's type from changing.
+        match.match_type = (
+            Match.objects.filter(pk=keep_type_of.pk)
+            .values_list("match_type", flat=True)
+            .get()
+        )
 
 
 def lock_draft(draft: MatchDraft, *, also: Sequence[int] = ()) -> None:

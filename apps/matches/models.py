@@ -37,7 +37,8 @@ Each Match stores its match type when it is recorded: the Event's kind,
 ``rec_verified`` for a Club with no Event, or ``self_reported`` for neither
 (decision F1 in #1, ADR 0035). A check constraint ties it to the Event and
 Club links, and the ledger guard keeps it from changing, so a later change
-of the Event's kind moves only matches recorded after it.
+of the Event's kind moves only matches recorded after it. A correction
+copies the type of the match it corrects.
 """
 
 import datetime
@@ -370,7 +371,8 @@ class MatchType(models.TextChoices):
     per Match when it is recorded (``apps.matches.services.draft_match``):
     the Event's kind, ``rec_verified`` for a Club with no Event, and
     ``self_reported`` for neither. It never changes afterward, so a later
-    change of an Event's kind moves only matches recorded after it.
+    change of an Event's kind moves only matches recorded after it. A
+    correction (``edit_match``) copies the type of the match it corrects.
     """
 
     TOURNAMENT = "tournament", "Tournament"

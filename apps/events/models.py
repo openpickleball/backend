@@ -8,9 +8,10 @@ Self-reported matches have no Event (decision F1 in #1).
 
 Each Match stores the kind as its match type when it is recorded, so the
 kind may change at any time and the change reaches only matches recorded
-after it. The organizer decides who may submit the Event's counted
-matches and the club consents to them, so neither can change once any
-Match (in any status) names the Event (ADR 0035).
+after it; a correction keeps the type of the match it corrects. The
+organizer decides who may submit the Event's counted matches and the club
+consents to them, so neither can change once any Match (in any status)
+names the Event (ADR 0035).
 
 An Event has no weight of its own. The engine weights a match only by its
 match type and takes no per-event weight (openpickleball/engine#30), so
