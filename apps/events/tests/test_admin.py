@@ -4,10 +4,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 from django.contrib import admin
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.test import Client
 from django.urls import reverse
 
 from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import AuditAction, AuditEvent
 from apps.clubs.models import Club, Organizer
 from apps.clubs.tests.factories import (
     ClubFactory,
@@ -16,6 +18,7 @@ from apps.clubs.tests.factories import (
 )
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
+from apps.matches.tests.factories import MatchFactory
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -187,3 +190,93 @@ def test_club_delete_page_lists_the_event_as_protected(
     assert event.public_code in page.content.decode()
     assert posted.status_code == 200
     assert Club.objects.filter(pk=club.pk).exists()
+
+
+# Audit Events (#163, ADR 0035).
+
+
+def _audit(action: str) -> list[AuditEvent]:
+    return list(AuditEvent.objects.filter(action=action).order_by("pk"))
+
+
+def test_add_form_records_one_create(superuser_client: Client) -> None:
+    organizer: Organizer = OrganizerFactory.create()
+
+    response = superuser_client.post(reverse(EVENT_ADD), _add_data(organizer))
+
+    assert response.status_code == 302
+    event = Event.objects.get()
+    [audit] = _audit(AuditAction.EVENT_CREATE)
+    assert audit.target == event
+    assert audit.actor_user == response.wsgi_request.user
+    assert audit.after is not None
+    assert audit.after["organizer"] == organizer.public_code
+
+
+def test_change_form_records_only_the_changed_fields(
+    superuser_client: Client,
+) -> None:
+    event: Event = EventFactory.create(kind="league")
+    data = _add_data(
+        event.organizer,
+        name=event.name,
+        kind="tournament",
+        start_date=event.start_date.isoformat(),
+        end_date=event.end_date.isoformat(),
+    )
+
+    response = superuser_client.post(reverse(EVENT_CHANGE, args=[event.pk]), data)
+
+    assert response.status_code == 302
+    [audit] = _audit(AuditAction.EVENT_CHANGE)
+    assert audit.actor_user == response.wsgi_request.user
+    assert (audit.before, audit.after) == ({"kind": "league"}, {"kind": "tournament"})
+
+
+def test_delete_records_one_delete(superuser_client: Client) -> None:
+    event: Event = EventFactory.create()
+    pk = event.pk
+
+    response = superuser_client.post(
+        reverse("admin:events_event_delete", args=[pk]), {"post": "yes"}
+    )
+
+    assert response.status_code == 302
+    assert not Event.objects.filter(pk=pk).exists()
+    [audit] = _audit(AuditAction.EVENT_DELETE)
+    assert audit.target_object_id == str(pk)
+    assert audit.actor_user == response.wsgi_request.user
+
+
+def test_bulk_delete_records_one_delete_per_event(superuser_client: Client) -> None:
+    events = [EventFactory.create() for _ in range(3)]
+
+    response = superuser_client.post(
+        reverse(EVENT_CHANGELIST),
+        {
+            "action": "delete_selected",
+            "post": "yes",
+            ACTION_CHECKBOX_NAME: [str(e.pk) for e in events],
+        },
+    )
+
+    assert response.status_code == 302
+    assert not Event.objects.exists()
+    audits = _audit(AuditAction.EVENT_DELETE)
+    assert sorted(a.target_object_id for a in audits) == sorted(
+        str(e.pk) for e in events
+    )
+
+
+def test_delete_of_an_event_with_a_match_is_refused_and_records_nothing(
+    superuser_client: Client,
+) -> None:
+    event: Event = EventFactory.create()
+    MatchFactory.create(event=event)
+
+    superuser_client.post(
+        reverse("admin:events_event_delete", args=[event.pk]), {"post": "yes"}
+    )
+
+    assert Event.objects.filter(pk=event.pk).exists()
+    assert _audit(AuditAction.EVENT_DELETE) == []

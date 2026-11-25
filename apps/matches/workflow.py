@@ -127,6 +127,7 @@ from apps.matches.services import (
     draft_match,
     duplicate_error,
     exact_duplicate,
+    hold_event,
     insert_draft,
     lock_draft,
     near_duplicates,
@@ -555,6 +556,11 @@ def edit_match(
     match; anyone else gets ``MatchStateError``, as for a voided match.
     With ``as_moderator=False`` (the Organizer's API operations) the
     moderator path is never taken, so only the non-moderator rules apply.
+    For a match with an Event, the write transaction first share-locks the
+    Event row and checks a non-moderator again (``hold_event``), so an
+    organizer change made after the first check refuses the edit with
+    ``MatchActionDenied`` before any lock or write. The correction keeps
+    the old match's stored match type, never the Event's current kind.
 
     The correction keeps the old match's submitter, external id, Event,
     and Club, links to it through ``corrects``, and is confirmed when the
@@ -590,20 +596,21 @@ def edit_match(
     stored = Match.objects.select_related(
         "submitted_by_user", "submitted_by_application", "event", "club"
     ).get(pk=match.pk)
-    if not moderator:
+    submission = MatchSubmission(
+        event=stored.event,
+        club=stored.club,
+        player_ids=frozenset(new_player_ids),
+    )
+
+    def check_editor() -> None:
         # An edit creates a match, so the editor also needs the authority
         # to submit it, checked before any validation.
-        submission = MatchSubmission(
-            event=stored.event,
-            club=stored.club,
-            player_ids=frozenset(
-                player.pk
-                for player in (*team_a, *team_b)
-                if isinstance(player, Player) and player.pk is not None
-            ),
-        )
-        if not can_create_match(actor, submission):
+        if not moderator and not (
+            can_change_match(actor, match) and can_create_match(actor, submission)
+        ):
             raise MatchActionDenied
+
+    check_editor()
     # The Event's verified Organizer settling a dispute (ADR 0034) gives a
     # reason, as a moderator does. The status read here only decides
     # whether a reason may be given; it is checked again under the lock.
@@ -637,6 +644,10 @@ def edit_match(
         sequence=sequence,
     )
     with transaction.atomic():
+        # Holds the Event fixed until commit and checks the editor again.
+        # The correction keeps the old match's type (the maintainer's
+        # decision on #163).
+        hold_event(draft, check_editor, keep_type_of=stored)
         lock_draft(draft, also=[stored_lineup_lock_key(stored)])
         locked = _lock_row(match)
         if locked.status == MatchStatus.VOIDED:

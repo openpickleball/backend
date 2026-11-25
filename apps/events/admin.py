@@ -1,11 +1,19 @@
-"""Admin for Events."""
+"""Admin for Events.
+
+Saves and deletes go through ``apps.events.services``, which record one
+Audit Event each with ``request.user`` as actor (#163).
+"""
 
 from typing import Any, ClassVar
 
 from django import forms
 from django.contrib import admin
+from django.db import transaction
+from django.db.models import QuerySet
+from django.http import HttpRequest
 
 from apps.events.models import CHOICE_MESSAGES, Event
+from apps.events.services import delete_event, save_event
 
 
 class EventAdminForm(forms.ModelForm[Event]):
@@ -57,3 +65,21 @@ class EventAdmin(admin.ModelAdmin[Event]):
     search_fields = ("public_code", "name")
     list_filter = ("kind",)
     autocomplete_fields = ("organizer", "club")
+
+    def save_model(
+        self,
+        request: HttpRequest,
+        obj: Event,
+        form: forms.ModelForm[Event],
+        change: bool,
+    ) -> None:
+        save_event(obj, actor=request.user)
+
+    def delete_model(self, request: HttpRequest, obj: Event) -> None:
+        delete_event(obj, actor=request.user)
+
+    def delete_queryset(self, request: HttpRequest, queryset: QuerySet[Event]) -> None:
+        # One transaction, one Audit Event per Event.
+        with transaction.atomic():
+            for event in queryset.order_by("pk"):
+                delete_event(event, actor=request.user)

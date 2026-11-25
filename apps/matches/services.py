@@ -67,7 +67,7 @@ no such input (CLAUDE.md, hard rule 7).
 
 import hashlib
 import json
-from collections.abc import Hashable, Sequence
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
@@ -98,6 +98,7 @@ from apps.matches.models import (
     ScoringType,
     SubmissionBatch,
     Team,
+    source_match_type,
 )
 from apps.matches.permissions import Actor, MatchSubmission, check_can_create_match
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
@@ -173,6 +174,32 @@ def _stored_rating_format(
     return derive_rating_format(
         format, [stored[key] for key in keys_a], [stored[key] for key in keys_b]
     )
+
+
+def _stored_match_type(event: "Event | None", club: "Club | None") -> str:
+    """The match type to store, from the Event's kind as stored now.
+
+    ``rec_verified`` for a Club with no Event and ``self_reported`` for
+    neither (ADR 0024, ADR 0035). The kind is read from the database by
+    id, never from the instance. An Event whose row is gone (or an unsaved
+    one) gets the instance's kind here, so the model rules that run next
+    (``_clean_all``) report the missing Event as a ``MatchValidationError``.
+    """
+    from_source = source_match_type(
+        has_event=event is not None, has_club=club is not None
+    )
+    if event is None:
+        assert from_source is not None
+        return str(from_source)
+    stored = None
+    if event.pk is not None:
+        stored = (
+            type(event)
+            ._base_manager.filter(pk=event.pk)
+            .values_list("kind", flat=True)
+            .first()
+        )
+    return str(event.kind if stored is None else stored)
 
 
 @dataclass(frozen=True)
@@ -917,6 +944,7 @@ def draft_match(
     match = Match(
         format=validated.format,
         rating_format=_stored_rating_format(validated.format, keys_a, keys_b),
+        match_type=_stored_match_type(event, club),
         played_on=validated.played_on,
         best_of=validated.best_of,
         game_target=validated.game_target,
@@ -965,6 +993,55 @@ def stored_lineup_lock_key(match: Match) -> int:
     ).values_list("player_id", "team"):
         teams.setdefault(team, []).append(player_id)
     return _lineup_lock_key(teams[Team.A], teams[Team.B], played_on.get())
+
+
+def hold_event(
+    draft: MatchDraft,
+    recheck: Callable[[], None],
+    *,
+    keep_type_of: Match | None = None,
+) -> None:
+    """Share-lock the draft's Event row, check authority again, set the type.
+
+    Call first inside the write transaction, before ``lock_draft`` and any
+    lookup, lock, or write. ``FOR KEY SHARE`` conflicts with the
+    ``FOR UPDATE`` that ``Event.save()`` takes on every save, so the two
+    serialize: either the Event change waits until this match commits (an
+    organizer or club change then sees the match and refuses), or this
+    call waits until the change commits and is judged against the stored
+    Event. ``recheck`` raises the caller's fixed-text refusal. Then the
+    draft's match type is set. For a new match it is read again from the
+    Event's kind as stored under the lock, so a kind change committed
+    after ``draft_match`` reaches this match (ADR 0035). For a correction
+    (``keep_type_of``, the match it corrects) it is that match's stored
+    type: a correction never changes a match's type (the maintainer's
+    decision on #163). The correction has the old match's Event and Club,
+    so the copied type always fits them. The lock lasts until the
+    outermost transaction ends; nothing takes the Event row lock after a
+    Match lock. With no Event, it runs ``recheck`` alone.
+    """
+    match = draft.match
+    event = match.event
+    if event is not None and event.pk is not None:
+        pk_column = event._meta.pk.column
+        assert pk_column is not None
+        quote = connection.ops.quote_name
+        table, column = quote(event._meta.db_table), quote(pk_column)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT 1 FROM {table} WHERE {column} = %s FOR KEY SHARE",
+                [event.pk],
+            )
+    recheck()
+    if keep_type_of is None:
+        match.match_type = _stored_match_type(event, match.club)
+    else:
+        # The ledger guard keeps a saved match's type from changing.
+        match.match_type = (
+            Match.objects.filter(pk=keep_type_of.pk)
+            .values_list("match_type", flat=True)
+            .get()
+        )
 
 
 def lock_draft(draft: MatchDraft, *, also: Sequence[int] = ()) -> None:
@@ -1243,6 +1320,11 @@ def record_match(
     ``match_changed`` with ``change=hold``. Signals are sent inside the
     transaction (``apps.matches.signals``).
 
+    For a match with an Event, the write transaction first share-locks the
+    Event row and checks every submitter again (``hold_event``), so an
+    organizer change made after the first check is caught before any
+    lookup, lock, or write, with the same ``MatchPermissionDenied``.
+
     Call it in its own transaction, never several times inside one outer
     ``transaction.atomic()``. Its advisory locks (an external id lock, then
     a lineup lock) last until the outermost transaction ends, so two
@@ -1260,10 +1342,14 @@ def record_match(
     submission = MatchSubmission(
         event=event, club=club, player_ids=frozenset(keys_a + keys_b)
     )
-    if submitted_by_user is not None:
-        check_can_create_match(submitted_by_user, submission)
-    if submitted_by_application is not None:
-        check_can_create_match(submitted_by_application, submission)
+
+    def check_submitters() -> None:
+        if submitted_by_user is not None:
+            check_can_create_match(submitted_by_user, submission)
+        if submitted_by_application is not None:
+            check_can_create_match(submitted_by_application, submission)
+
+    check_submitters()
     if submission_batch is not None:
         check_batch(
             submission_batch,
@@ -1300,6 +1386,9 @@ def record_match(
     submitter: Actor | None = submitted_by_user or submitted_by_application
 
     with transaction.atomic():
+        # Holds the Event fixed until commit, checks the submitters again,
+        # and takes the kind under that lock (ADR 0035).
+        hold_event(draft, check_submitters)
         lock_draft(draft)
         check_external_id(draft)
         existing = exact_duplicate(draft)

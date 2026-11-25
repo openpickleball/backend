@@ -296,12 +296,11 @@ def test_an_unknown_format_raises() -> None:
     _expect_mapping_error(match, "format", str(match.public_code))
 
 
-def test_an_unknown_event_kind_raises() -> None:
+def test_an_unknown_match_type_raises() -> None:
     match = _prefetched(saved_match(event=EventFactory.create())[0])
-    assert match.event is not None
-    match.event.kind = "exhibition"
+    match.match_type = "exhibition"
 
-    _expect_mapping_error(match, "event kind")
+    _expect_mapping_error(match, "match type", str(match.public_code))
 
 
 def test_an_unknown_scoring_type_raises() -> None:

@@ -22,6 +22,7 @@ from apps.matches.models import (
     MatchParticipant,
     ScoringType,
     Team,
+    source_match_type,
 )
 from apps.matches.services import derive_rating_format, match_fingerprint
 from apps.partners.tests.factories import PartnerApplicationFactory
@@ -94,6 +95,8 @@ class MatchFactory(DjangoModelFactory[Match]):
     game's winner reaches the target and the loser stays at least 2 behind.
     Its rating format is derived from its players' divisions, as
     ``record_match`` does; with no players it is the format's base value.
+    Its match type is the Event's kind, or ``rec_verified`` for a Club with
+    no Event, or ``self_reported``, as ``record_match`` sets it.
     Traits: ``best_of_1``, ``best_of_3``, ``best_of_5``, ``side_out``,
     ``rally``, and ``by_application`` (a Partner Application submitted it,
     with an external ID). Pass ``games=False`` or ``participants=False``
@@ -127,6 +130,9 @@ class MatchFactory(DjangoModelFactory[Match]):
     # Unless one is passed, insert_rows derives it from the players'
     # divisions, as record_match does, or uses the format's base value.
     rating_format = None
+    # Unless one is passed, _build takes it from the Event's kind or the
+    # Club, as record_match does.
+    match_type = None
     played_on = LazyFunction(_played_on)  # type: ignore[no-untyped-call]
     best_of = BestOf.ONE
     game_target = GameTarget.ELEVEN
@@ -137,6 +143,15 @@ class MatchFactory(DjangoModelFactory[Match]):
     def _build(cls, model_class: type[Match], *args: Any, **kwargs: Any) -> Match:
         if kwargs.get("rating_format") is None:
             kwargs["rating_format"] = str(kwargs.get("format", MatchFormat.SINGLES))
+        if kwargs.get("match_type") is None:
+            event = kwargs.get("event")
+            kwargs["match_type"] = (
+                str(event.kind)
+                if event is not None
+                else source_match_type(
+                    has_event=False, has_club=kwargs.get("club") is not None
+                )
+            )
         return model_class(*args, **kwargs)
 
     @classmethod

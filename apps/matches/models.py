@@ -32,9 +32,13 @@ so the engine adapter (``apps.ratings.engine_adapter``) maps them
 directly. ``MatchFormat`` holds only the two base values of
 ``open_engine.RatingFormat``: the engine adapter derives the doubles
 categories (mixed, men's, women's) from the players. ``MatchStatus``, ``BestOf``, and ``Team``
-have no engine enum. The match type is not stored: it comes from the
-Event's kind, or is self-reported when there is no Event (decision F1 in
-#1).
+have no engine enum. ``MatchType`` values equal ``open_engine.MatchType``'s.
+Each Match stores its match type when it is recorded: the Event's kind,
+``rec_verified`` for a Club with no Event, or ``self_reported`` for neither
+(decision F1 in #1, ADR 0035). A check constraint ties it to the Event and
+Club links, and the ledger guard keeps it from changing, so a later change
+of the Event's kind moves only matches recorded after it. A correction
+copies the type of the match it corrects.
 """
 
 import datetime
@@ -43,7 +47,7 @@ from datetime import UTC, timedelta
 from typing import Any, ClassVar, NoReturn
 
 from django.conf import settings
-from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import (
@@ -60,7 +64,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Cast
 
-from apps.clubs.models import _CleanedTextModel
+from apps.clubs.models import _CleanedTextModel, _LinkMessagesModel
 from apps.events.models import CHOICE_MESSAGES
 from apps.public_ids.codes import CodeType
 
@@ -128,6 +132,7 @@ _PLAYED_AT_NAIVE = "Give the time played with its time zone."
 _PLAYED_AT_OUT_OF_RANGE = "Enter a time played within the supported dates."
 _LOCAL_DATE = "The date played must be the local date of the time played."
 _RATING_FORMAT_FITS = "The rating format must fit the format."
+_MATCH_TYPE_FITS = "The match type must fit the match's event and club."
 
 # played_at shifted to local time where the match was played, as a date. Postgres keeps a
 # timestamptz in UTC and drops its offset, so the offset is stored apart.
@@ -146,42 +151,6 @@ _LOCAL_PLAYED_ON = Cast(
     ),
     output_field=DateField(),
 )
-
-
-class _LinkMessagesModel(models.Model):
-    """Gives each link's own ``invalid`` message for an id of the wrong type.
-
-    ``ForeignKey.to_python`` converts the id with the target's primary key
-    field, whose message repeats the submitted value (CLAUDE.md, API).
-    """
-
-    class Meta:
-        abstract = True
-
-    def clean_fields(self, exclude: Collection[str] | None = None) -> None:
-        try:
-            super().clean_fields(exclude=exclude)
-        except ValidationError as error:
-            errors: dict[str, list[ValidationError]] = {}
-            for name, field_errors in error.error_dict.items():
-                field = _foreign_key(self, name)
-                errors[name] = [
-                    ValidationError(field.error_messages["invalid"], code="invalid")
-                    if field is not None and item.code == "invalid"
-                    else item
-                    for item in field_errors
-                ]
-            raise ValidationError(errors) from None
-
-
-def _foreign_key(
-    instance: models.Model, name: str
-) -> models.ForeignKey[models.Model, models.Model] | None:
-    try:
-        field = instance._meta.get_field(name)
-    except FieldDoesNotExist:
-        return None
-    return field if isinstance(field, models.ForeignKey) else None
 
 
 class MatchImmutable(RuntimeError):
@@ -359,6 +328,42 @@ RATING_FORMATS_BY_FORMAT: dict[str, frozenset[str]] = {
 }
 
 
+class MatchType(models.TextChoices):
+    """The match type a Match counts as (ADR 0024, ADR 0035).
+
+    The values are ``open_engine.MatchType``'s. ``record_match`` stores one
+    per Match when it is recorded (``apps.matches.services.draft_match``):
+    the Event's kind, ``rec_verified`` for a Club with no Event, and
+    ``self_reported`` for neither. It never changes afterward, so a later
+    change of an Event's kind moves only matches recorded after it. A
+    correction (``edit_match``) copies the type of the match it corrects.
+    """
+
+    TOURNAMENT = "tournament", "Tournament"
+    LEAGUE = "league", "League"
+    REC_VERIFIED = "rec_verified", "Verified rec play"
+    SELF_REPORTED = "self_reported", "Self-reported"
+
+
+# The match types a Match with an Event allows: the Event kinds.
+EVENT_MATCH_TYPES: tuple[str, ...] = (
+    MatchType.TOURNAMENT,
+    MatchType.LEAGUE,
+    MatchType.REC_VERIFIED,
+)
+
+
+def source_match_type(*, has_event: bool, has_club: bool) -> MatchType | None:
+    """The one match type a Match without an Event allows, from its Club.
+
+    None for a Match with an Event: its type is the Event's kind, one of
+    ``EVENT_MATCH_TYPES``.
+    """
+    if has_event:
+        return None
+    return MatchType.REC_VERIFIED if has_club else MatchType.SELF_REPORTED
+
+
 class MatchStatus(models.TextChoices):
     """Where a Match is in confirmation.
 
@@ -518,6 +523,14 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
         default=RatingFormat.SINGLES,
         error_messages=CHOICE_MESSAGES,
     )
+    # Set once at creation from the Event's kind, or the Club (ADR 0024,
+    # ADR 0035). A check constraint ties it to the Event and Club links.
+    match_type = models.CharField(
+        max_length=16,
+        choices=MatchType,
+        default=MatchType.SELF_REPORTED,
+        error_messages=CHOICE_MESSAGES,
+    )
     event = models.ForeignKey(
         "events.Event",
         null=True,
@@ -662,6 +675,21 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
                 violation_error_message=_RATING_FORMAT_FITS,
             ),
             models.CheckConstraint(
+                condition=Q(event__isnull=False, match_type__in=EVENT_MATCH_TYPES)
+                | Q(
+                    event__isnull=True,
+                    club__isnull=False,
+                    match_type=MatchType.REC_VERIFIED,
+                )
+                | Q(
+                    event__isnull=True,
+                    club__isnull=True,
+                    match_type=MatchType.SELF_REPORTED,
+                ),
+                name="matches_match_match_type_fits_source",
+                violation_error_message=_MATCH_TYPE_FITS,
+            ),
+            models.CheckConstraint(
                 condition=Q(status__in=MatchStatus.values),
                 name="matches_match_status_valid",
             ),
@@ -752,6 +780,15 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
             return False
         return Match.objects.counted().filter(pk=self.pk).exists()
 
+    def _match_type_fits(self) -> bool:
+        """True when the match type fits the Event and Club links."""
+        expected = source_match_type(
+            has_event=self.event_id is not None, has_club=self.club_id is not None
+        )
+        if expected is None:
+            return self.match_type in EVENT_MATCH_TYPES
+        return self.match_type == expected
+
     def clean(self) -> None:
         # Django runs clean() even when a field failed, so a value may still
         # be the raw input here: check its type before using it.
@@ -775,6 +812,8 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
             and self.rating_format not in allowed
         ):
             errors["rating_format"] = _RATING_FORMAT_FITS
+        if isinstance(self.match_type, str) and not self._match_type_fits():
+            errors["match_type"] = _MATCH_TYPE_FITS
 
         played_at, offset = self.played_at, self.played_at_utc_offset
         if played_at is not None and offset is None:

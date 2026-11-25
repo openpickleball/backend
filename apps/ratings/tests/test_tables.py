@@ -16,6 +16,7 @@ from apps.matches.models import (
     GameTarget,
     Match,
     MatchFormat,
+    MatchType,
     RatingFormat,
     ScoringType,
     Team,
@@ -42,11 +43,11 @@ def test_the_rating_format_table() -> None:
 
 def test_the_match_type_table() -> None:
     table = engine_adapter._MATCH_TYPES
-    assert set(table) == set(EventKind.values)
-    assert set(table.values()) == set(open_engine.MatchType) - {
-        open_engine.MatchType.SELF_REPORTED
-    }
+    assert set(table) == set(MatchType.values)
+    assert set(table.values()) == set(open_engine.MatchType)
     assert all(table[key].value == key for key in table)
+    # Every Event kind is a stored match type.
+    assert set(EventKind.values) < set(table)
 
 
 def test_the_scoring_type_table() -> None:

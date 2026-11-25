@@ -46,7 +46,7 @@ _Avoid_: venue, team.
 An Account's role at a Club. The only Club Role is admin (ADR 0021). A Club admin manages the Club's profile and its Club Organizer Grants. A Club Role gives no authority to submit, confirm, or change a match. Backend: `clubs.ClubRole`.
 
 **Event**:
-A tournament, league, or verified rec play that an Organizer runs, optionally at a Club, from a start date to an end date. An Event names a Club only when that Club granted its Organizer a Club Organizer Grant (ADR 0021). Every trusted match has an Event. Its kind is the Match Type its matches count as: `tournament`, `league`, or `rec_verified`. Self-reported matches have no Event. An Event has no weight of its own: a match's weight comes from its Match Type alone. Backend: `events.Event`.
+A tournament, league, or verified rec play that an Organizer runs, optionally at a Club, from a start date to an end date. An Event names a Club only when that Club granted its Organizer a Club Organizer Grant (ADR 0021). Every trusted match has an Event. Its kind is the Match Type its matches are recorded with: `tournament`, `league`, or `rec_verified`. The kind may change later, which changes only matches recorded after it (a Correction keeps the type of the Match it corrects). The Organizer and the Club cannot change once the Event has a match (ADR 0035). Self-reported matches have no Event. An Event has no weight of its own: a match's weight comes from its Match Type alone. Backend: `events.Event`.
 _Avoid_: competition.
 
 **Partner**:
@@ -85,7 +85,7 @@ One scored unit inside a Match, such as 11-8. Must be valid for the Match's Game
 How each game is scored: side-out or rally scoring, points to win, win-by margin, and an optional cap. Recorded on every Match. The backend stores the scoring type (`scoring_type`, side-out by default) and points to win (`game_target`: 11, 15, or 21); every game in a Match uses the same ones (decision F15). Engine: `GameFormat`.
 
 **Match Type**:
-Where the result came from, which affects its weight: `tournament`, `league`, `rec_verified`, or `self_reported`. Not stored: an Event match has its Event's kind, a Club match with no Event is `rec_verified` (none can be submitted since ADR 0021, so only one already in the Ledger or its correction), and a match with neither is `self_reported` (ADR 0024). Engine: `MatchType`.
+Where the result came from, which affects its weight: `tournament`, `league`, `rec_verified`, or `self_reported`. Stored on each Match when it is recorded and never changed (ADR 0035): an Event match has its Event's kind at that time (a Correction copies the type of the Match it corrects), a Club match with no Event is `rec_verified` (none can be submitted since ADR 0021, so only one already in the Ledger or its correction), and a match with neither is `self_reported` (ADR 0024). Engine: `MatchType`.
 
 **Confirmation**:
 Agreement that a reported score is correct. A self-reported Match stays pending until at least one player from each team confirms it (a player's own submission counts as their team's confirmation), or a submitter with event authority (a member of a verified Organizer, or a Partner Application acting for one) submits the same Match (same teams, date, and scores). A Match such a submitter submits, always with an Event, is confirmed when it is created (decision F4, ADR 0021). A Club gives no confirmation. Only a confirmed Match can count. Engine: `Match.confirmed_by`. Backend: `matches.MatchConfirmation`, one row per player's decision, and `Match.status` (ADR 0013). For a self-reported Match a moderator confirmed, the engine gets every participant as confirmed, since the moderator's decision stands in for the teams (ADR 0024).
@@ -165,7 +165,7 @@ Running the engine on real results without publishing or relying on its Ratings.
 ## Records
 
 **Audit Event**:
-One recorded sensitive action: who did it (an Account, a Partner Application, both, or nobody), what it changed (the target), the values before and after (for an identifying personal data field, only its name, ADR 0009), and a reason. Audit Events are append-only. They record moderation, manual edits, every Match status change (confirmation, dispute, void, expiry, and correction), account security changes, privacy changes, a player's own profile changes, Organizer verification, changes to Organizer Members, Club Roles, and both kinds of grant, and partner application requests and decisions; they are not part of the Ledger and never feed ratings. Backend: `audit.AuditEvent`.
+One recorded sensitive action: who did it (an Account, a Partner Application, both, or nobody), what it changed (the target), the values before and after (for an identifying personal data field, only its name, ADR 0009), and a reason. Audit Events are append-only. They record moderation, manual edits, every Match status change (confirmation, dispute, void, expiry, and correction), account security changes, privacy changes, a player's own profile changes, Organizer verification, Event creates, changes, and deletes, changes to Organizer Members, Club Roles, and both kinds of grant, and partner application requests and decisions; they are not part of the Ledger and never feed ratings. Backend: `audit.AuditEvent`.
 _Avoid_: log entry (Django's admin `LogEntry` is a different thing), history.
 
 ## Governance terms
