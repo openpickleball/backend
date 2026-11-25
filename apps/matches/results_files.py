@@ -50,7 +50,7 @@ logged but row ids and error classes: the file holds names and IDs.
 
 import logging
 import unicodedata
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import timedelta
 from enum import StrEnum
 from functools import partial
@@ -78,7 +78,6 @@ from apps.matches.models import (
     FlagReason,
     GameTarget,
     Match,
-    MatchFlag,
     MatchStatus,
     ResultsFile,
     ResultsFileStatus,
@@ -297,22 +296,7 @@ def _players(rows: tuple[CsvMatch | CsvRowError, ...]) -> dict[str, Player]:
     }
 
 
-def _held(match_id: int) -> bool:
-    return MatchFlag.objects.filter(
-        match_id=match_id,
-        reason=FlagReason.POSSIBLE_DUPLICATE,
-        resolution="",
-    ).exists()
-
-
 def _recorded(row: CsvMatch, match: Match, warnings: list[ReportIssue]) -> RowResult:
-    if _held(match.pk):
-        warnings = [
-            *warnings,
-            ReportIssue(
-                [], FlagReason.POSSIBLE_DUPLICATE.value, POSSIBLE_DUPLICATE_MESSAGE
-            ),
-        ]
     return RowResult(
         row.row,
         row.sequence,
@@ -320,6 +304,34 @@ def _recorded(row: CsvMatch, match: Match, warnings: list[ReportIssue]) -> RowRe
         match=match.public_code,
         warnings=warnings,
     )
+
+
+def _mark_held(report: list[RowResult]) -> list[RowResult]:
+    """Warn on every recorded row whose match is confirmed but held.
+
+    Read when the run finishes, from ``Match.objects.counted()``, so both
+    matches of a held pair are warned about and a match whose hold was
+    lifted (the other match voided, or the flag resolved) is not.
+    """
+    codes = [
+        result.match
+        for result in report
+        if result.result == ResultRow.RECORDED and result.match is not None
+    ]
+    held = set(
+        Match.objects.filter(public_code__in=codes, status=MatchStatus.CONFIRMED)
+        .exclude(pk__in=Match.objects.counted().values("pk"))
+        .values_list("public_code", flat=True)
+    )
+    warning = ReportIssue(
+        [], FlagReason.POSSIBLE_DUPLICATE.value, POSSIBLE_DUPLICATE_MESSAGE
+    )
+    return [
+        replace(result, warnings=[*result.warnings, warning])
+        if result.result == ResultRow.RECORDED and result.match in held
+        else result
+        for result in report
+    ]
 
 
 def _record_row(
@@ -581,7 +593,7 @@ def process_results_file(results_file_id: int) -> None:
         if result is None:
             return
         report.append(result)
-    _finish(results_file_id, report=report)
+    _finish(results_file_id, report=_mark_held(report))
 
 
 def sweep_results_files() -> int:
