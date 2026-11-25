@@ -85,3 +85,4 @@ Add each record here when it merges.
 - [0035. A stored match type, and what may change on an Event with matches](0035-stored-match-type-and-event-changes.md) (issue #163)
 - [0036. CSV results files](0036-csv-results-files.md) (issue #71)
 - [0037. Players report Organizers to OPEN Moderators](0037-organizer-reports.md) (issue #271)
+- [0038. Postgres connection pool](0038-postgres-connection-pool.md) (issue #60)

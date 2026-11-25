@@ -106,6 +106,26 @@ docker run --rm --env-file prod.env open-backend celery -A config beat -l info
 
 Here `prod.env` is a file of settings you keep outside the repository. Run one beat process only.
 
+### Connection pool
+
+Production can reach Postgres through a PgBouncer connection pool in transaction mode, such as a DigitalOcean connection pool (ADR 0038). Then `DATABASE_URL` is the pool's connection string and `DIRECT_DATABASE_URL` is the database's own. A DigitalOcean pool's connection string names the pool as its database, not the database itself, so the two URLs differ in more than the port. With `DIRECT_DATABASE_URL` set:
+
+- Requests, Celery tasks, and beat use the pool. Each closes its connection when the request or task ends.
+- `manage.py migrate` runs on the direct connection unless you pass `--database`. The image's `python manage.py migrate` does this too.
+- Settings refuse `prepare_threshold`, `assume_role`, and `pool` in the `DATABASE_URL` query, because a pool in transaction mode cannot serve them.
+
+Leave `DIRECT_DATABASE_URL` empty when `DATABASE_URL` is the database itself, as in local development and CI.
+
+Size the pool for client connections at their busiest. Each gunicorn worker (`WEB_CONCURRENCY`, sync workers) holds at most one connection per instance, each Celery worker child process holds one (the worker's `--concurrency`, which defaults to the number of CPUs), and beat holds one. Multiply by the number of instances. PgBouncer accepts many more client connections than its pool size and queues clients while every server connection is busy. A transaction that waits for a lock keeps its server connection for the whole wait, so lock waits use up the pool too. Migrations use direct connections, outside the pool, and these count against the cluster's own connection limit.
+
+To try the pool locally, start PgBouncer in transaction mode on 127.0.0.1:6432, with prepared statements off and a small pool:
+
+```bash
+docker compose --profile pgbouncer up -d --wait
+```
+
+Then set `DATABASE_URL=postgres://open@localhost:6432/open` and `DIRECT_DATABASE_URL=postgres://open@localhost:5432/open`. PgBouncer routes every database name to the compose Postgres, so the tests run through it too.
+
 With `DJANGO_DEBUG` off, settings trust the `X-Forwarded-Proto` header to tell https from http. So run the web container only behind the hosting proxy, which sets that header, and never let clients reach it directly. To test it locally, send `X-Forwarded-Proto: https` with each request, as in [Serving like production](#serving-like-production).
 
 ### CORS
