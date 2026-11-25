@@ -48,6 +48,32 @@ services:
       retries: 10
       start_period: 10s
 
+  # Optional. PgBouncer in transaction mode in front of db, on
+  # 127.0.0.1:6432, like a DigitalOcean connection pool (ADR 0038). Start
+  # it with docker compose --profile pgbouncer up -d --wait, then point
+  # DATABASE_URL at it and DIRECT_DATABASE_URL at db (see .env.example).
+  # Prepared statement support is off and the pool is small, so code that
+  # keeps session state fails here first. Any database name is routed to
+  # db, so the test databases are reachable too.
+  pgbouncer:
+    profiles: [pgbouncer]
+    image: edoburu/pgbouncer:v1.24.1-p1
+    configs:
+      # The image writes its own config only when this file is missing.
+      - source: pgbouncer-ini
+        target: /etc/pgbouncer/pgbouncer.ini
+    ports:
+      - "127.0.0.1:6432:6432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U open -d open"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    depends_on:
+      db:
+        condition: service_healthy
+
   # Optional. Runs the app with uv, on http://127.0.0.1:8000, with the
   # Celery worker and beat services below. The container runs as root and
   # mounts the repository, so files it writes (a generated migration, for
@@ -146,6 +172,25 @@ services:
     depends_on:
       web:
         condition: service_healthy
+
+configs:
+  pgbouncer-ini:
+    # Local only. auth_type any skips passwords, like db's trust
+    # authentication, and every server connection logs in as open. The
+    # port is bound to localhost.
+    content: |
+      [databases]
+      * = host=db port=5432 user=open
+
+      [pgbouncer]
+      listen_addr = 0.0.0.0
+      listen_port = 6432
+      auth_type = any
+      admin_users = open
+      pool_mode = transaction
+      max_prepared_statements = 0
+      default_pool_size = 5
+      max_client_conn = 200
 
 volumes:
   postgres-data:
