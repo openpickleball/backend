@@ -19,7 +19,8 @@ Event with an explicit actor, in the same transaction:
 The audited values are the name, the kind, the Organizer's and Club's
 OPEN Codes (read from the database by id, never from a related instance),
 and the dates as ISO strings. A plain ORM save or delete, and raw writes,
-record nothing. The admin uses these services; #125's API will too.
+record nothing. The admin and the organizer Event API
+(``apps/events/api.py``) use these services.
 """
 
 from typing import Any
