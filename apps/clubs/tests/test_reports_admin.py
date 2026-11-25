@@ -10,9 +10,11 @@ Messages and pages never hold a name or an email. Made-up data only.
 from datetime import date
 
 import pytest
+from django.contrib.admin import site
 from django.contrib.auth.models import Group, Permission
 from django.contrib.messages import get_messages
-from django.test import Client
+from django.contrib.messages.storage.fallback import FallbackStorage
+from django.test import Client, RequestFactory
 from django.urls import reverse
 
 from apps.accounts.models import User
@@ -143,14 +145,25 @@ def test_an_already_closed_report_changes_nothing() -> None:
     )
 
 
-def test_a_moderator_who_is_a_member_gets_a_warning_naming_the_code() -> None:
+def test_a_moderator_who_became_a_member_gets_a_warning_naming_the_code() -> None:
+    """The admin's list leaves out a member's Organizers' reports. One
+    selected before the membership began still meets the service's check.
+    """
     organizer = verified_organizer(name=ORGANIZER_NAME)
     report = _report(organizer)
     moderator = _moderator()
     OrganizerMemberFactory.create(organizer=organizer, account=moderator)
+    request = RequestFactory().post(reverse(CHANGELIST), {"reason": REASON})
+    request.user = moderator
+    request.session = {}  # type: ignore[assignment]
+    request._messages = FallbackStorage(request)  # type: ignore[attr-defined]
+    model_admin = site._registry[OrganizerReport]
 
-    messages = _close(_client(moderator), [report], REASON)
+    model_admin.close_selected(  # type: ignore[attr-defined]
+        request, OrganizerReport.objects.filter(pk=report.pk)
+    )
 
+    messages = [str(m) for m in get_messages(request)]
     assert messages == [
         f"Report on {organizer.public_code} was not closed: you may not close it."
     ]
