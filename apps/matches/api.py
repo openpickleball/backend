@@ -48,7 +48,9 @@ refuses, a member whose Player plays in the match included, with the
 unknown-code 404, before any team code is read. A moderator who is not a
 member is refused the same way: moderators review matches in the admin
 (ADR 0029). The disputed matches of the signed-in Account's verified
-Organizers' Events are at /api/v1/me/matches/organizer-disputes.
+Organizers' Events are at /api/v1/me/matches/organizer-disputes, and the
+disputed matches the signed-in Account's Player played in are at
+/api/v1/me/matches/disputes (#272).
 
 The matches awaiting the signed-in player's confirmation are at
 /api/v1/me/matches/awaiting-confirmation (``me_router``): pending matches
@@ -645,18 +647,41 @@ def list_my_holds(request: HttpRequest) -> QuerySet[Match]:
 )
 @paginate(MatchHistoryPagination)
 def list_organizer_disputes(request: HttpRequest) -> QuerySet[Match]:
-    """The disputed matches of your organizers' Events, newest first.
+    """The disputed matches of your organizers' Events you can settle,
+    newest first.
 
     Lists every disputed match of an Event run by a verified organizer
-    you are a member of. Anyone else gets an empty page. A match leaves
-    the list once its dispute is settled or ends.
+    you are a member of, except a match your player plays in, or plays in
+    an earlier or later version of (a corrected match): you cannot settle
+    those. Anyone else gets an empty page. A match leaves the list once
+    its dispute is settled or ends.
     """
     viewer = request_account(request)
+    return with_match_details(workflow.organizer_disputes(viewer)).order_by(
+        "-played_on", "-created_at", "-pk"
+    )
+
+
+@me_router.get(
+    "/matches/disputes",
+    response={200: list[MatchOut]},
+    operation_id="list_my_disputes",
+)
+@paginate(MatchHistoryPagination)
+def list_my_disputes(request: HttpRequest) -> QuerySet[Match]:
+    """The disputed matches you played in, newest first.
+
+    A match leaves the list once its dispute is withdrawn, settled, or
+    ends. Matches held as possible duplicates are listed by
+    list_my_holds.
+    """
+    viewer = request_account(request)
+    player = Player.objects.filter(account=viewer).first()
+    if player is None:
+        return Match.objects.none()
     disputed = Match.objects.filter(
-        status=MatchStatus.DISPUTED,
-        event__organizer__verified_at__isnull=False,
-        event__organizer__members__account=viewer,
-    ).distinct()
+        status=MatchStatus.DISPUTED, participants__player=player
+    )
     return with_match_details(disputed).order_by("-played_on", "-created_at", "-pk")
 
 

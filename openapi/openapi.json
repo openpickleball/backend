@@ -3018,6 +3018,101 @@
         ]
       }
     },
+    "/api/v1/me/matches/disputes": {
+      "get": {
+        "description": "The disputed matches you played in, newest first.\n\nA match leaves the list once its dispute is withdrawn, settled, or\nends. Matches held as possible duplicates are listed by\nlist_my_holds.",
+        "operationId": "list_my_disputes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedMatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List My Disputes",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
     "/api/v1/me/matches/holds": {
       "get": {
         "description": "The held matches you may vouch for, newest first.\n\nLists each match that is not voided and that a possible duplicate\nhold keeps from counting, when you may vouch for it: a match with no\nEvent you played in, or a match of an Event run by a verified\norganizer you are a member of, when your player is in no match of its\ncorrection chain. A match with a club and no Event is never listed:\nnobody vouches for it. ``vouched`` says\nwhether your side has vouched for it already. The other match of the\nhold is never named. A match leaves the list once the hold ends.",
@@ -3115,7 +3210,7 @@
     },
     "/api/v1/me/matches/organizer-disputes": {
       "get": {
-        "description": "The disputed matches of your organizers' Events, newest first.\n\nLists every disputed match of an Event run by a verified organizer\nyou are a member of. Anyone else gets an empty page. A match leaves\nthe list once its dispute is settled or ends.",
+        "description": "The disputed matches of your organizers' Events you can settle,\nnewest first.\n\nLists every disputed match of an Event run by a verified organizer\nyou are a member of, except a match your player plays in, or plays in\nan earlier or later version of (a corrected match): you cannot settle\nthose. Anyone else gets an empty page. A match leaves the list once\nits dispute is settled or ends.",
         "operationId": "list_organizer_disputes",
         "parameters": [
           {

@@ -13,7 +13,9 @@ States and transitions:
   Organizer, or an approved application that Organizer owns or granted an
   Organizer Application Grant, confirms a pending match alone.
 - ``dispute_match``: a participant disputes a pending or confirmed match,
-  which becomes disputed.
+  which becomes disputed. After commit, the other team's players and, for
+  an Event match, its verified Organizer's members get a dispute notice
+  (``apps.matches.notices``, #272).
 - ``withdraw_dispute``: a participant withdraws their open dispute (#267).
   Once no dispute is open, the match goes back to confirmed when it was
   confirmed as the dispute began, else to pending. A voided match refuses
@@ -104,8 +106,9 @@ from typing import TYPE_CHECKING
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import models, transaction
+from django.db import connection, models, transaction
 from django.db.models import CharField, Exists, OuterRef, Q, QuerySet, Subquery
+from django.db.models.expressions import RawSQL
 from django.db.models.functions import Cast
 from django.utils import timezone
 from oauth2_provider.models import get_application_model
@@ -126,6 +129,7 @@ from apps.matches.models import (
     SubmissionBatch,
     Team,
 )
+from apps.matches.notices import schedule_dispute_notices
 from apps.matches.permissions import (
     Actor,
     MatchActionDenied,
@@ -378,7 +382,8 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
     nothing. A voided match raises
     ``MatchStateError``. Only a participant may dispute. A dispute takes no
     reason: Audit Events are append-only, and a participant's free text
-    could hold a name.
+    could hold a name. A match that becomes disputed schedules its dispute
+    notices (``schedule_dispute_notices``), queued after commit.
     """
     _saved(match)
     player = participant_player(actor, match)
@@ -402,6 +407,12 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
             before=before,
             after=snapshot(locked, ["status"]),
             **audit_actor(actor),
+        )
+        schedule_dispute_notices(
+            locked,
+            MatchParticipant.objects.filter(match=locked, player=player)
+            .values_list("team", flat=True)
+            .get(),
         )
         if was_counting:
             match_changed.send(
@@ -1216,6 +1227,59 @@ def vouchable_holds(account: "_User") -> QuerySet[Match]:
         Q(pk__in=self_reported.values("pk"))
         | Q(pk__in=organizer.exclude(in_chain).values("pk"))
         | Q(pk__in=chained)
+    )
+
+
+def _conflicted_chain_ids(account_pk: int) -> RawSQL:
+    """SQL for the ids of every match in the correction chain of a match
+    the Account's Players play in.
+
+    A chain is the matches linked through ``corrects`` in either direction,
+    the set ``permissions._correction_chain`` walks one match at a time.
+    One recursive query starts from the Account's matches and follows
+    ``corrects`` back and forward, so its cost does not grow with the rows
+    a list filters.
+    """
+    match_table = connection.ops.quote_name(Match._meta.db_table)
+    participant_table = connection.ops.quote_name(MatchParticipant._meta.db_table)
+    player_table = connection.ops.quote_name(Player._meta.db_table)
+    # The table names come from the models and the Account id is a query
+    # parameter, so nothing from a request is put into the SQL text.
+    sql = f"""
+        WITH RECURSIVE chain(id) AS (
+            SELECT mp.match_id
+            FROM {participant_table} mp
+            JOIN {player_table} p ON p.id = mp.player_id
+            WHERE p.account_id = %s
+            UNION
+            SELECT CASE WHEN m.id = chain.id THEN m.corrects_id ELSE m.id END
+            FROM {match_table} m
+            JOIN chain
+              ON (m.id = chain.id AND m.corrects_id IS NOT NULL)
+              OR m.corrects_id = chain.id
+        )
+        SELECT id FROM chain
+    """
+    return RawSQL(sql, (account_pk,))
+
+
+def organizer_disputes(account: "_User") -> QuerySet[Match]:
+    """The disputed matches ``account`` may settle as an Organizer. Read only.
+
+    Disputed matches of an Event run by a verified Organizer the Account
+    is a member of, minus every match whose correction chain holds a
+    match the Account's Player plays in: ``settles_dispute`` refuses such
+    a member (ADR 0034, the maintainer's decision on #272). The rule runs
+    in the database in one query, with no check per row.
+    """
+    return (
+        Match.objects.filter(
+            status=MatchStatus.DISPUTED,
+            event__organizer__verified_at__isnull=False,
+            event__organizer__members__account=account,
+        )
+        .exclude(pk__in=_conflicted_chain_ids(account.pk))
+        .distinct()
     )
 
 

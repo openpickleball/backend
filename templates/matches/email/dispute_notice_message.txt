@@ -1,0 +1,11 @@
+{% extends "emails/base_message.txt" %}
+{% block content %}{% if as_organizer %}A player disputed a match from one of your organizer's events. It does not count while the dispute is open. Scores show team A first.{% else %}A player on the other team disputed a match you played in. It does not count while the dispute is open. Scores show your team first.{% endif %}
+
+Match {{ code }}, played {{ played_on|date:"F j, Y" }}
+Scores: {{ scores }}
+View the match: {{ url }}
+
+{% if as_organizer %}As a member of the organizer, you can confirm it, void it, or correct it from its page, with a reason.{% else %}The player who disputed it can withdraw the dispute.{% if organizer_level %} The event's organizer can settle it.{% endif %}{% if self_reported %} Either team can correct the scores from the match's page; the correction counts once the other team confirms it.{% endif %}{% endif %}
+
+If nobody settles the dispute first, the match is voided on {{ ends_on|date:"F j, Y" }} or the next day (UTC), and does not count.{% endblock content %}
+{% block reason %}{% if as_organizer %}You received this email because you are a member of the organizer that ran this match's event.{% else %}You received this email because a match you played in was disputed on OPEN.{% endif %}{% endblock reason %}

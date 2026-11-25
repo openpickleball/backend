@@ -1,0 +1,11 @@
+{% extends "emails/base_message.txt" %}
+{% block content %}{% if as_organizer %}A match from one of your organizer's events{% else %}A match you played in{% endif %} has the same teams and date as another match on OPEN, with other scores. Both are held from counting until each is vouched for, or the hold ends. {% if as_organizer %}Scores show team A first.{% else %}Scores show your team first.{% endif %}
+
+Match {{ code }}, played {{ played_on|date:"F j, Y" }}
+Scores: {{ scores }}
+View the match: {{ url }}
+
+{% if as_organizer %}If it is a separate match, not a repeat, a member of your organizer can vouch for it from its page.{% else %}If it is a separate match, not a repeat, vouch for it from its page. One player from each team needs to vouch.{% endif %}
+
+If nobody settles the hold first, the newer of the two matches is voided on {{ ends_on|date:"F j, Y" }} or the next day (UTC), as long as the earlier one is confirmed by then.{% endblock content %}
+{% block reason %}{% if as_organizer %}You received this email because you are a member of the organizer that ran this match's event.{% else %}You received this email because a match you played in is on hold on OPEN.{% endif %}{% endblock reason %}
