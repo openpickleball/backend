@@ -54,6 +54,9 @@ def save_event(event: Event, *, actor: Actor) -> None:
         # Every model rule, for a caller that did not clean the Event (the
         # admin form did): the Club Organizer Grant (ADR 0021), the dates,
         # and the organizer and club locks. The OPEN Code is issued by save().
+        # The ids of related objects saved after they were assigned, so the
+        # rules see the ids Django will write.
+        event.copy_related_ids()
         event.full_clean(exclude=["public_code"])
         event.save()
         after = _stored_values(event.pk, lock=False)

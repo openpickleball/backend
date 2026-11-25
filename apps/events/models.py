@@ -28,7 +28,11 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import F, Q
 
-from apps.clubs.models import ClubOrganizerGrant, _CleanedTextModel
+from apps.clubs.models import (
+    ClubOrganizerGrant,
+    _CleanedTextModel,
+    _LinkMessagesModel,
+)
 from apps.public_ids.codes import CodeType
 
 # Messages never include the submitted value (CLAUDE.md, API). Django's
@@ -64,7 +68,7 @@ class EventKind(models.TextChoices):
     REC_VERIFIED = "rec_verified", "Verified rec play"
 
 
-class Event(_CleanedTextModel):
+class Event(_LinkMessagesModel, _CleanedTextModel):
     """A tournament, league, or verified rec session (CONTEXT.md, Event)."""
 
     public_code_type = CodeType.EVENT
@@ -134,6 +138,10 @@ class Event(_CleanedTextModel):
         if self._state.adding or self.pk is None:
             super().save(*args, **kwargs)
             return
+        # Copy each id from a cached related object saved after it was
+        # assigned, as Django does during the save, so the check below sees
+        # the id that is written.
+        self.copy_related_ids()
         update_fields = kwargs.get("update_fields")
         if update_fields is not None:
             # Read a one-pass iterator once, and hand Django the same values.
@@ -150,6 +158,17 @@ class Event(_CleanedTextModel):
             if errors:
                 raise ValidationError(errors)
             super().save(*args, **kwargs)
+
+    def copy_related_ids(self) -> None:
+        """Copy each link's id from its cached related object, as save does.
+
+        A Club or Organizer assigned unsaved and saved afterwards leaves
+        ``club_id`` or ``organizer_id`` stale until Django's save copies it,
+        so every rule that reads the ids runs after this. Raises
+        ``ValueError`` for a related object that is still unsaved.
+        """
+        # Django's own step; django-stubs does not declare it.
+        self._prepare_related_fields_for_save(operation_name="save")  # type: ignore[attr-defined]
 
     def clean(self) -> None:
         # Django runs clean() even when a field failed, so a date may still

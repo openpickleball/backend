@@ -47,7 +47,7 @@ from datetime import UTC, timedelta
 from typing import Any, ClassVar, NoReturn
 
 from django.conf import settings
-from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import (
@@ -64,7 +64,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Cast
 
-from apps.clubs.models import _CleanedTextModel
+from apps.clubs.models import _CleanedTextModel, _LinkMessagesModel
 from apps.events.models import CHOICE_MESSAGES
 from apps.public_ids.codes import CodeType
 
@@ -151,42 +151,6 @@ _LOCAL_PLAYED_ON = Cast(
     ),
     output_field=DateField(),
 )
-
-
-class _LinkMessagesModel(models.Model):
-    """Gives each link's own ``invalid`` message for an id of the wrong type.
-
-    ``ForeignKey.to_python`` converts the id with the target's primary key
-    field, whose message repeats the submitted value (CLAUDE.md, API).
-    """
-
-    class Meta:
-        abstract = True
-
-    def clean_fields(self, exclude: Collection[str] | None = None) -> None:
-        try:
-            super().clean_fields(exclude=exclude)
-        except ValidationError as error:
-            errors: dict[str, list[ValidationError]] = {}
-            for name, field_errors in error.error_dict.items():
-                field = _foreign_key(self, name)
-                errors[name] = [
-                    ValidationError(field.error_messages["invalid"], code="invalid")
-                    if field is not None and item.code == "invalid"
-                    else item
-                    for item in field_errors
-                ]
-            raise ValidationError(errors) from None
-
-
-def _foreign_key(
-    instance: models.Model, name: str
-) -> models.ForeignKey[models.Model, models.Model] | None:
-    try:
-        field = instance._meta.get_field(name)
-    except FieldDoesNotExist:
-        return None
-    return field if isinstance(field, models.ForeignKey) else None
 
 
 class MatchImmutable(RuntimeError):

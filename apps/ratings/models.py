@@ -41,8 +41,9 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.clubs.models import _LinkMessagesModel
 from apps.events.models import CHOICE_MESSAGES
-from apps.matches.models import RatingFormat, _LinkMessagesModel
+from apps.matches.models import RatingFormat
 
 # Messages never include the submitted value (CLAUDE.md, API). Django's
 # defaults for these keys do.
