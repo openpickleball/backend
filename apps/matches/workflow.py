@@ -422,9 +422,10 @@ def _dispute_period(match: Match) -> _DisputePeriod:
     Rows before the opening row belong to an earlier period that a
     resolution settled, so they are never open again. With no event or no
     opening row (rows written outside the services), every dispute row not
-    withdrawn counts as open, so a withdrawal leaves the match disputed
-    while any such row remains (fail closed). ``dispute_started_at`` then
-    uses the event's time instead (the later, safe start).
+    withdrawn counts as open and ``opening_pk`` is None. Both callers then
+    fail closed: ``withdraw_dispute`` refuses every withdrawal, so the
+    match stays disputed until a resolution or expiry, and
+    ``dispute_started_at`` uses the event's time (the later, safe start).
 
     Only ids are compared, never times. One match's rows are written under
     its row lock, so id order is insertion order.
@@ -471,7 +472,10 @@ def withdraw_dispute(match: Match, *, actor: Actor) -> Match:
     first, also for a player who already withdrew. On a match that is not
     voided, a repeat withdrawal changes nothing; otherwise a participant
     with no open dispute in the current period, or a match that is not
-    disputed, gets ``MatchStateError``.
+    disputed, gets ``MatchStateError``. So does every withdrawal when the
+    period's opening row is unknown (``_dispute_period``: rows written
+    outside the services): the match stays disputed until a resolution or
+    expiry.
     """
     _saved(match)
     player = participant_player(actor, match)
@@ -491,15 +495,16 @@ def withdraw_dispute(match: Match, *, actor: Actor) -> Match:
             raise MatchStateError
         period = _dispute_period(locked)
         event, open_disputes = period.event, period.open_disputes
+        # With no opening row the period's disputes are unknown, so no
+        # withdrawal may end it (fail closed): a resolution or expiry does.
+        if event is None or period.opening_pk is None:
+            raise MatchStateError
         if not any(row.player_id == player.pk for row in open_disputes):
             raise MatchStateError
         _record_decision(locked, player, ConfirmationDecision.WITHDRAW)
         if any(row.player_id != player.pk for row in open_disputes):
             return locked
-        if event is not None:
-            was_confirmed = (event.before or {}).get("status") == MatchStatus.CONFIRMED
-        else:
-            was_confirmed = _both_teams_confirmed(locked)
+        was_confirmed = (event.before or {}).get("status") == MatchStatus.CONFIRMED
         status = MatchStatus.CONFIRMED if was_confirmed else MatchStatus.PENDING
         before = _set_status(locked, status)
         record_event(
