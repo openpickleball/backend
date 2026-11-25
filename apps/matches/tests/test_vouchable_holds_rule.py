@@ -146,6 +146,10 @@ def test_the_list_is_exactly_what_vouch_level_allows() -> None:
         _match([p[0], p[1], p[5], p[8]]),
         _match([p[0], p[1], p[5], p[8]], status=MatchStatus.VOIDED),
     )
+    # The flag's newer match is voided (as the hold period does), its
+    # earlier match is live.
+    released = _match([p[0], p[3], p[5], p[9]])
+    _flag(_match([p[0], p[3], p[5], p[9]], status=MatchStatus.VOIDED), released)
     # A resolved flag.
     _flag(
         _match([p[0], p[2], p[5], p[8]]),
@@ -174,6 +178,7 @@ def test_the_list_is_exactly_what_vouch_level_allows() -> None:
         expected = {m.pk for m in held if vouch_level(account, m) is not None}
         listed = set(vouchable_holds(account).values_list("pk", flat=True))
         assert listed == expected, account.pk
+        assert released.pk not in listed
         listed_any = listed_any or bool(listed)
     assert listed_any
     assert set(vouchable_holds(member_without_player))
