@@ -130,6 +130,10 @@ class Event(_CleanedTextModel):
             super().save(*args, **kwargs)
             return
         update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            # Read a one-pass iterator once, and hand Django the same values.
+            update_fields = tuple(update_fields)
+            kwargs["update_fields"] = update_fields
         writes_organizer = update_fields is None or bool(
             {"organizer", "organizer_id"} & set(update_fields)
         )
