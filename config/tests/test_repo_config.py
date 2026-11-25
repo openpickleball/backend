@@ -18,6 +18,10 @@ CODEOWNERS = BASE_DIR / ".github" / "CODEOWNERS"
 EDITORCONFIG = BASE_DIR / ".editorconfig"
 DOCKERFILE = BASE_DIR / "Dockerfile"
 PYTHON_VERSION = BASE_DIR / ".python-version"
+GITIGNORE = BASE_DIR / ".gitignore"
+DOCKERIGNORE = BASE_DIR / ".dockerignore"
+# Negations in .gitignore that the image may receive (none does today).
+ALLOWED_GITIGNORE_NEGATIONS = {"!.env.example"}
 MAINTAINERS = "@openpickleball/maintainers"
 
 
@@ -203,3 +207,50 @@ def test_dockerfile_last_stage_runs_as_non_root_user() -> None:
     assert users
     user = users[-1].split(":")[0]
     assert user not in {"0", "root"}
+
+
+def _gitignore_block(heading: str) -> list[str]:
+    """Return the patterns under a `# <heading>` comment, up to a blank line."""
+    patterns: list[str] = []
+    inside = False
+    for line in GITIGNORE.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            inside = stripped.lstrip("# ").startswith(heading)
+            continue
+        if not stripped:
+            if patterns:
+                inside = False
+            continue
+        if inside:
+            patterns.append(stripped)
+    return patterns
+
+
+def _dockerignore_lines() -> list[str]:
+    return [
+        line.strip()
+        for line in DOCKERIGNORE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+@pytest.mark.parametrize("heading", ["Secrets", "Local data"])
+def test_dockerignore_excludes_gitignored_secrets_and_local_data(
+    heading: str,
+) -> None:
+    patterns = _gitignore_block(heading)
+    lines = _dockerignore_lines()
+
+    assert patterns
+    # The root `*` blocks every root-only entry unless the allowlist names it.
+    assert lines[0] == "*"
+    for pattern in patterns:
+        if pattern.startswith("!"):
+            assert pattern in ALLOWED_GITIGNORE_NEGATIONS
+            continue
+        name = pattern.strip("/")
+        if pattern.startswith("/"):
+            assert f"!{name}" not in lines, pattern
+            continue
+        assert f"**/{name}" in lines, pattern
