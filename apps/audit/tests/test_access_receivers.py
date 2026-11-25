@@ -3,7 +3,7 @@
 from django.apps import apps
 from django.db.models.signals import pre_delete
 
-from apps.audit.access import AuditedAccessModel
+from apps.audit.access import AuditedAccessModel, _record_removal
 
 EXPECTED = {
     "clubs.organizermember",
@@ -22,4 +22,5 @@ def test_each_concrete_access_model_has_a_removal_receiver() -> None:
 
     assert set(models) == EXPECTED
     for model in models.values():
-        assert pre_delete.has_listeners(model)
+        sync_receivers, _ = pre_delete._live_receivers(model)
+        assert _record_removal in sync_receivers
