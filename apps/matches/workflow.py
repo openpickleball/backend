@@ -458,10 +458,12 @@ def withdraw_dispute(match: Match, *, actor: Actor) -> Match:
     confirmed sends ``match_confirmed``; back to pending sends nothing.
 
     A withdrawn dispute is still the player's one dispute: disputing again
-    changes nothing, and so does a repeat withdrawal. Only a participant
-    may withdraw (``MatchActionDenied``). A participant with no open
-    dispute in the current period, and a match that is not disputed, get
-    ``MatchStateError``.
+    changes nothing. Only a participant may withdraw
+    (``MatchActionDenied``). A voided match gets ``MatchStateError``
+    first, also for a player who already withdrew. On a match that is not
+    voided, a repeat withdrawal changes nothing; otherwise a participant
+    with no open dispute in the current period, or a match that is not
+    disputed, gets ``MatchStateError``.
     """
     _saved(match)
     player = participant_player(actor, match)
@@ -469,6 +471,10 @@ def withdraw_dispute(match: Match, *, actor: Actor) -> Match:
         raise MatchActionDenied
     with transaction.atomic():
         locked = _lock(match)
+        # A voided match is refused first, as ``dispute_match`` does, even
+        # for a player who already withdrew.
+        if locked.status == MatchStatus.VOIDED:
+            raise MatchStateError
         if MatchConfirmation.objects.filter(
             match=locked, player=player, decision=ConfirmationDecision.WITHDRAW
         ).exists():

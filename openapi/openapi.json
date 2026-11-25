@@ -2646,7 +2646,7 @@
     },
     "/api/v1/matches/{code}/withdraw-dispute": {
       "post": {
-        "description": "Withdraw your dispute of a match you played in.\n\nThe match stays disputed while another player's dispute is open. Once\nno dispute is open, it is confirmed again when it was confirmed before\nthe dispute, else pending, and a confirmed match counts again. Your\ndispute still counts as your one dispute, so disputing again changes\nnothing. Withdrawing again changes nothing. A match you have no open\ndispute on gets 409. Anyone who did not play in the match gets 404, as\nfor an unknown code.",
+        "description": "Withdraw your dispute of a match you played in.\n\nThe match stays disputed while another player's dispute is open. Once\nno dispute is open, it is confirmed again when it was confirmed before\nthe dispute, else pending, and a confirmed match counts again. Your\ndispute still counts as your one dispute, so disputing again changes\nnothing. Withdrawing again changes nothing unless the match was voided\nmeanwhile. A voided match, and a match you have no open dispute on,\nget 409. Anyone who did not play in the match gets 404, as\nfor an unknown code.",
         "operationId": "withdraw_match_dispute",
         "parameters": [
           {

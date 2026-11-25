@@ -364,8 +364,9 @@ def withdraw_match_dispute(request: HttpRequest, code: MatchCode) -> MatchOut:
     no dispute is open, it is confirmed again when it was confirmed before
     the dispute, else pending, and a confirmed match counts again. Your
     dispute still counts as your one dispute, so disputing again changes
-    nothing. Withdrawing again changes nothing. A match you have no open
-    dispute on gets 409. Anyone who did not play in the match gets 404, as
+    nothing. Withdrawing again changes nothing unless the match was voided
+    meanwhile. A voided match, and a match you have no open dispute on,
+    get 409. Anyone who did not play in the match gets 404, as
     for an unknown code.
     """
     return _change(request, code, workflow.withdraw_dispute)
