@@ -1,6 +1,7 @@
 # 0011. Duplicate match detection
 
 - Status: Proposed
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (a possible duplicate hold ends when each match is vouched for at its own level, or after a fixed period that voids the newer match; moderators no longer resolve the flag)
 - Amended by: [ADR 0021](0021-organizers-are-the-trusted-submitters.md) (only a submitter with Event authority confirms a pending exact duplicate; club authority is gone)
 - Date: 2026-11-15
 

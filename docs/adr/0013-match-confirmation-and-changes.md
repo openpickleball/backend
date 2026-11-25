@@ -1,6 +1,7 @@
 # 0013. Match confirmation and changes
 
 - Status: Proposed
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (a disputer can withdraw a dispute, players correct a self-reported match, the Event's Organizer resolves a dispute on its match, an unsettled dispute voids the match after a fixed period, and moderators no longer resolve, void, or edit single matches)
 - Amended by: [ADR 0021](0021-organizers-are-the-trusted-submitters.md) (every confirmed-on-creation match has an Event, and the duplicate path confirms a pending match only for a submitter with Event authority)
 - Date: 2026-11-16
 
