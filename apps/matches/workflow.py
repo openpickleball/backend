@@ -112,6 +112,7 @@ from oauth2_provider.models import get_application_model
 
 from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
+from apps.clubs.models import OrganizerMember
 from apps.matches.models import (
     ConfirmationDecision,
     FlagReason,
@@ -1154,11 +1155,17 @@ def vouchable_holds(account: "_User") -> QuerySet[Match]:
 
     Matches that are not voided and that an open possible duplicate flag
     holds (its other match not voided), that ``account`` may vouch for
-    (``vouch_level``): self-reported matches its Player plays in, and
-    Event matches of verified Organizers it is a member of, under the
-    conflict rule. The rule is applied to each candidate in Python, since
-    it reads the correction chain.
+    (``vouch_level``). An inactive Account may vouch for none. The rule is
+    applied in SQL, so the cost does not grow with the held matches:
+    self-reported matches its Player plays in (the player level), and
+    Event matches of verified Organizers it is a member of that its Player
+    does not play in (the Organizer level). Only an Event match with a
+    correction chain (it corrects a match, or a match corrects it) is
+    checked in Python with ``vouch_level``, since the conflict rule
+    follows the chain.
     """
+    if not get_user_model().objects.filter(pk=account.pk, is_active=True).exists():
+        return Match.objects.none()
     open_flags = MatchFlag.objects.filter(
         reason=FlagReason.POSSIBLE_DUPLICATE, resolved_at__isnull=True
     )
@@ -1171,28 +1178,36 @@ def vouchable_holds(account: "_User") -> QuerySet[Match]:
             match__status=MatchStatus.VOIDED
         )
     )
-    candidates = (
-        Match.objects.exclude(status=MatchStatus.VOIDED)
-        .filter(held)
-        .filter(
-            Q(
-                event__isnull=True,
-                club__isnull=True,
-                participants__player__account=account,
-            )
-            | Q(
-                event__organizer__verified_at__isnull=False,
-                event__organizer__members__account=account,
-            )
+    plays = Exists(
+        MatchParticipant.objects.filter(
+            match=OuterRef("pk"), player__account_id=account.pk
         )
-        .distinct()
     )
-    allowed = [
+    held_matches = Match.objects.exclude(status=MatchStatus.VOIDED).filter(held)
+    self_reported = held_matches.filter(plays, event__isnull=True, club__isnull=True)
+    organizer = held_matches.filter(
+        ~plays,
+        Exists(
+            OrganizerMember.objects.filter(
+                organizer_id=OuterRef("event__organizer_id"),
+                organizer__verified_at__isnull=False,
+                account_id=account.pk,
+            )
+        ),
+    )
+    in_chain = Q(corrects__isnull=False) | Exists(
+        Match.objects.filter(corrects_id=OuterRef("pk"))
+    )
+    chained = [
         candidate.pk
-        for candidate in candidates
+        for candidate in organizer.filter(in_chain).only("pk")
         if vouch_level(account, candidate) is not None
     ]
-    return Match.objects.filter(pk__in=allowed)
+    return Match.objects.filter(
+        Q(pk__in=self_reported.values("pk"))
+        | Q(pk__in=organizer.exclude(in_chain).values("pk"))
+        | Q(pk__in=chained)
+    )
 
 
 def approve_match(match: Match, *, actor: Actor, reason: str) -> bool:
