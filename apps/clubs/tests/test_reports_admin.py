@@ -360,3 +360,22 @@ def test_the_list_filters_closed_reports() -> None:
 
     shown = [r.pk for r in response.context["cl"].result_list]
     assert shown == [closed.pk]
+
+
+def test_a_member_moderator_mixed_selection_closes_only_the_other() -> None:
+    own = verified_organizer()
+    other = verified_organizer()
+    own_report = _report(own)
+    other_report = _report(other)
+    moderator = _moderator()
+    OrganizerMemberFactory.create(organizer=own, account=moderator)
+
+    messages = _close(_client(moderator), [own_report, other_report], REASON)
+
+    own_report.refresh_from_db()
+    other_report.refresh_from_db()
+    assert own_report.closed_at is None
+    assert other_report.closed_at is not None
+    assert messages == ["1 report(s) closed."]
+    (event,) = AuditEvent.objects.filter(action=AuditAction.ORGANIZER_REPORT_CLOSE)
+    assert event.target_object_id == str(other_report.pk)
