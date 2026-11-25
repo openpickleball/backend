@@ -19,7 +19,10 @@ their own:
   active Account that ``permissions.vouch_level`` allows (an Event
   match's Organizer members, a self-reported match's players, nobody for
   a club-only match). A voided match, or one no open flag of this
-  submission still holds, gets nothing.
+  submission still holds, gets nothing. An earlier match that an older
+  open flag (one not written by this submission, its other match not
+  voided) already held gets nothing either: its recipients were told
+  when that hold began. The new match is always notified.
 
 A failure while building or queuing notices is logged with the match's
 row id and the error class only, and never fails the change, which has
@@ -185,10 +188,15 @@ def _send_hold_notices(new_match_pk: int) -> int:
         match = Match.objects.filter(pk=target_pk).first()
         if match is None or match.status == MatchStatus.VOIDED:
             continue
+        holds = _open_holds_of(match)
+        if target_pk != new_match_pk and holds.exclude(pk__in=flag_pks).exists():
+            # An older open flag already held this earlier match, and its
+            # recipients were told when that hold began. Telling them again
+            # for every new near duplicate would grow with the square of
+            # the submissions.
+            continue
         holding = list(
-            _open_holds_of(match)
-            .filter(pk__in=flag_pks)
-            .values_list("created_at", flat=True)
+            holds.filter(pk__in=flag_pks).values_list("created_at", flat=True)
         )
         if not holding:
             continue
