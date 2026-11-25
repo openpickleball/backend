@@ -492,6 +492,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # allauth's per-request state. It must come after AuthenticationMiddleware.
     "allauth.account.middleware.AccountMiddleware",
+    # Holds request.user as the actor for Audit Events that model hooks
+    # record (apps.audit.access). It must come after AuthenticationMiddleware.
+    "apps.audit.middleware.AuditActorMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

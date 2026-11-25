@@ -47,6 +47,36 @@ class AuditAction(models.TextChoices):
     PLAYER_PROFILE_CHANGE = "player.profile_change", "Player profile change"
     ORGANIZER_VERIFY = "organizer.verify", "Organizer verification"
     ORGANIZER_UNVERIFY = "organizer.unverify", "Organizer verification removed"
+    ORGANIZER_MEMBER_ADD = "organizer_member.add", "Organizer member added"
+    ORGANIZER_MEMBER_CHANGE = "organizer_member.change", "Organizer member changed"
+    ORGANIZER_MEMBER_REMOVE = "organizer_member.remove", "Organizer member removed"
+    CLUB_ROLE_ADD = "club_role.add", "Club role added"
+    CLUB_ROLE_CHANGE = "club_role.change", "Club role changed"
+    CLUB_ROLE_REMOVE = "club_role.remove", "Club role removed"
+    CLUB_ORGANIZER_GRANT_ADD = (
+        "club_organizer_grant.add",
+        "Club organizer grant added",
+    )
+    CLUB_ORGANIZER_GRANT_CHANGE = (
+        "club_organizer_grant.change",
+        "Club organizer grant changed",
+    )
+    CLUB_ORGANIZER_GRANT_REMOVE = (
+        "club_organizer_grant.remove",
+        "Club organizer grant removed",
+    )
+    ORGANIZER_APPLICATION_GRANT_ADD = (
+        "organizer_application_grant.add",
+        "Organizer application grant added",
+    )
+    ORGANIZER_APPLICATION_GRANT_CHANGE = (
+        "organizer_application_grant.change",
+        "Organizer application grant changed",
+    )
+    ORGANIZER_APPLICATION_GRANT_REMOVE = (
+        "organizer_application_grant.remove",
+        "Organizer application grant removed",
+    )
 
 
 class AuditEventImmutable(RuntimeError):
