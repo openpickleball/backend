@@ -110,8 +110,11 @@ class Event(_CleanedTextModel):
         row is locked with a plain ``FOR UPDATE`` before the check, so a
         concurrent organizer change waits, and so does a Match insert
         whose deferred foreign key check (``FOR KEY SHARE``) runs at its
-        commit. The check counts Matches in every status, voided ones
-        included. Raw writes (``QuerySet.update``, raw SQL) skip it.
+        commit. A submission whose transaction has not reached its commit
+        is not seen, so it can still land after the change (a known race,
+        like an unverify during a submission). The check counts Matches in
+        every status, voided ones included. Raw writes
+        (``QuerySet.update``, raw SQL) skip it.
         """
         if self._state.adding or self.pk is None:
             super().save(*args, **kwargs)
