@@ -1369,13 +1369,21 @@ def void_submission_batch(
     ``matches.moderate_match``) gets ``MatchActionDenied`` before anything
     is read or written. Then a blank ``reason``, and a batch that is
     unsaved, built in memory, or has no stored row, raise ``ValueError``
-    (fixed text), before any match is read or voided. The matches are found by the batch link
+    (fixed text), before any match is read or voided. Next, in its own
+    transaction, the batch's Results File, when it has one still pending
+    (a CSV upload, #71), fails as ``voided`` under its row lock, keeping
+    its row results (``apps.matches.results_files.fail_for_void``), so no
+    run of that file records a row afterward. The matches are found by the batch link
     (``submission_batch_matches``), never by time. See ``_bulk_void`` for
     how each is voided and what is recorded.
     """
+    # Imported here: results_files imports the services this module uses.
+    from apps.matches.results_files import fail_for_void
+
     _check_bulk(actor, reason)
     if not _stored(batch, SubmissionBatch):
         raise ValueError(_UNSAVED_BATCH)
+    fail_for_void(batch.pk)
     return _bulk_void(
         submission_batch_matches(batch),
         actor=actor,
@@ -1401,7 +1409,14 @@ def void_submitter_matches(
     the same order; a submitter that is unsaved, built in memory, or has
     no stored row, or one that is neither an Account nor a Partner
     Application, raises ``ValueError`` before any match is read or voided.
+    Next, each pending Results File of the submitter (a CSV upload, #71)
+    fails as ``voided`` in its own transaction, keeping its row results
+    (``apps.matches.results_files.fail_for_submitter_void``), so no run of
+    it records a row afterward.
     """
+    # Imported here: results_files imports the services this module uses.
+    from apps.matches.results_files import fail_for_submitter_void
+
     _check_bulk(actor, reason)
     account_model = get_user_model()
     application_model = get_application_model()
@@ -1413,6 +1428,10 @@ def void_submitter_matches(
         stored = False
     if not stored:
         raise ValueError(_UNKNOWN_SUBMITTER)
+    if isinstance(submitter, account_model):
+        fail_for_submitter_void(user_id=submitter.pk)
+    else:
+        fail_for_submitter_void(application_id=submitter.pk)
     return _bulk_void(
         submitter_matches(submitter, recorded_since),
         actor=actor,

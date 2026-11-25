@@ -53,6 +53,14 @@ transaction, and ``confirm_match`` takes the lineup lock ``record_match``
 already holds, then the row lock of a match no other transaction can see
 yet, so the lock order stays the same and nothing can wait on it.
 
+An Organizer's CSV results upload (#71) is on ``organizer_router``,
+mounted at /api/v1/organizer/. A member of the Event's verified Organizer
+(``permissions.can_manage_events``) uploads a file
+(``create_results_file``), which ``apps.matches.results_files`` stores and
+a worker processes, and reads its report (``get_results_file``). Anyone
+else, and an unknown Event or file, gets the same 404. Only the uploader
+reads a report.
+
 No rule reads payment status: every player may submit and confirm every
 match (hard rule 7).
 """
@@ -60,18 +68,30 @@ match (hard rule 7).
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, cast
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import QuerySet
 from django.http import Http404, HttpRequest
-from ninja import Router, Status
+from ninja import File, Form, Router, Status, UploadedFile
+from ninja.errors import HttpError
+from ninja.errors import ValidationError as NinjaValidationError
 from ninja.pagination import paginate
+from ninja.params import FormEx, P
 
-from apps.matches import workflow
-from apps.matches.models import Match, MatchStatus
+from apps.events.models import Event
+from apps.matches import results_files, workflow
+from apps.matches.models import (
+    MATCH_LOCATION_MAX,
+    GameTarget,
+    Match,
+    MatchStatus,
+    ResultsFile,
+)
 from apps.matches.pagination import MatchHistoryPagination
 from apps.matches.permissions import (
     MatchActionDenied,
     MatchPermissionDenied,
+    can_manage_events,
     participant_player,
     settles_dispute,
 )
@@ -80,14 +100,16 @@ from apps.matches.schemas import (
     DisputeResolutionIn,
     MatchCreateIn,
     MatchOut,
+    ResultsFileOut,
     match_out,
+    results_file_out,
     with_match_details,
 )
 from apps.matches.services import MatchIssue, MatchValidationError, record_match
 from apps.players.models import Player
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType, normalize
-from config.api_errors import ErrorResponse
+from config.api_errors import ErrorResponse, model_validation_error
 from config.auth import account_auth
 from config.throttling import account_throttle
 
@@ -478,3 +500,104 @@ def list_matches_awaiting_confirmation(request: HttpRequest) -> QuerySet[Match]:
     return with_match_details(workflow.awaiting_confirmation(player)).order_by(
         "-played_on", "-created_at", "-pk"
     )
+
+
+# CSV results files (#71), mounted at /api/v1/organizer/.
+
+organizer_router = Router(
+    tags=["matches"], auth=account_auth, throttle=account_throttle
+)
+
+EventCode = Annotated[str, PublicCodePath(CodeType.EVENT)]
+ResultsFileCode = Annotated[str, PublicCodePath(CodeType.RESULTS_FILE)]
+
+
+@organizer_router.post(
+    "/events/{code}/results-files",
+    response={202: ResultsFileOut, 404: ErrorResponse, 413: ErrorResponse},
+    operation_id="create_results_file",
+)
+def create_results_file(
+    request: HttpRequest,
+    code: EventCode,
+    file: File[UploadedFile],
+    players_13_or_older: Form[bool],
+    game_target: Form[GameTarget] = GameTarget.ELEVEN,
+    location: FormEx[str, P(max_length=MATCH_LOCATION_MAX)] = "",
+) -> Status[ResultsFileOut]:
+    """Upload a CSV results file for an Event of your verified Organizer.
+
+    The file is in the CSV results format (``docs/csv-format.md``), at
+    most 1 MiB and 1000 match rows. ``players_13_or_older`` must be true:
+    it confirms that every player in the file is 13 or older (422
+    otherwise, checked before anything else). ``game_target`` (11, 15, or
+    21) and ``location`` apply to every row. Anyone who may not manage the
+    Event's matches gets the same 404 as an unknown Event. A larger file
+    gets 413. The file is processed in the background: the response is
+    202 with the file pending, and ``get_results_file`` shows the report.
+    Only the good rows are recorded. A row that repeats a match already
+    recorded, a pending one included, is reported as a duplicate.
+    """
+    account = request_account(request)
+    if players_13_or_older is not True:
+        raise NinjaValidationError(
+            [
+                {
+                    "loc": ("form", "players_13_or_older"),
+                    "type": "confirmation_required",
+                    "msg": results_files.AGE_CONFIRMATION_REQUIRED,
+                }
+            ]
+        )
+    event = get_by_public_code(Event.objects.only("pk", "organizer_id"), code)
+    if not can_manage_events(account, event.organizer_id):
+        raise Http404
+    if file.size is None or file.size > results_files.MAX_FILE_BYTES:
+        raise HttpError(413, results_files.FILE_TOO_LARGE)
+    content = file.read(results_files.MAX_FILE_BYTES + 1)
+    if len(content) > results_files.MAX_FILE_BYTES:
+        raise HttpError(413, results_files.FILE_TOO_LARGE)
+    try:
+        results_file = results_files.create_results_file(
+            account=account,
+            event=event,
+            content=content,
+            game_target=game_target,
+            location=location,
+            players_13_or_older=True,
+        )
+    except MatchPermissionDenied:
+        # Checked again under the Event row's lock.
+        raise Http404 from None
+    except DjangoValidationError as error:
+        raise model_validation_error(error, prefix=("form",)) from None
+    stored = (
+        ResultsFile.objects.select_related("submission_batch__event")
+        .defer("content")
+        .get(pk=results_file.pk)
+    )
+    return Status(202, results_file_out(stored))
+
+
+@organizer_router.get(
+    "/results-files/{code}",
+    response={200: ResultsFileOut, 404: ErrorResponse},
+    operation_id="get_results_file",
+)
+def get_results_file(request: HttpRequest, code: ResultsFileCode) -> ResultsFileOut:
+    """A results file you uploaded, with its report.
+
+    Each row shows its result (``recorded``, ``duplicate``, or
+    ``failed``), the match's OPEN Code when there is one you may know,
+    and issues and warnings as columns, a code, and a fixed message. The
+    report never repeats a name, a player ID, or any other cell. Anyone
+    but the uploader gets the same 404 as an unknown code.
+    """
+    account = request_account(request)
+    results_file = get_by_public_code(
+        ResultsFile.objects.select_related("submission_batch__event").defer("content"),
+        code,
+    )
+    if results_file.submission_batch.submitted_by_user_id != account.pk:
+        raise Http404
+    return results_file_out(results_file)

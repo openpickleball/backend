@@ -37,6 +37,7 @@ class AuditAction(models.TextChoices):
     DISPUTE_OUTCOME = "dispute.outcome", "Dispute outcome"
     MATCH_FLAG_RESOLVE = "match.flag_resolve", "Match flag resolved"
     MATCH_BULK_VOID = "match.bulk_void", "Matches voided in bulk"
+    RESULTS_FILE_CREATE = "results_file.create", "Results file uploaded"
     EVENT_CREATE = "event.create", "Event created"
     EVENT_CHANGE = "event.change", "Event changed"
     EVENT_DELETE = "event.delete", "Event deleted"

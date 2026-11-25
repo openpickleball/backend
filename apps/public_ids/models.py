@@ -1,7 +1,7 @@
 """Public codes on records, and the registry of every code ever issued.
 
 A model whose records have a public identity (a player, club, event,
-organizer, or match) inherits ``PublicCodeModel`` and sets
+organizer, match, or results file) inherits ``PublicCodeModel`` and sets
 ``public_code_type``. See ADR 0008.
 """
 

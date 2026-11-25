@@ -495,6 +495,9 @@ MIDDLEWARE = [
     # Adds CORS headers to /api/ responses. It must come before
     # CommonMiddleware, which can return a response early.
     "corsheaders.middleware.CorsMiddleware",
+    # Refuses an oversized body on the CSV results upload route before
+    # anything reads it (#71). It must come before CsrfViewMiddleware.
+    "apps.matches.upload_limits.ResultsFileBodyLimitMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -657,6 +660,13 @@ CELERY_BEAT_SCHEDULE = {
     # again (ADR 0016). A run missed for 15 minutes is dropped.
     "sweep-queued-emails": {
         "task": "apps.emails.tasks.sweep_queued_emails",
+        "schedule": crontab(minute="*/15"),
+        "options": {"expire_seconds": 900},
+    },
+    # Fails CSV results files pending for three days and queues lost ones
+    # again (#71). A run missed for 15 minutes is dropped.
+    "sweep-results-files": {
+        "task": "apps.matches.tasks.sweep_results_files",
         "schedule": crontab(minute="*/15"),
         "options": {"expire_seconds": 900},
     },

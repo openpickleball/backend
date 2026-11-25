@@ -1,5 +1,5 @@
 """OPEN Codes: the public identifiers of players, clubs, events, organizers,
-and matches.
+matches, and results files.
 
 A code is a type prefix, then random characters and one check character
 from Crockford's base32 alphabet, in groups of four: ``P-7K3M-QX9H``. The
@@ -34,6 +34,7 @@ class CodeType(enum.Enum):
     EVENT = ("E", 8)
     ORGANIZER = ("G", 8)
     MATCH = ("M", 12)
+    RESULTS_FILE = ("F", 8)
 
     @property
     def prefix(self) -> str:
