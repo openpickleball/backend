@@ -1371,6 +1371,191 @@
         "title": "ReadyOut",
         "type": "object"
       },
+      "ResultRow": {
+        "description": "The values of ``RowResult.result``.",
+        "enum": [
+          "recorded",
+          "duplicate",
+          "failed"
+        ],
+        "title": "ResultRow",
+        "type": "string"
+      },
+      "ResultsFileOut": {
+        "description": "An uploaded results file and its report.\n\n``status`` is ``pending``, ``done``, or ``failed``. ``error`` is the\ncode of a file that failed as a whole (``not_utf8``, ``malformed``,\n``bad_header``, ``no_rows``, ``too_many_rows``, or ``expired``), else\nnull. ``rows`` is empty until the file is processed.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duplicates": {
+            "title": "Duplicates",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "game_target": {
+            "title": "Game Target",
+            "type": "integer"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ResultsRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResultsFileStatus"
+          }
+        },
+        "required": [
+          "code",
+          "event",
+          "status",
+          "error",
+          "game_target",
+          "location",
+          "created_at",
+          "processed_at",
+          "recorded",
+          "duplicates",
+          "failed",
+          "rows"
+        ],
+        "title": "ResultsFileOut",
+        "type": "object"
+      },
+      "ResultsFileStatus": {
+        "description": "Where a Results File is in its processing (#71).",
+        "enum": [
+          "pending",
+          "done",
+          "failed"
+        ],
+        "title": "ResultsFileStatus",
+        "type": "string"
+      },
+      "ResultsIssueOut": {
+        "description": "One issue or warning on a row: the columns it concerns (canonical\nnames such as ``playerB1Id``, empty for the whole row), a code, and a\nfixed message. Never a cell value.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "columns",
+          "code",
+          "message"
+        ],
+        "title": "ResultsIssueOut",
+        "type": "object"
+      },
+      "ResultsRowOut": {
+        "description": "One match row's result. ``row`` is the CSV record number and\n``sequence`` the row's place among the match rows. ``match`` is the\nMatch's OPEN Code: the recorded match, or, for a duplicate, the earlier\nmatch when the uploader may know it.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ResultsIssueOut"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ResultRow"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ResultsIssueOut"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "row",
+          "sequence",
+          "result",
+          "match",
+          "issues",
+          "warnings"
+        ],
+        "title": "ResultsRowOut",
+        "type": "object"
+      },
       "ScoringType": {
         "description": "How points are scored. The values are ``open_engine.ScoringType``'s.",
         "enum": [
@@ -3109,6 +3294,263 @@
         "summary": "Update Organizer Event",
         "tags": [
           "events"
+        ]
+      }
+    },
+    "/api/v1/organizer/events/{code}/results-files": {
+      "post": {
+        "description": "Upload a CSV results file for an Event of your verified Organizer.\n\nThe file is in the CSV results format (``docs/csv-format.md``), at\nmost 1 MiB and 1000 match rows. ``players_13_or_older`` must be true:\nit confirms that every player in the file is 13 or older (422\notherwise, checked before anything else). ``game_target`` (11, 15, or\n21) and ``location`` apply to every row. Anyone who may not manage the\nEvent's matches gets the same 404 as an unknown Event. A larger file\ngets 413. The file is processed in the background: the response is\n202 with the file pending, and ``get_results_file`` shows the report.\nOnly the good rows are recorded. A row that repeats a match already\nrecorded, a pending one included, is reported as a duplicate.",
+        "operationId": "create_results_file",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a event. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "E-7K3M-QX9S"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a event. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "E-7K3M-QX9S"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "title": "File",
+                    "type": "string"
+                  },
+                  "game_target": {
+                    "allOf": [
+                      {
+                        "description": "The points a game is played to (decision F15 in #1).\n\nThe values are the points in the engine's ``ALL_GAME_FORMATS``.",
+                        "enum": [
+                          11,
+                          15,
+                          21
+                        ],
+                        "title": "GameTarget",
+                        "type": "integer"
+                      }
+                    ],
+                    "default": 11
+                  },
+                  "location": {
+                    "default": "",
+                    "maxLength": 200,
+                    "title": "Location",
+                    "type": "string"
+                  },
+                  "players_13_or_older": {
+                    "title": "Players 13 Or Older",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "file",
+                  "players_13_or_older"
+                ],
+                "title": "MultiPartBodyParams",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsFileOut"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create Results File",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
+    "/api/v1/organizer/results-files/{code}": {
+      "get": {
+        "description": "A results file you uploaded, with its report.\n\nEach row shows its result (``recorded``, ``duplicate``, or\n``failed``), the match's OPEN Code when there is one you may know,\nand issues and warnings as columns, a code, and a fixed message. The\nreport never repeats a name, a player ID, or any other cell. Anyone\nbut the uploader gets the same 404 as an unknown code.",
+        "operationId": "get_results_file",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a results_file. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "F-7K3M-QX9R"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a results_file. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "F-7K3M-QX9R"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsFileOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Results File",
+        "tags": [
+          "matches"
         ]
       }
     },

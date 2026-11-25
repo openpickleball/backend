@@ -11,9 +11,11 @@ search (/api/v1/players/search), a player's profile, the rating lookup
 (/api/v1/players/{code}/rating-history) at /api/v1/players/, and at
 /api/v1/me/ the matches awaiting the signed-in player's confirmation, the
 disputed matches of the signed-in Account's verified Organizers' Events,
-and the signed-in Account's own Player, and at /api/v1/organizer/events
+and the signed-in Account's own Player, at /api/v1/organizer/events
 the Events of the signed-in Account's Organizers (list, create, change,
-delete).
+delete), and at /api/v1/organizer/ the CSV results upload
+(/api/v1/organizer/events/{code}/results-files) and its report
+(/api/v1/organizer/results-files/{code}).
 
 Adding an app's endpoints (usually one router per app):
 
@@ -38,7 +40,8 @@ signed-in player's own match lists and is mounted at `me/`.
 `apps.players.api.me_router`, the Account's own Player, is mounted at
 `me/` too: ninja accepts several routers under one prefix. `players/` is
 shared the same way, by the players router and the ratings router
-(`apps.ratings.api.router`).
+(`apps.ratings.api.router`), and `organizer/` by the events router and
+`apps.matches.api.organizer_router`.
 
 Every operation needs an explicit `operation_id`: it names the method in the
 generated client, so it must not change when a view is renamed. Building the
@@ -82,6 +85,7 @@ from ninja.schema import NinjaGenerateJsonSchema
 from apps.accounts.api import router as accounts_router
 from apps.events.api import router as events_router
 from apps.matches.api import me_router
+from apps.matches.api import organizer_router as matches_organizer_router
 from apps.matches.api import router as matches_router
 from apps.players.api import me_router as players_me_router
 from apps.players.api import router as players_router
@@ -288,3 +292,4 @@ api.add_router("players/", ratings_router)
 api.add_router("me/", me_router)
 api.add_router("me/", players_me_router)
 api.add_router("organizer/", events_router)
+api.add_router("organizer/", matches_organizer_router)
