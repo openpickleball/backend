@@ -154,8 +154,8 @@ def _client_ip_header(name: str, default: str) -> str:
     return value
 
 
-def _database(url: str) -> dict[str, object]:
-    """Parse DATABASE_URL, failing fast without echoing the value.
+def _database(url: str, name: str = "DATABASE_URL") -> dict[str, object]:
+    """Parse a database URL variable, failing fast without echoing the value.
 
     Only a scheme django-environ knows, in scheme://host form, with a
     database name is accepted. django-environ alone accepts unknown
@@ -174,7 +174,7 @@ def _database(url: str) -> dict[str, object]:
                 config = {}
     if not config.get("ENGINE") or not config.get("NAME"):
         raise ImproperlyConfigured(
-            "DATABASE_URL is not a database URL. Use the form "
+            f"{name} is not a database URL. Use the form "
             "postgres://USER:PASSWORD@HOST:PORT/NAME (see .env.example)."
         )
     return config
@@ -540,6 +540,36 @@ TEST_RUNNER = "config.test_runner.HttpTestRunner"
 DATABASES = {
     "default": _database(_required("DATABASE_URL")),
 }
+
+# Pooled mode (ADR 0038). When DIRECT_DATABASE_URL is set, DATABASE_URL
+# names a PgBouncer pool in transaction mode, such as a DigitalOcean
+# connection pool, and DIRECT_DATABASE_URL names the database itself.
+# Requests and tasks use the pool. migrate uses the direct connection
+# (apps/database). A pool in transaction mode hands each transaction a
+# possibly different server connection, so nothing may keep session state:
+# Django closes each connection after its request or task, and never opens
+# a server-side cursor (a named cursor lives on one server connection).
+DIRECT_DATABASE_URL = _raw("DIRECT_DATABASE_URL").strip()
+
+# URL options that keep state on one server connection, or that put a
+# second pool in front of PgBouncer. Pooled mode refuses them.
+_POOLED_REFUSED_OPTIONS = ("prepare_threshold", "assume_role", "pool")
+
+if DIRECT_DATABASE_URL:
+    _pool_options = DATABASES["default"].get("OPTIONS")
+    for _option in _POOLED_REFUSED_OPTIONS:
+        if isinstance(_pool_options, dict) and _option in _pool_options:
+            raise ImproperlyConfigured(
+                f"DATABASE_URL sets {_option}, which a pool in transaction "
+                "mode cannot serve. Remove it from DATABASE_URL (see ADR 0038)."
+            )
+    DATABASES["default"]["CONN_MAX_AGE"] = 0
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    _direct = _database(DIRECT_DATABASE_URL, "DIRECT_DATABASE_URL")
+    _direct["CONN_MAX_AGE"] = 0
+    # Tests use one test database, reached through default.
+    _direct["TEST"] = {"MIRROR": "default"}
+    DATABASES["direct"] = _direct
 
 
 # Cache
