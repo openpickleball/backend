@@ -611,8 +611,10 @@ def test_the_sweep_fails_a_file_pending_too_long(
     event: Event, member: User, no_queue: Any
 ) -> None:
     results_file = _upload(member, event, b"made-up content")
+    now = timezone.now()
     ResultsFile.objects.filter(pk=results_file.pk).update(
-        created_at=timezone.now() - results_files.PENDING_EXPIRY - timedelta(minutes=1)
+        created_at=now - results_files.PENDING_EXPIRY - timedelta(minutes=1),
+        queued_at=now - results_files.REQUEUE_AFTER - timedelta(minutes=1),
     )
 
     sweep_results_files()

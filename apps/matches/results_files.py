@@ -587,17 +587,21 @@ def process_results_file(results_file_id: int) -> None:
 def sweep_results_files() -> int:
     """Fail stale pending files and queue lost ones again.
 
-    A file still pending ``PENDING_EXPIRY`` after upload fails as
-    ``expired`` and is emptied. A pending file last queued more than
+    A file still pending ``PENDING_EXPIRY`` after upload, and last queued
+    more than ``REQUEUE_AFTER`` ago (so no run can still be going), fails
+    as ``expired`` and is emptied, keeping the row results already
+    stored. A pending file last queued more than
     ``REQUEUE_AFTER`` ago is queued again after commit, and its queue time
-    is set, so later sweeps skip it while that run may still be going.
+    is set, so later sweeps skip it for ``REQUEUE_AFTER``.
     Returns how many files were queued.
     """
     now = timezone.now()
     for results_file_id in ResultsFile.objects.filter(
-        status=ResultsFileStatus.PENDING, created_at__lt=now - PENDING_EXPIRY
+        status=ResultsFileStatus.PENDING,
+        created_at__lt=now - PENDING_EXPIRY,
+        queued_at__lt=now - REQUEUE_AFTER,
     ).values_list("pk", flat=True):
-        _finish(results_file_id, report=[], error_code=EXPIRED)
+        _finish(results_file_id, report=None, error_code=EXPIRED)
     queued = 0
     stale = ResultsFile.objects.filter(
         status=ResultsFileStatus.PENDING, queued_at__lt=now - REQUEUE_AFTER
