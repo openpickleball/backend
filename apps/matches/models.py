@@ -1096,3 +1096,88 @@ class MatchFlag(_LinkMessagesModel):
     def __str__(self) -> str:
         # The match code and reason, never a name.
         return f"{self.match.public_code} flag {self.reason}"
+
+
+# A Results File's location is stored on each of its matches.
+MATCH_LOCATION_MAX: int = Match._meta.get_field("location").max_length or 0
+
+
+class ResultsFileStatus(models.TextChoices):
+    """Where a Results File is in its processing (#71)."""
+
+    PENDING = "pending", "Pending"
+    DONE = "done", "Done"
+    FAILED = "failed", "Failed"
+
+
+_ERROR_CODE_NEEDS_FAILED = "Only a failed results file has an error code."
+
+
+class ResultsFile(_LinkMessagesModel, _CleanedTextModel):
+    """A CSV results file an organizer sent, and its report (#71, CONTEXT.md).
+
+    Created by ``apps.matches.results_files.create_results_file`` with its
+    Submission Batch (the uploader and the Event), and changed only by that
+    module's processing and sweep. It is not a ledger row: its status,
+    report, and content change once, when it is processed.
+
+    ``content`` holds the raw file, which has player names and IDs, only
+    until processing ends (done or failed); then it is emptied. ``report``
+    holds one result per match row: row number, sequence, result, the
+    Match's OPEN Code, and issues and warnings as columns, code, and fixed
+    message. It never holds a name or a submitted cell value.
+    ``error_code`` is set only for a file that failed as a whole.
+    """
+
+    public_code_type = CodeType.RESULTS_FILE
+    TEXT_FIELDS: ClassVar[tuple[str, ...]] = ("location",)
+
+    submission_batch = models.OneToOneField(
+        SubmissionBatch,
+        on_delete=models.PROTECT,
+        related_name="results_file",
+        error_messages=_BATCH_MESSAGES,
+    )
+    game_target = models.PositiveSmallIntegerField(
+        choices=GameTarget,
+        default=GameTarget.ELEVEN,
+        error_messages=_INTEGER_CHOICE_MESSAGES,
+    )
+    location = models.CharField(
+        max_length=MATCH_LOCATION_MAX,
+        blank=True,
+        default="",
+        help_text="The place's name, such as a court or park. Never a street address.",
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=ResultsFileStatus,
+        default=ResultsFileStatus.PENDING,
+        error_messages=CHOICE_MESSAGES,
+    )
+    error_code = models.CharField(max_length=32, blank=True, default="")
+    content = models.BinaryField(blank=True, default=b"", editable=False)
+    report = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.CheckConstraint(
+                condition=Q(status__in=ResultsFileStatus.values),
+                name="matches_resultsfile_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(game_target__in=GameTarget.values),
+                name="matches_resultsfile_game_target_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(status=ResultsFileStatus.FAILED) | Q(error_code=""),
+                name="matches_resultsfile_error_code_needs_failed",
+                violation_error_message=_ERROR_CODE_NEEDS_FAILED,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # The OPEN Code only, never the uploader or the file.
+        return self.public_code
