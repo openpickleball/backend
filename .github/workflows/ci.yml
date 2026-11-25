@@ -107,13 +107,21 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
-      # A planted .env must never reach the image (.dockerignore).
-      - run: echo "DJANGO_SECRET_KEY=planted-in-ci-must-not-ship" > .env
+      # A planted .env and local database must never reach the image
+      # (.dockerignore).
+      - run: |
+          echo "DJANGO_SECRET_KEY=planted-in-ci-must-not-ship" > .env
+          echo "planted local data" > config/planted.sqlite3
       - run: docker build -t open-backend:ci .
       - name: Runs as a non-root user
         run: test "$(docker run --rm open-backend:ci id -u)" != "0"
-      - name: Leaves .env, uv, and git out
-        run: docker run --rm open-backend:ci sh -c 'test ! -e /app/.env && ! command -v uv && ! command -v git'
+      - name: Leaves .env, local data, uv, and git out
+        run: >-
+          docker run --rm open-backend:ci sh -c
+          'test ! -e /app/.env && test ! -e /app/config/planted.sqlite3
+          && ! command -v uv && ! command -v git'
+      - name: Carries the license
+        run: docker run --rm open-backend:ci test -f /app/LICENSE
       - name: Holds the collected static files
         run: docker run --rm open-backend:ci test -f /app/staticfiles/staticfiles.json
       - name: Installs no dev package
