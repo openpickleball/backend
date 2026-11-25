@@ -1064,10 +1064,15 @@ def vouch_for_match(match: Match, *, actor: Actor) -> Match:
     actor has not vouched on yet, it writes one ``MatchVouch`` row and one
     ``match.vouch`` Audit Event. A flag opened later needs a new vouch. A
     flag is resolved as approved (``_resolve_flag_rows``, rule
-    ``vouched``, no reason) once both its matches are vouched for at their
-    own levels (``_flag_vouched``), and each match that counts again sends
-    ``release``. A repeat vouch writes nothing. A vouch takes no text: the
-    audit log cannot be erased. Returns the locked match.
+    ``vouched``, no reason, the actor whose vouch completed it as its
+    actor) once both its matches are vouched for at their own levels
+    (``_flag_vouched``), and each match that counts again sends
+    ``release``. Every open flag is checked on each vouch, a repeat
+    included. A repeat vouch writes no vouch row and no ``match.vouch``
+    event. A vouch takes no text: the audit log cannot be erased. A vouch
+    row keeps counting after its voucher loses standing (a member removed,
+    an Organizer unverified, an application unapproved, an Account
+    deactivated), as a confirmation row does. Returns the locked match.
     """
     _saved(match)
     level = vouch_level(actor, match)
@@ -1090,19 +1095,22 @@ def vouch_for_match(match: Match, *, actor: Actor) -> Match:
         counting = _counting([locked, *_linked(locked)])
         completed: list[MatchFlag] = []
         for flag in flags:
-            if MatchVouch.objects.filter(flag=flag, match=locked, **voucher).exists():
-                continue
-            row = MatchVouch.objects.create(flag=flag, match=locked, **voucher)
-            record_event(
-                action=AuditAction.MATCH_VOUCH,
-                target=row,
-                after={
-                    "flag": flag.pk,
-                    "match": locked.public_code,
-                    "level": str(level),
-                },
-                **audit_actor(actor),
-            )
+            if not MatchVouch.objects.filter(
+                flag=flag, match=locked, **voucher
+            ).exists():
+                row = MatchVouch.objects.create(flag=flag, match=locked, **voucher)
+                record_event(
+                    action=AuditAction.MATCH_VOUCH,
+                    target=row,
+                    after={
+                        "flag": flag.pk,
+                        "match": locked.public_code,
+                        "level": str(level),
+                    },
+                    **audit_actor(actor),
+                )
+            # Checked for every open flag, also after a repeat vouch, so a
+            # flag both sides already vouched for is always resolved.
             if _flag_vouched(flag, locked.pk) and _flag_vouched(
                 flag, _other_side(flag, locked.pk)
             ):

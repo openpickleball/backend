@@ -511,3 +511,26 @@ def test_vouched_at_own_level_is_false_with_no_hold(
     confirmed: Match, players: list[Player]
 ) -> None:
     assert not vouched_at_own_level(confirmed, players[0].account)
+
+
+def test_any_vouch_resolves_a_flag_already_vouched_for_on_both_sides(
+    pair: tuple[Match, Match], players: list[Player], signals: SignalLog
+) -> None:
+    earlier, later = pair
+    flag = MatchFlag.objects.get()
+    # Rows written outside the service, so no vouch completed the flag.
+    for match, voucher in (
+        (earlier, players[0]),
+        (earlier, players[2]),
+        (later, players[1]),
+        (later, players[3]),
+    ):
+        MatchVouch.objects.create(flag=flag, match=match, account=voucher.account)
+
+    vouch_for_match(earlier, actor=players[0].account)
+
+    assert MatchVouch.objects.count() == 4
+    assert _vouch_events() == []
+    assert MatchFlag.objects.get().resolution == FlagResolution.APPROVED
+    assert _counted() == {earlier.pk, later.pk}
+    assert signals.changes(earlier) == [MatchChange.RELEASE]
