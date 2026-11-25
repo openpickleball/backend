@@ -116,6 +116,7 @@ def test_debug_off_run_keeps_test_overrides() -> None:
             "DJANGO_SECRET_KEY": secrets.token_urlsafe(50),
             "DJANGO_ALLOWED_HOSTS": "",
             "DATABASE_URL": os.environ["DATABASE_URL"],
+            "DIRECT_DATABASE_URL": "",
             # Nothing listens here. The cache must not be used.
             "REDIS_URL": "redis://127.0.0.1:1/0",
             "CSRF_TRUSTED_ORIGINS": "",

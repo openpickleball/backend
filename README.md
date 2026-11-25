@@ -57,7 +57,7 @@ Docker Compose also reads `.env` and treats a `$` in a value as a variable refer
 
 ### Local services
 
-Migrations and tests need the Postgres that `DATABASE_URL` points to. `compose.yaml` runs Postgres and Valkey for local development, and the values in `.env.example` point at them. Docker must be running.
+Migrations and tests need the Postgres that `DATABASE_URL` points to. In pooled mode (see [Connection pool](#connection-pool)), `migrate` uses the one `DIRECT_DATABASE_URL` points to. `compose.yaml` runs Postgres and Valkey for local development, and the values in `.env.example` point at them. Docker must be running.
 
 `--wait` returns once both services are healthy. The services listen on `127.0.0.1` only: Postgres on port 5432 and Valkey on 6379. Stop any other Postgres, Redis, or Valkey on those ports first. `docker compose down` stops them and keeps the data; `docker compose down -v` also deletes it. To run the app in a container on http://127.0.0.1:8000 instead of with `runserver` on the host, use `docker compose --profile web up -d --wait`. It uses the same port as `runserver`, so stop one before starting the other. The same profile also starts a Celery worker and beat. Beat waits until the migrations are applied, so run `uv run python manage.py migrate` first.
 
@@ -105,6 +105,26 @@ docker run --rm --env-file prod.env open-backend celery -A config beat -l info
 ```
 
 Here `prod.env` is a file of settings you keep outside the repository. Run one beat process only.
+
+### Connection pool
+
+Production can reach Postgres through a PgBouncer connection pool in transaction mode, such as a DigitalOcean connection pool (ADR 0038). Then `DATABASE_URL` is the pool's connection string and `DIRECT_DATABASE_URL` is the database's own. A DigitalOcean pool's connection string names the pool as its database, not the database itself, so the two URLs differ in more than the port. With `DIRECT_DATABASE_URL` set:
+
+- Requests, Celery tasks, and beat use the pool. A request or task closes its connection when it ends. Beat keeps one connection open, which PgBouncer serves like any other client.
+- `manage.py migrate` from the command line with no `--database` points the default connection at the direct database for its own process, so every migration, data migrations included, runs on the direct connection. The image's `python manage.py migrate` does this too. An explicit `--database` is honored as given (`--database default` goes through the pool), and so is an in-process `call_command("migrate")`, which never rebinds.
+- Settings refuse `prepare_threshold`, `assume_role`, and `pool` in the `DATABASE_URL` query, because a pool in transaction mode cannot serve them.
+
+Leave `DIRECT_DATABASE_URL` empty when `DATABASE_URL` is the database itself, as in local development and CI. These protections (closed connections, no server-side cursors, refused URL options) apply only when `DIRECT_DATABASE_URL` is set, so a pool URL in `DATABASE_URL` without it runs unprotected.
+
+Size the pool for client connections at their busiest. Each gunicorn worker (`WEB_CONCURRENCY`, sync workers) holds at most one connection per instance, each Celery worker child process holds one (the worker's `--concurrency`, which defaults to the number of CPUs), and beat holds one. Multiply by the number of instances. PgBouncer accepts many more client connections than its pool size and queues clients while every server connection is busy. A transaction that waits for a lock keeps its server connection for the whole wait, so lock waits use up the pool too. Migrations use direct connections, outside the pool, and these count against the cluster's own connection limit.
+
+To try the pool locally, start PgBouncer in transaction mode on 127.0.0.1:6432, with prepared statements off and a small pool. Its config is inline in `compose.yaml` (a `configs` block with `content`), which needs Docker Compose 2.23.1 or later:
+
+```bash
+docker compose --profile pgbouncer up -d --wait
+```
+
+Then set `DATABASE_URL=postgres://open@localhost:6432/open` and `DIRECT_DATABASE_URL=postgres://open@localhost:5432/open`. PgBouncer routes every database name to the compose Postgres, so the tests run through it too. At the end of such a run, the test databases cannot be dropped, because PgBouncer still holds idle server connections to them: pytest warns and leaves them behind. Drop them from Postgres afterwards with `DROP DATABASE ... WITH (FORCE)`, or restart PgBouncer before the next run.
 
 With `DJANGO_DEBUG` off, settings trust the `X-Forwarded-Proto` header to tell https from http. So run the web container only behind the hosting proxy, which sets that header, and never let clients reach it directly. To test it locally, send `X-Forwarded-Proto: https` with each request, as in [Serving like production](#serving-like-production).
 
