@@ -60,6 +60,7 @@ def test_seeds_empty_database() -> None:
     assert not Match.objects.filter(club__isnull=False, event__isnull=True).exists()
     for match in Match.objects.filter(club__isnull=False).select_related("event"):
         assert match.event is not None
+        assert match.club_id is not None
         assert ClubOrganizerGrant.objects.filter(
             club_id=match.club_id, organizer_id=match.event.organizer_id
         ).exists()

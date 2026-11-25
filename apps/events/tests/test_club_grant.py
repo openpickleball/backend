@@ -81,7 +81,7 @@ def test_a_new_event_with_a_club_that_did_not_grant_is_refused(
 
 def test_a_grant_to_another_organizer_is_not_enough(organizer: Organizer) -> None:
     other_club: Club = ClubFactory.create()
-    ClubOrganizerGrantFactory.create(club=other_club, organizer=OrganizerFactory())
+    ClubOrganizerGrantFactory.create(club=other_club, organizer=OrganizerFactory.create())
 
     assert _club_errors(_event(organizer, club=other_club)) == [REFUSED]
 

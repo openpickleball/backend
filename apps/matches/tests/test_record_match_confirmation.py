@@ -120,11 +120,11 @@ def test_an_event_and_club_submission_is_created_confirmed(
     match = recorded.match
     assert recorded.created
     assert Match.objects.get(pk=match.pk).status == MatchStatus.CONFIRMED
-    [event] = _events(match, AuditAction.MATCH_CONFIRM)
-    assert event.actor_user == account
-    assert event.actor_application is None
-    assert event.before is None
-    assert event.after == {"status": MatchStatus.CONFIRMED}
+    [audit] = _events(match, AuditAction.MATCH_CONFIRM)
+    assert audit.actor_user == account
+    assert audit.actor_application is None
+    assert audit.before is None
+    assert audit.after == {"status": MatchStatus.CONFIRMED}
     assert AuditEvent.objects.count() == 1 + _verification_events()
     assert signals.confirmed == [match.pk]
 

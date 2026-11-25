@@ -204,10 +204,12 @@ def _with_club_role(scene: Scene, account: User) -> User:
     return account
 
 
-def test_a_club_only_match_is_refused_for_every_actor(scene: Scene) -> None:
+@pytest.mark.parametrize("kind", sorted(CREATE_TABLE))
+def test_a_club_only_match_is_refused_for_every_actor(scene: Scene, kind: str) -> None:
     # ADR 0021: a match with a Club and no Event has no Organizer behind it.
-    for build, _permitted in CREATE_TABLE.values():
-        assert not can_create_match(build(scene), scene.submission(CLUB))
+    build, _permitted = CREATE_TABLE[kind]
+
+    assert not can_create_match(build(scene), scene.submission(CLUB))
 
 
 @pytest.mark.parametrize("shape", SHAPES)

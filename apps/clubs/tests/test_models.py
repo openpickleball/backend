@@ -224,9 +224,7 @@ def test_role_choices() -> None:
 def test_club_role_choices_are_admin_only() -> None:
     # ADR 0021: a Club has only the admin role.
     assert ClubRoleKind.values == ["admin"]
-    assert [value for value, _label in ClubRole._meta.get_field("role").choices] == [
-        "admin"
-    ]
+    assert ClubRole._meta.get_field("role").choices == [("admin", "Admin")]
 
 
 def test_club_role_match_manager_is_refused_by_full_clean() -> None:
