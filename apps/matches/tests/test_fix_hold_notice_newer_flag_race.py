@@ -12,6 +12,8 @@ from typing import Any
 import pytest
 from django.core import mail
 
+from apps.emails.models import QueuedEmail
+from apps.matches.emails import HOLD_NOTICE
 from apps.matches.models import Match, MatchFormat
 from apps.matches.services import record_match
 from apps.matches.tests.conftest import WORKFLOW_PLAYED_ON
@@ -35,6 +37,18 @@ def _count(match: Match) -> int:
     return sum(str(match.public_code) in str(m.body) for m in mail.outbox)
 
 
+def _queued(match: Match) -> int:
+    """Hold notice rows for ``match`` still in the outbox table.
+
+    Sent rows are deleted, so this counts the ones queued and not sent.
+    Together with ``_count`` it covers every notice, sent or not.
+    """
+    return sum(
+        str(match.public_code) in row.body
+        for row in QueuedEmail.objects.filter(template=HOLD_NOTICE)
+    )
+
+
 def test_earlier_match_is_told_once_when_callbacks_run_out_of_order(
     players: list[Player],
     confirmed: Match,
@@ -46,13 +60,19 @@ def test_earlier_match_is_told_once_when_callbacks_run_out_of_order(
     with django_capture_on_commit_callbacks(execute=True):
         third = _submit(players, ((11, 4), (11, 5)))
     assert _count(confirmed) == 0
+    assert _queued(confirmed) == 0
     assert _count(third) == 4
+    assert _queued(third) == 0
 
-    for callback in second_callbacks:
-        callback()
+    # Inside a capture block, so the send that queue_email registers runs.
+    with django_capture_on_commit_callbacks(execute=True):
+        for callback in second_callbacks:
+            callback()
 
     assert _count(confirmed) == 4
+    assert _queued(confirmed) == 0
     assert _count(second) == 4
+    assert _queued(second) == 0
     assert (
         len({m.to[0] for m in mail.outbox if str(confirmed.public_code) in str(m.body)})
         == 4
