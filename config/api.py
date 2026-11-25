@@ -4,7 +4,8 @@
 /api/v1/openapi.json and the interactive docs at /api/v1/docs. The health
 router (`config/health.py`) is mounted at /api/v1/health/, the signed-in
 Account at /api/v1/accounts/, match submission, reading one match,
-confirmation, dispute, and the Organizer's dispute resolution and
+confirmation, dispute, a player's dispute withdrawal and correction of a
+self-reported match, and the Organizer's dispute resolution and
 correction at /api/v1/matches/, a player's match history and player
 search (/api/v1/players/search), a player's profile, the rating lookup
 (/api/v1/players/{code}/ratings), and a player's rating history

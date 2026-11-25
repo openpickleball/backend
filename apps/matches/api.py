@@ -21,8 +21,8 @@ use). Anyone else, an organizer of its Event included, gets the same 404
 as an unknown or malformed code, so the response never reveals that the
 match exists (ADR 0008).
 
-Confirm and dispute answer an actor the workflow refuses
-(``MatchActionDenied``) with the same 404 as an unknown or malformed
+Confirm, dispute, withdraw-dispute, and correction answer an actor the
+workflow refuses (``MatchActionDenied``) with the same 404 as an unknown or malformed
 code, so the response never reveals that the match exists (ADR 0008).
 A participant whose change the match's status does not allow still gets
 409.
@@ -342,9 +342,11 @@ def dispute_match(request: HttpRequest, code: MatchCode) -> MatchOut:
     """Dispute a match you played in.
 
     A disputed match stops counting. For a match with an Event, the
-    Event's organizer then settles it.
+    Event's organizer then settles it. You can withdraw your dispute
+    (``/withdraw-dispute``), and for a match with no Event you can
+    correct it yourself (``/correction``).
 
-    Disputing again changes nothing. A voided match cannot be disputed
+    Disputing again changes nothing, also after you withdrew your dispute. A voided match cannot be disputed
     (409). Anyone who did not play in the match gets 404, as for an
     unknown code.
     """

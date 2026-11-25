@@ -16,7 +16,8 @@ States and transitions:
   which becomes disputed.
 - ``withdraw_dispute``: a participant withdraws their open dispute (#267).
   Once no dispute is open, the match goes back to confirmed when it was
-  confirmed as the dispute began, else to pending.
+  confirmed as the dispute began, else to pending. A voided match refuses
+  it.
 - ``resolve_dispute``: the match's Event's verified Organizer
   (``settles_dispute``: a member whose Player is not in the match's
   correction chain, or the approved application that submitted the match
@@ -29,9 +30,11 @@ States and transitions:
   creation core ``record_match`` uses: validation, model rules, locks,
   duplicate checks, and flags. Only a moderator, or the Event's verified
   Organizer settling the dispute with a required reason, edits a
-  disputed match. A participant corrects a pending or disputed
-  self-reported match with the same teams (#267); the correction is
-  pending with the corrector's confirmation.
+  disputed match with an Event. On the player path (``as_player=True``,
+  #267) a participant corrects a pending or disputed self-reported match
+  (no Event, no Club) with the same teams; the correction is always
+  pending, with the corrector's confirmation, and keeps the old match's
+  submitter (ADR 0013).
 - ``expire_unconfirmed_matches``: with ``MATCH_CONFIRMATION_EXPIRY_DAYS``
   set, voids pending matches older than that.
 - ``expire_disputes_and_holds``: voids a disputed match whose first open
@@ -672,10 +675,12 @@ def edit_match(
 
     For a moderator, or an actor ``can_change_match`` allows that may also
     submit the correction (``can_create_match`` for the old match's Event
-    and Club and the new players), checked before any validation. Only a
-    moderator, or the Event's verified Organizer settling the dispute
-    (``settles_dispute`` with the new players, ADR 0034), edits a disputed
-    match; anyone else gets ``MatchStateError``, as for a voided match.
+    and Club and the new players), checked before any validation. Off the
+    player path, only a moderator, or the Event's verified Organizer
+    settling the dispute (``settles_dispute`` with the new players, ADR
+    0034), edits a disputed match; anyone else gets ``MatchStateError``,
+    as for a voided match. On the player path (``as_player=True``, below)
+    a participant also edits a disputed self-reported match.
     With ``as_moderator=False`` (the Organizer's API operations) the
     moderator path is never taken, so only the non-moderator rules apply.
     For a match with an Event, the write transaction first share-locks the
@@ -684,9 +689,11 @@ def edit_match(
     ``MatchActionDenied`` before any lock or write. The correction keeps
     the old match's stored match type, never the Event's current kind.
 
-    The correction keeps the old match's submitter, external id, Event,
-    and Club, links to it through ``corrects``, and is confirmed when the
-    old one was confirmed or disputed, else pending. It goes through
+    The correction keeps the old match's submitter (ADR 0013), external
+    id, Event, and Club, and links to it through ``corrects``. Off the
+    player path it is confirmed when the old one was confirmed or
+    disputed, else pending; on the player path it is always pending, with
+    the corrector's ``confirm`` row. It goes through
     validation, the model rules, and the duplicate checks
     (``MatchValidationError``, ``DuplicateMatchError``), and any error
     rolls everything back. One ``match.edit`` Audit Event on the old match
