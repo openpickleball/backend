@@ -22,6 +22,7 @@ The backend already fits transaction mode in most ways. Its advisory locks are t
 
 ## Consequences
 
+- The pooled-mode protections (`CONN_MAX_AGE` 0, no server-side cursors, refused URL options) apply only when `DIRECT_DATABASE_URL` is set. A pool URL in `DATABASE_URL` without it runs unprotected.
 - New code must never rely on session state: only transaction level advisory locks, and no `SET` or `SET SESSION`, `LISTEN`, temporary tables, `WITH HOLD` cursors, or prepared statements. `SET LOCAL` inside a transaction is fine.
 - A data migration that queries through a plain manager, or calls Django's `create_permissions` without `using`, goes through the pool instead of migrate's connection. A test calls each first-party data migration with a missing alias to catch this.
 - Each request and task opens a new connection to the pool. That is cheap with PgBouncer, which keeps its server connections open.
