@@ -21,11 +21,23 @@ use). Anyone else, an organizer of its Event included, gets the same 404
 as an unknown or malformed code, so the response never reveals that the
 match exists (ADR 0008).
 
-Confirm and dispute answer an actor the workflow refuses
-(``MatchActionDenied``) with the same 404 as an unknown or malformed
+Confirm, dispute, withdraw-dispute, and correction answer an actor the
+workflow refuses (``MatchActionDenied``) with the same 404 as an unknown or malformed
 code, so the response never reveals that the match exists (ADR 0008).
 A participant whose change the match's status does not allow still gets
 409.
+
+A participant withdraws their own open dispute
+(``withdraw_match_dispute``, ``workflow.withdraw_dispute``): once no
+dispute is open, the match goes back to confirmed when it was confirmed
+as the dispute began, else to pending. A participant of a pending or
+disputed self-reported match (no Event, no Club) corrects it with the
+same two teams (``correct_match``, ``workflow.edit_match`` with
+``as_player=True``, #267): the old match is voided and the correction is
+pending with the corrector's confirmation, submitted by the corrector. Anyone who did not play in a
+self-reported match, a participant of a match with an Event, and a
+correction with other teams get the unknown-code 404, checked before any
+team code is read except for the team check itself.
 
 The Event's verified Organizer settles a dispute on its match (ADR 0034):
 ``resolve_match_dispute`` resolves it as confirmed or voided, and
@@ -91,13 +103,16 @@ from apps.matches.pagination import MatchHistoryPagination
 from apps.matches.permissions import (
     MatchActionDenied,
     MatchPermissionDenied,
+    can_correct_as_player,
     can_manage_events,
+    corrects_as_player,
     participant_player,
     settles_dispute,
 )
 from apps.matches.schemas import (
     DisputeCorrectionIn,
     DisputeResolutionIn,
+    MatchCorrectionIn,
     MatchCreateIn,
     MatchOut,
     ResultsFileOut,
@@ -327,13 +342,114 @@ def dispute_match(request: HttpRequest, code: MatchCode) -> MatchOut:
     """Dispute a match you played in.
 
     A disputed match stops counting. For a match with an Event, the
-    Event's organizer then settles it.
+    Event's organizer then settles it. You can withdraw your dispute
+    (``/withdraw-dispute``), and for a match with no Event you can
+    correct it yourself (``/correction``).
 
-    Disputing again changes nothing. A voided match cannot be disputed
+    Disputing again changes nothing, also after you withdrew your dispute. A voided match cannot be disputed
     (409). Anyone who did not play in the match gets 404, as for an
     unknown code.
     """
     return _change(request, code, workflow.dispute_match)
+
+
+@router.post(
+    "/{code}/withdraw-dispute",
+    response=_CHANGE_RESPONSES,
+    operation_id="withdraw_match_dispute",
+    openapi_extra=_CHANGE_OPENAPI,
+)
+def withdraw_match_dispute(request: HttpRequest, code: MatchCode) -> MatchOut:
+    """Withdraw your dispute of a match you played in.
+
+    The match stays disputed while another player's dispute is open. Once
+    no dispute is open, it is confirmed again when it was confirmed before
+    the dispute, else pending, and a confirmed match counts again. Your
+    dispute still counts as your one dispute, so disputing again changes
+    nothing. Withdrawing again changes nothing unless the match was voided
+    meanwhile. A voided match, and a match you have no open dispute on,
+    get 409. Anyone who did not play in the match gets 404, as
+    for an unknown code.
+    """
+    return _change(request, code, workflow.withdraw_dispute)
+
+
+@router.post(
+    "/{code}/correction",
+    response=_CHANGE_RESPONSES,
+    operation_id="correct_match",
+    openapi_extra=_CHANGE_OPENAPI,
+)
+def correct_match(
+    request: HttpRequest, code: MatchCode, payload: MatchCorrectionIn
+) -> MatchOut:
+    """Correct a pending or disputed match you played in with no Event.
+
+    Give the corrected match as for a new one, with the same two teams in
+    either order. The match is voided and the correction is created
+    pending, submitted by you and with your confirmation, and returned. It
+    counts once a player on the other team confirms it. A scoring type or game target left out
+    is the corrected match's, and a missing best-of is inferred from the
+    games. Its location, labels, and order come from the corrected match. A
+    confirmed match gets 409: dispute it first. Anyone who did not play in
+    the match, a match with an Event or Club, and a correction with other
+    teams get 404, as for an unknown code.
+    """
+    account = request_account(request)
+    match = get_by_public_code(Match.objects.all(), code)
+    if not can_correct_as_player(account, match):
+        raise Http404
+    if match.status not in (MatchStatus.PENDING, MatchStatus.DISPUTED):
+        raise workflow.MatchStateError
+    teams = _resolve_teams(payload)
+    if (
+        corrects_as_player(
+            account,
+            match,
+            team_a_ids=[player.pk for player in teams["team_a"]],
+            team_b_ids=[player.pk for player in teams["team_b"]],
+        )
+        is None
+    ):
+        raise Http404
+    same_day = payload.played_on == match.played_on
+    try:
+        with transaction.atomic():
+            corrected = workflow.edit_match(
+                match,
+                actor=account,
+                format=payload.format,
+                team_a=teams["team_a"],
+                team_b=teams["team_b"],
+                games=[(game.team_a, game.team_b) for game in payload.games],
+                played_on=payload.played_on,
+                best_of=payload.best_of,
+                # An omitted setting is the corrected match's, not the
+                # default for a new match. best_of is inferred as usual.
+                game_target=(
+                    payload.game_target
+                    if payload.game_target is not None
+                    else match.game_target
+                ),
+                scoring_type=(
+                    payload.scoring_type
+                    if payload.scoring_type is not None
+                    else match.scoring_type
+                ),
+                played_at=match.played_at if same_day else None,
+                played_at_utc_offset=(match.played_at_utc_offset if same_day else None),
+                location=match.location,
+                event_label=match.event_label,
+                bracket_label=match.bracket_label,
+                sequence=match.sequence,
+                as_moderator=False,
+                as_player=True,
+            )
+    except MatchActionDenied:
+        raise Http404 from None
+    except MatchValidationError as error:
+        raise _in_body(error) from None
+    return match_out(_loaded(corrected), account)
 
 
 def _settled_match(request: HttpRequest, code: str) -> tuple["_User", Match]:

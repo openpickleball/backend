@@ -6,8 +6,10 @@ organizer, a match created confirmed by ``record_match()``, an existing
 pending match confirmed by a permitted duplicate submission, a disputed
 match a moderator or the Event's verified Organizer resolved as confirmed,
 and a confirmed correction of a match that was not counting (such as a
-disputed match corrected by a moderator or the Organizer). It is sent once
-per confirmation, never for a repeated confirm.
+disputed match corrected by a moderator or the Organizer), and a disputed
+match that is confirmed again because its last open dispute was withdrawn
+(``withdraw_dispute``). It is sent once per confirmation, never for a
+repeated confirm.
 
 ``match_changed`` is sent with ``sender=Match``, ``match``,
 ``earliest_date`` (the earliest ``played_on`` whose ratings the change can

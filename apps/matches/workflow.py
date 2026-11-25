@@ -14,6 +14,10 @@ States and transitions:
   Organizer Application Grant, confirms a pending match alone.
 - ``dispute_match``: a participant disputes a pending or confirmed match,
   which becomes disputed.
+- ``withdraw_dispute``: a participant withdraws their open dispute (#267).
+  Once no dispute is open, the match goes back to confirmed when it was
+  confirmed as the dispute began, else to pending. A voided match refuses
+  it.
 - ``resolve_dispute``: the match's Event's verified Organizer
   (``settles_dispute``: a member whose Player is not in the match's
   correction chain, or the approved application that submitted the match
@@ -26,7 +30,12 @@ States and transitions:
   creation core ``record_match`` uses: validation, model rules, locks,
   duplicate checks, and flags. Only a moderator, or the Event's verified
   Organizer settling the dispute with a required reason, edits a
-  disputed match.
+  disputed match with an Event. On the player path (``as_player=True``,
+  #267) a participant corrects a pending or disputed self-reported match
+  (no Event, no Club) with the same teams; the correction is always
+  pending, with the corrector's confirmation, and the corrector's Account
+  is its submitter (the maintainer's decision on #267). Every other edit
+  keeps the old match's submitter (ADR 0013).
 - ``expire_unconfirmed_matches``: with ``MATCH_CONFIRMATION_EXPIRY_DAYS``
   set, voids pending matches older than that.
 - ``expire_disputes_and_holds``: voids a disputed match whose first open
@@ -114,7 +123,9 @@ from apps.matches.permissions import (
     MatchSubmission,
     can_change_match,
     can_confirm_as_organizer,
+    can_correct_as_player,
     can_create_match,
+    corrects_as_player,
     is_moderator,
     moderates,
     participant_player,
@@ -317,8 +328,9 @@ def confirm_match(match: Match, *, actor: Actor) -> Match:
     match alone; for a confirmed match it does nothing. A participant adds
     their confirmation to a pending or confirmed match, and a pending match
     becomes confirmed once each team has one. A repeat does nothing. A
-    disputed or voided match raises ``MatchStateError``: disputes go to a
-    moderator. Anyone else gets ``MatchActionDenied``. An actor who is
+    disputed or voided match raises ``MatchStateError``: a disputed match
+    is settled by withdrawing every open dispute (``withdraw_dispute``), by
+    the Event's Organizer, or by a moderator. Anyone else gets ``MatchActionDenied``. An actor who is
     both organizer and participant takes the organizer path.
     """
     _saved(match)
@@ -352,7 +364,8 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
     ``match_changed`` with ``change=dispute``. A disputed match only gains
     the participant's dispute row. A participant disputes a match at most
     once: a repeat (also after a moderator or the Event's Organizer resolved
-    the dispute as confirmed) does nothing. A voided match raises
+    the dispute as confirmed, and after the participant withdrew it) does
+    nothing. A voided match raises
     ``MatchStateError``. Only a participant may dispute. A dispute takes no
     reason: Audit Events are append-only, and a participant's free text
     could hold a name.
@@ -387,6 +400,123 @@ def dispute_match(match: Match, *, actor: Actor) -> Match:
                 change=MatchChange.DISPUTE,
                 earliest_date=locked.played_on,
             )
+        return locked
+
+
+@dataclass(frozen=True)
+class _DisputePeriod:
+    """The current disputed period of a match (``_dispute_period``)."""
+
+    event: AuditEvent | None
+    open_disputes: list[MatchConfirmation]
+    opening_pk: int | None
+
+
+def _dispute_period(match: Match) -> _DisputePeriod:
+    """The current disputed period's ``match.dispute`` event and open disputes.
+
+    The period starts at the match's latest ``match.dispute`` Audit Event
+    (by id: every change into disputed writes exactly one). Its actor is
+    the Account whose Player wrote the period's first dispute row, the
+    opening row. The open disputes are the match's dispute rows from the
+    opening row on, by id, whose player has not withdrawn, in id order.
+    Rows before the opening row belong to an earlier period that a
+    resolution settled, so they are never open again. With no event or no
+    opening row (rows written outside the services), every dispute row not
+    withdrawn counts as open and ``opening_pk`` is None. Both callers then
+    fail closed: ``withdraw_dispute`` refuses every withdrawal, so the
+    match stays disputed until a resolution or expiry, and
+    ``dispute_started_at`` uses the event's time (the later, safe start).
+
+    Only ids are compared, never times. One match's rows are written under
+    its row lock, so id order is insertion order.
+    """
+    event = (
+        _match_events()
+        .filter(action=AuditAction.MATCH_DISPUTE, target_object_id=str(match.pk))
+        .order_by("-pk")
+        .first()
+    )
+    disputes = MatchConfirmation.objects.filter(
+        match_id=match.pk, decision=ConfirmationDecision.DISPUTE
+    )
+    opening_pk: int | None = None
+    if event is not None and event.actor_user_id is not None:
+        opening_pk = (
+            disputes.filter(player__account_id=event.actor_user_id)
+            .values_list("pk", flat=True)
+            .first()
+        )
+    if opening_pk is not None:
+        disputes = disputes.filter(pk__gte=opening_pk)
+    withdrawn = MatchConfirmation.objects.filter(
+        match_id=match.pk, decision=ConfirmationDecision.WITHDRAW
+    ).values("player_id")
+    open_disputes = list(disputes.exclude(player_id__in=withdrawn).order_by("pk"))
+    return _DisputePeriod(event, open_disputes, opening_pk)
+
+
+def withdraw_dispute(match: Match, *, actor: Actor) -> Match:
+    """A participant withdraws their open dispute of ``match`` (#267).
+
+    The withdrawal is a new ``withdraw`` row; the dispute row stays. The
+    match stays disputed while another dispute of the current period is
+    open, with no Audit Event and no signal. When the last open dispute is
+    withdrawn, the match goes back to confirmed when it was confirmed as
+    the period began (the ``match.dispute`` event's ``before``), else to
+    pending, with one ``match.dispute_withdraw`` Audit Event. Back to
+    confirmed sends ``match_confirmed``; back to pending sends nothing.
+
+    A withdrawn dispute is still the player's one dispute: disputing again
+    changes nothing. Only a participant may withdraw
+    (``MatchActionDenied``). A voided match gets ``MatchStateError``
+    first, also for a player who already withdrew. On a match that is not
+    voided, a repeat withdrawal changes nothing; otherwise a participant
+    with no open dispute in the current period, or a match that is not
+    disputed, gets ``MatchStateError``. So does every withdrawal when the
+    period's opening row is unknown (``_dispute_period``: rows written
+    outside the services): the match stays disputed until a resolution or
+    expiry.
+    """
+    _saved(match)
+    player = participant_player(actor, match)
+    if player is None:
+        raise MatchActionDenied
+    with transaction.atomic():
+        locked = _lock(match)
+        # A voided match is refused first, as ``dispute_match`` does, even
+        # for a player who already withdrew.
+        if locked.status == MatchStatus.VOIDED:
+            raise MatchStateError
+        if MatchConfirmation.objects.filter(
+            match=locked, player=player, decision=ConfirmationDecision.WITHDRAW
+        ).exists():
+            return locked
+        if locked.status != MatchStatus.DISPUTED:
+            raise MatchStateError
+        period = _dispute_period(locked)
+        event, open_disputes = period.event, period.open_disputes
+        # With no opening row the period's disputes are unknown, so no
+        # withdrawal may end it (fail closed): a resolution or expiry does.
+        if event is None or period.opening_pk is None:
+            raise MatchStateError
+        if not any(row.player_id == player.pk for row in open_disputes):
+            raise MatchStateError
+        _record_decision(locked, player, ConfirmationDecision.WITHDRAW)
+        if any(row.player_id != player.pk for row in open_disputes):
+            return locked
+        was_confirmed = (event.before or {}).get("status") == MatchStatus.CONFIRMED
+        status = MatchStatus.CONFIRMED if was_confirmed else MatchStatus.PENDING
+        before = _set_status(locked, status)
+        record_event(
+            action=AuditAction.MATCH_DISPUTE_WITHDRAW,
+            target=locked,
+            before=before,
+            after=snapshot(locked, ["status"]),
+            **audit_actor(actor),
+        )
+        if status == MatchStatus.CONFIRMED:
+            match_confirmed.send(sender=Match, match=locked)
         return locked
 
 
@@ -545,15 +675,18 @@ def edit_match(
     bracket_label: str = "",
     sequence: int = 0,
     as_moderator: bool = True,
+    as_player: bool = False,
 ) -> Match:
     """Void ``match`` and create its correction. Returns the new match.
 
     For a moderator, or an actor ``can_change_match`` allows that may also
     submit the correction (``can_create_match`` for the old match's Event
-    and Club and the new players), checked before any validation. Only a
-    moderator, or the Event's verified Organizer settling the dispute
-    (``settles_dispute`` with the new players, ADR 0034), edits a disputed
-    match; anyone else gets ``MatchStateError``, as for a voided match.
+    and Club and the new players), checked before any validation. Off the
+    player path, only a moderator, or the Event's verified Organizer
+    settling the dispute (``settles_dispute`` with the new players, ADR
+    0034), edits a disputed match; anyone else gets ``MatchStateError``,
+    as for a voided match. On the player path (``as_player=True``, below)
+    a participant also edits a disputed self-reported match.
     With ``as_moderator=False`` (the Organizer's API operations) the
     moderator path is never taken, so only the non-moderator rules apply.
     For a match with an Event, the write transaction first share-locks the
@@ -562,13 +695,29 @@ def edit_match(
     ``MatchActionDenied`` before any lock or write. The correction keeps
     the old match's stored match type, never the Event's current kind.
 
-    The correction keeps the old match's submitter, external id, Event,
-    and Club, links to it through ``corrects``, and is confirmed when the
-    old one was confirmed or disputed, else pending. It goes through
-    validation, the model rules, and the duplicate checks
+    The correction keeps the old match's external id, Event, and Club,
+    and links to it through ``corrects``. Off the player path it keeps the
+    old match's submitter (ADR 0013) and is confirmed when the old one was
+    confirmed or disputed, else pending. On the player path its submitter
+    is the corrector's Account (the maintainer's decision on #267), and it
+    is always pending, with the corrector's ``confirm`` row. It goes
+    through validation, the model rules, and the duplicate checks
     (``MatchValidationError``, ``DuplicateMatchError``), and any error
     rolls everything back. One ``match.edit`` Audit Event on the old match
     records it (no separate ``match.void``).
+
+    With ``as_player=True`` (the players' correction operation, #267) only
+    the player rules apply: a participant of a self-reported match (no
+    Event, no Club) corrects a pending or disputed one
+    (``corrects_as_player``). The correction must have the same two teams,
+    in either order, or the edit is refused with ``MatchActionDenied``
+    before any validation. A confirmed or voided match gets
+    ``MatchStateError`` (dispute it first). The correction is always
+    pending, with the corrector's ``confirm`` row written in the same
+    transaction, so it counts only once a player on the other team
+    confirms it. The Audit Event's ``after`` then also names the
+    correction's status (``correction_status``). Without ``as_player`` a
+    participant gets ``MatchActionDenied``, as before.
 
     Only a moderator, or the settling Organizer, may give a ``reason``;
     anyone else giving one gets ``ReasonRefused``. The settling Organizer
@@ -590,9 +739,30 @@ def edit_match(
     # the correction, falls back to the other rules.
     # With as_moderator=False (the Organizer's API operations) only the
     # non-moderator rules apply, whoever the actor is.
-    moderator = as_moderator and moderates(actor, match, new_player_ids=new_player_ids)
-    if not (moderator or can_change_match(actor, match)):
+    # With as_player=True (the players' correction operation) only the
+    # player rules apply (#267): never the moderator or Organizer paths.
+    moderator = (
+        as_moderator
+        and not as_player
+        and moderates(actor, match, new_player_ids=new_player_ids)
+    )
+    player_path = as_player
+    if player_path:
+        if not can_correct_as_player(actor, match):
+            raise MatchActionDenied
+    elif not (moderator or can_change_match(actor, match)):
         raise MatchActionDenied
+    team_ids = [
+        [p.pk for p in team if isinstance(p, Player) and p.pk is not None]
+        for team in (team_a, team_b)
+    ]
+    corrector: Player | None = None
+    if player_path:
+        corrector = corrects_as_player(
+            actor, match, team_a_ids=team_ids[0], team_b_ids=team_ids[1]
+        )
+        if corrector is None:
+            raise MatchActionDenied
     stored = Match.objects.select_related(
         "submitted_by_user", "submitted_by_application", "event", "club"
     ).get(pk=match.pk)
@@ -605,9 +775,17 @@ def edit_match(
     def check_editor() -> None:
         # An edit creates a match, so the editor also needs the authority
         # to submit it, checked before any validation.
-        if not moderator and not (
-            can_change_match(actor, match) and can_create_match(actor, submission)
-        ):
+        if moderator:
+            return
+        if player_path:
+            allowed = corrects_as_player(
+                actor, match, team_a_ids=team_ids[0], team_b_ids=team_ids[1]
+            ) is not None and can_create_match(actor, submission)
+        else:
+            allowed = can_change_match(actor, match) and can_create_match(
+                actor, submission
+            )
+        if not allowed:
             raise MatchActionDenied
 
     check_editor()
@@ -616,6 +794,7 @@ def edit_match(
     # whether a reason may be given; it is checked again under the lock.
     settles = (
         not moderator
+        and not player_path
         and stored.status == MatchStatus.DISPUTED
         and settles_dispute(actor, match, new_player_ids=new_player_ids)
     )
@@ -631,8 +810,15 @@ def edit_match(
         best_of=best_of,
         game_target=game_target,
         scoring_type=scoring_type,
-        submitted_by_user=stored.submitted_by_user,
-        submitted_by_application=stored.submitted_by_application,
+        # A player's correction is submitted by the corrector (the
+        # maintainer's decision on #267); every other edit keeps the old
+        # match's submitter (ADR 0013).
+        submitted_by_user=(
+            corrector.account if corrector is not None else stored.submitted_by_user
+        ),
+        submitted_by_application=(
+            None if corrector is not None else stored.submitted_by_application
+        ),
         external_id=stored.external_id,
         event=stored.event,
         club=stored.club,
@@ -652,10 +838,15 @@ def edit_match(
         locked = _lock_row(match)
         if locked.status == MatchStatus.VOIDED:
             raise MatchStateError
+        if player_path:
+            # A player corrects only a pending or disputed match: a
+            # confirmed one is disputed first.
+            if locked.status == MatchStatus.CONFIRMED:
+                raise MatchStateError
         # Only a moderator or the settling Organizer edits a disputed match.
         # A match no longer disputed under the lock refuses the settling
         # Organizer's reason: a reason is taken only to settle a dispute.
-        if not moderator and (locked.status == MatchStatus.DISPUTED) != settles:
+        elif not moderator and (locked.status == MatchStatus.DISPUTED) != settles:
             raise MatchStateError
         old_status = MatchStatus(locked.status)
         was_counting = locked.is_counted()
@@ -673,18 +864,29 @@ def edit_match(
             raise duplicate_error(existing, actor, reveal=moderator)
         new_status = (
             MatchStatus.PENDING
-            if old_status == MatchStatus.PENDING
+            if player_path or old_status == MatchStatus.PENDING
             else MatchStatus.CONFIRMED
         )
         corrected, _held = insert_draft(draft, status=new_status, corrects=locked)
+        if corrector is not None:
+            # The corrector's own confirmation, as a submission is the
+            # submitter's (#197). One team never confirms a self-reported
+            # match, so the correction waits for the other team.
+            _record_decision(corrected, corrector, ConfirmationDecision.CONFIRM)
+        after: dict[str, object] = {
+            **snapshot(locked, ["status"]),
+            "corrected_by": corrected.public_code,
+        }
+        if player_path:
+            # A player's correction of a disputed match is created pending,
+            # so the rating adapter must not read ``before`` alone as a
+            # correction created confirmed (ADR 0024).
+            after["correction_status"] = corrected.status
         record_event(
             action=AuditAction.MATCH_EDIT,
             target=locked,
             before=before,
-            after={
-                **snapshot(locked, ["status"]),
-                "corrected_by": corrected.public_code,
-            },
+            after=after,
             reason=reason,
             **audit_actor(actor),
         )
@@ -888,26 +1090,30 @@ def _match_events() -> QuerySet[AuditEvent]:
 
 
 def dispute_started_at(match: Match) -> datetime | None:
-    """When the match's open dispute began, or None.
+    """When the match's current disputed period began, or None.
 
-    The time of the match's latest ``match.dispute`` Audit Event, chosen
-    by row order, not time: every change into disputed writes exactly one,
+    The period's open disputes come from ``_dispute_period``. When the
+    first of them (by id) is the period's opening row, the start is the
+    time of the match's latest ``match.dispute`` Audit Event, chosen by
+    row order, not time: every change into disputed writes exactly one,
     and one match's status changes are serialized by its locks, so the
-    highest id is the latest. Times from different tables or hosts are
-    never compared, so a host with a clock behind another cannot hide a
-    dispute. A participant who joins a dispute writes no event, so the
-    period runs from the first open dispute. Withdrawal (#267) must change
-    this helper: with withdrawals, the first open dispute can be later
-    than the moment the match became disputed.
+    highest id is the latest. When the opener withdrew and a later dispute
+    is still open, the start is that row's time (the first open dispute
+    by id). With no event or no open dispute, None. With no opening row
+    (the event names no Account, or its Player has no dispute row: rows
+    written outside the services), the start is the event's time, the
+    later and safe start: a dispute row from an earlier settled period
+    never expires the match early. Times are never compared to choose a
+    row, so a host with a clock behind another cannot hide a dispute.
     """
-    started: datetime | None = (
-        _match_events()
-        .filter(action=AuditAction.MATCH_DISPUTE, target_object_id=str(match.pk))
-        .order_by("-pk")
-        .values_list("created_at", flat=True)
-        .first()
-    )
-    return started
+    period = _dispute_period(match)
+    if period.event is None or not period.open_disputes:
+        return None
+    started: datetime = period.event.created_at
+    first = period.open_disputes[0]
+    if period.opening_pk is None or first.pk == period.opening_pk:
+        return started
+    return first.created_at
 
 
 def expire_disputes_and_holds(now: datetime | None = None) -> int:
@@ -939,9 +1145,10 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     now = now or timezone.now()
     dispute_cutoff = now - timedelta(days=settings.MATCH_DISPUTE_EXPIRY_DAYS)
     hold_cutoff = now - timedelta(days=settings.MATCH_DUPLICATE_HOLD_DAYS)
-    # A cheap superset: any match.dispute event before the cutoff, which
-    # includes the latest one ``dispute_started_at`` reads. It is checked
-    # for each match under its locks.
+    # A cheap superset: any match.dispute event, or any dispute row, before
+    # the cutoff. ``dispute_started_at`` returns either the latest event's
+    # time or an open dispute row's time, so both are covered. It is
+    # checked for each match under its locks.
     disputed = list(
         Match.objects.filter(status=MatchStatus.DISPUTED)
         .filter(
@@ -949,6 +1156,13 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
                 _match_events().filter(
                     action=AuditAction.MATCH_DISPUTE,
                     target_object_id=Cast(OuterRef("pk"), output_field=CharField()),
+                    created_at__lt=dispute_cutoff,
+                )
+            )
+            | Exists(
+                MatchConfirmation.objects.filter(
+                    match=OuterRef("pk"),
+                    decision=ConfirmationDecision.DISPUTE,
                     created_at__lt=dispute_cutoff,
                 )
             )

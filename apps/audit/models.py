@@ -31,6 +31,7 @@ class AuditAction(models.TextChoices):
     MATCH_EDIT = "match.edit", "Manual match edit"
     MATCH_CONFIRM = "match.confirm", "Match confirmed"
     MATCH_DISPUTE = "match.dispute", "Match disputed"
+    MATCH_DISPUTE_WITHDRAW = "match.dispute_withdraw", "Match dispute withdrawn"
     MATCH_VOID = "match.void", "Match voided"
     MATCH_EXPIRE = "match.expire", "Match expired"
     DISPUTE_OUTCOME = "dispute.outcome", "Dispute outcome"

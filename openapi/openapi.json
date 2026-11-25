@@ -425,6 +425,82 @@
         "title": "LiveOut",
         "type": "object"
       },
+      "MatchCorrectionIn": {
+        "description": "A player's correction of a self-reported match (#267).\n\nThe same fields as a submission. The teams must be the match's own two\nteams, in either order. A missing game target or scoring type is the\ncorrected match's, and a missing best-of is inferred from the games.",
+        "properties": {
+          "best_of": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BestOf"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "format": {
+            "$ref": "#/components/schemas/MatchFormat"
+          },
+          "game_target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/GameScoreIn"
+            },
+            "maxItems": 20,
+            "title": "Games",
+            "type": "array"
+          },
+          "played_on": {
+            "format": "date",
+            "title": "Played On",
+            "type": "string"
+          },
+          "scoring_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScoringType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "team_a": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Team A",
+            "type": "array"
+          },
+          "team_b": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Team B",
+            "type": "array"
+          }
+        },
+        "required": [
+          "format",
+          "played_on",
+          "team_a",
+          "team_b",
+          "games"
+        ],
+        "title": "MatchCorrectionIn",
+        "type": "object"
+      },
       "MatchCreateIn": {
         "description": "A player's own match submission.\n\nThe field names are ``validate_match``'s argument names, so its issues\nname the request fields. A missing game target means 11, a missing\nscoring type means side-out, and a missing best-of is inferred from\nthe games. Each team takes at most ``MAX_TEAM_ENTRIES`` codes and the\ngames at most ``MAX_GAME_ENTRIES`` scores.",
         "properties": {
@@ -511,7 +587,7 @@
         "type": "string"
       },
       "MatchOut": {
-        "description": "A match, its teams, and its games, as the signed-in Account sees it.\n\n``my_team`` is the viewer's own team, null when the viewer's Player did\nnot play in the match. ``my_decision`` is the latest confirm or dispute\nthis player recorded on the match, ``none`` when they recorded none or\ndid not play. A repeated decision is not recorded again, so confirming\nagain after a dispute that a moderator or the Event's organizer resolved\nstill shows ``dispute``. An organizer's confirmation is not a player\ndecision: a player who confirms as a member of the match's Event\nOrganizer still shows ``none``. For a participant, ``confirmed_by_team``\nsays whether a player on each team recorded a confirmation (a dispute is\nnot a confirmation); it is null for anyone else. A confirmation still\nshows in ``confirmed_by_team`` after the same player disputes, since a\nrecorded decision is never withdrawn. It counts player confirmations\nonly: a match confirmed by an organizer or a moderator, or a correction,\ncan be confirmed with both false, so read ``status`` for whether the\nmatch is confirmed. ``created_at`` is when the match was submitted.",
+        "description": "A match, its teams, and its games, as the signed-in Account sees it.\n\n``my_team`` is the viewer's own team, null when the viewer's Player did\nnot play in the match. ``my_decision`` is the latest confirm, dispute,\nor withdraw this player recorded on the match, ``none`` when they\nrecorded none or did not play. A repeated decision is not recorded\nagain, so confirming again after a dispute that a moderator or the\nEvent's organizer resolved still shows ``dispute``. An organizer's confirmation is not a player\ndecision: a player who confirms as a member of the match's Event\nOrganizer still shows ``none``. For a participant, ``confirmed_by_team``\nsays whether a player on each team recorded a confirmation (a dispute is\nnot a confirmation); it is null for anyone else. A confirmation still\nshows in ``confirmed_by_team`` after the same player disputes, and\nafter they withdraw that dispute, since a recorded decision is never\nremoved: a player who confirmed, disputed, then withdrew shows\n``withdraw`` while their confirmation stays in ``confirmed_by_team``.\nIt counts player confirmations only: a match confirmed by an organizer\nor a moderator, or a correction, can be confirmed with both false, so\nread ``status`` for whether the match is confirmed. ``created_at`` is when the match was submitted.",
         "properties": {
           "best_of": {
             "$ref": "#/components/schemas/BestOf"
@@ -622,6 +698,7 @@
         "enum": [
           "confirm",
           "dispute",
+          "withdraw",
           "none"
         ],
         "title": "MyDecision",
@@ -2057,9 +2134,139 @@
         ]
       }
     },
+    "/api/v1/matches/{code}/correction": {
+      "post": {
+        "description": "Correct a pending or disputed match you played in with no Event.\n\nGive the corrected match as for a new one, with the same two teams in\neither order. The match is voided and the correction is created\npending, submitted by you and with your confirmation, and returned. It\ncounts once a player on the other team confirms it. A scoring type or game target left out\nis the corrected match's, and a missing best-of is inferred from the\ngames. Its location, labels, and order come from the corrected match. A\nconfirmed match gets 409: dispute it first. Anyone who did not play in\nthe match, a match with an Event or Club, and a correction with other\nteams get 404, as for an unknown code.",
+        "operationId": "correct_match",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "M-7K3M-QX9R-D2KR"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "M-7K3M-QX9R-D2KR"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchCorrectionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Correct Match",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
     "/api/v1/matches/{code}/dispute": {
       "post": {
-        "description": "Dispute a match you played in.\n\nA disputed match stops counting. For a match with an Event, the\nEvent's organizer then settles it.\n\nDisputing again changes nothing. A voided match cannot be disputed\n(409). Anyone who did not play in the match gets 404, as for an\nunknown code.",
+        "description": "Dispute a match you played in.\n\nA disputed match stops counting. For a match with an Event, the\nEvent's organizer then settles it. You can withdraw your dispute\n(``/withdraw-dispute``), and for a match with no Event you can\ncorrect it yourself (``/correction``).\n\nDisputing again changes nothing, also after you withdrew your dispute. A voided match cannot be disputed\n(409). Anyone who did not play in the match gets 404, as for an\nunknown code.",
         "operationId": "dispute_match",
         "parameters": [
           {
@@ -2432,6 +2639,126 @@
           }
         ],
         "summary": "Resolve Match Dispute",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
+    "/api/v1/matches/{code}/withdraw-dispute": {
+      "post": {
+        "description": "Withdraw your dispute of a match you played in.\n\nThe match stays disputed while another player's dispute is open. Once\nno dispute is open, it is confirmed again when it was confirmed before\nthe dispute, else pending, and a confirmed match counts again. Your\ndispute still counts as your one dispute, so disputing again changes\nnothing. Withdrawing again changes nothing unless the match was voided\nmeanwhile. A voided match, and a match you have no open dispute on,\nget 409. Anyone who did not play in the match gets 404, as\nfor an unknown code.",
+        "operationId": "withdraw_match_dispute",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "M-7K3M-QX9R-D2KR"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a match. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "M-7K3M-QX9R-D2KR"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Withdraw Match Dispute",
         "tags": [
           "matches"
         ]
