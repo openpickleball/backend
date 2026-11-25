@@ -155,3 +155,14 @@ def test_the_admin_form_shows_the_message(client: Client) -> None:
     assert response.status_code == 200
     assert response.context["adminform"].form.errors["organizer"] == [LOCKED]
     assert _stored_organizer_id(event) == event.organizer_id
+
+
+def test_an_id_that_does_not_convert_is_refused_without_echo() -> None:
+    event = _event_with_match()
+    event.organizer_id = "zqxjmarker"
+
+    with pytest.raises(ValidationError) as caught:
+        event.save()
+
+    assert caught.value.message_dict == {"organizer": ["Choose an existing organizer."]}
+    assert "zqxjmarker" not in str(caught.value)

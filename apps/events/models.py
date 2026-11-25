@@ -146,7 +146,7 @@ class Event(_CleanedTextModel):
                 .values(*_LOCKED_COLUMNS.values())
                 .first()
             )
-            errors = self._locked_field_errors(stored, update_fields)
+            errors = self._locked_field_errors(stored, update_fields, strict=True)
             if errors:
                 raise ValidationError(errors)
             super().save(*args, **kwargs)
@@ -172,27 +172,41 @@ class Event(_CleanedTextModel):
                 .values(*_LOCKED_COLUMNS.values())
                 .first()
             )
-            errors = self._locked_field_errors(stored, None)
+            errors = self._locked_field_errors(stored, None, strict=False)
             if errors:
                 raise ValidationError(errors)
 
     def _locked_field_errors(
-        self, stored: dict[str, Any] | None, update_fields: tuple[str, ...] | None
+        self,
+        stored: dict[str, Any] | None,
+        update_fields: tuple[str, ...] | None,
+        *,
+        strict: bool,
     ) -> dict[str, str]:
         """The fixed message for each locked field this save would change.
 
         A field changes when the save writes it (no ``update_fields``, or
-        ``update_fields`` naming it) and its value differs from ``stored``.
-        Locked fields change freely while no Match names the Event.
+        ``update_fields`` naming it) and its value, converted as Django
+        converts it on write (``"5"`` becomes ``5``), differs from
+        ``stored``. Locked fields change freely while no Match names the
+        Event. With ``strict`` (``save()``), a value that does not convert
+        raises ``ValidationError`` with the field's fixed ``invalid``
+        message; without it (``clean()``), such a value is skipped, since
+        field validation reports it.
         """
         if stored is None:
             return {}
         changed = []
         for name, column in _LOCKED_COLUMNS.items():
-            value = getattr(self, column)
-            if value is not None and not isinstance(value, int):
-                # Field validation reports an invalid link.
-                continue
+            field = self._meta.get_field(name)
+            assert isinstance(field, models.ForeignKey)
+            try:
+                value = field.to_python(getattr(self, column))
+            except ValidationError:
+                if not strict:
+                    continue
+                # Django's own message names the value (CLAUDE.md, API).
+                raise ValidationError({name: field.error_messages["invalid"]}) from None
             writes = (
                 update_fields is None
                 or name in update_fields

@@ -1007,18 +1007,18 @@ def hold_event(
     lookup, lock, or write. ``FOR KEY SHARE`` conflicts with the
     ``FOR UPDATE`` that ``Event.save()`` takes on every save, so the two
     serialize: either the Event change waits until this match commits (an
-    organizer change then sees the match and refuses), or this call waits
-    until the change commits and is judged against the stored Event.
-    ``recheck`` raises the caller's fixed-text refusal. Then the draft's
-    match type is set. For a new match it is read again from the Event's
-    kind as stored under the lock, so a kind change committed after
-    ``draft_match`` reaches this match (ADR 0035). For a correction
+    organizer or club change then sees the match and refuses), or this
+    call waits until the change commits and is judged against the stored
+    Event. ``recheck`` raises the caller's fixed-text refusal. Then the
+    draft's match type is set. For a new match it is read again from the
+    Event's kind as stored under the lock, so a kind change committed
+    after ``draft_match`` reaches this match (ADR 0035). For a correction
     (``keep_type_of``, the match it corrects) it is that match's stored
     type: a correction never changes a match's type (the maintainer's
     decision on #163). The correction has the old match's Event and Club,
-    so the copied type always fits them. The lock lasts until the outermost transaction ends;
-    nothing takes the Event row lock after a Match lock. With no Event, it
-    runs ``recheck`` alone.
+    so the copied type always fits them. The lock lasts until the
+    outermost transaction ends; nothing takes the Event row lock after a
+    Match lock. With no Event, it runs ``recheck`` alone.
     """
     match = draft.match
     event = match.event
