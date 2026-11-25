@@ -54,7 +54,7 @@ logged but row ids and error classes: the file holds names and IDs.
 
 import logging
 import unicodedata
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from datetime import timedelta
 from enum import StrEnum
 from functools import partial
@@ -311,32 +311,34 @@ def _recorded(row: CsvMatch, match: Match, warnings: list[ReportIssue]) -> RowRe
     )
 
 
-def _mark_held(report: list[RowResult]) -> list[RowResult]:
+def _mark_held(report: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Warn on every recorded row whose match is confirmed but held.
 
-    Read when the run finishes, from ``Match.objects.counted()``, so both
+    Takes and returns stored row results (``RowResult.as_json()``). Read
+    when processing ends, from ``Match.objects.counted()``, so both
     matches of a held pair are warned about and a match whose hold was
-    lifted (the other match voided, or the flag resolved) is not.
+    lifted (the other match voided, or the flag resolved) is not. Any
+    earlier ``possible_duplicate`` warning is replaced, so it applies once.
     """
+    code = FlagReason.POSSIBLE_DUPLICATE.value
     codes = [
-        result.match
-        for result in report
-        if result.result == ResultRow.RECORDED and result.match is not None
+        stored["match"]
+        for stored in report
+        if stored.get("result") == ResultRow.RECORDED and stored.get("match")
     ]
     held = set(
         Match.objects.filter(public_code__in=codes, status=MatchStatus.CONFIRMED)
         .exclude(pk__in=Match.objects.counted().values("pk"))
         .values_list("public_code", flat=True)
     )
-    warning = ReportIssue(
-        [], FlagReason.POSSIBLE_DUPLICATE.value, POSSIBLE_DUPLICATE_MESSAGE
-    )
-    return [
-        replace(result, warnings=[*result.warnings, warning])
-        if result.result == ResultRow.RECORDED and result.match in held
-        else result
-        for result in report
-    ]
+    warning = asdict(ReportIssue([], code, POSSIBLE_DUPLICATE_MESSAGE))
+    marked: list[dict[str, Any]] = []
+    for stored in report:
+        warnings = [w for w in stored.get("warnings", []) if w.get("code") != code]
+        if stored.get("result") == ResultRow.RECORDED and stored.get("match") in held:
+            warnings.append(warning)
+        marked.append({**stored, "warnings": warnings})
+    return marked
 
 
 def _name_warnings(row: CsvMatch, display_names: dict[str, str]) -> list[ReportIssue]:
@@ -441,7 +443,8 @@ def _finish(
 
     Sets the status (failed when ``error_code`` is set, else done), empties
     the file, and stores ``report``, or keeps the row results already
-    stored when ``report`` is None.
+    stored when ``report`` is None. Either way the held-match warning is
+    applied to the stored rows (``_mark_held``).
     """
     with transaction.atomic():
         results_file = (
@@ -452,17 +455,18 @@ def _finish(
         )
         if results_file is None or results_file.status != ResultsFileStatus.PENDING:
             return
-        fields = ["status", "error_code", "content", "processed_at"]
         if report is not None:
             results_file.report = [result.as_json() for result in report]
-            fields.append("report")
+        results_file.report = _mark_held(results_file.report)
         results_file.status = (
             ResultsFileStatus.FAILED if error_code else ResultsFileStatus.DONE
         )
         results_file.error_code = error_code
         results_file.content = b""
         results_file.processed_at = timezone.now()
-        results_file.save(update_fields=fields)
+        results_file.save(
+            update_fields=["report", "status", "error_code", "content", "processed_at"]
+        )
 
 
 def fail_for_void(batch_id: int) -> None:
@@ -643,7 +647,7 @@ def process_results_file(results_file_id: int) -> None:
         if result is None:
             return
         report.append(result)
-    _finish(results_file_id, report=_mark_held(report))
+    _finish(results_file_id, report=report)
 
 
 def sweep_results_files() -> int:
