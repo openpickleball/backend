@@ -262,6 +262,8 @@ class OrganizerMember(AuditedAccessModel):
     AUDIT_CHANGE = AuditAction.ORGANIZER_MEMBER_CHANGE
     AUDIT_REMOVE = AuditAction.ORGANIZER_MEMBER_REMOVE
     AUDIT_RELATED = ("organizer",)
+    # save() locks the Organizer first, and so does the Organizer's delete.
+    AUDIT_LOCK_FIRST = ("organizer",)
 
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [

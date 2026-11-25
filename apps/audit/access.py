@@ -45,6 +45,9 @@ class AuditedAccessModel(models.Model):
     AUDIT_REMOVE: ClassVar[AuditAction]
     # Passed to select_related when the stored row is read.
     AUDIT_RELATED: ClassVar[tuple[str, ...]] = ()
+    # Foreign keys whose rows a save locks before the row itself, in the
+    # order the model's own save and the parent's delete lock them.
+    AUDIT_LOCK_FIRST: ClassVar[tuple[str, ...]] = ()
 
     class Meta:
         abstract = True
@@ -59,6 +62,16 @@ class AuditedAccessModel(models.Model):
 def save_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
     """Save ``row`` and record its add or change with ``actor``."""
     with transaction.atomic():
+        for name in row.AUDIT_LOCK_FIRST:
+            field = row._meta.get_field(name)
+            assert isinstance(field, models.ForeignKey)
+            parent_pk = getattr(row, field.attname)
+            if parent_pk is not None:
+                list(
+                    field.related_model._base_manager.select_for_update()
+                    .filter(pk=parent_pk)
+                    .values_list("pk", flat=True)
+                )
         stored = _stored(row, lock=True)
         before = None if stored is None else stored.audit_values()
         row.save()
@@ -96,8 +109,9 @@ def record_cascaded_removals(
     rows. A delete Django would refuse (a protected or restricted link)
     records nothing here; the delete itself then raises.
 
-    When the delete removes ``actor``'s own Account, the events have no
-    actor: an event naming a deleted Account fails the delete at commit.
+    When the delete removes ``actor``'s own Account, every event it
+    records has no actor, the other selected Accounts' rows included: an
+    event naming a deleted Account fails the delete at commit.
     """
     rows = list(objs)
     if not rows:
@@ -112,9 +126,22 @@ def record_cascaded_removals(
         .order_by("pk")
         .values_list("pk", flat=True)
     )
-    collector = Collector(using=using, origin=rows[0])
     try:
-        collector.collect(rows)
+        collector = _collect(rows, using)
+        # Lock every row the delete cascades through, then collect again:
+        # a row added under one of them before the lock is found now, and
+        # one added after it waits until the delete commits.
+        for deleted_model, deleted in sorted(
+            collector.data.items(), key=lambda item: item[0]._meta.label
+        ):
+            list(
+                deleted_model._base_manager.using(using)
+                .select_for_update()
+                .filter(pk__in=[i.pk for i in deleted])
+                .order_by("pk")
+                .values_list("pk", flat=True)
+            )
+        collector = _collect(rows, using)
     except (ProtectedError, RestrictedError):
         return
     actor = _actor_unless_deleted(actor, collector)
@@ -125,6 +152,12 @@ def record_cascaded_removals(
             stored = _stored_by_pk(collected_model, pk, lock=True)
             if stored is not None:
                 _record_removal(stored, actor)
+
+
+def _collect(rows: list[models.Model], using: str) -> Collector:
+    collector = Collector(using=using, origin=rows[0])
+    collector.collect(rows)
+    return collector
 
 
 def _access_rows(
