@@ -83,7 +83,7 @@ def test_an_unknown_reason_message_does_not_echo_it() -> None:
     assert "MARKER" not in str(caught.value)
 
 
-def test_str_names_only_the_organizer_code() -> None:
+def test_str_names_no_organizer_or_reporter() -> None:
     organizer = OrganizerFactory.create(name="Made-up Person Name")
     account = UserFactory.create()
     report = OrganizerReport.objects.create(
@@ -92,7 +92,7 @@ def test_str_names_only_the_organizer_code() -> None:
 
     text = str(report)
 
-    assert organizer.public_code in text
+    assert organizer.public_code not in text
     assert "Made-up Person Name" not in text
     assert account.email not in text
 
