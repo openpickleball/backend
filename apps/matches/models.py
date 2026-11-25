@@ -993,6 +993,13 @@ class FlagReason(models.TextChoices):
     POSSIBLE_DUPLICATE = "possible_duplicate", "Possible duplicate"
 
 
+# Flag reasons that are signals only: a moderator sees them, but they never
+# hold a Match from counting, so they stay out of ``counted()`` (ADR 0029).
+# Empty until #206 and #207 add their reasons. The Organizer admin's
+# moderator review counts flags with these reasons (#271).
+SIGNAL_FLAG_REASONS: frozenset[str] = frozenset()
+
+
 class FlagResolution(models.TextChoices):
     """How a flag was closed (#40): by a moderator, or by vouches (#270).
 

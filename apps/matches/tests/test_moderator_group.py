@@ -45,6 +45,7 @@ EXPECTED = {
     "matches.view_matchflag",
     "clubs.verify_organizer",
     "clubs.view_organizer",
+    "clubs.view_organizerreport",
 }
 
 

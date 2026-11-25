@@ -53,6 +53,8 @@ class AuditAction(models.TextChoices):
     PLAYER_PROFILE_CHANGE = "player.profile_change", "Player profile change"
     ORGANIZER_VERIFY = "organizer.verify", "Organizer verification"
     ORGANIZER_UNVERIFY = "organizer.unverify", "Organizer verification removed"
+    ORGANIZER_REPORT_CREATE = "organizer_report.create", "Organizer reported"
+    ORGANIZER_REPORT_CLOSE = "organizer_report.close", "Organizer report closed"
     ORGANIZER_MEMBER_ADD = "organizer_member.add", "Organizer member added"
     ORGANIZER_MEMBER_CHANGE = "organizer_member.change", "Organizer member changed"
     ORGANIZER_MEMBER_REMOVE = "organizer_member.remove", "Organizer member removed"

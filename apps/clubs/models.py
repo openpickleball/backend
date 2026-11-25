@@ -443,3 +443,83 @@ class ClubOrganizerGrant(AuditedAccessModel):
             "club": self.club.public_code,
             "organizer": self.organizer.public_code,
         }
+
+
+class OrganizerReportReason(models.TextChoices):
+    """Why an Account reports an Organizer to OPEN Moderators (#271).
+
+    No free text: a report holds one of these and nothing the reporter
+    wrote.
+    """
+
+    WRONG_RESULTS = "wrong_results", "Posts wrong results"
+    FAKE_MATCHES = "fake_matches", "Records matches that were not played"
+    IGNORES_DISPUTES = "ignores_disputes", "Ignores disputes"
+    MISUSES_PLAYER_DATA = "misuses_player_data", "Misuses player data"
+    OTHER = "other", "Other"
+
+
+_REPORT_ORGANIZER_MESSAGES = {"invalid": "Choose an existing organizer."}
+_REPORT_ACCOUNT_MESSAGES = {"invalid": "Choose an existing account."}
+
+
+class OrganizerReport(_LinkMessagesModel):
+    """An Account's report of a verified Organizer to OPEN Moderators (#271).
+
+    Create and close it only through ``apps.clubs.reports``, which checks
+    the actor and records an Audit Event. A report is open while
+    ``closed_at`` is empty; an Account has at most one open report per
+    Organizer (a partial unique constraint). A report changes nothing
+    else: no Match, flag, rating, or Organizer field.
+
+    The reporter is held here and in the Audit Event's actor only. No API
+    response, email, or Organizer member sees it; the admin shows it to
+    moderators as the reporter's Player's OPEN Code.
+    """
+
+    organizer = models.ForeignKey(
+        Organizer,
+        on_delete=models.PROTECT,
+        related_name="reports",
+        error_messages=_REPORT_ORGANIZER_MESSAGES,
+    )
+    # CASCADE: the row follows the Account's retention (ADR 0009). The
+    # Audit Event's actor (PROTECT) keeps the Account row while it exists.
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="+",
+        error_messages=_REPORT_ACCOUNT_MESSAGES,
+    )
+    reason = models.CharField(
+        max_length=32,
+        choices=OrganizerReportReason,
+        error_messages=_CHOICE_MESSAGES,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        default_permissions = ("view",)
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["organizer", "reporter"],
+                condition=Q(closed_at__isnull=True),
+                name="clubs_one_open_report_per_account",
+                violation_error_message=(
+                    "This account already has an open report on this organizer."
+                ),
+            ),
+            models.CheckConstraint(
+                condition=Q(reason__in=OrganizerReportReason.values),
+                name="clubs_organizerreport_reason_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # The Organizer's OPEN Code only: never a name or an email.
+        return f"Report on {self.organizer.public_code}"
+
+    @property
+    def is_open(self) -> bool:
+        return self.closed_at is None
