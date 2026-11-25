@@ -63,6 +63,7 @@ from django.db.models import (
     Value,
 )
 from django.db.models.functions import Cast
+from django.utils import timezone
 
 from apps.clubs.models import _CleanedTextModel, _LinkMessagesModel
 from apps.events.models import CHOICE_MESSAGES
@@ -1159,6 +1160,9 @@ class ResultsFile(_LinkMessagesModel, _CleanedTextModel):
     content = models.BinaryField(blank=True, default=b"", editable=False)
     report = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # When processing was last queued: the sweep queues a file again only
+    # when this is old enough (``apps.matches.results_files``).
+    queued_at = models.DateTimeField(default=timezone.now, editable=False)
     processed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

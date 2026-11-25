@@ -660,6 +660,13 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
         "options": {"expire_seconds": 900},
     },
+    # Fails CSV results files pending for three days and queues lost ones
+    # again (#71). A run missed for 15 minutes is dropped.
+    "sweep-results-files": {
+        "task": "apps.matches.tasks.sweep_results_files",
+        "schedule": crontab(minute="*/15"),
+        "options": {"expire_seconds": 900},
+    },
     # Runs pending rating replay requests whose queued task was lost (#47).
     # Does nothing when no request is pending. A run missed for 15 minutes
     # is dropped.

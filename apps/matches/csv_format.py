@@ -121,6 +121,9 @@ _FIELD_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
 }
 
 
+UNKNOWN_PLAYER_MESSAGE: Final = "No player has this OPEN player ID."
+
+
 class CsvFileError(Exception):
     """The file as a whole cannot be read. ``message`` is fixed text.
 
@@ -323,9 +326,7 @@ def _parse_team(
         code = normalize(raw, CodeType.PLAYER)
         if code is None:
             row.issues.append(
-                CsvIssue(
-                    (column,), "unknown_player", "No player has this OPEN player ID."
-                )
+                CsvIssue((column,), "unknown_player", UNKNOWN_PLAYER_MESSAGE)
             )
             references.append(f"invalid:{column}")
             continue
@@ -400,6 +401,26 @@ def _match_issue_columns(
     if issue.field.startswith("games."):
         return _game_labels(int(issue.field.removeprefix("games.")) + 1)
     return _FIELD_COLUMNS.get(issue.field, ())
+
+
+def match_issue_columns(issue: MatchIssue, row: CsvMatch) -> tuple[str, ...]:
+    """The columns a ``record_match()`` issue on a parsed row concerns.
+
+    The same mapping the parser uses for ``validate_match``'s issues: a
+    team's issue names the team's ID columns, a game's issue that game's
+    two columns, and an issue on a field the file has no column for
+    (such as the upload's location) names none.
+    """
+    team_columns = {
+        "team_a": [player.column for player in row.team_a],
+        "team_b": [player.column for player in row.team_b],
+    }
+    return _match_issue_columns(issue, team_columns)
+
+
+def name_column(player: CsvPlayer) -> str:
+    """The name column of a player's slot, such as ``playerB1``."""
+    return player.column.removesuffix("Id")
 
 
 def _parse_row(
