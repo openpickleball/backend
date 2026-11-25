@@ -3210,7 +3210,7 @@
     },
     "/api/v1/me/matches/organizer-disputes": {
       "get": {
-        "description": "The disputed matches of your organizers' Events, newest first.\n\nLists every disputed match of an Event run by a verified organizer\nyou are a member of. Anyone else gets an empty page. A match leaves\nthe list once its dispute is settled or ends.",
+        "description": "The disputed matches of your organizers' Events you can settle,\nnewest first.\n\nLists every disputed match of an Event run by a verified organizer\nyou are a member of, except a match your player plays in, or plays in\nan earlier or later version of (a corrected match): you cannot settle\nthose. Anyone else gets an empty page. A match leaves the list once\nits dispute is settled or ends.",
         "operationId": "list_organizer_disputes",
         "parameters": [
           {

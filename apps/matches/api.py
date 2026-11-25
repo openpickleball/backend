@@ -647,19 +647,19 @@ def list_my_holds(request: HttpRequest) -> QuerySet[Match]:
 )
 @paginate(MatchHistoryPagination)
 def list_organizer_disputes(request: HttpRequest) -> QuerySet[Match]:
-    """The disputed matches of your organizers' Events, newest first.
+    """The disputed matches of your organizers' Events you can settle,
+    newest first.
 
     Lists every disputed match of an Event run by a verified organizer
-    you are a member of. Anyone else gets an empty page. A match leaves
-    the list once its dispute is settled or ends.
+    you are a member of, except a match your player plays in, or plays in
+    an earlier or later version of (a corrected match): you cannot settle
+    those. Anyone else gets an empty page. A match leaves the list once
+    its dispute is settled or ends.
     """
     viewer = request_account(request)
-    disputed = Match.objects.filter(
-        status=MatchStatus.DISPUTED,
-        event__organizer__verified_at__isnull=False,
-        event__organizer__members__account=viewer,
-    ).distinct()
-    return with_match_details(disputed).order_by("-played_on", "-created_at", "-pk")
+    return with_match_details(workflow.organizer_disputes(viewer)).order_by(
+        "-played_on", "-created_at", "-pk"
+    )
 
 
 @me_router.get(
