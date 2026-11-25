@@ -81,7 +81,8 @@ from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models, transaction
-from django.db.models import Exists, OuterRef, Q, QuerySet, Subquery
+from django.db.models import CharField, Exists, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Cast
 from django.utils import timezone
 from oauth2_provider.models import get_application_model
 
@@ -810,33 +811,32 @@ def _expire_one(pk: int, cutoff: datetime) -> bool:
         return True
 
 
-def dispute_started_at(match: Match) -> datetime | None:
-    """When the match's first open dispute was made, or None.
+def _match_events() -> QuerySet[AuditEvent]:
+    return AuditEvent.objects.filter(
+        target_content_type__app_label=Match._meta.app_label,
+        target_content_type__model=Match._meta.model_name,
+    )
 
-    A dispute is open when no dispute resolution (a ``dispute.outcome``
-    Audit Event) for the match comes after it: a resolution settles every
-    dispute made before it, and a participant who disputes later starts a
-    new period. Withdrawal (#267) must also leave out withdrawn disputes
-    here, since the dispute expiry rule reads only this.
+
+def dispute_started_at(match: Match) -> datetime | None:
+    """When the match's open dispute began, or None.
+
+    The time of the match's latest ``match.dispute`` Audit Event, chosen
+    by row order, not time: every change into disputed writes exactly one,
+    and one match's status changes are serialized by its locks, so the
+    highest id is the latest. Times from different tables or hosts are
+    never compared, so a host with a clock behind another cannot hide a
+    dispute. A participant who joins a dispute writes no event, so the
+    period runs from the first open dispute. Withdrawal (#267) must change
+    this helper: with withdrawals, the first open dispute can be later
+    than the moment the match became disputed.
     """
-    resolved = (
-        AuditEvent.objects.filter(
-            target_content_type__app_label=Match._meta.app_label,
-            target_content_type__model=Match._meta.model_name,
-            target_object_id=str(match.pk),
-            action=AuditAction.DISPUTE_OUTCOME,
-        )
-        .order_by("-created_at")
+    started: datetime | None = (
+        _match_events()
+        .filter(action=AuditAction.MATCH_DISPUTE, target_object_id=str(match.pk))
+        .order_by("-pk")
         .values_list("created_at", flat=True)
         .first()
-    )
-    disputes = MatchConfirmation.objects.filter(
-        match_id=match.pk, decision=ConfirmationDecision.DISPUTE
-    )
-    if resolved is not None:
-        disputes = disputes.filter(created_at__gt=resolved)
-    started: datetime | None = (
-        disputes.order_by("created_at").values_list("created_at", flat=True).first()
     )
     return started
 
@@ -865,15 +865,16 @@ def expire_disputes_and_holds(now: datetime | None = None) -> int:
     now = now or timezone.now()
     dispute_cutoff = now - timedelta(days=settings.MATCH_DISPUTE_EXPIRY_DAYS)
     hold_cutoff = now - timedelta(days=settings.MATCH_DUPLICATE_HOLD_DAYS)
-    # A cheap superset: any dispute made before the cutoff. The open
-    # dispute's start is checked for each match under its locks.
+    # A cheap superset: any match.dispute event before the cutoff, which
+    # includes the latest one ``dispute_started_at`` reads. It is checked
+    # for each match under its locks.
     disputed = list(
         Match.objects.filter(status=MatchStatus.DISPUTED)
         .filter(
             Exists(
-                MatchConfirmation.objects.filter(
-                    match=OuterRef("pk"),
-                    decision=ConfirmationDecision.DISPUTE,
+                _match_events().filter(
+                    action=AuditAction.MATCH_DISPUTE,
+                    target_object_id=Cast(OuterRef("pk"), output_field=CharField()),
                     created_at__lt=dispute_cutoff,
                 )
             )
