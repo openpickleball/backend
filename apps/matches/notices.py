@@ -20,9 +20,12 @@ their own:
   match's Organizer members, a self-reported match's players, nobody for
   a club-only match). A voided match, or one no open flag of this
   submission still holds, gets nothing. An earlier match that an older
-  open flag (written before this submission's flags, by id, its other
-  match not voided) already held gets nothing either: its recipients were
-  told when that hold began. The new match is always notified.
+  open flag it has not been vouched for on yet (older means a lower flag
+  id than this submission's flags; its other match not voided) already
+  held gets nothing either: its recipients were told when that hold
+  began. One it was already vouched for on needs a new vouch for this
+  submission's flag, so its recipients are told. The new match is always
+  notified.
 
 A failure while building or queuing notices is logged with the match's
 row id and the error class only, and never fails the change, which has
@@ -240,19 +243,24 @@ def _send_hold_notices(new_match_pk: int) -> int:
 
 def _send_hold_target(target_pk: int, new_match_pk: int, flag_pks: list[int]) -> int:
     """The hold notices for one match a flag of this submission holds."""
-    from apps.matches.workflow import _open_holds_of
+    from apps.matches.workflow import _flag_vouched, _open_holds_of
 
     match = Match.objects.filter(pk=target_pk).first()
     if match is None or match.status == MatchStatus.VOIDED:
         return 0
     holds = _open_holds_of(match)
-    if target_pk != new_match_pk and holds.filter(pk__lt=min(flag_pks)).exists():
-        # An older open flag already held this earlier match, and its
-        # recipients were told when that hold began. Telling them again
-        # for every new near duplicate would grow with the square of
-        # the submissions. Only flags older than this submission's count
-        # (flag ids are insertion order): a newer flag's callback skips
-        # this match because of ours, so ours must still tell them.
+    if target_pk != new_match_pk and any(
+        not _flag_vouched(flag, match.pk) for flag in holds.filter(pk__lt=min(flag_pks))
+    ):
+        # An older open flag it has not been vouched for on yet already
+        # held this earlier match, and its recipients were told when that
+        # hold began. Telling them again for every new near duplicate
+        # would grow with the square of the submissions. Only flags older
+        # than this submission's count (flag ids are insertion order): a
+        # newer flag's callback skips this match because of ours, so ours
+        # must still tell them. A flag it was vouched for on stays open
+        # only for its other match, and our flag needs a new vouch, so
+        # its recipients are told.
         return 0
     holding = list(holds.filter(pk__in=flag_pks).values_list("created_at", flat=True))
     if not holding:
