@@ -38,8 +38,11 @@ correction).
 A moderator's bulk void of the batch (``void_submission_batch``) first
 fails a pending file as ``voided`` (``fail_for_void``) under the same
 file lock, keeping the row results stored so far, and only then voids
-the matches. A run in flight either committed a row before that (the
-void sees its match) or sees the file failed at its next row and stops.
+the matches. A void of every match of the uploader
+(``void_submitter_matches``) does the same for each of the uploader's
+pending files first (``fail_for_submitter_void``). A run in flight either
+committed a row before that (the void sees its match) or sees the file
+failed at its next row and stops.
 
 Processing is safe to run twice, even at once: runs take the file lock
 row by row, and the final report is stored only while the file is still
@@ -475,6 +478,29 @@ def fail_for_void(batch_id: int) -> None:
         .first()
     )
     if results_file_id is not None:
+        _finish(results_file_id, report=None, error_code=VOIDED)
+
+
+def fail_for_submitter_void(
+    *, user_id: int | None = None, application_id: int | None = None
+) -> None:
+    """Fail every pending Results File of a submitter as ``voided``.
+
+    ``apps.matches.workflow.void_submitter_matches`` calls it before it
+    reads or voids any match. Each file is failed in its own short
+    transaction, under its row lock (``_finish``), keeping its stored row
+    results, so no run of it records a row afterward.
+    """
+    files = ResultsFile.objects.filter(status=ResultsFileStatus.PENDING)
+    if user_id is not None:
+        files = files.filter(submission_batch__submitted_by_user_id=user_id)
+    elif application_id is not None:
+        files = files.filter(
+            submission_batch__submitted_by_application_id=application_id
+        )
+    else:
+        return
+    for results_file_id in files.values_list("pk", flat=True):
         _finish(results_file_id, report=None, error_code=VOIDED)
 
 

@@ -1295,7 +1295,14 @@ def void_submitter_matches(
     the same order; a submitter that is unsaved, built in memory, or has
     no stored row, or one that is neither an Account nor a Partner
     Application, raises ``ValueError`` before any match is read or voided.
+    Next, each pending Results File of the submitter (a CSV upload, #71)
+    fails as ``voided`` in its own transaction, keeping its row results
+    (``apps.matches.results_files.fail_for_submitter_void``), so no run of
+    it records a row afterward.
     """
+    # Imported here: results_files imports the services this module uses.
+    from apps.matches.results_files import fail_for_submitter_void
+
     _check_bulk(actor, reason)
     account_model = get_user_model()
     application_model = get_application_model()
@@ -1307,6 +1314,10 @@ def void_submitter_matches(
         stored = False
     if not stored:
         raise ValueError(_UNKNOWN_SUBMITTER)
+    if isinstance(submitter, account_model):
+        fail_for_submitter_void(user_id=submitter.pk)
+    else:
+        fail_for_submitter_void(application_id=submitter.pk)
     return _bulk_void(
         submitter_matches(submitter, recorded_since),
         actor=actor,
