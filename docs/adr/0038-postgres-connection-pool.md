@@ -16,7 +16,7 @@ The backend already fits transaction mode in most ways. Its advisory locks are t
 - `DATABASE_URL` may point at a pool in transaction mode. When it does, `DIRECT_DATABASE_URL` names the database itself. Setting `DIRECT_DATABASE_URL` (non-blank) turns on pooled mode. Empty, settings are as before, with one `default` database.
 - In pooled mode, `default` (the pool) has `CONN_MAX_AGE` 0 and `DISABLE_SERVER_SIDE_CURSORS`, whatever the URL's query says, and settings refuse a `DATABASE_URL` whose query sets `prepare_threshold`, `assume_role`, or `pool`. The error names the variable and the option, never the value.
 - Pooled mode adds a `direct` database alias from `DIRECT_DATABASE_URL`, checked like `DATABASE_URL`, with `CONN_MAX_AGE` 0. Tests mirror it to `default`, so the test run has one test database.
-- OPEN's `migrate` command (`apps/database`) defaults `--database` to `direct` when that alias exists. An explicit `--database` wins. Every data migration queries through `schema_editor.connection.alias`, so it runs on migrate's connection and in the migration's transaction.
+- OPEN's `migrate` command (`apps/database`), in pooled mode and with no `--database` given, points the `default` connection at the direct database for its own process, before its system checks, then migrates `default`. The default alias keeps its own `TEST` settings. So every migration, data migration, and `post_migrate` handler that uses the default alias runs on the direct connection, with no edits to any migration. An explicit `--database` is honored as given and rebinds nothing: the test runner always passes one, and `--database default` by hand goes through the pool.
 - Requests, tasks, and beat use `default`, the pool. Nothing in the app keeps session state on a connection.
 - `compose.yaml` has an optional `pgbouncer` profile: PgBouncer in transaction mode, prepared statements off, a small pool, on 127.0.0.1:6432, so session state bugs show locally.
 
@@ -24,7 +24,8 @@ The backend already fits transaction mode in most ways. Its advisory locks are t
 
 - The pooled-mode protections (`CONN_MAX_AGE` 0, no server-side cursors, refused URL options) apply only when `DIRECT_DATABASE_URL` is set. A pool URL in `DATABASE_URL` without it runs unprotected.
 - New code must never rely on session state: only transaction level advisory locks, and no `SET` or `SET SESSION`, `LISTEN`, temporary tables, `WITH HOLD` cursors, or prepared statements. `SET LOCAL` inside a transaction is fine.
-- A data migration that queries through a plain manager, or calls Django's `create_permissions` without `using`, goes through the pool instead of migrate's connection. A test calls each first-party data migration with a missing alias to catch this.
+- The rebind lasts only for the migrate process, and only `migrate` does it. Other commands that write, such as `seed_dev_data`, go through the pool. An integration test migrates a new database with `DATABASE_URL` unreachable, so a migration that reaches the pool fails it.
+- A data migration should still use `schema_editor.connection.alias`, as Django advises, but nothing depends on it.
 - Each request and task opens a new connection to the pool. That is cheap with PgBouncer, which keeps its server connections open.
 - A lock wait holds a pool server connection for the whole wait. The pool must be sized for the busiest moment, waits included, or clients queue in PgBouncer.
 - Direct connections for migrations count against the cluster's own limit, outside the pool.
@@ -32,7 +33,8 @@ The backend already fits transaction mode in most ways. Its advisory locks are t
 
 ## Alternatives considered
 
-- Passing `--database direct` by hand: easy to forget in a deploy step, and a forgotten flag silently runs migrations through the pool.
+- Editing the data migrations to use `schema_editor.connection.alias`, with `migrate` defaulting to the `direct` alias: rejected, because merged migrations are never edited, and every new data migration and third-party `post_migrate` handler would have to follow the rule too.
+- Passing `--database direct` by hand: easy to forget in a deploy step, and a forgotten flag silently runs migrations through the pool. Data migrations that use the default alias would still go through the pool even with the flag.
 - A database router that sends migrations to `direct`: routers decide where a model migrates, not which connection runs `migrate`, so `migrate` would still record its history on `default`, and every app would need routing rules.
 - Setting `DATABASE_URL` to the direct URL only in the migrate job: works, but needs a second environment for one job, and any other command run in the app's environment would still use the pool.
 - Session mode pooling: keeps session state, but gives one server connection per client, so it does not raise the connection limit.

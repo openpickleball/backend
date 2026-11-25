@@ -111,7 +111,7 @@ Here `prod.env` is a file of settings you keep outside the repository. Run one b
 Production can reach Postgres through a PgBouncer connection pool in transaction mode, such as a DigitalOcean connection pool (ADR 0038). Then `DATABASE_URL` is the pool's connection string and `DIRECT_DATABASE_URL` is the database's own. A DigitalOcean pool's connection string names the pool as its database, not the database itself, so the two URLs differ in more than the port. With `DIRECT_DATABASE_URL` set:
 
 - Requests, Celery tasks, and beat use the pool. A request or task closes its connection when it ends. Beat keeps one connection open, which PgBouncer serves like any other client.
-- `manage.py migrate` runs on the direct connection unless you pass `--database`. The image's `python manage.py migrate` does this too.
+- `manage.py migrate` with no `--database` points the default connection at the direct database for its own process, so every migration, data migrations included, runs on the direct connection. The image's `python manage.py migrate` does this too. An explicit `--database` is honored as given: `--database default` goes through the pool.
 - Settings refuse `prepare_threshold`, `assume_role`, and `pool` in the `DATABASE_URL` query, because a pool in transaction mode cannot serve them.
 
 Leave `DIRECT_DATABASE_URL` empty when `DATABASE_URL` is the database itself, as in local development and CI. These protections (closed connections, no server-side cursors, refused URL options) apply only when `DIRECT_DATABASE_URL` is set, so a pool URL in `DATABASE_URL` without it runs unprotected.
