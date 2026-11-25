@@ -154,6 +154,10 @@ def _client_ip_header(name: str, default: str) -> str:
     return value
 
 
+# Seconds a database connect may take (psycopg's connect_timeout).
+_DATABASE_CONNECT_TIMEOUT = 5
+
+
 def _database(url: str, name: str = "DATABASE_URL") -> dict[str, object]:
     """Parse a database URL variable, failing fast without echoing the value.
 
@@ -177,6 +181,13 @@ def _database(url: str, name: str = "DATABASE_URL") -> dict[str, object]:
             f"{name} is not a database URL. Use the form "
             "postgres://USER:PASSWORD@HOST:PORT/NAME (see .env.example)."
         )
+    # Give up on a connect after 5 seconds, like the cache. Without it, a
+    # Postgres that drops packets holds a request (a readiness probe
+    # included) until the operating system's TCP timeout, and gunicorn
+    # kills the worker first. A connect_timeout in the URL's query wins.
+    options = config.setdefault("OPTIONS", {})
+    if isinstance(options, dict):
+        options.setdefault("connect_timeout", _DATABASE_CONNECT_TIMEOUT)
     return config
 
 
