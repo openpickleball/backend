@@ -14,6 +14,7 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 
 from apps.accounts.tests.factories import UserFactory
+from apps.clubs.tests.factories import verified_organizer
 from apps.emails.services import queue_email
 from apps.emails.tests.hygiene import assert_clean_message, assert_clean_template
 from apps.events.models import Event
@@ -118,7 +119,9 @@ def test_dispute_notice_for_a_player() -> None:
 
 def test_dispute_notice_for_an_event_match_says_the_organizer_settles() -> None:
     players = _players()
-    event_match = _match(players, [(11, 7)], event=EventFactory.create())
+    event_match = _match(
+        players, [(11, 7)], event=EventFactory.create(organizer=verified_organizer())
+    )
 
     message = render_dispute_notice(
         players[0].account, event_match, team=Team.A, ends_on=ENDS_ON

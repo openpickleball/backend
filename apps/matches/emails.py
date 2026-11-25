@@ -124,7 +124,15 @@ def _notice(
         "url": match_url(match),
         "ends_on": ends_on,
         "as_organizer": team is None,
-        "event_match": match.event_id is not None,
+        # Read from the stored match, so the email offers only what
+        # someone can do: the Event's verified Organizer settles a
+        # dispute, and the players correct a self-reported match.
+        "organizer_level": Match.objects.filter(
+            pk=match.pk, event__organizer__verified_at__isnull=False
+        ).exists(),
+        "self_reported": Match.objects.filter(
+            pk=match.pk, event__isnull=True, club__isnull=True
+        ).exists(),
     }
     return render_email(prefix, account.email, context)
 
