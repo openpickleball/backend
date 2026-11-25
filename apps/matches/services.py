@@ -83,6 +83,7 @@ from oauth2_provider.models import get_application_model
 
 from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
+from apps.events.models import Event
 from apps.matches.models import (
     MAX_GAMES,
     MAX_UTC_OFFSET_MINUTES,
@@ -109,7 +110,6 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
     from apps.clubs.models import Club
-    from apps.events.models import Event
     from apps.partners.models import PartnerApplication
 
 PLAYERS_PER_TEAM: dict[MatchFormat, int] = {
@@ -996,6 +996,26 @@ def stored_lineup_lock_key(match: Match) -> int:
     return _lineup_lock_key(teams[Team.A], teams[Team.B], played_on.get())
 
 
+def share_lock_event(event_id: int) -> None:
+    """Take the Event row ``FOR KEY SHARE`` until the transaction ends.
+
+    It conflicts with the ``FOR UPDATE`` that ``Event.save()`` and the
+    Event API take, so an organizer or club change, or a delete, waits
+    for this transaction to commit (ADR 0035). Django has no share mode,
+    so this is raw SQL. Call it inside a transaction, before any Match
+    lock: nothing takes the Event row lock after a Match lock.
+    """
+    pk_column = Event._meta.pk.column
+    assert pk_column is not None
+    quote = connection.ops.quote_name
+    table, column = quote(Event._meta.db_table), quote(pk_column)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT 1 FROM {table} WHERE {column} = %s FOR KEY SHARE",
+            [event_id],
+        )
+
+
 def hold_event(
     draft: MatchDraft,
     recheck: Callable[[], None],
@@ -1024,15 +1044,7 @@ def hold_event(
     match = draft.match
     event = match.event
     if event is not None and event.pk is not None:
-        pk_column = event._meta.pk.column
-        assert pk_column is not None
-        quote = connection.ops.quote_name
-        table, column = quote(event._meta.db_table), quote(pk_column)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                f"SELECT 1 FROM {table} WHERE {column} = %s FOR KEY SHARE",
-                [event.pk],
-            )
+        share_lock_event(event.pk)
     recheck()
     if keep_type_of is None:
         match.match_type = _stored_match_type(event, match.club)
