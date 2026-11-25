@@ -249,7 +249,8 @@ def organizer_review(
     it locks and writes nothing.
     """
     window_days: int = settings.ORGANIZER_REVIEW_WINDOW_DAYS
-    since = (now or timezone.now()) - timedelta(days=window_days)
+    now = now or timezone.now()
+    since = now - timedelta(days=window_days)
     matches = Match.objects.filter(event__organizer_id=organizer.pk)
     # target_object_id is text, so compare with the Matches' ids as text.
     match_ids = matches.annotate(text_id=Cast("pk", output_field=CharField())).values(
@@ -259,6 +260,7 @@ def organizer_review(
         target_content_type=ContentType.objects.get_for_model(Match),
         target_object_id__in=match_ids,
         created_at__gte=since,
+        created_at__lte=now,
     ).aggregate(
         opened=Count("pk", filter=Q(action=AuditAction.MATCH_DISPUTE)),
         withdrawn=Count("pk", filter=Q(action=AuditAction.MATCH_DISPUTE_WITHDRAW)),
@@ -285,6 +287,7 @@ def organizer_review(
         match__in=matches,
         reason__in=SIGNAL_FLAG_REASONS,
         created_at__gte=since,
+        created_at__lte=now,
     ).count()
     open_reports = list(
         OrganizerReport.objects.filter(
