@@ -1,0 +1,1 @@
+{% autoescape off %}{% if as_organizer %}A match from your organizer's event is on hold on OPEN{% else %}A match you played in is on hold on OPEN{% endif %}{% endautoescape %}

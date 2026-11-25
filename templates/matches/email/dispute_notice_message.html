@@ -1,0 +1,15 @@
+{% extends "emails/base_message.html" %}
+{% block title %}{% if as_organizer %}A match from your organizer's event was disputed on OPEN{% else %}A match you played in was disputed on OPEN{% endif %}{% endblock title %}
+{% block content %}
+<p style="margin: 0 0 16px;">{% if as_organizer %}A player disputed a match from one of your organizer's events. It does not count while the dispute is open. Scores show team A first.{% else %}A player on the other team disputed a match you played in. It does not count while the dispute is open. Scores show your team first.{% endif %}</p>
+<div style="margin: 0 0 16px; padding: 12px 16px; border: 1px solid #dddddd; border-radius: 4px;">
+<p style="margin: 0 0 4px; font-weight: bold;">Match {{ code }}</p>
+<p style="margin: 0 0 4px;">Played {{ played_on|date:"F j, Y" }}</p>
+<p style="margin: 0 0 8px;">Scores: {{ scores }}</p>
+<p style="margin: 0;"><a href="{{ url }}" style="color: #1a5c38; font-weight: bold;">View the match</a></p>
+<p style="margin: 4px 0 0; font-size: 14px; color: #555555;"><span style="word-break: break-all;">{{ url }}</span></p>
+</div>
+<p style="margin: 0 0 16px;">{% if as_organizer %}As a member of the organizer, you can confirm it, void it, or correct it from its page, with a reason.{% else %}The player who disputed it can withdraw the dispute. {% if event_match %}The event's organizer can settle it.{% else %}Either team can correct the scores from the match's page; the correction counts once the other team confirms it.{% endif %}{% endif %}</p>
+<p style="margin: 0;">If the dispute is not settled by {{ ends_on|date:"F j, Y" }}, the match is voided and does not count.</p>
+{% endblock content %}
+{% block reason %}{% if as_organizer %}You received this email because you are a member of the organizer that ran this match's event.{% else %}You received this email because a match you played in was disputed on OPEN.{% endif %}{% endblock reason %}
