@@ -15,21 +15,22 @@ NEW_NAME = "Can void matches in bulk"
 OLD_NAME = "Can void matches and resolve disputes"
 
 
-def _rename(apps: Apps, name: str) -> None:
+def _rename(apps: Apps, schema_editor: BaseDatabaseSchemaEditor, name: str) -> None:
     Permission = apps.get_model("auth", "Permission")
-    Permission.objects.filter(
+    alias = schema_editor.connection.alias
+    Permission.objects.using(alias).filter(
         content_type__app_label="matches", codename="moderate_match"
     ).update(name=name)
 
 
 def rename_permission(apps: Apps, schema_editor: BaseDatabaseSchemaEditor) -> None:
-    _rename(apps, NEW_NAME)
+    _rename(apps, schema_editor, NEW_NAME)
 
 
 def restore_permission_name(
     apps: Apps, schema_editor: BaseDatabaseSchemaEditor
 ) -> None:
-    _rename(apps, OLD_NAME)
+    _rename(apps, schema_editor, OLD_NAME)
 
 
 class Migration(migrations.Migration):
