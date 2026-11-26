@@ -98,7 +98,7 @@ class SafeAutocompleteAdminMixin(BaseModelAdmin[Any]):
 
     def formfield_for_choice_field(
         self, db_field: Field[Any, Any], request: HttpRequest, **kwargs: Any
-    ) -> TypedChoiceField:
+    ) -> TypedChoiceField | None:
         kwargs["error_messages"] = {
             **CHOICE_ERRORS,
             **(kwargs.get("error_messages") or {}),

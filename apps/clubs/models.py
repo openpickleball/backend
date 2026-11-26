@@ -361,11 +361,13 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
         if self.organizer_id is None or self.account_id is None:
             # Field validation reports a missing link.
             return False
+        organizer_field = self._meta.get_field("organizer")
+        account_field = self._meta.get_field("account")
+        assert isinstance(organizer_field, models.ForeignKey)
+        assert isinstance(account_field, models.ForeignKey)
         try:
-            organizer_id = self._meta.get_field("organizer").to_python(
-                self.organizer_id
-            )
-            account_id = self._meta.get_field("account").to_python(self.account_id)
+            organizer_id = organizer_field.to_python(self.organizer_id)
+            account_id = account_field.to_python(self.account_id)
         except ValidationError:
             # An id of the wrong type: field validation reports it.
             return False
