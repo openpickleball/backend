@@ -21,6 +21,9 @@ void matches, so the admin asks more than Django's (issue #99, #101, ADR
 - Every add, change, delete, and custom action made through it records
   an Audit Event (``register`` adds ``apps.audit.admin_audit``'s mixin
   to every admin).
+- A tampered autocomplete id gets the form's error, never a 500
+  (``config.admin_autocomplete``, issue #161): ``register`` gives every
+  admin and its inlines safe autocomplete widgets.
 - A staff Account's own password change records ``password.change``.
 - The login page takes no password. Its script
   (``apps/accounts/static/accounts/admin_login.js``) signs in through
@@ -64,6 +67,7 @@ from apps.accounts.mfa import has_mfa, last_mfa_at
 from apps.audit.admin_audit import audited_admin_class
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event
+from config.admin_autocomplete import safe_autocomplete_class
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -108,11 +112,15 @@ class OpenAdminSite(admin.AdminSite):
         **options: Any,
     ) -> None:
         """Register with ``AdminAuditMixin`` first in the admin's bases
-        (``apps/audit/admin_audit.py``), so every admin change is audited.
+        (``apps/audit/admin_audit.py``), so every admin change is audited,
+        and ``SafeAutocompleteAdminMixin`` next
+        (``config/admin_autocomplete.py``).
         """
         super().register(
             model_or_iterable,
-            audited_admin_class(admin_class or admin.ModelAdmin),
+            audited_admin_class(
+                safe_autocomplete_class(admin_class or admin.ModelAdmin)
+            ),
             **options,
         )
 
