@@ -57,6 +57,7 @@ _GENDER_DIVISION_MESSAGES = {
 }
 _WHOLE_NUMBER = "Enter a whole number."
 _INTEGER_MESSAGES = {"invalid": _WHOLE_NUMBER}
+_BIRTH_REQUIRED = "This field is required."
 CONTROL_CHARACTER_MESSAGE = "Remove control or invalid characters."
 # Control characters (Postgres cannot store NUL) and lone surrogates
 # (not encodable as UTF-8).
@@ -131,8 +132,9 @@ class Player(_LinkMessagesModel, PublicCodeModel):
 
     public_code_type = CodeType.PLAYER
 
-    # PROTECT: deleting an Account keeps its Player (ADR 0002). #116
-    # decides how.
+    # PROTECT: deleting an Account keeps a Player that is in the Ledger,
+    # with its personal data cleared, linked to the kept, cleared Account
+    # (ADR 0002, ADR 0048).
     account = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -144,12 +146,16 @@ class Player(_LinkMessagesModel, PublicCodeModel):
     # encrypted (ADR 0046). The database cannot check them, so save()
     # applies their rules (_check_encrypted_fields).
     legal_name = EncryptedCharField(max_length=200, blank=True)
+    # Required for every new Player (blank=False, so full_clean refuses
+    # None). NULL only after Account deletion removes them (#116).
     birth_year = EncryptedPositiveSmallIntegerField(
+        null=True,
         validators=[MinValueValidator(EARLIEST_BIRTH_YEAR)],
         error_messages=_INTEGER_MESSAGES,
     )
     # Never the day (ADR 0009).
     birth_month = EncryptedPositiveSmallIntegerField(
+        null=True,
         validators=[MinValueValidator(1), MaxValueValidator(12)],
         error_messages=_INTEGER_MESSAGES,
     )
@@ -191,7 +197,9 @@ class Player(_LinkMessagesModel, PublicCodeModel):
         fields an ``update_fields`` save names. Raw writes
         (``QuerySet.update``, ``bulk_create``, raw SQL, ``loaddata``) skip
         it. ``update_fields`` is read once, so a one-shot iterable reaches
-        the check and Django's save as the same set.
+        the check and Django's save as the same set. A new Player without a
+        birth year or month is refused: the columns allow NULL only for
+        Account deletion (ADR 0048).
         """
         update_fields = kwargs.get("update_fields")
         if update_fields is not None:
@@ -200,6 +208,15 @@ class Player(_LinkMessagesModel, PublicCodeModel):
         self._check_encrypted_fields(
             ENCRYPTED_CHECKED_FIELDS if update_fields is None else update_fields
         )
+        if self._state.adding:
+            # The columns allow NULL only for Account deletion (ADR 0048).
+            missing = {
+                name: [ValidationError(_BIRTH_REQUIRED)]
+                for name in BIRTH_FIELDS
+                if getattr(self, name) is None
+            }
+            if missing:
+                raise ValidationError(missing)
         super().save(*args, **kwargs)
 
     def _check_encrypted_fields(self, fields: Collection[str]) -> None:

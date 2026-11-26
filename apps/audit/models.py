@@ -46,6 +46,7 @@ class AuditAction(models.TextChoices):
     MFA_CHANGE = "mfa.change", "MFA change"
     PASSWORD_CHANGE = "password.change", "Password change"
     SESSION_END = "session.end", "Session ended by the player"
+    ACCOUNT_DELETE = "account.delete", "Account deleted"
     OAUTH_APP_REQUEST = "oauth_app.request", "OAuth application request"
     OAUTH_APP_APPROVE = "oauth_app.approve", "OAuth application approval"
     OAUTH_APP_REJECT = "oauth_app.reject", "OAuth application rejection"
@@ -58,6 +59,10 @@ class AuditAction(models.TextChoices):
     )
     ORGANIZER_VERIFY = "organizer.verify", "Organizer verification"
     ORGANIZER_UNVERIFY = "organizer.unverify", "Organizer verification removed"
+    ORGANIZER_NAME_REMOVE = (
+        "organizer.name_remove",
+        "Organizer name removed at Account deletion",
+    )
     ORGANIZER_REPORT_CREATE = "organizer_report.create", "Organizer reported"
     ORGANIZER_REPORT_CLOSE = "organizer_report.close", "Organizer report closed"
     ORGANIZER_MEMBER_ADD = "organizer_member.add", "Organizer member added"

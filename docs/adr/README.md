@@ -95,4 +95,5 @@ Add each record here when it merges.
 - [0045. A private, MFA-only, fully audited admin](0045-harden-the-admin.md) (issue #101)
 - [0046. Encrypt personal data fields and audit staff access](0046-encrypt-personal-data-fields.md) (issue #115)
 - [0047. Account security: login limits, breached passwords, session lifetimes, and sign-in alerts](0047-account-security-limits-and-sessions.md) (issue #100)
+- [0048. Account deletion: what goes, what stays, and how a Player is shown](0048-account-deletion.md) (issue #116)
 - [0050. An Account reads its own Organizer memberships](0050-own-organizer-memberships.md) (issue #301)

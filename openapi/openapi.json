@@ -1827,6 +1827,77 @@
   "openapi": "3.1.0",
   "paths": {
     "/api/v1/accounts/me": {
+      "delete": {
+        "description": "Delete your Account and your personal data.\n\nReauthenticate first, through allauth's `auth/reauthenticate` (your\npassword) or `auth/2fa/reauthenticate` (a two-factor code); without a\nrecent one you get 403 with code `reauthentication_required`. Your\nemail address, name, birth year and month, gender division, city and\nregion, privacy settings, sessions, two-factor methods, and\norganizer memberships go. Matches you played stay in the ledger, with\nyour player shown as a private player, so other players' ratings do\nnot change. Every session of the Account ends, this one included.\nThe same email address can sign up again afterwards. A staff or\nsuperuser Account gets 409.",
+        "operationId": "delete_current_account",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Delete Current Account",
+        "tags": [
+          "accounts"
+        ]
+      },
       "get": {
         "description": "Return the Account that the session token or session cookie belongs to.",
         "operationId": "get_current_account",

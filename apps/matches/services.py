@@ -790,6 +790,32 @@ def _near_matches(
     return near
 
 
+INACTIVE_PLAYER_MESSAGE = "No player has this OPEN Code."
+
+
+def _refuse_inactive_players(keys_a: Sequence[int], keys_b: Sequence[int]) -> None:
+    """Refuse a new Match that names a Player whose Account is inactive.
+
+    A deleted or deactivated Account's Player stays in the Ledger, but no
+    new Match names it (ADR 0048). The submission paths already treat
+    such a Player as unknown; this is the same rule for any other caller,
+    with the same code and fixed text. An edit's correction is not a new
+    submission: it goes through the creation core, not here.
+    """
+    inactive = set(
+        Player.objects.filter(
+            pk__in=[*keys_a, *keys_b], account__is_active=False
+        ).values_list("pk", flat=True)
+    )
+    issues = [
+        MatchIssue(team, "unknown_player", INACTIVE_PLAYER_MESSAGE)
+        for team, keys in (("team_a", keys_a), ("team_b", keys_b))
+        if any(key in inactive for key in keys)
+    ]
+    if issues:
+        raise MatchValidationError(issues)
+
+
 def _player_keys(team: object) -> list[int]:
     """Each team member's pk. A member that is not a saved Player is a
     programming error, not user input."""
@@ -1352,6 +1378,10 @@ def record_match(
     ``match_changed`` with ``change=hold``. Signals are sent inside the
     transaction (``apps.matches.signals``).
 
+    A team that names a Player whose Account is inactive raises
+    ``MatchValidationError`` (code ``unknown_player``) right after the
+    batch check (ADR 0048).
+
     For a match with an Event, the write transaction first share-locks the
     Event row and checks every submitter again (``hold_event``), so an
     organizer change made after the first check is caught before any
@@ -1390,6 +1420,7 @@ def record_match(
             event=event,
             club=club,
         )
+    _refuse_inactive_players(keys_a, keys_b)
     draft = draft_match(
         format=format,
         team_a=team_a,

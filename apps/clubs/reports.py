@@ -15,7 +15,9 @@ Organizer member can reach.
 Lock order: ``report_organizer`` and ``unverify_organizer`` lock the
 Organizer row first, so a report never lands open after an unverify
 closed the others. ``close_report`` locks only the report row, never the
-Organizer, so it cannot form a cycle with them.
+Organizer, so it cannot form a cycle with them, and so does
+``delete_reporter_reports`` (Account deletion, #116) for the reporter's
+rows.
 """
 
 from dataclasses import dataclass
@@ -47,6 +49,7 @@ if TYPE_CHECKING:
 OPEN_REPORT_CONSTRAINT = "clubs_one_open_report_per_account"
 RULE_MODERATOR = "moderator"
 RULE_ORGANIZER_UNVERIFIED = "organizer_unverified"
+RULE_REPORTER_DELETED = "reporter_deleted"
 
 # Fixed texts, never a submitted value.
 _REFUSED = "This organizer cannot be reported."
@@ -193,10 +196,37 @@ def close_open_reports(
     return count
 
 
+def delete_reporter_reports(
+    reporter: "_User", *, actor: "_User | AnonymousUser | None"
+) -> int:
+    """Delete every report ``reporter`` filed, for Account deletion (#116).
+
+    Call inside the deletion's transaction. Each open report is closed
+    first, with one ``organizer_report.close`` Audit Event naming rule
+    ``reporter_deleted``, so a moderator's queue never loses a report
+    without a trace. Then every report row of the reporter goes; the
+    ``organizer_report.create`` events stay (append-only, ADR 0037).
+    Locks only the report rows, as ``close_report`` does. Returns how
+    many rows it deleted.
+    """
+    reports = list(
+        OrganizerReport.objects.select_for_update()
+        .filter(reporter_id=reporter.pk)
+        .order_by("pk")
+    )
+    for report in reports:
+        if report.closed_at is None:
+            _close(report, actor=actor, reason="", rule=RULE_REPORTER_DELETED)
+    deleted, _ = OrganizerReport.objects.filter(
+        pk__in=[report.pk for report in reports]
+    ).delete()
+    return int(deleted)
+
+
 def _close(
     locked: OrganizerReport,
     *,
-    actor: "_User | AnonymousUser",
+    actor: "_User | AnonymousUser | None",
     reason: str,
     rule: str,
 ) -> None:

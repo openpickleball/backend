@@ -48,6 +48,10 @@ An Account that must set up two-factor authentication and has not
 (`config.auth.MFARequired`, ADR 0043) gets 403 with code "mfa_required",
 fixed text, and no items, on every signed-in operation.
 
+An operation that needs a recent reauthentication (Account deletion,
+`config.auth.ReauthenticationRequired`, #116) gets 403 with code
+"reauthentication_required", fixed text, and no items.
+
 An `HttpError` takes its code from its status: 413 (a file over an
 upload's size limit) is "too_large".
 
@@ -77,7 +81,12 @@ from apps.matches.services import (
     MatchValidationError,
 )
 from apps.matches.workflow import MatchStateError
-from config.auth import MFA_REQUIRED_STATUS, MFARequired
+from config.auth import (
+    MFA_REQUIRED_STATUS,
+    REAUTHENTICATION_REQUIRED_STATUS,
+    MFARequired,
+    ReauthenticationRequired,
+)
 
 VALIDATION_ERROR_STATUS = 422
 UNAUTHORIZED_STATUS = 401
@@ -216,6 +225,15 @@ def install_error_handlers(api: NinjaAPI) -> None:
         # Fixed text: never which rule made a method required.
         body = ErrorResponse(code="mfa_required", message=str(exc), errors=[])
         return _respond(api, request, MFA_REQUIRED_STATUS, body)
+
+    @api.exception_handler(ReauthenticationRequired)
+    def on_reauthentication_required(
+        request: HttpRequest, exc: ReauthenticationRequired
+    ) -> HttpResponse:
+        body = ErrorResponse(
+            code="reauthentication_required", message=str(exc), errors=[]
+        )
+        return _respond(api, request, REAUTHENTICATION_REQUIRED_STATUS, body)
 
     @api.exception_handler(AuthenticationError)
     def on_authentication_error(
