@@ -58,41 +58,41 @@ def _member(**links: Any) -> OrganizerMember:
 
 
 @pytest.mark.parametrize("bad", BAD_IDS)
-def test_member_organizer_bad_id(bad: object) -> None:
+def test_member_organizer_bad_id(bad: int | str) -> None:
     _assert_fixed(_member(organizer_id=bad), "organizer", ORGANIZER)
 
 
 @pytest.mark.parametrize("bad", BAD_IDS)
-def test_member_account_bad_id(bad: object) -> None:
+def test_member_account_bad_id(bad: int | str) -> None:
     _assert_fixed(_member(account_id=bad), "account", ACCOUNT)
 
 
 @pytest.mark.parametrize("bad", BAD_IDS)
-def test_club_role_club_bad_id(bad: object) -> None:
+def test_club_role_club_bad_id(bad: int | str) -> None:
     role = ClubRole(club_id=bad, account=UserFactory.create(), role="admin")
     _assert_fixed(role, "club", CLUB)
 
 
 @pytest.mark.parametrize("bad", BAD_IDS)
-def test_club_role_account_bad_id(bad: object) -> None:
+def test_club_role_account_bad_id(bad: int | str) -> None:
     role = ClubRole(club=ClubFactory.create(), account_id=bad, role="admin")
     _assert_fixed(role, "account", ACCOUNT)
 
 
 @pytest.mark.parametrize("bad", BAD_IDS)
-def test_grant_club_bad_id(bad: object) -> None:
+def test_grant_club_bad_id(bad: int | str) -> None:
     grant = ClubOrganizerGrant(club_id=bad, organizer=OrganizerFactory.create())
     _assert_fixed(grant, "club", CLUB)
 
 
 @pytest.mark.parametrize("bad", BAD_IDS)
-def test_grant_organizer_bad_id(bad: object) -> None:
+def test_grant_organizer_bad_id(bad: int | str) -> None:
     grant = ClubOrganizerGrant(club=ClubFactory.create(), organizer_id=bad)
     _assert_fixed(grant, "organizer", ORGANIZER)
 
 
 @pytest.mark.parametrize("bad", BAD_IDS)
-def test_organizer_verified_by_bad_id(bad: object) -> None:
+def test_organizer_verified_by_bad_id(bad: int | str) -> None:
     organizer = Organizer(name="Made-up Organizer", verified_by_id=bad)
     _assert_fixed(organizer, "verified_by", ACCOUNT)
 

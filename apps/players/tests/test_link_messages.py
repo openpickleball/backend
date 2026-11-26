@@ -58,8 +58,8 @@ def test_privacy_player_bad_id(bad: object) -> None:
 def test_encrypted_fields_name_no_value() -> None:
     player = Player.objects.get(pk=PlayerFactory.create().pk)
     player.legal_name = MARKER * 30
-    player.birth_year = MARKER  # type: ignore[assignment]
-    player.birth_month = MARKER  # type: ignore[assignment]
+    player.birth_year = MARKER
+    player.birth_month = MARKER
     player.gender_division = MARKER
 
     messages = _messages(player)
