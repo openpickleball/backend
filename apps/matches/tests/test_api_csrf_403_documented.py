@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from datetime import date
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import Client
@@ -74,7 +75,7 @@ def _signed_in_participant() -> tuple[Client, Match]:
         submitted_by_user=opponent.account,
     ).match
     client = browser_client()
-    assert client.cookies["csrftoken"]
+    assert client.cookies[settings.CSRF_COOKIE_NAME]
     assert login(client, BROWSER, EMAIL, **csrf_header(client)).status_code == 200
     return client, match
 

@@ -88,6 +88,22 @@ jobs:
       # DATABASE_URL in .env.example points at localhost:5432, the service.
       - run: cp .env.example .env
       - run: uv run python manage.py check
+      # Fails on any check --deploy warning (ADR 0040). The values are
+      # made up and production-like: DEBUG off, example.org hosts, and keys
+      # that are not secrets. They win over .env. Nothing connects to them.
+      - run: uv run python manage.py check --deploy --fail-level WARNING
+        env:
+          DJANGO_DEBUG: "false"
+          DJANGO_SECRET_KEY: ci-only-made-up-deploy-check-key-not-a-secret-7Qx2Lm9Vr4Tz
+          DJANGO_ALLOWED_HOSTS: api.example.org
+          DATABASE_URL: postgres://open@db.example.org:5432/open
+          REDIS_URL: rediss://cache.example.org:6379/0
+          CSRF_TRUSTED_ORIGINS: https://app.example.org
+          CORS_ALLOWED_ORIGINS: https://app.example.org
+          FRONTEND_URL: https://app.example.org
+          EMAIL_BACKEND: anymail.backends.resend.EmailBackend
+          RESEND_API_KEY: re_made_up_ci_only_not_a_key
+          DEFAULT_FROM_EMAIL: OPEN <noreply@example.org>
       - run: uv run python manage.py makemigrations --check --dry-run
       # Fails when openapi/openapi.json differs from the API it documents.
       - run: uv run python manage.py export_openapi_schema --check

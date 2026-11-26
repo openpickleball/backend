@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.core import mail
 from django.core.cache import cache
 from django.test import Client
@@ -154,7 +155,7 @@ def test_me_operation_is_documented_with_both_schemes_and_401() -> None:
         for name, scheme in schemes.items()
     } == {
         "SessionTokenAuth": ("apiKey", "header", "X-Session-Token"),
-        "SessionAuth": ("apiKey", "cookie", "sessionid"),
+        "SessionAuth": ("apiKey", "cookie", settings.SESSION_COOKIE_NAME),
     }
     assert {name for item in operation["security"] for name in item} == set(schemes)
     unauthorized = operation["responses"]["401"]

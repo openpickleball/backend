@@ -14,6 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
 from django.test import SimpleTestCase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -37,7 +38,10 @@ SETTINGS_VARS = (
     "EMAIL_BACKEND",
     "RESEND_API_KEY",
     "DEFAULT_FROM_EMAIL",
+    "CSP_REPORT_ONLY",
 )
+
+DEPLOY_CHECK = "uv run python manage.py check --deploy --fail-level WARNING"
 
 # Made-up values for tests only. Not a real secret.
 TEST_SECRET_KEY = "test-only-" + "k3y" * 16
@@ -94,6 +98,17 @@ print(json.dumps({
     'SECURE_HSTS_SECONDS': settings.SECURE_HSTS_SECONDS,
     'SECURE_HSTS_INCLUDE_SUBDOMAINS': settings.SECURE_HSTS_INCLUDE_SUBDOMAINS,
     'SECURE_HSTS_PRELOAD': settings.SECURE_HSTS_PRELOAD,
+    'SESSION_COOKIE_NAME': settings.SESSION_COOKIE_NAME,
+    'CSRF_COOKIE_NAME': settings.CSRF_COOKIE_NAME,
+    'SESSION_COOKIE_DOMAIN': settings.SESSION_COOKIE_DOMAIN,
+    'CSRF_COOKIE_DOMAIN': settings.CSRF_COOKIE_DOMAIN,
+    'SESSION_COOKIE_PATH': settings.SESSION_COOKIE_PATH,
+    'CSRF_COOKIE_PATH': settings.CSRF_COOKIE_PATH,
+    'SESSION_COOKIE_HTTPONLY': settings.SESSION_COOKIE_HTTPONLY,
+    'CSRF_COOKIE_HTTPONLY': settings.CSRF_COOKIE_HTTPONLY,
+    'SESSION_COOKIE_SAMESITE': settings.SESSION_COOKIE_SAMESITE,
+    'CSRF_COOKIE_SAMESITE': settings.CSRF_COOKIE_SAMESITE,
+    'SILENCED_SYSTEM_CHECKS': settings.SILENCED_SYSTEM_CHECKS,
     'CACHE_BACKEND': settings.CACHES['default']['BACKEND'],
     'CACHE_LOCATION': settings.CACHES['default'].get('LOCATION'),
     'CACHE_KEY_PREFIX': settings.CACHES['default'].get('KEY_PREFIX'),
@@ -117,6 +132,9 @@ print(json.dumps({
     'SERVERS': len(caches['default']._servers),
 }))
 """
+
+# A made-up host that must never appear in any output.
+CSRF_MARKER = "csrf-marker-x4k.example.org"
 
 # A made-up password that must never appear in any output.
 REDIS_MARKER = "not-a-real-pw-MARKER"
@@ -341,6 +359,43 @@ class ListTests(SimpleTestCase):
             values["CSRF_TRUSTED_ORIGINS"], ["https://a.example", "https://b.example"]
         )
 
+    def test_csrf_trusted_origins_refuse_a_non_origin_without_echoing_it(
+        self,
+    ) -> None:
+        for value in (
+            f"https://*.{CSRF_MARKER}",
+            f"https://{CSRF_MARKER}/",
+            f"https://{CSRF_MARKER}/path",
+            f"https://{CSRF_MARKER}:443",
+            f"http://{CSRF_MARKER}:80",
+            CSRF_MARKER,
+            "*",
+        ):
+            for env in (PRODUCTION_LIKE, LOCAL_DEBUG):
+                with self.subTest(value=value, debug=env["DJANGO_DEBUG"]):
+                    result = _check({**env, "CSRF_TRUSTED_ORIGINS": value})
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("ImproperlyConfigured", result.stderr)
+                    self.assertIn("CSRF_TRUSTED_ORIGINS", result.stderr)
+                    self.assertNotIn(CSRF_MARKER, result.stderr)
+                    self.assertNotIn(CSRF_MARKER, result.stdout)
+
+    def test_csrf_trusted_origins_need_https_with_debug_off(self) -> None:
+        value = f"https://a.example.org,http://{CSRF_MARKER}"
+        result = _check({**PRODUCTION_LIKE, "CSRF_TRUSTED_ORIGINS": value})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ImproperlyConfigured", result.stderr)
+        self.assertIn("CSRF_TRUSTED_ORIGINS must list only https", result.stderr)
+        self.assertNotIn(CSRF_MARKER, result.stderr)
+
+    def test_csrf_trusted_origins_allow_http_with_debug_on(self) -> None:
+        value = "http://localhost:8081,https://a.example.org"
+        values = _settings({**LOCAL_DEBUG, "CSRF_TRUSTED_ORIGINS": value})
+        self.assertEqual(
+            values["CSRF_TRUSTED_ORIGINS"],
+            ["http://localhost:8081", "https://a.example.org"],
+        )
+
     def test_lists_default_empty(self) -> None:
         values = _settings(
             {**LOCAL_DEBUG, "DJANGO_ALLOWED_HOSTS": "", "CSRF_TRUSTED_ORIGINS": ""}
@@ -371,11 +426,64 @@ class SecurityBlockTests(SimpleTestCase):
         self.assertEqual(values["SECURE_HSTS_SECONDS"], 0)
 
     def test_production_like_values_pass_deploy_check(self) -> None:
-        result = _check(PRODUCTION_LIKE, "--deploy")
+        result = _check(PRODUCTION_LIKE, "--deploy", "--fail-level", "WARNING")
         self.assertEqual(result.returncode, 0, result.stderr)
         output = result.stdout + result.stderr
         self.assertIn("System check identified no issues (0 silenced).", output)
         self.assertNotIn("WARNINGS", output)
+
+    def test_a_deploy_warning_fails_the_deploy_check(self) -> None:
+        # A short key is a deploy warning (security.W009), not an error.
+        values = {**PRODUCTION_LIKE, "DJANGO_SECRET_KEY": "short-made-up-key"}
+        result = _check(values, "--deploy", "--fail-level", "WARNING")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("security.W009", result.stdout + result.stderr)
+
+    def test_ci_runs_the_deploy_check_with_values_that_pass(self) -> None:
+        workflow = yaml.safe_load((BASE_DIR / ".github/workflows/ci.yml").read_text())
+        [step] = [
+            step
+            for step in workflow["jobs"]["test"]["steps"]
+            if step.get("run") == DEPLOY_CHECK
+        ]
+        env = {name: str(value) for name, value in step["env"].items()}
+        self.assertEqual(env["DJANGO_DEBUG"], "false")
+        self.assertTrue(set(env) <= set(SETTINGS_VARS))
+        result = _check(env, "--deploy", "--fail-level", "WARNING")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_no_system_check_is_silenced(self) -> None:
+        for env in (PRODUCTION_LIKE, LOCAL_DEBUG):
+            with self.subTest(debug=env["DJANGO_DEBUG"]):
+                self.assertEqual(_settings(env)["SILENCED_SYSTEM_CHECKS"], [])
+
+
+class CookieTests(SimpleTestCase):
+    def test_debug_off_uses_host_prefixed_cookies(self) -> None:
+        values = _settings(PRODUCTION_LIKE)
+        self.assertEqual(values["SESSION_COOKIE_NAME"], "__Host-sessionid")
+        self.assertEqual(values["CSRF_COOKIE_NAME"], "__Host-csrftoken")
+        self.assertIs(values["SESSION_COOKIE_SECURE"], True)
+        self.assertIs(values["CSRF_COOKIE_SECURE"], True)
+
+    def test_debug_on_keeps_plain_cookie_names(self) -> None:
+        values = _settings(LOCAL_DEBUG)
+        self.assertEqual(values["SESSION_COOKIE_NAME"], "sessionid")
+        self.assertEqual(values["CSRF_COOKIE_NAME"], "csrftoken")
+
+    def test_cookie_attributes_in_both_modes(self) -> None:
+        for env in (PRODUCTION_LIKE, LOCAL_DEBUG):
+            with self.subTest(debug=env["DJANGO_DEBUG"]):
+                values = _settings(env)
+                self.assertIsNone(values["SESSION_COOKIE_DOMAIN"])
+                self.assertIsNone(values["CSRF_COOKIE_DOMAIN"])
+                self.assertEqual(values["SESSION_COOKIE_PATH"], "/")
+                self.assertEqual(values["CSRF_COOKIE_PATH"], "/")
+                self.assertIs(values["SESSION_COOKIE_HTTPONLY"], True)
+                # allauth's browser client reads the CSRF token.
+                self.assertIs(values["CSRF_COOKIE_HTTPONLY"], False)
+                self.assertEqual(values["SESSION_COOKIE_SAMESITE"], "Lax")
+                self.assertEqual(values["CSRF_COOKIE_SAMESITE"], "Lax")
 
 
 class EnvExampleTests(SimpleTestCase):

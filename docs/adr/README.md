@@ -87,3 +87,4 @@ Add each record here when it merges.
 - [0037. Players report Organizers to OPEN Moderators](0037-organizer-reports.md) (issue #271)
 - [0038. Postgres connection pool](0038-postgres-connection-pool.md) (issue #60)
 - [0039. A password check before the rest of signup](0039-signup-password-check.md) (issue #289)
+- [0040. Security headers, cookies, and a body limit](0040-security-headers-and-cookies.md) (issue #102)

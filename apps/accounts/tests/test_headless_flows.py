@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from allauth.account.models import EmailAddress
+from django.conf import settings
 from django.core import mail
 from django.core.cache import cache
 from django.test import Client
@@ -139,9 +140,9 @@ def test_browser_flow_signup_verify_login_logout() -> None:
     )
     early = login(client, BROWSER, EMAIL, **csrf_header(client))
     verify_from_last_mail(client, BROWSER, **csrf_header(client))
-    client.cookies.pop("sessionid", None)
+    client.cookies.pop(settings.SESSION_COOKIE_NAME, None)
     logged_in = login(client, BROWSER, EMAIL, **csrf_header(client))
-    session_cookie = client.cookies["sessionid"].value
+    session_cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
     session = client.get(f"{BROWSER}/auth/session")
     logged_out = client.delete(f"{BROWSER}/auth/session", headers=csrf_header(client))
     after = client.get(f"{BROWSER}/auth/session")
