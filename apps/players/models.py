@@ -80,8 +80,10 @@ _NOT_TEXT = "Enter text."
 BIRTH_FIELDS = ("birth_year", "birth_month")
 
 EARLIEST_BIRTH_YEAR = 1900
-# Fields save() checks, since the database cannot (ADR 0046).
-ENCRYPTED_CHECKED_FIELDS = (*BIRTH_FIELDS, "gender_division")
+# Fields save() checks, since the database cannot (ADR 0046): their
+# columns are text, with no length limit or check constraint.
+ENCRYPTED_TEXT_FIELDS = ("legal_name", "gender_division")
+ENCRYPTED_CHECKED_FIELDS = (*BIRTH_FIELDS, *ENCRYPTED_TEXT_FIELDS)
 
 # One setting per profile detail other than the display name, which has
 # none (ADR 0002). ``rating_visibility`` covers current Ratings (#53): it
@@ -184,27 +186,42 @@ class Player(PublicCodeModel):
         rules its check constraints did (ADR 0046) on every save, to the
         fields an ``update_fields`` save names. Raw writes
         (``QuerySet.update``, ``bulk_create``, raw SQL, ``loaddata``) skip
-        it.
+        it. ``update_fields`` is read once, so a one-shot iterable reaches
+        the check and Django's save as the same set.
         """
         update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = frozenset(update_fields)
+            kwargs["update_fields"] = update_fields
         self._check_encrypted_fields(
             ENCRYPTED_CHECKED_FIELDS if update_fields is None else update_fields
         )
         super().save(*args, **kwargs)
 
     def _check_encrypted_fields(self, fields: Collection[str]) -> None:
-        """Refuse a bad birth year, birth month, or gender division.
+        """Refuse a bad birth year or month, legal name, or gender division.
 
-        A None birth year or month is left to the database's NOT NULL.
-        Messages are the model's fixed ones, never the value.
+        A birth year or month must be an int in range, a legal name text
+        within the field's ``max_length``, and a gender division text and
+        one of the stored values (each within its ``max_length``). A None value is
+        left to the database's NOT NULL. Messages are the model's fixed
+        ones, never the value.
         """
         errors: dict[str, list[ValidationError]] = {}
-        for name in BIRTH_FIELDS:
+        for name in ENCRYPTED_CHECKED_FIELDS:
             value = getattr(self, name)
             if name not in fields or value is None:
                 continue
-            if not _is_int(value):
+            if name in BIRTH_FIELDS and not _is_int(value):
                 errors[name] = [ValidationError(_WHOLE_NUMBER)]
+                continue
+            if name in ENCRYPTED_TEXT_FIELDS and not isinstance(value, str):
+                errors[name] = [ValidationError(_NOT_TEXT)]
+                continue
+            if name == "gender_division":
+                # Every stored value is within max_length.
+                if value not in _STORED_DIVISIONS:
+                    errors[name] = [ValidationError(_CHOICE_MESSAGES["invalid_choice"])]
                 continue
             field = self._meta.get_field(name)
             assert isinstance(field, models.Field)
@@ -212,11 +229,6 @@ class Player(PublicCodeModel):
                 field.run_validators(value)
             except ValidationError as error:
                 errors[name] = error.error_list
-        division = self.gender_division
-        if "gender_division" in fields and division not in _STORED_DIVISIONS:
-            errors["gender_division"] = [
-                ValidationError(_CHOICE_MESSAGES["invalid_choice"])
-            ]
         if errors:
             raise ValidationError(errors)
 
