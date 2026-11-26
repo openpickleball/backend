@@ -293,10 +293,12 @@ def test_csp_mode(env: dict[str, str], value: str, *, enforced: bool) -> None:
 
 
 def test_the_header_middlewares_wrap_every_other_middleware() -> None:
-    assert settings.MIDDLEWARE[:4] == [
+    assert settings.MIDDLEWARE[:5] == [
         "csp.middleware.CSPMiddleware",
         "config.security_headers.PermissionsPolicyMiddleware",
         "django.middleware.clickjacking.XFrameOptionsMiddleware",
+        # Answers the platform's health probes (ADR 0042), inside the headers.
+        "config.health_probe.HealthProbeMiddleware",
         "django.middleware.security.SecurityMiddleware",
     ]
     assert (

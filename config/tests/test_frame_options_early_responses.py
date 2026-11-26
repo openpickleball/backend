@@ -44,6 +44,6 @@ def test_a_static_file_refuses_framing() -> None:
 
 def test_the_https_redirect_refuses_framing() -> None:
     with override_settings(SECURE_SSL_REDIRECT=True):
-        response = Client().get("/api/v1/health/live")
+        response = Client().get("/api/v1/accounts/me")
     assert response.status_code == 301
     assert response["X-Frame-Options"] == "DENY"

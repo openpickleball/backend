@@ -1,4 +1,4 @@
-# Local development only. Not for staging or production.
+# Local development only. Not for production.
 #
 # Start Postgres and Valkey:   docker compose up -d --wait
 # Also run the app (optional): docker compose --profile web up -d --wait

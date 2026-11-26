@@ -1,11 +1,12 @@
 # 0004. Settings from the environment, secure by default
 
 - Status: Proposed
+- Amended by: [ADR 0042](0042-health-probes-from-the-platform.md) (a plain-http GET of the two health paths is answered directly, without the redirect, so App Platform's probes reach the health checks)
 - Date: 2026-11-11
 
 ## Context
 
-The same image must run locally, in CI, in staging, and in production, and no secret may live in the repository (issue #4). Settings therefore come from environment variables, read with django-environ (decided in issue #1). Production will run on DigitalOcean App Platform, behind a proxy that terminates TLS and sets `X-Forwarded-Proto`.
+The same image must run locally, in CI, and in production, and no secret may live in the repository (issue #4). Settings therefore come from environment variables, read with django-environ (decided in issue #1). Production will run on DigitalOcean App Platform, behind a proxy that terminates TLS and sets `X-Forwarded-Proto`.
 
 Some of these choices are hard to undo. A browser that has seen an HSTS header keeps forcing https for the whole max-age, and a default that is unsafe in production stays unsafe until someone notices.
 

@@ -4,7 +4,7 @@
 
 Backend services and APIs for [OPEN](https://github.com/openpickleball), the Open Pickleball Evaluation Network.
 
-> **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model with sign-up (behind an age screen: players must be 13 or older), login, email verification, and password reset (django-allauth, headless, at `/_allauth/`), the append-only audit log, the OPEN Code scheme for public identifiers, the Player model with its privacy settings, the Club and Organizer models with organizer verification and players' reports of an Organizer to moderators, the email outbox that sends account email, dispute and hold notices, and notices of matches an organizer recorded from the Celery `email` queue (Resend through django-anymail), partner OAuth applications (django-oauth-toolkit) with token and revoke endpoints at `/oauth/token/` and `/oauth/revoke_token/`, the Match, Match Participant, Game, Match Flag, and Match Confirmation models of the match ledger with score validation, duplicate detection, match submission permissions, and the confirmation workflow (confirm, dispute, void, correct, and expire), the rating engine package, pinned to its `v1.0.0` tag (see `docs/engine.md`), the rating state, rating history, and replay models that store the engine's ratings with each replay's provenance, the API mount at `/api/v1/`, the Celery background task setup, static file serving and CORS for the API, a gunicorn configuration, and the local development services so far. The API's operations are the liveness and readiness checks, at `/api/v1/health/live` and `/api/v1/health/ready`, the signed-in Account at `/api/v1/accounts/me`, a player's own match submission at `/api/v1/matches/`, one match for its players at `/api/v1/matches/{code}`, confirm and dispute at `/api/v1/matches/{code}/confirm` and `/dispute`, an Event organizer's settlement of a dispute at `/api/v1/matches/{code}/resolve-dispute` and `/dispute-correction`, with the open disputes a member can settle at `/api/v1/me/matches/organizer-disputes`, a player's own disputed matches at `/api/v1/me/matches/disputes`, a vouch that a held possible duplicate is not one at `/api/v1/matches/{code}/vouch`, with the holds the signed-in Account may vouch for at `/api/v1/me/matches/holds`, the matches waiting for the signed-in player's confirmation at `/api/v1/me/matches/awaiting-confirmation`, a player's profile at `/api/v1/players/{code}`, a player's match history at `/api/v1/players/{code}/matches`, player search by display name at `/api/v1/players/search`, a player's current ratings at `/api/v1/players/{code}/ratings` and rating history at `/api/v1/players/{code}/rating-history`, both labeled as demonstration ratings, the signed-in Account's own Player at `/api/v1/me/player` (create, read, and change it), an organizer's Events at `/api/v1/organizer/events` (list, create, change, and delete them), an organizer's CSV results upload at `/api/v1/organizer/events/{code}/results-files` with its processing report at `/api/v1/organizer/results-files/{code}`, and a player's report of an Organizer to moderators at `/api/v1/organizers/{code}/reports`. No OPEN rating is live.
+> **Project status:** OPEN is in early development. This repository holds the project scaffold, the account model with sign-up (behind an age screen: players must be 13 or older), login, email verification, and password reset (django-allauth, headless, at `/_allauth/`), the append-only audit log, the OPEN Code scheme for public identifiers, the Player model with its privacy settings, the Club and Organizer models with organizer verification and players' reports of an Organizer to moderators, the email outbox that sends account email, dispute and hold notices, and notices of matches an organizer recorded from the Celery `email` queue (Resend through django-anymail), partner OAuth applications (django-oauth-toolkit) with token and revoke endpoints at `/oauth/token/` and `/oauth/revoke_token/`, the Match, Match Participant, Game, Match Flag, and Match Confirmation models of the match ledger with score validation, duplicate detection, match submission permissions, and the confirmation workflow (confirm, dispute, void, correct, and expire), the rating engine package, pinned to its `v1.0.0` tag (see `docs/engine.md`), the rating state, rating history, and replay models that store the engine's ratings with each replay's provenance, the API mount at `/api/v1/`, the Celery background task setup, static file serving and CORS for the API, a gunicorn configuration, the DigitalOcean App Platform spec for production (`.do/production.yaml`), and the local development services so far. The API's operations are the liveness and readiness checks, at `/api/v1/health/live` and `/api/v1/health/ready`, the signed-in Account at `/api/v1/accounts/me`, a player's own match submission at `/api/v1/matches/`, one match for its players at `/api/v1/matches/{code}`, confirm and dispute at `/api/v1/matches/{code}/confirm` and `/dispute`, an Event organizer's settlement of a dispute at `/api/v1/matches/{code}/resolve-dispute` and `/dispute-correction`, with the open disputes a member can settle at `/api/v1/me/matches/organizer-disputes`, a player's own disputed matches at `/api/v1/me/matches/disputes`, a vouch that a held possible duplicate is not one at `/api/v1/matches/{code}/vouch`, with the holds the signed-in Account may vouch for at `/api/v1/me/matches/holds`, the matches waiting for the signed-in player's confirmation at `/api/v1/me/matches/awaiting-confirmation`, a player's profile at `/api/v1/players/{code}`, a player's match history at `/api/v1/players/{code}/matches`, player search by display name at `/api/v1/players/search`, a player's current ratings at `/api/v1/players/{code}/ratings` and rating history at `/api/v1/players/{code}/rating-history`, both labeled as demonstration ratings, the signed-in Account's own Player at `/api/v1/me/player` (create, read, and change it), an organizer's Events at `/api/v1/organizer/events` (list, create, change, and delete them), an organizer's CSV results upload at `/api/v1/organizer/events/{code}/results-files` with its processing report at `/api/v1/organizer/results-files/{code}`, and a player's report of an Organizer to moderators at `/api/v1/organizers/{code}/reports`. No OPEN rating is live.
 
 ## Technology
 
@@ -78,7 +78,7 @@ Run only one beat process. Tests run tasks eagerly, so they need no worker and n
 
 ### Serving like production
 
-To serve the app the way production does, with `DJANGO_DEBUG` off, collect the static files first and then start gunicorn. gunicorn reads `gunicorn.conf.py`, which takes `PORT` (default 8000) and `WEB_CONCURRENCY` (default 2 workers) from the process environment, not from `.env`. With `DJANGO_DEBUG` off, settings redirect plain http to https, so a local request needs the `X-Forwarded-Proto: https` header that the hosting proxy would set, and `DJANGO_ALLOWED_HOSTS` must name the host you request (for example `127.0.0.1`). `FRONTEND_URL` must be https, for example `https://app.example.org`.
+To serve the app the way production does, with `DJANGO_DEBUG` off, collect the static files first and then start gunicorn. gunicorn reads `gunicorn.conf.py`, which takes `PORT` (default 8000) and `WEB_CONCURRENCY` (default 2 workers) from the process environment, not from `.env`. With `DJANGO_DEBUG` off, settings redirect plain http to https, so a local request needs the `X-Forwarded-Proto: https` header that the hosting proxy would set, and `DJANGO_ALLOWED_HOSTS` must name the host you request (for example `127.0.0.1`). The two health checks answer a plain http request with any host (see [App Platform](#app-platform)). `FRONTEND_URL` must be https, for example `https://app.example.org`.
 
 ```bash
 uv run python manage.py collectstatic --noinput
@@ -130,6 +130,74 @@ Then set `DATABASE_URL=postgres://open@localhost:6432/open` and `DIRECT_DATABASE
 
 With `DJANGO_DEBUG` off, settings trust the `X-Forwarded-Proto` header to tell https from http. So run the web container only behind the hosting proxy, which sets that header, and never let clients reach it directly. To test it locally, send `X-Forwarded-Proto: https` with each request, as in [Serving like production](#serving-like-production).
 
+### App Platform
+
+Production runs on DigitalOcean App Platform, from one app spec: `.do/production.yaml` (app `open-backend-production`). There is no staging environment, to keep costs down: changes are tried in local development (the compose services, and the production image as in [Serving like production](#serving-like-production)), then deployed to production. The spec has:
+
+- `web`: the image's gunicorn on port 8000. Its readiness check is `/api/v1/health/ready`, which stops traffic while the database or cache is down. A database connect gives up after 5 seconds, but a query is not bounded: if the pool answers and Postgres behind it hangs, the check can wait past gunicorn's worker timeout (ADR 0042; bounding it is left to #66). Its liveness check is `/api/v1/health/live`, which restarts the container only when the process stops answering.
+- `worker`: `celery -A config worker -Q ratings,email,webhooks,default -l info --concurrency 2`, every queue.
+- `beat`: `celery -A config beat` with the database scheduler, exactly one instance. During a deploy App Platform may run the old and the new beat together for a short time, so a periodic task can be sent twice. Every task must already be safe to run twice (ADR 0006).
+- `migrate`: a pre-deploy job, `python manage.py migrate`. It runs before each deploy goes live and migrates on the direct connection by itself (ADR 0038). A failed migration stops the deploy.
+- `pg`: a managed Postgres cluster (`open-production-pg`), database `open`, user `open`.
+- `valkey`: a managed Valkey cluster (`open-production-valkey`), the cache and Celery broker (ADR 0006). DigitalOcean's Valkey takes TLS only (`rediss://`).
+
+Every component runs the same image on the smallest instance size, `apps-s-1vcpu-0.5gb`. The variables are set once, at app level, so every component gets them: `DATABASE_URL` is the pool `open-pool` (`${pg.open-pool.DATABASE_URL}`), `DIRECT_DATABASE_URL` the database itself (`${pg.DATABASE_URL}`), `REDIS_URL` the Valkey cluster (`${valkey.DATABASE_URL}`), and `DJANGO_ALLOWED_HOSTS` the app's domain (`${APP_DOMAIN}`). `FRONTEND_URL` is `https://app.openpb.org` (#182). Until the web app answers there (#183), the links in verification and reset emails open a page that does not exist yet. `CLIENT_IP_HEADER` stays at its default, `do-connecting-ip`.
+
+The spec holds no secret values. `DJANGO_SECRET_KEY` and `RESEND_API_KEY` are declared as secrets with no value. Set them in the App Platform console, or in a spec exported from the running app, where App Platform shows them encrypted (`EV[...]`). Never commit a value.
+
+App Platform's HTTP health probes reach the container directly, over plain http, with a Host header that `DJANGO_ALLOWED_HOSTS` refuses. `HealthProbeMiddleware` (`config/health_probe.py`, ADR 0042) answers a GET of exactly the two health paths in that case. Every other request keeps the host check and the https redirect.
+
+#### Before the first deploy
+
+The spec does not set these. #68 and #63 do:
+
+- Create the Postgres and Valkey clusters with the cluster names above, in one region, and set the app's `region` to match. The spec leaves `region` unset.
+- Create the pool `open-pool` in transaction mode on database `open` for user `open`: `doctl databases pool create <cluster-id> open-pool --size 10 --mode transaction --db open --user open`.
+- Set Valkey's eviction policy to `volatile-lru`: `doctl databases configuration update <cluster-id> --engine valkey --config-json '{"valkey_maxmemory_policy":"volatile-lru"}'`. Valkey holds the cache and the Celery queues. Cache and throttle keys all expire, and queued tasks never do, so `volatile-lru` evicts only cache keys. An `allkeys-*` policy could drop queued tasks, and `noeviction` would make every cache write fail once Valkey is full.
+- Make user `open` the owner of database `open`: as `doadmin`, run `ALTER DATABASE open OWNER TO open;`. On Postgres 15 and later the `public` schema belongs to the database owner, so a user that does not own the database cannot create tables, and the first migrate fails. Today both URLs use `open`, so the runtime user owns every table, the audit table included. #103 decides separate migration and runtime users, as the Audit log rules require.
+- Limit each cluster's trusted sources to the app (#68, #103).
+- Set the two secret values.
+- Give App Platform access to the image on GHCR, and deploy by digest instead of the `main` tag (#63).
+- On the first deploy, confirm that `${valkey.DATABASE_URL}` is Valkey's `rediss://` connection string. DigitalOcean documents `DATABASE_URL` for every database and `REDIS_URL` only for its older Redis engine.
+
+#### Pool sizing
+
+One instance each of web, worker, and beat opens at most 5 client connections: web 2 (`WEB_CONCURRENCY`, default 2), worker 2 (`--concurrency 2`), and beat 1. The smallest cluster (1 GiB) allows 25 connections, 3 of them reserved, so 22 are usable. DigitalOcean suggests a pool of about half the usable connections, so `open-pool` has size 10. That leaves room for a second web instance and for the old and new instances running side by side during a deploy. Migrations use one direct connection, outside the pool.
+
+#### Validate the spec
+
+```bash
+doctl apps spec validate --schema-only .do/production.yaml
+```
+
+`--schema-only` checks the fields locally. A full `doctl apps spec validate`, which also checks the bindings and the instance size, needs an authenticated doctl.
+
+#### Check the client IP header
+
+The per-IP throttle reads the client IP from `do-connecting-ip` (ADR 0030). Until this check passes on production, no public operation goes live: a client that can set that header itself could spread its requests across any number of throttle buckets.
+
+1. On the production `web` component, before it opens to players (#68), set `GUNICORN_CMD_ARGS` to `--access-logfile - --access-logformat "%({http_do_connecting_ip}e)s %(s)s"` and redeploy. gunicorn applies `GUNICORN_CMD_ARGS` after `gunicorn.conf.py`. The format logs the header's value as Django reads it (gunicorn joins repeated headers with a comma) and the status, never the request line, which can hold an email verification or password reset key.
+2. From a machine whose public IP you know, run `curl -sS -o /dev/null -H 'do-connecting-ip: 203.0.113.7' https://<app domain>/api/v1/health/live`.
+3. Read the web runtime logs with `doctl apps logs <app-id> web --type run`. The check passes only if the logged value is exactly your real IP. A comma-separated list, or `203.0.113.7`, fails it.
+4. Remove `GUNICORN_CMD_ARGS` and redeploy, since the line logs client IPs.
+5. Record the result on #61 and #34. If the check fails, no public operation goes live until the setting or the throttle changes.
+
+#### Monthly cost
+
+Prices from DigitalOcean's pricing pages, checked 2026-11-25:
+
+| Component | Size | Per month |
+| --- | --- | --- |
+| web | `apps-s-1vcpu-0.5gb` (512 MiB, shared CPU) | $5.00 |
+| worker | `apps-s-1vcpu-0.5gb` | $5.00 |
+| beat | `apps-s-1vcpu-0.5gb` | $5.00 |
+| migrate job | `apps-s-1vcpu-0.5gb`, billed per second while it runs | under $0.01 per deploy |
+| Postgres | 1 GiB RAM, 1 vCPU, single node, from 10 GiB storage | $15.15 |
+| Valkey | 1 GiB | $15.00 |
+| Total | | $45.15 |
+
+There is no staging environment, so this is the whole hosting cost. Each $5 container includes 50 GiB of outbound transfer, pooled across the app, and more costs $0.02 per GiB. Running beat inside the worker (`celery worker -B`) would save $5 a month, but decision Q16 in #1 keeps beat a separate process.
+
 ### CORS
 
 A browser page on another origin can read API responses only if its origin is listed in `CORS_ALLOWED_ORIGINS`, comma-separated, as exact origins such as `https://app.example.org` or `http://localhost:3000`. It is empty by default, so no other origin is allowed. Only `/api/` and `/_allauth/` paths send CORS headers. CORS limits what browsers let a page read; it is not access control, and it does not limit other clients.
@@ -153,7 +221,7 @@ CI runs lint, types, and tests on every pull request. The test job also runs `ma
 
 Requests never send email. Each message is stored in the email outbox and sent by a Celery task on the `email` queue after the transaction commits (ADR 0016), so run a worker to see it. With `DJANGO_DEBUG` on and `EMAIL_BACKEND` empty, the worker prints every message to its console. With `DJANGO_DEBUG` off, `EMAIL_BACKEND` and `DEFAULT_FROM_EMAIL` are required, and backends that print or keep messages are refused.
 
-Staging and production send through Resend with django-anymail: set `EMAIL_BACKEND=anymail.backends.resend.EmailBackend` and `RESEND_API_KEY`. The sending domain, its DNS records (SPF, DKIM, DMARC), and the DMARC rollout are in `docs/email.md`. To switch to Amazon SES, run `uv add "django-anymail[amazon-ses]"`, set `EMAIL_BACKEND=anymail.backends.amazon_ses.EmailBackend`, and set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION` in the environment. No code changes. The SES backend uses boto3, which ignores `ANYMAIL_REQUESTS_TIMEOUT`: without more, a slow SES request reaches the send task's 60-second soft time limit, and the sweep retries it about an hour later instead of a backoff retry. For backoff retries, you can optionally add `ANYMAIL["AMAZON_SES_CLIENT_PARAMS"] = {"config": Config(connect_timeout=5, read_timeout=20, retries={"max_attempts": 1})}` in settings, with `Config` from `botocore.config`.
+Production sends through Resend with django-anymail: set `EMAIL_BACKEND=anymail.backends.resend.EmailBackend` and `RESEND_API_KEY`. The sending domain, its DNS records (SPF, DKIM, DMARC), and the DMARC rollout are in `docs/email.md`. To switch to Amazon SES, run `uv add "django-anymail[amazon-ses]"`, set `EMAIL_BACKEND=anymail.backends.amazon_ses.EmailBackend`, and set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION` in the environment. No code changes. The SES backend uses boto3, which ignores `ANYMAIL_REQUESTS_TIMEOUT`: without more, a slow SES request reaches the send task's 60-second soft time limit, and the sweep retries it about an hour later instead of a backoff retry. For backoff retries, you can optionally add `ANYMAIL["AMAZON_SES_CLIENT_PARAMS"] = {"config": Config(connect_timeout=5, read_timeout=20, retries={"max_attempts": 1})}` in settings, with `Config` from `botocore.config`.
 
 ## Test data
 

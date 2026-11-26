@@ -178,6 +178,10 @@ def _client_ip_header(name: str, default: str) -> str:
     return value
 
 
+# Seconds a database connect may take (psycopg's connect_timeout).
+_DATABASE_CONNECT_TIMEOUT = 5
+
+
 def _database(url: str, name: str = "DATABASE_URL") -> dict[str, object]:
     """Parse a database URL variable, failing fast without echoing the value.
 
@@ -201,6 +205,14 @@ def _database(url: str, name: str = "DATABASE_URL") -> dict[str, object]:
             f"{name} is not a database URL. Use the form "
             "postgres://USER:PASSWORD@HOST:PORT/NAME (see .env.example)."
         )
+    # Give up on a connect after 5 seconds, like the cache. Without it, a
+    # Postgres that drops packets holds a request (a readiness probe
+    # included) for psycopg's own default of 130 seconds, and gunicorn
+    # kills the worker first. A connect_timeout in the URL's query wins.
+    # It bounds only the connect, not a query on an open connection.
+    options = config.setdefault("OPTIONS", {})
+    if isinstance(options, dict):
+        options.setdefault("connect_timeout", _DATABASE_CONNECT_TIMEOUT)
     return config
 
 
@@ -532,10 +544,16 @@ OAUTH2_PROVIDER = {
 MIDDLEWARE = [
     # The Content Security Policy, Permissions-Policy, and X-Frame-Options
     # headers (ADR 0040). First, so every response gets them: static files,
-    # redirects, CORS preflights, and the 413s below included.
+    # redirects, CORS preflights, health probe answers, and the 413s below
+    # included.
     "csp.middleware.CSPMiddleware",
     "config.security_headers.PermissionsPolicyMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Answers App Platform's health probes, which arrive over plain http
+    # with a Host that ALLOWED_HOSTS refuses (ADR 0042). It must come
+    # right after the header middlewares, ahead of the https redirect and
+    # the host check.
+    "config.health_probe.HealthProbeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Serves the collected static files. It must come right after
     # SecurityMiddleware and only answers STATIC_URL paths.
@@ -1077,6 +1095,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 if not DEBUG:
     # Trust X-Forwarded-Proto only because the app runs behind a proxy that
     # sets it (DigitalOcean App Platform). Never serve the app directly.
+    # The one exception: config/health_probe.py reads SECURE_SSL_REDIRECT
+    # and is_secure(), and answers the two health paths to the platform's
+    # direct plain-http probes (ADR 0042).
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True

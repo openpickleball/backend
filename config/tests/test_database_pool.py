@@ -94,7 +94,8 @@ def test_pooled_default_closes_connections_and_uses_no_server_cursors() -> None:
     default = _databases({**POOLED, "DATABASE_URL": url})["default"]
     assert default["CONN_MAX_AGE"] == 0
     assert default["DISABLE_SERVER_SIDE_CURSORS"] is True
-    assert default["OPTIONS"] == ["sslmode"]
+    # The URL keeps sslmode; settings add the default connect_timeout.
+    assert default["OPTIONS"] == ["connect_timeout", "sslmode"]
 
 
 def test_pooled_default_never_prepares_statements() -> None:
