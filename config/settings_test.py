@@ -4,7 +4,8 @@ pytest loads this module (see [tool.pytest.ini_options] in pyproject.toml).
 It applies the same overrides as config/test_runner.py, the `manage.py test`
 counterpart, and nothing else: tests run over plain http, with an
 in-memory cache, with Celery tasks run eagerly in the caller, with
-plain static file storage, and with a fast password hasher. The overrides live in the settings module, so
+plain static file storage, with a fast password hasher, and with the
+admin at admin/. The overrides live in the settings module, so
 every process that loads it, parallel workers included, gets them. A test
 fails if the two sets of overrides drift apart.
 """
@@ -12,6 +13,10 @@ fails if the two sets of overrides drift apart.
 from django.conf import global_settings
 
 from config.settings import *  # noqa: F403
+
+# A developer's .env may give the admin a private path, as production
+# does. Tests use the local default (#101).
+ADMIN_URL = "admin/"
 
 # With DEBUG off, settings turn on the https redirect. Tests use plain http.
 SECURE_SSL_REDIRECT = False

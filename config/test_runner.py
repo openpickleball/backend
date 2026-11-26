@@ -2,7 +2,7 @@
 
 It serves the suite over plain http, swaps the cache for an in-memory
 one, runs Celery tasks eagerly, stores static files without the
-collectstatic manifest, and hashes passwords with a fast hasher, so the tests need no cache server, broker, or
+collectstatic manifest, hashes passwords with a fast hasher, and serves the admin at admin/, so the tests need no cache server, broker, or
 collectstatic step.
 """
 
@@ -20,8 +20,10 @@ from django.test.utils import override_settings
 # collectstatic writes. Tests use the plain storage instead.
 # Settings hash passwords with production-strength PBKDF2. Tests hash with
 # fast MD5 first and keep the defaults, so identify_hasher still knows them.
+# A developer's .env may give the admin a private path. Tests use admin/.
 _TEST_OVERRIDES: dict[str, Any] = {
     "SECURE_SSL_REDIRECT": False,
+    "ADMIN_URL": "admin/",
     "CACHES": {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
     "CELERY_TASK_ALWAYS_EAGER": True,
     "CELERY_TASK_EAGER_PROPAGATES": True,

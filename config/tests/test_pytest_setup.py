@@ -79,7 +79,11 @@ def test_settings_module_overrides_only_the_test_runner_overrides() -> None:
         and getattr(config.settings_test, name)
         != getattr(config.settings, name, object())
     }
-    assert changed == set(_TEST_OVERRIDES)
+    # An override may equal the base value in some environments (ADMIN_URL
+    # is admin/ locally), so it need not show as changed; the per-name test
+    # above checks every override's value.
+    assert changed <= set(_TEST_OVERRIDES)
+    assert set(_TEST_OVERRIDES) - {"ADMIN_URL"} <= changed
 
 
 def test_active_settings_carry_the_overrides() -> None:
