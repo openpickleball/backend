@@ -1,7 +1,7 @@
 """OPEN's django-allauth account adapter (``ACCOUNT_ADAPTER``)."""
 
 import ipaddress
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.core import context as allauth_context
@@ -11,6 +11,7 @@ from django.contrib.sites.shortcuts import get_current_site
 from django.db import transaction
 from django.http import HttpRequest
 
+from apps.accounts.devices import note_sign_in
 from apps.accounts.sessions import start_lifetime
 from apps.accounts.validators import (
     is_canonical_email,
@@ -27,6 +28,7 @@ FALLBACK_CLIENT_IP = "0.0.0.0"
 
 if TYPE_CHECKING:
     from allauth.account.models import EmailAddress
+    from django.contrib.auth.models import _User
 
 
 class AccountAdapter(DefaultAccountAdapter):
@@ -46,9 +48,12 @@ class AccountAdapter(DefaultAccountAdapter):
 
     def login(self, request: HttpRequest, user: AbstractBaseUser) -> None:
         """allauth's login, which runs once every login stage passed, then
-        the session's lifetime clocks (#100, ADR 0047)."""
+        the session's lifetime clocks and the new device check (#100, ADR
+        0047). Django's login sets ``last_login``, so it is read first."""
+        signed_in_before = user.last_login is not None
         super().login(request, user)
         start_lifetime(request.session)
+        note_sign_in(request, cast("_User", user), signed_in_before)
 
     def get_client_ip(self, request: HttpRequest) -> str:
         """OPEN's client IP, for allauth's rate limits and user sessions.

@@ -1,0 +1,8 @@
+{% extends "emails/base_message.txt" %}
+{% block content %}Your OPEN account was signed in to from {{ client }} that it had not used before, on {{ signed_in_at }}.
+
+If this was you, there is nothing to do.
+
+If it was not you, review your sessions, end any you do not recognize, and change your password:
+{{ sessions_url }}{% endblock content %}
+{% block reason %}You received this email because someone signed in to the OPEN account that uses this email address from a browser or app it had not used before.{% endblock reason %}

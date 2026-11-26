@@ -5,6 +5,7 @@ from collections.abc import Callable
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest, HttpResponseBase
 
+from apps.accounts.devices import write_marker
 from apps.accounts.sessions import check_lifetime, end_session
 
 
@@ -26,3 +27,17 @@ class SessionLifetimeMiddleware:
             end_session(session)
             request.user = AnonymousUser()
         return self.get_response(request)
+
+
+class DeviceMarkerMiddleware:
+    """Writes the device marker a completed login left on the request
+    (``apps.accounts.devices``, #100): the browser client's cookie, or
+    the app client's ``X-Device-Token`` response header."""
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponseBase]):
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponseBase:
+        response = self.get_response(request)
+        write_marker(request, response)
+        return response

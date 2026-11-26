@@ -592,16 +592,19 @@ CORS_ALLOW_ALL_ORIGINS = False
 # same-origin only: the web app is served from, or proxied through, the
 # API host (ADR 0040). Credentials stay off cross-origin.
 CORS_ALLOW_CREDENTIALS = False
-# corsheaders' default request headers, plus the three allauth reads.
+# corsheaders' default request headers, plus the three allauth reads and
+# the app client's device token, sent with a login (#100).
 CORS_ALLOW_HEADERS = (
     *default_headers,
     "x-session-token",
     "x-email-verification-key",
     "x-password-reset-key",
+    "x-device-token",
 )
 # Response headers a script on an allowed origin may read beyond the
-# safelisted ones: Retry-After on a throttled 429 (ADR 0030).
-CORS_EXPOSE_HEADERS = ["Retry-After"]
+# safelisted ones: Retry-After on a throttled 429 (ADR 0030), and the
+# device token a login returns to the app client (#100).
+CORS_EXPOSE_HEADERS = ["Retry-After", "X-Device-Token"]
 
 # Valkey URL (redis:// or rediss://). The cache and Celery (issue #9)
 # read it from here.
@@ -737,6 +740,8 @@ MIDDLEWARE = [
     # Ends a signed-in browser session past its lifetime (#100). After
     # AuthenticationMiddleware.
     "apps.accounts.middleware.SessionLifetimeMiddleware",
+    # Writes the device marker a completed login leaves (#100).
+    "apps.accounts.middleware.DeviceMarkerMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
 ]
 
@@ -1132,6 +1137,15 @@ SESSION_COOKIE_AGE = SESSION_MAX_AGE_DAYS * 86400
 # How often a session's last seen time is written: at most hourly, so a
 # request rarely writes.
 SESSION_SEEN_REFRESH_SECONDS = 3600
+# New device detection (#100, ADR 0047): a completed login from a browser
+# or app whose signed marker does not show the Account sends one email.
+# The browser keeps the marker in this cookie, the app in its
+# X-Device-Token header, each refused after SIGN_IN_DEVICE_COOKIE_DAYS
+# (unset or empty gives 365). HttpOnly and SameSite Lax; with DEBUG off,
+# Secure and __Host- prefixed, like the session cookie (ADR 0040).
+SIGN_IN_DEVICE_COOKIE_DAYS = _days("SIGN_IN_DEVICE_COOKIE_DAYS", 365)
+SIGN_IN_DEVICE_COOKIE_NAME = "open_device" if DEBUG else "__Host-open_device"
+SIGN_IN_DEVICE_COOKIE_SECURE = not DEBUG
 # allauth's session token strategy, with the lifetimes above.
 HEADLESS_TOKEN_STRATEGY = "apps.accounts.token_strategy.SessionTokenStrategy"
 
