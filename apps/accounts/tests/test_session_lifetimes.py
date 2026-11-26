@@ -9,6 +9,7 @@ user session row. Made-up data only.
 """
 
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -16,8 +17,10 @@ from allauth.account.models import EmailAddress
 from allauth.usersessions.models import UserSession
 from django.conf import settings
 from django.contrib.sessions.models import Session
+from django.utils import timezone
 
 from apps.accounts.sessions import SESSION_SEEN_KEY, SESSION_STARTED_KEY
+from apps.accounts.tasks import sweep_sessions
 from apps.accounts.tests.factories import UserFactory
 from apps.accounts.tests.headless import (
     APP,
@@ -55,7 +58,9 @@ def _key(session: HeadlessSession) -> str:
 
 def _age(session: HeadlessSession, started: float, seen: float) -> None:
     """Move the session's start and last seen ``started`` and ``seen``
-    seconds into the past."""
+    seconds into the past, leaving the store's expiry where it was (as for
+    a session the store still holds past its lifetime, such as one from
+    before #100). ``_age_like_time`` ages it as time does."""
     store = session.store()
     now = time.time()
     store[SESSION_STARTED_KEY] = int(now - started)
@@ -187,3 +192,39 @@ def test_a_signed_out_session_gets_no_clocks() -> None:
     store = session.store()
     assert SESSION_STARTED_KEY not in store
     assert SESSION_SEEN_KEY not in store
+
+
+def _age_like_time(session: HeadlessSession, started: int, seen: int) -> None:
+    """Age the session as time does: the stored times and the store's own
+    expiry, which production keeps at the earlier end."""
+    store = session.store()
+    now = int(time.time())
+    store[SESSION_STARTED_KEY] = now - started
+    store[SESSION_SEEN_KEY] = now - seen
+    ends = min(
+        now - started + settings.SESSION_MAX_AGE_DAYS * DAY,
+        now - seen + settings.SESSION_IDLE_DAYS * DAY,
+    )
+    store.set_expiry(datetime.fromtimestamp(ends, tz=UTC))
+    store.save()
+
+
+@pytest.mark.parametrize("base", [APP, BROWSER])
+@pytest.mark.parametrize(("started", "seen"), [(31 * DAY, 60), (8 * DAY, 7 * DAY + 60)])
+def test_a_session_ended_by_time_is_refused_and_its_row_goes(
+    base: str, started: int, seen: int
+) -> None:
+    session = _signed_in(base)
+    key = _key(session)
+    _age_like_time(session, started, seen)
+
+    assert _allauth_status(session) == 401
+    assert _api_status(session) == 401
+
+    if base == BROWSER:
+        # The browser's row goes with the next sweep.
+        sweep_sessions()
+    assert not UserSession.objects.filter(session_key=key).exists()
+    assert not Session.objects.filter(
+        session_key=key, expire_date__gt=timezone.now()
+    ).exists()
