@@ -37,6 +37,10 @@ allauth's URLconf (`config/urls.py`).
 - MFA (issue #99, ADR 0043): allauth's TOTP, recovery codes, MFA login,
   and MFA reauthentication views, recording an Audit Event for each
   change in the change's transaction (`apps/accounts/mfa_views.py`).
+- Login (#100): allauth's failed login limit answers 429.
+- Sessions, password change, and password reset from a key (#100, ADR
+  0047): the session list by opaque ids, and audited changes that end
+  other sessions (``apps/accounts/session_views.py``).
 - Email verification: an address that is another Account's login cannot
   be verified (allauth's `email_taken`, a 400). allauth checks only other
   verified EmailAddress rows, so verifying would set the address as this
@@ -91,6 +95,7 @@ from apps.accounts.mfa_views import (
     ReauthenticateView,
 )
 from apps.accounts.openapi import open_schema
+from apps.accounts.session_views import SessionsView
 from apps.accounts.validators import is_canonical_email, normalize_email_address
 from apps.players.age import is_old_enough
 from apps.players.signup import (
@@ -569,6 +574,7 @@ def headless_urlpatterns() -> list[URLPattern]:
         prefix = f"{client.value}/v1/auth/"
         patterns += [
             path(f"{prefix}login", LoginView.as_api_view(client=client)),
+            path(f"{prefix}sessions", SessionsView.as_api_view(client=client)),
             path(f"{prefix}signup", SignupView.as_api_view(client=client)),
             path(
                 f"{prefix}signup/age-check",

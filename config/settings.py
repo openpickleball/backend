@@ -638,13 +638,16 @@ INSTALLED_APPS = [
     # Sends email through a provider's API (Resend), chosen by EMAIL_BACKEND.
     "anymail",
     # Account sign-up, login, email verification, and password reset,
-    # served only as JSON at /_allauth/ (allauth.headless), and two-factor
-    # authentication with TOTP and recovery codes (allauth.mfa, ADR 0043).
-    # No social login or user sessions app: see the Accounts section below.
+    # served only as JSON at /_allauth/ (allauth.headless), two-factor
+    # authentication with TOTP and recovery codes (allauth.mfa, ADR 0043),
+    # and the list of a player's sessions (allauth.usersessions, #100,
+    # ADR 0047). No social login: see the Accounts section below.
     "allauth",
     "allauth.account",
     "allauth.mfa",
     "allauth.headless",
+    # Before apps.accounts, whose admin module unregisters its admin.
+    "allauth.usersessions",
     "apps.accounts",
     "apps.audit",
     "apps.public_ids",
@@ -928,6 +931,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
         "options": {"expire_seconds": 900},
     },
+    # Deletes expired sessions and the user session rows (IP address and
+    # user agent) of sessions that ended or expired (#100). A run missed
+    # for 15 minutes is dropped.
+    "sweep-sessions": {
+        "task": "apps.accounts.tasks.sweep_sessions",
+        "schedule": crontab(minute="*/15"),
+        "options": {"expire_seconds": 900},
+    },
     # Runs pending rating replay requests whose queued task was lost (#47).
     # Does nothing when no request is pending. A run missed for 15 minutes
     # is dropped.
@@ -1091,6 +1102,17 @@ ACCOUNT_RATE_LIMITS = {
     "change_password": "5/m/user",
     "manage_email": "10/m/user",
 }
+
+# A password change keeps the session that made it (allauth's default, set
+# explicitly) and ends the Account's other sessions (OPEN's change view,
+# #100). A reset from a key ends every session.
+ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = False
+
+# The player's session list (allauth.usersessions, #100, ADR 0047). A row
+# per signed-in session holds OPEN's client IP and the user agent, only
+# while the session lasts. No activity tracking, so no row is written per
+# request.
+USERSESSIONS_TRACK_ACTIVITY = False
 
 # JSON only, at /_allauth/browser/v1/ (session cookie and CSRF) and
 # /_allauth/app/v1/ (X-Session-Token header). No server-rendered allauth

@@ -122,6 +122,8 @@ module = [
     "apps.accounts.headless_adapter",
     "apps.accounts.headless_views",
     "apps.accounts.mfa_views",
+    "apps.accounts.session_views",
+    "apps.accounts.token_strategy",
     "config.auth",
 ]
 disallow_subclassing_any = false

@@ -2,6 +2,7 @@ from typing import Any
 
 from allauth.account.models import EmailAddress
 from allauth.mfa.models import Authenticator
+from allauth.usersessions.models import UserSession
 from django.contrib import admin
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -43,6 +44,11 @@ admin.site.unregister(EmailAddress)
 # secrets and recovery code seeds to staff (ADR 0009: never shown, ADR
 # 0043). allauth.mfa also comes before apps.accounts.
 admin.site.unregister(Authenticator)
+# allauth.usersessions registers an admin for UserSession, whose __str__
+# and list show a session's IP address and user agent (ADR 0047). The
+# player sees them in the session list; staff have no need to.
+# allauth.usersessions also comes before apps.accounts.
+admin.site.unregister(UserSession)
 # Django's Group admin, replaced below: only a superuser changes groups.
 # django.contrib.auth also comes before apps.accounts.
 admin.site.unregister(Group)
