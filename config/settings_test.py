@@ -4,14 +4,15 @@ pytest loads this module (see [tool.pytest.ini_options] in pyproject.toml).
 It applies the same overrides as config/test_runner.py, the `manage.py test`
 counterpart, and nothing else: tests run over plain http, with an
 in-memory cache, with Celery tasks run eagerly in the caller, with
-plain static file storage, with a fast password hasher, and with the
-admin at admin/. The overrides live in the settings module, so
+plain static file storage, with a fast password hasher, with the
+admin at admin/, and with a field encryption key generated at import. The overrides live in the settings module, so
 every process that loads it, parallel workers included, gets them. A test
 fails if the two sets of overrides drift apart.
 """
 
 from django.conf import global_settings
 
+from config import test_runner as _test_runner
 from config.settings import *  # noqa: F403
 
 # A developer's .env may give the admin a private path, as production
@@ -44,3 +45,8 @@ PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",
     *global_settings.PASSWORD_HASHERS,
 ]
+
+# Personal data fields need an encryption key (ADR 0046). The test
+# runner module generates one per process at import, so no key is ever
+# stored and both sets of overrides hold the same one.
+FIELD_ENCRYPTION_KEYS = _test_runner._TEST_OVERRIDES["FIELD_ENCRYPTION_KEYS"]

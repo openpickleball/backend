@@ -21,6 +21,7 @@ import django_stubs_ext
 import environ
 from celery.schedules import crontab
 from corsheaders.defaults import default_headers
+from cryptography.fernet import Fernet
 from csp.constants import NONE, SELF
 from django.core.exceptions import ImproperlyConfigured
 from kombu import Queue
@@ -431,6 +432,38 @@ def _base_url(name: str, default: str, *, require_https: bool) -> str:
     return value
 
 
+# A Fernet key: urlsafe base64 of 32 bytes, 44 characters with one "=".
+_FERNET_KEY = re.compile(r"[A-Za-z0-9_-]{43}=")
+
+
+def _encryption_keys(name: str, *, required: bool) -> list[str]:
+    """Read a comma-separated list of Fernet keys, newest first (ADR 0046).
+
+    Every entry must be a Fernet key, in any mode. With required (DEBUG
+    off), an empty list stops startup. Errors name the variable and the
+    entry's position, never a value.
+    """
+    keys = _list(name)
+    if required and not keys:
+        raise ImproperlyConfigured(
+            f"Set the {name} environment variable when DJANGO_DEBUG is off "
+            "(see .env.example)."
+        )
+    for position, key in enumerate(keys, start=1):
+        valid = _FERNET_KEY.fullmatch(key) is not None
+        if valid:
+            try:
+                Fernet(key)
+            except ValueError:
+                valid = False
+        if not valid:
+            raise ImproperlyConfigured(
+                f"{name} entry {position} is not a Fernet key. Each entry is "
+                "urlsafe base64 of 32 bytes (see .env.example)."
+            )
+    return keys
+
+
 def _celery_broker_url(url: str) -> str:
     """Return a checked REDIS_URL in the form kombu reads as one broker.
 
@@ -481,6 +514,13 @@ if not SECRET_KEY.strip():
             'print(get_random_secret_key())"'
         )
     SECRET_KEY = DEVELOPMENT_SECRET_KEY
+
+# Keys that encrypt personal data fields (apps/encryption, ADR 0046): a
+# comma-separated list of Fernet keys, newest first. The newest encrypts;
+# every listed key decrypts, so keep an old key listed until
+# reencrypt_fields has run. Required with DEBUG off. With DEBUG on it may
+# be empty, and then reading or writing an encrypted field fails.
+FIELD_ENCRYPTION_KEYS = _encryption_keys("FIELD_ENCRYPTION_KEYS", required=not DEBUG)
 
 ALLOWED_HOSTS = _list("DJANGO_ALLOWED_HOSTS")
 
@@ -584,6 +624,8 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.audit",
     "apps.public_ids",
+    # Field-level encryption of personal data (ADR 0046). No models.
+    "apps.encryption",
     "apps.players",
     "apps.clubs",
     "apps.events",

@@ -1,7 +1,8 @@
 # DigitalOcean App Platform spec for OPEN's production backend (issue #61).
 # README.md, "App Platform", explains how to deploy it and what is still
 # set by hand. This file holds no secret values: DJANGO_SECRET_KEY,
-# RESEND_API_KEY, and ADMIN_URL are set in the App Platform console.
+# FIELD_ENCRYPTION_KEYS, RESEND_API_KEY, and ADMIN_URL are set in the App
+# Platform console.
 name: open-backend-production
 
 # Set once here, so every component gets them (ADR 0038).
@@ -10,6 +11,10 @@ envs:
     value: "false"
     scope: RUN_TIME
   - key: DJANGO_SECRET_KEY
+    type: SECRET
+    scope: RUN_TIME
+  # Keys that encrypt personal data fields, newest first (ADR 0046).
+  - key: FIELD_ENCRYPTION_KEYS
     type: SECRET
     scope: RUN_TIME
   - key: DJANGO_ALLOWED_HOSTS
