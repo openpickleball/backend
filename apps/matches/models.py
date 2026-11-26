@@ -53,7 +53,7 @@ from typing import Any, ClassVar, NoReturn
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import (
     DateField,
     DateTimeField,
@@ -437,6 +437,15 @@ class SubmissionBatch(_LinkMessagesModel, _InsertOnlyModel):
     the batch has that Event or Club. Like the ledger rows, a batch is
     inserted once and never changed or deleted (``MatchImmutable``). It has
     no OPEN Code: no API shows it.
+
+    ``expected_size`` is how many matches the batch path means to record
+    (a CSV upload's number of match rows), so the unusual submission rule
+    for large batches flags every match from the first (#206, ADR 0049).
+    It is the one exception to the guard: it may be given at insert, or
+    set once later with ``set_expected_size()`` (a save with
+    ``update_fields=["expected_size"]`` and nothing else) while the stored
+    value is empty. Every other change, a second set, a full save, and
+    ``QuerySet.update`` stay refused.
     """
 
     submitted_by_user = models.ForeignKey(
@@ -472,6 +481,9 @@ class SubmissionBatch(_LinkMessagesModel, _InsertOnlyModel):
         error_messages=_CLUB_MESSAGES,
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    expected_size = models.PositiveIntegerField(
+        null=True, blank=True, error_messages=_NUMBER_MESSAGES
+    )
 
     objects = SubmissionBatchQuerySet.as_manager()
 
@@ -493,11 +505,75 @@ class SubmissionBatch(_LinkMessagesModel, _InsertOnlyModel):
                 name="matches_submissionbatch_one_submitter",
                 violation_error_message=_BATCH_ONE_SUBMITTER,
             ),
+            models.CheckConstraint(
+                condition=Q(expected_size__isnull=True) | Q(expected_size__gte=1),
+                name="matches_submissionbatch_expected_size_positive",
+                violation_error_message="A batch expects at least one match.",
+            ),
         ]
 
     def __str__(self) -> str:
         # Never the submitter: an Account's __str__ is its email.
         return f"Submission batch {self.pk}"
+
+    def save_base(
+        self,
+        raw: bool = False,
+        force_insert: bool | tuple[models.base.ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
+        if update_fields is None or set(update_fields) != {"expected_size"}:
+            super().save_base(
+                raw=raw,
+                force_insert=force_insert,
+                force_update=force_update,
+                using=using,
+                update_fields=update_fields,
+            )
+            return
+        # The set-once exception: only the size, only on a stored batch,
+        # only while the stored size is empty, read under the row's lock.
+        if (
+            raw
+            or force_insert
+            or self._state.adding
+            or self.pk is None
+            or self.expected_size is None
+        ):
+            raise MatchImmutable
+        with transaction.atomic(using=using):
+            stored = (
+                SubmissionBatch.objects.using(using)
+                .select_for_update()
+                .filter(pk=self.pk)
+                .values_list("expected_size", flat=True)
+            )
+            if list(stored) != [None]:
+                raise MatchImmutable
+            models.Model.save_base(
+                self,
+                force_update=True,
+                using=using,
+                update_fields=["expected_size"],
+            )
+
+    def set_expected_size(self, size: int) -> None:
+        """Set how many matches this stored batch expects, once.
+
+        Raises ``ValueError`` for a size below 1 and ``MatchImmutable``
+        for an unsaved batch or one whose stored size is already set.
+        """
+        if isinstance(size, bool) or not isinstance(size, int) or size < 1:
+            raise ValueError("A batch expects at least one match.")
+        previous = self.expected_size
+        self.expected_size = size
+        try:
+            self.save(update_fields=["expected_size"])
+        except MatchImmutable:
+            self.expected_size = previous
+            raise
 
 
 class Match(_LinkMessagesModel, _CleanedTextModel):
@@ -657,6 +733,12 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
         # guarded one too.
         base_manager_name = "objects"
         permissions = (("moderate_match", "Can void matches in bulk"),)
+        # The unusual submission rules count a submitter's matches since a
+        # time (#206), so each count is an index range.
+        indexes: ClassVar[list[models.Index]] = [
+            models.Index(fields=["submitted_by_user", "created_at"]),
+            models.Index(fields=["submitted_by_application", "created_at"]),
+        ]
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.CheckConstraint(
                 condition=(
@@ -990,13 +1072,27 @@ class FlagReason(models.TextChoices):
     """Why a Match was flagged for review."""
 
     POSSIBLE_DUPLICATE = "possible_duplicate", "Possible duplicate"
+    UNUSUAL_SUBMISSION = "unusual_submission", "Unusual submission"
+
+
+class FlagRule(models.TextChoices):
+    """Which unusual submission rule flagged a Match (#206, ADR 0049).
+
+    Only an ``unusual_submission`` flag has a rule, and a Match carries at
+    most one flag per rule. #207 adds its own rule here.
+    """
+
+    FIRST_MATCHES = "first_matches", "First matches"
+    LARGE_BATCH = "large_batch", "Large batch"
+    DAILY_VOLUME = "daily_volume", "Daily volume"
 
 
 # Flag reasons that are signals only: they never hold a Match from
-# counting, so they stay out of ``counted()`` (ADR 0029).
-# Empty until #206 and #207 add their reasons. The Organizer admin's
-# moderator review counts flags with these reasons (#271).
-SIGNAL_FLAG_REASONS: frozenset[str] = frozenset()
+# counting, so they stay out of ``counted()`` (ADR 0029). They hold
+# nothing, change no rating, and send no signal or notice. The Organizer
+# admin's moderator review counts flags with these reasons (#271), and
+# the match admin shows none of them (ADR 0049). #207 adds its reason.
+SIGNAL_FLAG_REASONS: frozenset[str] = frozenset({FlagReason.UNUSUAL_SUBMISSION.value})
 
 
 class FlagResolution(models.TextChoices):
@@ -1055,6 +1151,13 @@ class MatchFlag(_LinkMessagesModel):
     ``resolved_at`` together (a check constraint). Both are empty while
     the flag is open. A flag row is never deleted. The resolver and reason
     are in its Audit Event, not on the flag.
+
+    An ``unusual_submission`` flag (#206, ADR 0049) is a signal only
+    (``SIGNAL_FLAG_REASONS``): ``record_match()`` writes one per
+    ``FlagRule`` that fires for a match with an Event, and it holds
+    nothing, so the match counts at once. It names its ``rule`` and no
+    other match, and stays open: nothing resolves it. A
+    ``possible_duplicate`` flag has no rule.
     """
 
     match = models.ForeignKey(
@@ -1082,12 +1185,40 @@ class MatchFlag(_LinkMessagesModel):
         error_messages=CHOICE_MESSAGES,
     )
     resolved_at = models.DateTimeField(null=True, blank=True)
+    rule = models.CharField(
+        max_length=30,
+        choices=FlagRule,
+        blank=True,
+        default="",
+        error_messages=CHOICE_MESSAGES,
+    )
 
     class Meta:
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.CheckConstraint(
                 condition=Q(reason__in=FlagReason.values),
                 name="matches_matchflag_reason_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(rule="") | Q(rule__in=FlagRule.values),
+                name="matches_matchflag_rule_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(reason=FlagReason.POSSIBLE_DUPLICATE, rule="")
+                | Q(reason=FlagReason.UNUSUAL_SUBMISSION, rule__in=FlagRule.values),
+                name="matches_matchflag_rule_matches_reason",
+                violation_error_message=(
+                    "An unusual submission flag names its rule, and no other "
+                    "flag has one."
+                ),
+            ),
+            models.UniqueConstraint(
+                fields=("match", "rule"),
+                condition=~Q(rule=""),
+                name="matches_matchflag_once_per_rule",
+                violation_error_message=(
+                    "This match already has a flag for that rule."
+                ),
             ),
             models.CheckConstraint(
                 condition=Q(resolution="", resolved_at__isnull=True)
