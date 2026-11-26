@@ -34,6 +34,9 @@ allauth's URLconf (`config/urls.py`).
   against its email the same way (`clean_signup_password`).
 - allauth's OpenAPI document: served with the age and password checks
   added (`apps/accounts/openapi.py`).
+- MFA (issue #99, ADR 0043): allauth's TOTP, recovery codes, MFA login,
+  and MFA reauthentication views, recording an Audit Event for each
+  change in the change's transaction (`apps/accounts/mfa_views.py`).
 - Email verification: an address that is another Account's login cannot
   be verified (allauth's `email_taken`, a 400). allauth checks only other
   verified EmailAddress rows, so verifying would set the address as this
@@ -76,6 +79,12 @@ from django.utils.decorators import method_decorator
 
 from apps.accounts.agreements import current_versions, record_acceptance
 from apps.accounts.forms import SignupAgeForm, SignupBirthForm, signup_full_name
+from apps.accounts.mfa_views import (
+    AuthenticateView,
+    ManageRecoveryCodesView,
+    ManageTOTPView,
+    ReauthenticateView,
+)
 from apps.accounts.openapi import open_schema
 from apps.accounts.validators import is_canonical_email, normalize_email_address
 from apps.players.age import is_old_enough
@@ -508,7 +517,10 @@ class OpenAPIYAMLView(BaseOpenAPIYAMLView):
 
 def headless_urlpatterns() -> list[URLPattern]:
     """OPEN's views at allauth's paths, for each enabled headless client,
-    and its own age and password checks under allauth's sign-up."""
+    and its own age and password checks under allauth's sign-up.
+
+    The MFA views assume ``MFA_SUPPORTED_TYPES`` holds TOTP and recovery
+    codes (settings, ADR 0043), as allauth would mount them."""
     patterns = []
     if settings.HEADLESS_SERVE_SPECIFICATION:
         patterns += [
@@ -536,6 +548,22 @@ def headless_urlpatterns() -> list[URLPattern]:
             path(
                 f"{prefix}email/verify",
                 VerifyEmailView.as_api_view(client=client),
+            ),
+            path(
+                f"{prefix}2fa/authenticate",
+                AuthenticateView.as_api_view(client=client),
+            ),
+            path(
+                f"{prefix}2fa/reauthenticate",
+                ReauthenticateView.as_api_view(client=client),
+            ),
+            path(
+                f"{client.value}/v1/account/authenticators/totp",
+                ManageTOTPView.as_api_view(client=client),
+            ),
+            path(
+                f"{client.value}/v1/account/authenticators/recovery-codes",
+                ManageRecoveryCodesView.as_api_view(client=client),
             ),
         ]
     return patterns

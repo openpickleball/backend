@@ -120,6 +120,7 @@ module = [
     "apps.accounts.auth_backends",
     "apps.accounts.headless_adapter",
     "apps.accounts.headless_views",
+    "apps.accounts.mfa_views",
     "config.auth",
 ]
 disallow_subclassing_any = false
