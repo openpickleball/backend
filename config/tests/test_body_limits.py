@@ -5,6 +5,8 @@ ErrorResponse before anything reads the body, signed in or not. A POST
 to the CSV results upload keeps its own limit (apps/matches/upload_limits).
 """
 
+from typing import TYPE_CHECKING
+
 import pytest
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
@@ -12,6 +14,9 @@ from django.test import Client, RequestFactory, override_settings
 
 from apps.matches.upload_limits import MAX_REQUEST_BYTES
 from config.body_limits import TOO_LARGE_MESSAGE, RequestBodyLimitMiddleware
+
+if TYPE_CHECKING:
+    from django.test.client import _MonkeyPatchedWSGIResponse
 
 LIMIT = settings.DATA_UPLOAD_MAX_MEMORY_SIZE
 TOO_LARGE = {"code": "too_large", "message": TOO_LARGE_MESSAGE, "errors": []}
@@ -37,8 +42,10 @@ def _passed() -> tuple[RequestBodyLimitMiddleware, HttpResponse]:
     return RequestBodyLimitMiddleware(get_response), passed
 
 
-def _oversized(client: Client, method: str, path: str, **extra: str) -> HttpResponse:
-    response: HttpResponse = getattr(client, method)(
+def _oversized(
+    client: Client, method: str, path: str, **extra: str
+) -> "_MonkeyPatchedWSGIResponse":
+    response: _MonkeyPatchedWSGIResponse = getattr(client, method)(
         path,
         data=b"",
         content_type="application/json",
