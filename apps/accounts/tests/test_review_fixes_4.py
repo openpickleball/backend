@@ -16,6 +16,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from apps.accounts.models import User
+from apps.accounts.tests.factories import enroll_totp
 
 PASSWORD = "correct-horse-battery-staple-42"
 FORMAT_MESSAGE = "Enter a valid email address."
@@ -87,6 +88,8 @@ class AdminAddFormFormatTests(TestCase):
         cls.superuser = User.objects.create_superuser(
             "admin@example.org", password=PASSWORD
         )
+        # The admin needs MFA for staff (ADR 0043).
+        enroll_totp(cls.superuser)
 
     def setUp(self) -> None:
         self.client.force_login(self.superuser)

@@ -57,13 +57,12 @@ def test_spec_page_is_served() -> None:
     assert Client().get("/_allauth/openapi.html").status_code == 200
 
 
-def test_no_social_or_mfa_app_is_installed() -> None:
+def test_mfa_is_installed_and_social_login_and_user_sessions_are_not() -> None:
+    assert "allauth.mfa" in settings.INSTALLED_APPS
     assert not [
         app
         for app in settings.INSTALLED_APPS
-        if app.startswith(
-            ("allauth.socialaccount", "allauth.mfa", "allauth.usersessions")
-        )
+        if app.startswith(("allauth.socialaccount", "allauth.usersessions"))
     ]
 
 
@@ -71,8 +70,24 @@ def test_config_has_no_socialaccount_section() -> None:
     data = Client().get(f"{BROWSER}/config").json()["data"]
 
     assert "socialaccount" not in data
-    assert "mfa" not in data
     assert data["account"]["login_methods"] == ["email"]
+
+
+def test_config_offers_totp_and_recovery_codes_only() -> None:
+    data = Client().get(f"{BROWSER}/config").json()["data"]
+
+    assert sorted(data["mfa"]["supported_types"]) == ["recovery_codes", "totp"]
+    assert data["mfa"]["passkey_login_enabled"] is False
+
+
+def test_served_spec_lists_the_mfa_endpoints() -> None:
+    paths = Client().get("/_allauth/openapi.json").json()["paths"]
+
+    assert "/_allauth/{client}/v1/auth/2fa/authenticate" in paths
+    assert "/_allauth/{client}/v1/auth/2fa/reauthenticate" in paths
+    assert "/_allauth/{client}/v1/account/authenticators/totp" in paths
+    assert "/_allauth/{client}/v1/account/authenticators/recovery-codes" in paths
+    assert "/_allauth/{client}/v1/account/authenticators/webauthn" not in paths
 
 
 def test_provider_redirect_is_not_found() -> None:

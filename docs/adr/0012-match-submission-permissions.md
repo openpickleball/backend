@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Amended by: [ADR 0021](0021-organizers-are-the-trusted-submitters.md) (the verified Organizer is the only trusted submitter: club authority and the Club Application Grant are gone, an application also acts for an Organizer that granted it an Organizer Application Grant, a match with a Club needs an Event and the Club's Club Organizer Grant to its Organizer, and a Club admin no longer changes matches)
+- Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (a member's event authority also needs MFA on the member's Account)
 - Date: 2026-11-15
 
 ## Context

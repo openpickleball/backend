@@ -1,6 +1,7 @@
 # 0014. Headless account authentication
 
 - Status: Proposed
+- Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (MFA with TOTP and recovery codes; a session of an Account with MFA counts only once it passed MFA)
 - Date: 2026-11-17
 
 ## Context
@@ -17,7 +18,7 @@ allauth keeps its own `EmailAddress` table next to `accounts.User.email`, and it
 ## Decision
 
 - django-allauth runs headless only, with both of its clients: `browser` (session cookie and CSRF) at `/_allauth/browser/v1/`, and `app` (`X-Session-Token`) at `/_allauth/app/v1/`. It is mounted at `/_allauth/`, allauth's default, so its documentation, OpenAPI document, and example frontends apply as written. Its OpenAPI document is served and linked from the OPEN API's description.
-- Login is by email only. Email verification is mandatory. An Account has one login address: a change through allauth replaces it once verified. Any save that changes `User.email`, such as an admin edit, deletes the Account's rows for other addresses in the same transaction. No social login, MFA, or user sessions app is installed.
+- Login is by email only. Email verification is mandatory. An Account has one login address: a change through allauth replaces it once verified. Any save that changes `User.email`, such as an admin edit, deletes the Account's rows for other addresses in the same transaction. No social login or user sessions app is installed. MFA came later, in [ADR 0043](0043-mfa-totp-and-recovery-codes.md).
 - Verification and password reset use emailed links to pages of the web app at `FRONTEND_URL`, as the issue asks. `FRONTEND_URL` is required, an exact origin, and https when DEBUG is off.
 - Sign-up and password reset answer the same way whether or not an Account has the address, and neither mails an address that has no Account.
 - An address allauth stores (sign-up, change of address) is normalized and passes the Account email rules (`AccountAdapter.clean_email`). An address used to find an Account (login, password reset) must be canonical (`is_canonical_email`): stripped and lowercased, it equals its normalized form, and it is ASCII. Anything else finds no Account.
@@ -34,7 +35,7 @@ allauth keeps its own `EmailAddress` table next to `accounts.User.email`, and it
 - Email links open web pages. Opening them in the mobile apps needs Universal Links and App Links on the `FRONTEND_URL` domain, which is the apps' work.
 - Until #35, a deployment with DEBUG off discarded mail, so nobody could verify an address or log in through allauth there. ADR 0016 adds a real provider (Resend) and sends account email from the email queue.
 - An Account made with `createsuperuser` or the admin has no `EmailAddress` row. Its first headless login creates one, unverified, and asks for verification.
-- The Django admin login does not check email verification, so a staff Account's admin session also authenticates `account_auth`. Staff Accounts are made by operators.
+- The Django admin login does not check email verification, so a staff Account's admin session also authenticates `account_auth`. Staff Accounts are made by operators. Since ADR 0043 that session is password-only, so the API answers it with 403 `mfa_required`.
 - A login typed with the Kelvin sign (U+212A) for a `k` still logs in. allauth's email field lowercases it to ASCII before OPEN's check, so it reaches the same Account that ADR 0003's normalization maps it to. It needs the password, stores nothing, and a reset with it mails only the stored address. This is accepted.
 - allauth keys its per-address rate limits on the lowercased address as typed, so each refused variant has its own counter. Variants never log in, and the per-IP limits still apply. #100 sets the limits and the client IP behind the proxy.
 - allauth sends at most one verification mail per address every three minutes. If allauth just mailed an address (for example for another Account's change of address), a sign-up with it in that window is created and answered as usual, but no verification mail is sent; the next login after the cooldown sends it. #100 sets the limits.

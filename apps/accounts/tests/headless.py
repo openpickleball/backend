@@ -6,10 +6,12 @@ test client and the whole middleware stack.
 
 import re
 from importlib import import_module
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import unquote
 
 import pytest
+from allauth.account.internal.flows.login import record_authentication
 from django.conf import settings
 from django.contrib.sessions.backends.base import SessionBase
 from django.core import mail
@@ -115,6 +117,13 @@ def csrf_header(client: Client) -> dict[str, str]:
     return {"X-CSRFToken": client.cookies[settings.CSRF_COOKIE_NAME].value}
 
 
+def pass_mfa(session: SessionBase, account: Any) -> None:
+    """Record in ``session`` that ``account`` passed the second factor, as
+    an MFA login does (allauth's own record, with no row id)."""
+    record_authentication(SimpleNamespace(session=session), account, "mfa", type="totp")
+    session.save()
+
+
 def run_on_commit_after_each_request(monkeypatch: pytest.MonkeyPatch) -> None:
     """Run the on_commit callbacks a test client request registers.
 
@@ -146,17 +155,54 @@ class HeadlessSession:
         self.client = browser_client() if base == BROWSER else Client()
         self.token: str | None = None
 
-    def post(self, endpoint: str, data: dict[str, Any]) -> Any:
+    def _headers(self) -> dict[str, str]:
         if self.base == BROWSER:
-            headers = csrf_header(self.client)
-        else:
-            headers = app_headers(self.token)
-        response = post(self.client, f"{self.base}/{endpoint}", data, **headers)
-        if self.base == APP:
+            return csrf_header(self.client)
+        return app_headers(self.token)
+
+    def _keep_token(self, response: Any) -> Any:
+        if self.base == APP and response.content:
             token = response.json().get("meta", {}).get("session_token")
             if token:
                 self.token = token
         return response
+
+    def post(self, endpoint: str, data: dict[str, Any]) -> Any:
+        response = post(self.client, f"{self.base}/{endpoint}", data, **self._headers())
+        return self._keep_token(response)
+
+    def get(self, endpoint: str) -> Any:
+        response = self.client.get(f"{self.base}/{endpoint}", headers=self._headers())
+        return self._keep_token(response)
+
+    def delete(self, endpoint: str) -> Any:
+        response = self.client.delete(
+            f"{self.base}/{endpoint}", headers=self._headers()
+        )
+        return self._keep_token(response)
+
+    def login(self, email: str, password: str = PASSWORD) -> Any:
+        return self.post("auth/login", {"email": email, "password": password})
+
+    def reauthenticate(self, password: str = PASSWORD) -> Any:
+        return self.post("auth/reauthenticate", {"password": password})
+
+    def logout(self) -> Any:
+        response = self.delete("auth/session")
+        if self.base == APP:
+            self.token = None
+        return response
+
+    def mfa_login(self, email: str, code: str, password: str = PASSWORD) -> Any:
+        """Log in with the password, then pass the MFA stage with ``code``
+        (a TOTP code or a recovery code)."""
+        response = self.login(email, password)
+        flows = response.json()["data"]["flows"]
+        assert any(
+            flow["id"] == "mfa_authenticate" and flow.get("is_pending")
+            for flow in flows
+        ), flows
+        return self.post("auth/2fa/authenticate", {"code": code})
 
     def signup(self, email: object = SESSION_EMAIL, **fields: object) -> Any:
         data: dict[str, object] = {"email": email, "password": PASSWORD}

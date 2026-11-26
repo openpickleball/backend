@@ -41,10 +41,10 @@ def test_the_lookup_is_documented_with_sign_in(document: dict[str, Any]) -> None
     operation = document["paths"][LOOKUP]["get"]
 
     assert operation["operationId"] == "get_player_ratings"
-    assert _statuses(operation) == {"200", "401", "404", "422", "429"}
+    assert _statuses(operation) == {"200", "401", "403", "404", "422", "429"}
     assert operation.get("security")
     assert operation["security"] == document["paths"][HISTORY]["get"]["security"]
-    for status in ("401", "404", "422", "429"):
+    for status in ("401", "403", "404", "422", "429"):
         content = operation["responses"][status]["content"]["application/json"]
         assert content["schema"] == ERROR_REF, status
     assert "Retry-After" in operation["responses"]["429"]["headers"]
@@ -57,9 +57,9 @@ def test_the_history_is_documented_with_sign_in(document: dict[str, Any]) -> Non
     operation = document["paths"][HISTORY]["get"]
 
     assert operation["operationId"] == "list_player_rating_history"
-    assert _statuses(operation) == {"200", "401", "404", "422", "429"}
+    assert _statuses(operation) == {"200", "401", "403", "404", "422", "429"}
     assert operation.get("security")
-    for status in ("401", "404", "422", "429"):
+    for status in ("401", "403", "404", "422", "429"):
         content = operation["responses"][status]["content"]["application/json"]
         assert content["schema"] == ERROR_REF, status
 

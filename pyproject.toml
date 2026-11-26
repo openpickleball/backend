@@ -6,7 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "celery[redis]>=5.7.0",
     "django>=5.2,<5.3",
-    "django-allauth[headless,headless-spec]>=65.22,<66",
+    "django-allauth[headless,headless-spec,mfa]>=65.22,<66",
     "django-anymail[resend]>=15.2",
     "django-celery-beat>=2.9.0",
     "django-cors-headers>=4.9.0",
@@ -120,9 +120,16 @@ module = [
     "apps.accounts.auth_backends",
     "apps.accounts.headless_adapter",
     "apps.accounts.headless_views",
+    "apps.accounts.mfa_views",
     "config.auth",
 ]
 disallow_subclassing_any = false
+
+[[tool.mypy.overrides]]
+# A frozen regression test whose helper returns a comparison built from
+# the test client's untyped JSON body.
+module = ["apps.accounts.tests.test_fix_password_session_mfa"]
+disable_error_code = ["no-any-return"]
 
 [[tool.mypy.overrides]]
 # celery-types declares conf.timezone as a tzinfo, but the app's conf holds

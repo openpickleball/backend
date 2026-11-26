@@ -106,6 +106,7 @@ from django.db.models.functions import Cast
 from django.utils import timezone
 from oauth2_provider.models import get_application_model
 
+from apps.accounts.mfa import accounts_with_mfa
 from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
 from apps.clubs.models import OrganizerMember
@@ -1093,7 +1094,8 @@ def vouchable_holds(account: "_User") -> QuerySet[Match]:
     applied in SQL, so the cost does not grow with the held matches:
     self-reported matches its Player plays in (the player level), and
     Event matches of verified Organizers it is a member of that its Player
-    does not play in (the Organizer level). Only an Event match with a
+    does not play in, while its Account has a method (the Organizer level,
+    ADR 0043). Only an Event match with a
     correction chain (it corrects a match, or a match corrects it) is
     checked in Python with ``vouch_level``, since the conflict rule
     follows the chain. Such matches are rare, so the list still calls
@@ -1127,7 +1129,7 @@ def vouchable_holds(account: "_User") -> QuerySet[Match]:
                 organizer_id=OuterRef("event__organizer_id"),
                 organizer__verified_at__isnull=False,
                 account_id=account.pk,
-            )
+            ).filter(account_id__in=accounts_with_mfa())
         ),
     )
     in_chain = Q(corrects__isnull=False) | Exists(
@@ -1192,6 +1194,8 @@ def organizer_disputes(account: "_User") -> QuerySet[Match]:
             status=MatchStatus.DISPUTED,
             event__organizer__verified_at__isnull=False,
             event__organizer__members__account=account,
+            # Organizer authority needs MFA (ADR 0043), as in settles_dispute.
+            event__organizer__members__account_id__in=accounts_with_mfa(),
         )
         .exclude(pk__in=_conflicted_chain_ids(account.pk))
         .distinct()

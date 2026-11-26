@@ -1,14 +1,15 @@
 """The Organizer's Event operations at /api/v1/organizer/events (#125).
 
 A signed-in Account lists the Events of every Organizer it is a member of
-(either role, verified or not). A member of a verified Organizer
-(``apps.matches.permissions.can_manage_events``, ADR 0021) creates,
+(either role, verified or not). A member of a verified Organizer whose
+Account has MFA (``apps.matches.permissions.can_manage_events``, ADR
+0021, ADR 0043) creates,
 changes, and deletes its Events, through ``apps.events.services``, which
 record one Audit Event each with the Account as actor.
 
 Create names the Organizer in the body: an unknown or malformed code, an
 unverified Organizer, and an Account that is not a member all get one
-403 with fixed text, before the Club is read and before anything is
+403 with fixed text (as does a member without MFA), before the Club is read and before anything is
 written. Change and delete name the Event in the path: anyone who may not
 manage it gets the same 404 as an unknown or malformed code (ADR 0008,
 ADR 0015).
@@ -146,7 +147,8 @@ def create_organizer_event(
 ) -> Status[EventOut]:
     """Create an Event for a verified Organizer the Account is a member of.
 
-    403 for any other Organizer, an unknown one included. A Club must have
+    The Account needs two-factor authentication. 403 for any other
+    Organizer, an unknown one included, and for a member without it. A Club must have
     granted the Organizer a Club Organizer Grant (422 on ``club``).
     """
     account = request_account(request)

@@ -5,6 +5,8 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from apps.accounts.tests.factories import enroll_totp
+
 if TYPE_CHECKING:
     from apps.accounts.models import User as Account
 
@@ -21,6 +23,8 @@ class UserAdminTests(TestCase):
         cls.superuser = cls.User.objects.create_superuser(
             "admin@example.org", password=PASSWORD
         )
+        # The admin needs MFA for staff (ADR 0043).
+        enroll_totp(cls.superuser)
 
     def setUp(self) -> None:
         self.client.force_login(self.superuser)

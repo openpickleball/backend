@@ -93,7 +93,8 @@ def confirmed(pending: Match, players: list[Player]) -> Match:
 
 @pytest.fixture
 def moderator() -> User:
-    account: User = UserFactory.create()
+    # A moderator needs MFA to use the API (ADR 0043).
+    account: User = UserFactory.create(mfa=True)
     account.user_permissions.add(
         Permission.objects.get(
             content_type__app_label="matches", codename="moderate_match"

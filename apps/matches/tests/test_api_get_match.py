@@ -29,10 +29,10 @@ pytestmark = pytest.mark.django_db
 
 MATCHES = "/api/v1/matches/"
 NOT_FOUND = {"code": "not_found", "message": "Not found.", "errors": []}
-# Session, Account, the Match by code, the Account's active check, the
-# viewer's Player, the Match again, then its participants, games, and
-# confirmations.
-QUERIES = 9
+# Session, Account, the two-factor requirement check (ADR 0043), the
+# Match by code, the Account's active check, the viewer's Player, the
+# Match again, then its participants, games, and confirmations.
+QUERIES = 10
 
 
 def signed_in(account: Any) -> Client:

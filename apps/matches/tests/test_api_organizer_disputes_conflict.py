@@ -162,5 +162,6 @@ def test_the_list_query_count_does_not_grow_with_its_rows(event: Event) -> None:
     large = _list_queries(free)
 
     assert len(_codes(free)) == 8
-    # Session, Account, the list, its count, and three prefetches.
-    assert small == large == 7
+    # Session, Account, the two-factor requirement check (ADR 0043), the
+    # list, its count, and three prefetches.
+    assert small == large == 8

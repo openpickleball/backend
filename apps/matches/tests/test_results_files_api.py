@@ -18,7 +18,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 
 from apps.accounts.models import User
-from apps.accounts.tests.factories import UserFactory
+from apps.accounts.tests.factories import UserFactory, totp_code, totp_secret
 from apps.accounts.tests.headless import (
     APP,
     BROWSER,
@@ -205,14 +205,18 @@ def test_the_same_file_again_reports_duplicates_with_the_codes(
 
 @pytest.mark.parametrize("base", [APP, BROWSER])
 def test_both_headless_clients_can_upload(
-    event: Event, base: str, django_capture_on_commit_callbacks: Any
+    event: Event, base: str, django_capture_on_commit_callbacks: Any, settings: Any
 ) -> None:
+    # Accept the neighbouring TOTP step, so the MFA login never fails on a
+    # period boundary.
+    settings.MFA_TOTP_TOLERANCE = 1
     account = _member(event.organizer, password=PASSWORD)
     EmailAddress.objects.create(
         user=account, email=account.email, verified=True, primary=True
     )
     session = HeadlessSession(base)
-    login = session.post("auth/login", {"email": account.email, "password": PASSWORD})
+    # A member has TOTP (ADR 0043), so the login passes the MFA stage too.
+    login = session.mfa_login(account.email, totp_code(totp_secret(account)))
     assert login.status_code == 200
     headers = (
         csrf_header(session.client)

@@ -465,7 +465,9 @@ REDIS_URL = _redis_url(_required("REDIS_URL"))
 # partners.PartnerApplication (decision Q3). partners' first migration runs
 # before django-oauth-toolkit's, whose tables point at it.
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # django.contrib.admin, with OPEN's admin site, which needs MFA for
+    # every staff Account (config/admin.py, ADR 0043).
+    "config.apps.OpenAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -485,10 +487,12 @@ INSTALLED_APPS = [
     # Sends email through a provider's API (Resend), chosen by EMAIL_BACKEND.
     "anymail",
     # Account sign-up, login, email verification, and password reset,
-    # served only as JSON at /_allauth/ (allauth.headless). No social login,
-    # MFA, or user sessions app: see the Accounts section below.
+    # served only as JSON at /_allauth/ (allauth.headless), and two-factor
+    # authentication with TOTP and recovery codes (allauth.mfa, ADR 0043).
+    # No social login or user sessions app: see the Accounts section below.
     "allauth",
     "allauth.account",
+    "allauth.mfa",
     "allauth.headless",
     "apps.accounts",
     "apps.audit",
@@ -891,6 +895,10 @@ ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 # Verification and password reset use emailed links, not codes.
 ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED = False
 ACCOUNT_PASSWORD_RESET_BY_CODE_ENABLED = False
+# Reauthentication (before an MFA change) is by password or by an MFA
+# code only. allauth's default also allows an emailed code, which would
+# mail allauth's own login_code template.
+ACCOUNT_REAUTHENTICATION_METHODS = ("password", "mfa")
 # Sign-up and password reset answer the same way whether or not an Account
 # has the address (allauth's default, set explicitly), and nothing is
 # mailed to an address that has no Account.
@@ -940,6 +948,28 @@ HEADLESS_FRONTEND_URLS = {
     ),
     "account_signup": f"{FRONTEND_URL}/account/signup",
 }
+
+
+# Two-factor authentication (allauth.mfa, issue #99, ADR 0043)
+# https://docs.allauth.org/en/latest/mfa/configuration.html
+
+# TOTP, with recovery codes made alongside the first method. WebAuthn and
+# passkeys stay off until #117.
+MFA_SUPPORTED_TYPES = ["totp", "recovery_codes"]
+MFA_PASSKEY_LOGIN_ENABLED = False
+MFA_PASSKEY_SIGNUP_ENABLED = False
+# No "trust this browser": every login with a method asks for a code.
+MFA_TRUST_ENABLED = False
+# Recovery codes are shown once, right after they are made, and can be
+# made again.
+MFA_RECOVERY_CODES_SHOW_ONCE = True
+# Adding or removing TOTP and making new recovery codes need a recent
+# reauthentication (ACCOUNT_REAUTHENTICATION_TIMEOUT, allauth's default).
+MFA_REAUTHENTICATION_REQUIRED = True
+# The issuer an authenticator app shows, so the request's host never is.
+MFA_TOTP_ISSUER = "OPEN"
+# No method before the login address is verified (allauth's default).
+MFA_ALLOW_UNVERIFIED_EMAIL = False
 
 
 # Password validation

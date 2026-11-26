@@ -1,6 +1,7 @@
 # 0021. Organizers are the only trusted submitters
 
 - Status: Accepted
+- Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (a member acts for a verified Organizer only while the member's Account has MFA)
 - Date: 2026-11-23
 
 ## Context

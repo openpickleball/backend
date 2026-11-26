@@ -57,11 +57,12 @@ Errors raised while an operation runs (input that fails validation, a body
 that does not parse, `Http404`, any `HttpError`, a failed `auth` check,
 which returns 401, a `DuplicateMatchError`, which returns 409, a
 `MatchValidationError`, which returns 422, a `MatchPermissionDenied` or
-`MatchActionDenied`, which return 403, and a `MatchStateError`, which
+`MatchActionDenied`, which return 403, a `config.auth.MFARequired`, which
+returns 403 `mfa_required` (ADR 0043), and a `MatchStateError`, which
 returns 409) come back as `ErrorResponse` (see `config/api_errors.py`). Every operation that
 takes input documents a 422 response with that schema, and may not declare
 a different 422 schema. Every operation with `auth` (such as
-`config.auth.account_auth`) documents a 401 response with it.
+`config.auth.account_auth`) documents a 401 and a 403 response with it.
 
 Throttles (ADR 0030): a router whose operations need sign-in passes
 `throttle=config.throttling.account_throttle` next to its `auth`, so they
@@ -102,6 +103,7 @@ from config.api_errors import (
     ErrorResponse,
     install_error_handlers,
 )
+from config.auth import MFA_REQUIRED_STATUS
 from config.health import router as health_router
 
 _SCHEMA_REF = "#/components/schemas/{model}"
@@ -202,10 +204,53 @@ def _document_throttled(
         responses[THROTTLED_STATUS] = response
 
 
+_MFA_REQUIRED_DESCRIPTION = (
+    "Code `mfa_required`: an Account that must have two-factor "
+    "authentication (staff, superusers, moderators, and owners of a "
+    "production application) and has none, or an Account with it whose "
+    "session did not pass it, such as a password-only session. It can "
+    "still use allauth's endpoints to set it up or sign in with it."
+)
+
+
+def _document_mfa_required(
+    operation: dict[str, Any], error_ref: dict[str, str]
+) -> None:
+    """Document the 403 `mfa_required` on a signed-in operation (ADR 0043)."""
+    responses = operation.setdefault("responses", {})
+    # ninja keys responses by int status; JSON rendering makes them strings.
+    declared = [code for code in responses if str(code) == str(MFA_REQUIRED_STATUS)]
+    for code in declared:
+        content = responses[code].get("content", {}).get("application/json", {})
+        if content.get("schema") != error_ref:
+            raise ImproperlyConfigured(
+                f"API operation {operation.get('operationId')} declares its own "
+                f"{MFA_REQUIRED_STATUS} response, but a signed-in operation's "
+                f"403 always returns {ErrorResponse.__name__}. Declare "
+                f"{ErrorResponse.__name__}."
+            )
+        own = responses[code].get("description", "").rstrip()
+        if own and not own.endswith("."):
+            own = f"{own}."
+        responses[code] = {
+            **responses[code],
+            "description": f"{own} {_MFA_REQUIRED_DESCRIPTION}".strip(),
+        }
+    if not declared:
+        responses[MFA_REQUIRED_STATUS] = {
+            "description": _MFA_REQUIRED_DESCRIPTION,
+            "content": {"application/json": {"schema": error_ref}},
+        }
+
+
 def _document_errors(schema: OpenAPISchema, throttled: set[str]) -> None:
     """Add `ErrorResponse`, a 422 response to every operation with input, a
-    401 response to every operation that takes auth, and a 429 response to
-    every operation in `throttled`."""
+    401 and a 403 response to every operation that takes auth, and a 429
+    response to every operation in `throttled`.
+
+    The 403 is `mfa_required` (ADR 0043). An operation that declares its
+    own 403 keeps its description, with the `mfa_required` case added,
+    and must declare `ErrorResponse`, the schema every 403 returns."""
     error_schema = ErrorResponse.model_json_schema(
         ref_template=_SCHEMA_REF, schema_generator=NinjaGenerateJsonSchema
     )
@@ -253,6 +298,7 @@ def _document_errors(schema: OpenAPISchema, throttled: set[str]) -> None:
                 operation.setdefault("responses", {})[UNAUTHORIZED_STATUS] = (
                     unauthorized
                 )
+                _document_mfa_required(operation, error_ref)
             has_input = bool(operation.get("parameters")) or "requestBody" in operation
             if not has_input:
                 continue

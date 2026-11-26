@@ -44,6 +44,10 @@ A request that an operation's `auth` does not authenticate (ninja's
 `AuthenticationError`, see `config/auth.py`) returns 401 with code
 "unauthorized", fixed text, and no items.
 
+An Account that must set up two-factor authentication and has not
+(`config.auth.MFARequired`, ADR 0043) gets 403 with code "mfa_required",
+fixed text, and no items, on every signed-in operation.
+
 An `HttpError` takes its code from its status: 413 (a file over an
 upload's size limit) is "too_large".
 
@@ -73,6 +77,7 @@ from apps.matches.services import (
     MatchValidationError,
 )
 from apps.matches.workflow import MatchStateError
+from config.auth import MFA_REQUIRED_STATUS, MFARequired
 
 VALIDATION_ERROR_STATUS = 422
 UNAUTHORIZED_STATUS = 401
@@ -205,6 +210,12 @@ def install_error_handlers(api: NinjaAPI) -> None:
             errors=[],
         )
         return _respond(api, request, exc.status_code, body)
+
+    @api.exception_handler(MFARequired)
+    def on_mfa_required(request: HttpRequest, exc: MFARequired) -> HttpResponse:
+        # Fixed text: never which rule made a method required.
+        body = ErrorResponse(code="mfa_required", message=str(exc), errors=[])
+        return _respond(api, request, MFA_REQUIRED_STATUS, body)
 
     @api.exception_handler(AuthenticationError)
     def on_authentication_error(

@@ -90,3 +90,4 @@ Add each record here when it merges.
 - [0040. Security headers, cookies, and a body limit](0040-security-headers-and-cookies.md) (issue #102)
 - [0041. Players are told about matches a trusted submitter records](0041-recorded-match-notices.md) (issue #208)
 - [0042. Health probes from the platform](0042-health-probes-from-the-platform.md) (issue #61)
+- [0043. Two-factor authentication with TOTP and recovery codes](0043-mfa-totp-and-recovery-codes.md) (issue #99)
