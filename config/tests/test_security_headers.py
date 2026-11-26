@@ -281,12 +281,19 @@ def test_csp_mode(env: dict[str, str], value: str, *, enforced: bool) -> None:
     }
 
 
-def test_csp_and_permissions_policy_wrap_every_other_middleware() -> None:
-    assert settings.MIDDLEWARE[:3] == [
+def test_the_header_middlewares_wrap_every_other_middleware() -> None:
+    assert settings.MIDDLEWARE[:4] == [
         "csp.middleware.CSPMiddleware",
         "config.security_headers.PermissionsPolicyMiddleware",
+        "django.middleware.clickjacking.XFrameOptionsMiddleware",
         "django.middleware.security.SecurityMiddleware",
     ]
+    assert (
+        settings.MIDDLEWARE.count(
+            "django.middleware.clickjacking.XFrameOptionsMiddleware"
+        )
+        == 1
+    )
 
 
 def test_permissions_policy_keeps_a_header_the_view_set() -> None:

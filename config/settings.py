@@ -507,11 +507,12 @@ OAUTH2_PROVIDER = {
 }
 
 MIDDLEWARE = [
-    # The Content Security Policy and Permissions-Policy headers (ADR 0040).
-    # First, so every response gets them: static files, redirects, and the
-    # 413s below included.
+    # The Content Security Policy, Permissions-Policy, and X-Frame-Options
+    # headers (ADR 0040). First, so every response gets them: static files,
+    # redirects, CORS preflights, and the 413s below included.
     "csp.middleware.CSPMiddleware",
     "config.security_headers.PermissionsPolicyMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Serves the collected static files. It must come right after
     # SecurityMiddleware and only answers STATIC_URL paths.
@@ -533,7 +534,6 @@ MIDDLEWARE = [
     # allauth's per-request state. It must come after AuthenticationMiddleware.
     "allauth.account.middleware.AccountMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
