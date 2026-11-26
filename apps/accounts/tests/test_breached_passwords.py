@@ -277,3 +277,11 @@ def test_an_outage_still_lets_signup_through(
 
     # Signup goes on to the email verification step.
     assert response.status_code == 401
+
+
+def test_a_password_that_is_not_text_is_never_sent(
+    breach_service: FakeBreachService,
+) -> None:
+    # EncodablePasswordValidator refuses it; the range API is not asked.
+    assert not is_breached("\ud800abcdefgh-XYZ-123")
+    assert breach_service.prefixes == []

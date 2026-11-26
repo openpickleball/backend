@@ -40,6 +40,8 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from django.conf import settings
 from django.core.exceptions import ValidationError
 
+from apps.accounts.validators import is_encodable_password
+
 logger = logging.getLogger(__name__)
 
 # A generic client name: no contact detail, host, or version.
@@ -155,9 +157,11 @@ def is_breached(password: str) -> bool:
 
     False, with one warning, when the service cannot answer (fail open).
     """
-    # surrogatepass: a lone surrogate (valid JSON) still hashes, so the
-    # other password rules decide instead of a 500.
-    encoded = password.encode("utf-8", "surrogatepass")
+    # A password that is not UTF-8 text is refused by
+    # EncodablePasswordValidator; nothing is asked for it.
+    if not is_encodable_password(password):
+        return False
+    encoded = password.encode("utf-8")
     digest = hashlib.sha1(encoded, usedforsecurity=False).hexdigest().upper()
     prefix, suffix = digest[:PREFIX_LENGTH], digest[PREFIX_LENGTH:]
     try:

@@ -186,7 +186,9 @@ def end_sessions_after_password_change(
     session = getattr(request, "session", None)
     key = getattr(session, "session_key", None)
     if old_key and key and old_key != key:
-        UserSession.objects.filter(session_key=old_key).update(session_key=key)
+        UserSession.objects.filter(user_id=request.user.pk, session_key=old_key).update(
+            session_key=key
+        )
     if getattr(request.user, "pk", None) == account.pk:
         end_other_sessions(request, account)
     else:
