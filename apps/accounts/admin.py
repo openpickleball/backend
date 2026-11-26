@@ -8,7 +8,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.http import HttpRequest, HttpResponse
 
 from apps.accounts.forms import UserChangeForm, UserCreationForm
@@ -38,8 +38,17 @@ def _is_superuser(request: HttpRequest) -> bool:
 
 
 def _holds_power(account: Any) -> bool:
-    """True for a staff or superuser Account."""
-    return bool(account.is_staff or account.is_superuser)
+    """True for an Account with any power beyond a player's: staff or
+    superuser status, a group, or a permission of its own. The groups and
+    permissions are read from the database."""
+    return bool(
+        account.is_staff
+        or account.is_superuser
+        or (
+            account.pk is not None
+            and (account.groups.exists() or account.user_permissions.exists())
+        )
+    )
 
 
 @admin.register(User)
@@ -87,27 +96,32 @@ class UserAdmin(AccessAuditAdminMixin, BaseUserAdmin[User]):
         return fields + tuple(f for f in GRANT_FIELDS if f not in fields)
 
     def has_change_permission(self, request: HttpRequest, obj: Any = None) -> bool:
-        """Only a superuser changes a staff or superuser Account (#101)."""
+        """Only a superuser changes an Account that holds power (#101)."""
         if obj is not None and _holds_power(obj) and not _is_superuser(request):
             return False
         return super().has_change_permission(request, obj)
 
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
-        """Only a superuser deletes a staff or superuser Account (#101)."""
+        """Only a superuser deletes an Account that holds power (#101)."""
         if obj is not None and _holds_power(obj) and not _is_superuser(request):
             return False
         return super().has_delete_permission(request, obj)
 
     def delete_queryset(self, request: HttpRequest, queryset: QuerySet[User]) -> None:
-        """Delete the selection, or nothing when it holds a staff or
-        superuser Account and the actor is not a superuser.
+        """Delete the selection, or nothing when it holds an Account with
+        power (``_holds_power``) and the actor is not a superuser.
 
         ``delete_selected`` already refuses such a selection on its
         confirmation page; this checks again at the delete itself.
         """
-        if not _is_superuser(request) and (
-            queryset.filter(is_staff=True).exists()
-            or queryset.filter(is_superuser=True).exists()
+        if (
+            not _is_superuser(request)
+            and queryset.filter(
+                Q(is_staff=True)
+                | Q(is_superuser=True)
+                | Q(groups__isnull=False)
+                | Q(user_permissions__isnull=False)
+            ).exists()
         ):
             raise PermissionDenied
         super().delete_queryset(request, queryset)
