@@ -5,6 +5,8 @@ OPEN's admin login (issue #101). It takes no password itself: its script
 (accounts/admin_login.js) signs in through allauth's headless browser
 client, the password and then a code, or in code mode confirms a code
 for a signed-in session. No inline script or style (the CSP refuses them).
+The form posts (a native submit gets 405) and its inputs have no names,
+so without the script nothing typed is sent anywhere.
 {% endcomment %}
 
 {% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static "admin/css/login.css" %}">
@@ -25,7 +27,7 @@ for a signed-in session. No inline script or style (the CSP refuses them).
 
 {% block content %}
 <div id="content-main">
-<form id="open-admin-login" data-base="{{ allauth_base }}" data-mode="{{ mode }}" data-next="{{ next }}" data-csrf-cookie="{{ csrf_cookie_name }}" novalidate>
+<form id="open-admin-login" method="post" data-base="{{ allauth_base }}" data-mode="{{ mode }}" data-next="{{ next }}" data-csrf-cookie="{{ csrf_cookie_name }}" novalidate>
   {% csrf_token %}
   <p class="errornote" id="open-admin-error" role="alert" hidden></p>
   {% if mode == "code" %}
@@ -33,16 +35,16 @@ for a signed-in session. No inline script or style (the CSP refuses them).
   {% else %}
   <div class="form-row" id="open-admin-credentials">
     <label class="required" for="open-admin-email">Email:</label>
-    <input type="email" name="email" id="open-admin-email" autocomplete="username" required autofocus>
+    <input type="email" id="open-admin-email" autocomplete="username" required autofocus>
   </div>
   <div class="form-row" id="open-admin-password-row">
     <label class="required" for="open-admin-password">Password:</label>
-    <input type="password" name="password" id="open-admin-password" autocomplete="current-password" required>
+    <input type="password" id="open-admin-password" autocomplete="current-password" required>
   </div>
   {% endif %}
   <div class="form-row" id="open-admin-code-row"{% if mode != "code" %} hidden{% endif %}>
     <label class="required" for="open-admin-code">Code:</label>
-    <input type="text" name="code" id="open-admin-code" autocomplete="one-time-code" inputmode="numeric"{% if mode == "code" %} required autofocus{% endif %}>
+    <input type="text" id="open-admin-code" autocomplete="one-time-code" inputmode="numeric"{% if mode == "code" %} required autofocus{% endif %}>
   </div>
   <div class="submit-row">
     <input type="submit" value="{% if mode == "code" %}Continue{% else %}Log in{% endif %}">
