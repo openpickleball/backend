@@ -145,7 +145,7 @@ uv run pre-commit run --all-files
 
 mypy loads the Django settings, so it needs `.env` (or the variables) like `check` does. Without them mypy fails with "Error constructing plugin instance", and the message does not name the missing variable. The mypy hook checks the whole project, so an untracked `.py` file with type errors also blocks a commit. The ruff and mypy hooks run through `uv run --locked`: after changing dependencies in `pyproject.toml`, run `uv lock` before you commit.
 
-CI runs lint, types, and tests on every pull request. The test job also runs `manage.py check` and the missing-migrations check (`makemigrations --check --dry-run`), and fails when the committed OpenAPI document `openapi/openapi.json` is out of date (`export_openapi_schema --check`). After changing the API, regenerate it with `uv run python manage.py export_openapi_schema` and commit it.
+CI runs lint, types, and tests on every pull request. The test job also runs `manage.py check` and the missing-migrations check (`makemigrations --check --dry-run`), and fails when the committed OpenAPI document `openapi/openapi.json` is out of date (`export_openapi_schema --check`). After changing the API, regenerate it with `uv run python manage.py export_openapi_schema` and commit it. The audit workflow checks the locked dependencies for known vulnerabilities on every pull request and weekly; see [Supply chain checks](CONTRIBUTING.md#supply-chain-checks).
 
 ### Email
 

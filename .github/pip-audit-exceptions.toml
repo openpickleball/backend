@@ -1,0 +1,10 @@
+# Known vulnerabilities the project accepts for now, read by
+# scripts/audit_dependencies.py. Each entry needs every key below. The
+# audit fails once an entry's expiry date has passed, so each exception is
+# reviewed again. CONTRIBUTING.md explains when an exception is acceptable.
+#
+# [[exception]]
+# id = "GHSA-xxxx-xxxx-xxxx"   # the id pip-audit reports, or an alias
+# package = "example-package"  # the exception covers this package only
+# reason = "Why the vulnerability does not affect OPEN, or why it cannot be fixed yet."
+# expires = 2027-01-31          # a date, no quotes

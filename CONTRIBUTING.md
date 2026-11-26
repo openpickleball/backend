@@ -109,6 +109,26 @@ uv run pytest --no-cov apps/accounts
 uv run python manage.py makemigrations --check --dry-run
 ```
 
+## Supply chain checks
+
+- Install only from the lock file. CI runs `uv sync --locked`, which fails when `uv.lock` is out of step with `pyproject.toml` and checks each package against its hash in `uv.lock`. The production image installs the same way. After changing dependencies, run `uv lock` and commit both files.
+- The `audit` workflow (`.github/workflows/audit.yml`) runs `scripts/audit_dependencies.py` on every pull request, every push to `main`, and every Monday. Its `audit` job is meant to be a required check on `main` too. It runs [pip-audit](https://pypi.org/project/pip-audit/) against every locked package, dev packages included, and fails on any known vulnerability. Run it yourself with:
+
+```bash
+uv run python scripts/audit_dependencies.py
+```
+
+- The audit also fails when a package in `uv.lock` does not come from PyPI. The engine is the one exception: it is installed from a git tag, so the lock file holds its commit but no artifact hash, and no vulnerability database tracks it. The audit checks instead that it is pinned to a version tag (such as `v1.0.0`) and a full commit SHA. Dependabot leaves it alone: upgrade it as [docs/engine.md](docs/engine.md) describes.
+- Dependabot (`.github/dependabot.yml`) opens weekly pull requests for Python packages, GitHub Actions, and the Dockerfile's base images, with minor and patch updates grouped. It keeps the Python minor version that `.python-version` names. Secret scanning, push protection, and Dependabot alerts are turned on in the repository settings, so a push that contains a known secret pattern is refused.
+- Every action in a workflow is pinned to a full commit SHA, with its version in a comment, and every workflow sets least-privilege `permissions:`. A test (`config/tests/test_supply_chain.py`) checks both.
+
+### When the audit or an alert reports a vulnerability
+
+1. Upgrade the package to a fixed version (`uv lock --upgrade-package <name>`), run the tests, and open a pull request. A Dependabot security update may already have opened one.
+2. If no fixed version exists, or the fix cannot land yet, and the vulnerability does not affect OPEN (the vulnerable code is never called, say), a maintainer may accept it. Add an entry to `.github/pip-audit-exceptions.toml` with the advisory id, the package, the reason, and an expiry date. The exception covers that advisory in that package only, and the audit fails once the package leaves `uv.lock`. The audit fails once that date passes, so the exception is reviewed again.
+3. A vulnerability that does affect OPEN is a security problem: report it privately, as the [security policy](https://github.com/openpickleball/.github/blob/main/SECURITY.md) describes, not in a public issue or pull request.
+4. If push protection blocks a push, remove the secret from the commits before pushing again. If a real secret was ever pushed, treat it as leaked: revoke it and tell the maintainers privately.
+
 ## API schema
 
 - `openapi/openapi.json` is the API's OpenAPI document. A command generates it. Never edit it by hand.
