@@ -656,10 +656,12 @@ def submitter_lock_key(submitter: "Actor") -> int:
 
     ``record_match()`` takes it last in its write transaction, so the
     counts of one Account's or application's concurrent submissions see
-    each other. After it the call takes no new lock. The commit-time
-    foreign key checks of the rows it wrote take KEY SHARE only on rows
-    the transaction already locked, or on rows nothing locks FOR UPDATE
-    while holding this lock, so holding it never waits in a cycle.
+    each other. After it the call takes no new lock. Before it, the call takes only share locks (the Account, the
+    Players, and the Event, ``FOR KEY SHARE``) and advisory locks, plus,
+    on the duplicate path, a Match row ``FOR UPDATE`` that the lineup lock
+    already covers (any other transaction touching that row holds the
+    same lineup lock first). So no transaction waiting for this lock holds
+    a row this one needs, and no cycle forms.
     """
     kind = "application" if isinstance(submitter, get_application_model()) else "user"
     return _lock_key({"lock": "unusual_submission", kind: submitter.pk})
@@ -1450,11 +1452,9 @@ def record_match(
     ``unusual_submission`` flag per unusual submission rule that fires
     (``apps.matches.unusual.flag_unusual_submission``, #206, ADR 0049):
     the last step of the write transaction, after every signal, under the
-    submitter's advisory lock (``submitter_lock_key``). After that lock the
-    call takes no new lock; the commit-time foreign key checks take KEY
-    SHARE only on rows the transaction already locked or that nothing
-    locks FOR UPDATE while holding this lock. It reads only stored values
-    by id, and holds nothing.
+    submitter's advisory lock (``submitter_lock_key``), after which the
+    call takes no new lock (see ``submitter_lock_key`` for why it adds no
+    deadlock). It reads only stored values by id, and holds nothing.
 
     A team that names a Player whose Account is inactive raises
     ``MatchValidationError`` (code ``unknown_player``) right after the
@@ -1471,9 +1471,9 @@ def record_match(
     callers that each record several matches in one outer transaction can
     deadlock, whatever order they sort them in. For a match with an
     Event, the submitter lock is taken last and the call takes no new lock
-    after it (the commit-time foreign key checks take KEY SHARE only on
-    rows the transaction already locked or that nothing locks FOR UPDATE
-    while holding it), so it adds no deadlock; after such a call returns,
+    after it; before it the call holds only share, advisory, and
+    lineup-covered row locks, so it adds no deadlock
+    (``submitter_lock_key``). After such a call returns,
     a caller must not take another lock in the same transaction, except
     on a row it already holds. ``create_match``'s ``confirm_match`` runs
     only for a self-submission, which takes no submitter lock. A batch
@@ -1583,9 +1583,9 @@ def record_match(
         send_holds(held)
         if confirms and submitter is not None:
             # Last: the submitter's lock, then the signal-only flags
-            # (#206). No new lock after this one; the commit-time foreign
-            # key checks take KEY SHARE only on rows already locked here or
-            # that nothing locks FOR UPDATE while holding this lock.
+            # (#206). No new lock after this one. Everything locked before
+            # it is a share lock, an advisory lock, or a Match row the
+            # lineup lock covers, so no waiter holds a row this call needs.
             _advisory_lock(submitter_lock_key(submitter))
             flag_unusual_submission(match)
     return RecordedMatch(match=match, created=True)
