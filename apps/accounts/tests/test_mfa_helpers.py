@@ -9,7 +9,7 @@ from allauth.account.models import EmailAddress
 from allauth.mfa.models import Authenticator
 from allauth.mfa.recovery_codes.internal.auth import RecoveryCodes
 from django.conf import settings
-from django.contrib.auth.models import AnonymousUser, Group
+from django.contrib.auth.models import AnonymousUser, Group, Permission
 from django.contrib.sessions.backends.base import SessionBase
 from django.core.cache import cache
 from django.test import Client
@@ -17,6 +17,7 @@ from django.test import Client
 from apps.accounts.mfa import (
     accounts_with_mfa,
     has_mfa,
+    lacks_required_mfa,
     mfa_required,
     session_passed_mfa,
 )
@@ -93,6 +94,24 @@ def test_a_moderator_needs_mfa() -> None:
     account.groups.add(Group.objects.get(name=MODERATOR_GROUP))
 
     assert mfa_required(account)
+
+
+def test_an_account_with_the_moderate_permission_itself_needs_mfa() -> None:
+    account = UserFactory.create()
+    account.user_permissions.add(
+        Permission.objects.get(
+            content_type__app_label="matches", codename="moderate_match"
+        )
+    )
+
+    assert mfa_required(account)
+
+
+def test_an_inactive_moderator_does_not_count_as_one() -> None:
+    account = UserFactory.create(is_active=False)
+    account.groups.add(Group.objects.get(name=MODERATOR_GROUP))
+
+    assert not mfa_required(account)
 
 
 def test_the_owner_of_a_production_application_needs_mfa() -> None:
@@ -190,3 +209,23 @@ def test_factory_leaves_a_player_and_an_opted_out_staff_account_without_mfa() ->
     assert not has_mfa(UserFactory.create())
     assert not has_mfa(UserFactory.create(is_staff=True, mfa=False))
     assert has_mfa(UserFactory.create(mfa=True))
+
+
+def test_lacks_required_mfa_only_when_required_and_missing() -> None:
+    staff = UserFactory.create(is_staff=True, mfa=False)
+    enrolled = UserFactory.create(is_staff=True)
+    player = UserFactory.create()
+
+    assert lacks_required_mfa(staff)
+    assert not lacks_required_mfa(enrolled)
+    assert not lacks_required_mfa(player)
+    assert not lacks_required_mfa(AnonymousUser())
+
+
+def test_lacks_required_mfa_is_one_query(
+    django_assert_num_queries: pytest.FixtureRequest,
+) -> None:
+    staff = UserFactory.create(is_staff=True, mfa=False)
+
+    with django_assert_num_queries(1):  # type: ignore[operator]
+        assert lacks_required_mfa(staff)

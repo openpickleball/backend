@@ -1815,6 +1815,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "429": {
             "content": {
               "application/json": {
@@ -1947,7 +1957,7 @@
                 }
               }
             },
-            "description": "Forbidden"
+            "description": "Forbidden. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "409": {
             "content": {
@@ -2048,6 +2058,16 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -2157,7 +2177,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -2287,7 +2307,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -2407,7 +2427,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -2537,7 +2557,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -2667,7 +2687,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -2787,7 +2807,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -2907,7 +2927,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -3024,6 +3044,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3118,6 +3148,16 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "422": {
             "content": {
@@ -3214,6 +3254,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3309,6 +3359,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3378,6 +3438,16 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -3456,6 +3526,16 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -3553,7 +3633,7 @@
                 }
               }
             },
-            "description": "Forbidden"
+            "description": "Forbidden. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "409": {
             "content": {
@@ -3660,6 +3740,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3746,7 +3836,7 @@
                 }
               }
             },
-            "description": "Forbidden"
+            "description": "Forbidden. An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "409": {
             "content": {
@@ -3840,6 +3930,16 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -3958,6 +4058,16 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -4116,6 +4226,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "404": {
             "content": {
               "application/json": {
@@ -4226,6 +4346,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "404": {
             "content": {
               "application/json": {
@@ -4335,6 +4465,16 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -4452,6 +4592,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4541,6 +4691,16 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {
@@ -4666,6 +4826,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "404": {
             "content": {
               "application/json": {
@@ -4790,6 +4960,16 @@
             },
             "description": "The request is not authenticated."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
+          },
           "404": {
             "content": {
               "application/json": {
@@ -4889,6 +5069,16 @@
               }
             },
             "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "An Account that must set up two-factor authentication (staff, moderators, and owners of a production application) and has not gets code `mfa_required`. It can still use allauth's endpoints to set one up."
           },
           "404": {
             "content": {

@@ -102,6 +102,7 @@ from config.api_errors import (
     ErrorResponse,
     install_error_handlers,
 )
+from config.auth import MFA_REQUIRED_STATUS
 from config.health import router as health_router
 
 _SCHEMA_REF = "#/components/schemas/{model}"
@@ -202,10 +203,51 @@ def _document_throttled(
         responses[THROTTLED_STATUS] = response
 
 
+_MFA_REQUIRED_DESCRIPTION = (
+    "An Account that must set up two-factor authentication (staff, "
+    "moderators, and owners of a production application) and has not gets "
+    "code `mfa_required`. It can still use allauth's endpoints to set one up."
+)
+
+
+def _document_mfa_required(
+    operation: dict[str, Any], error_ref: dict[str, str]
+) -> None:
+    """Document the 403 `mfa_required` on a signed-in operation (ADR 0043)."""
+    responses = operation.setdefault("responses", {})
+    # ninja keys responses by int status; JSON rendering makes them strings.
+    declared = [code for code in responses if str(code) == str(MFA_REQUIRED_STATUS)]
+    for code in declared:
+        content = responses[code].get("content", {}).get("application/json", {})
+        if content.get("schema") != error_ref:
+            raise ImproperlyConfigured(
+                f"API operation {operation.get('operationId')} declares its own "
+                f"{MFA_REQUIRED_STATUS} response, but a signed-in operation's "
+                f"403 always returns {ErrorResponse.__name__}. Declare "
+                f"{ErrorResponse.__name__}."
+            )
+        own = responses[code].get("description", "").rstrip()
+        if own and not own.endswith("."):
+            own = f"{own}."
+        responses[code] = {
+            **responses[code],
+            "description": f"{own} {_MFA_REQUIRED_DESCRIPTION}".strip(),
+        }
+    if not declared:
+        responses[MFA_REQUIRED_STATUS] = {
+            "description": _MFA_REQUIRED_DESCRIPTION,
+            "content": {"application/json": {"schema": error_ref}},
+        }
+
+
 def _document_errors(schema: OpenAPISchema, throttled: set[str]) -> None:
     """Add `ErrorResponse`, a 422 response to every operation with input, a
-    401 response to every operation that takes auth, and a 429 response to
-    every operation in `throttled`."""
+    401 and a 403 response to every operation that takes auth, and a 429
+    response to every operation in `throttled`.
+
+    The 403 is `mfa_required` (ADR 0043). An operation that declares its
+    own 403 keeps its description, with the `mfa_required` case added,
+    and must declare `ErrorResponse`, the schema every 403 returns."""
     error_schema = ErrorResponse.model_json_schema(
         ref_template=_SCHEMA_REF, schema_generator=NinjaGenerateJsonSchema
     )
@@ -253,6 +295,7 @@ def _document_errors(schema: OpenAPISchema, throttled: set[str]) -> None:
                 operation.setdefault("responses", {})[UNAUTHORIZED_STATUS] = (
                     unauthorized
                 )
+                _document_mfa_required(operation, error_ref)
             has_input = bool(operation.get("parameters")) or "requestBody" in operation
             if not has_input:
                 continue

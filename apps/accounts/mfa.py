@@ -14,6 +14,7 @@ Account's id, never from an instance cache:
   a production (non-sandbox) Partner Application. The admin needs a
   method for every staff Account (``config/admin.py``), and Organizer
   authority needs one for every member (``apps.matches.permissions``).
+  ``lacks_required_mfa`` asks both questions in one query.
 - ``session_passed_mfa``: the session's login passed the second factor.
   No rule uses it yet; it is the check for #101, #117, and #232.
 - ``record_mfa_change``: the one Audit Event per MFA change, written in
@@ -26,8 +27,9 @@ from typing import TYPE_CHECKING, Literal, cast
 from allauth.account.authentication import get_authentication_records
 from allauth.mfa.models import Authenticator
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group, Permission
 from django.contrib.sessions.backends.base import SessionBase
-from django.db.models import QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from oauth2_provider.models import get_application_model
 
 from apps.audit.models import AuditAction
@@ -74,30 +76,69 @@ def accounts_with_mfa() -> QuerySet[Authenticator, dict[str, int]]:
     return ids
 
 
-def mfa_required(actor: object) -> bool:
-    """True when ``actor`` must have a method before using the API.
+def _requires_mfa() -> Q:
+    """The rule ``mfa_required`` applies, as a filter on Accounts.
 
-    A saved Account that is staff, a superuser, a moderator
-    (``matches.moderate_match``), or the owner of a Partner Application
-    with production access (``is_sandbox`` false, #29). All read again
-    from the database by id.
+    Staff, a superuser, a moderator (an active Account holding
+    ``matches.moderate_match`` itself or through a group, as Django's
+    ``ModelBackend.has_perm`` reads it), or the owner of a Partner
+    Application with production access (``is_sandbox`` false, #29).
     """
     # Imported here: apps.matches.permissions imports this module.
     from apps.matches.permissions import MODERATE_PERMISSION
 
+    account_model = get_user_model()
+    app_label, codename = MODERATE_PERMISSION.split(".")
+    permission = Permission.objects.filter(
+        content_type__app_label=app_label, codename=codename
+    ).values("pk")
+    own_permission = account_model.user_permissions.through.objects.filter(
+        user_id=OuterRef("pk"), permission_id__in=permission
+    )
+    group_permission = account_model.groups.through.objects.filter(
+        user_id=OuterRef("pk"),
+        group_id__in=Group.permissions.through.objects.filter(
+            permission_id__in=permission
+        ).values("group_id"),
+    )
+    application_model = cast("type[PartnerApplication]", get_application_model())
+    production_application = application_model._default_manager.filter(
+        user_id=OuterRef("pk"), is_sandbox=False
+    )
+    return (
+        Q(is_staff=True)
+        | Q(is_superuser=True)
+        | Q(is_active=True) & (Q(Exists(own_permission)) | Q(Exists(group_permission)))
+        | Q(Exists(production_application))
+    )
+
+
+def mfa_required(actor: object) -> bool:
+    """True when ``actor`` must have a method before using the API.
+
+    A saved Account that ``_requires_mfa`` matches, read from the database
+    by id in one query.
+    """
     pk = _saved_account_pk(actor)
     if pk is None:
         return False
-    fresh = get_user_model().objects.filter(pk=pk).first()
-    if fresh is None:
+    required: bool = get_user_model().objects.filter(_requires_mfa(), pk=pk).exists()
+    return required
+
+
+def lacks_required_mfa(actor: object) -> bool:
+    """True when ``actor`` needs a method (``mfa_required``) and has none
+    (``has_mfa``). One query, the API's check on every signed-in request."""
+    pk = _saved_account_pk(actor)
+    if pk is None:
         return False
-    if fresh.is_staff or fresh.is_superuser or fresh.has_perm(MODERATE_PERMISSION):
-        return True
-    application_model = cast("type[PartnerApplication]", get_application_model())
-    owns_production_application: bool = application_model._default_manager.filter(
-        user_id=pk, is_sandbox=False
-    ).exists()
-    return owns_production_application
+    lacks: bool = (
+        get_user_model()
+        .objects.filter(_requires_mfa(), pk=pk)
+        .exclude(pk__in=accounts_with_mfa())
+        .exists()
+    )
+    return lacks
 
 
 def session_passed_mfa(session: SessionBase, account: "_User") -> bool:
