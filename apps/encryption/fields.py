@@ -13,9 +13,12 @@ The database checks nothing about the value either (no CHECK from the
 integer field), so the model checks it before saving.
 """
 
+from collections.abc import Callable
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from django.db import models
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db import connection, models
 from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.models.expressions import Expression
 from django.db.models.lookups import IsNull, Lookup, Transform
@@ -27,6 +30,8 @@ if TYPE_CHECKING:
 else:
     _FieldBase = object
 
+_Validator = Callable[[Any], None]
+
 # The set and get types, as on Django's fields (django-stubs).
 _ST = TypeVar("_ST")
 _GT = TypeVar("_GT")
@@ -34,6 +39,12 @@ _GT = TypeVar("_GT")
 
 class EncryptedFieldMixin(_FieldBase):
     """Store the field's value as a Fernet token in a text column."""
+
+    def get_internal_type(self) -> str:
+        # Schema changes read this: Django casts a column changed to or
+        # from it (USING), and drops or adds the integer field's ">= 0"
+        # check, only when the internal type changes.
+        return "TextField"
 
     def db_type(self, connection: BaseDatabaseWrapper) -> str:
         return "text"
@@ -74,3 +85,25 @@ class EncryptedPositiveSmallIntegerField(
     EncryptedFieldMixin, models.PositiveSmallIntegerField[_ST, _GT]
 ):
     """A ``PositiveSmallIntegerField`` stored encrypted, read back as an int."""
+
+    @cached_property
+    def validators(self) -> list[_Validator]:
+        # The plain field's range checks, read by its own internal type,
+        # since this field's internal type is text.
+        own: list[_Validator] = self.__dict__["_validators"]
+        validators_ = [*self.default_validators, *own]
+        low, high = connection.ops.integer_field_range("PositiveSmallIntegerField")
+        if low is not None and not any(
+            isinstance(v, MinValueValidator) and _limit(v) >= low for v in validators_
+        ):
+            validators_.append(MinValueValidator(low))
+        if high is not None and not any(
+            isinstance(v, MaxValueValidator) and _limit(v) <= high for v in validators_
+        ):
+            validators_.append(MaxValueValidator(high))
+        return validators_
+
+
+def _limit(validator: MinValueValidator | MaxValueValidator) -> Any:
+    limit = validator.limit_value
+    return limit() if callable(limit) else limit

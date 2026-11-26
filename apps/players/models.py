@@ -9,7 +9,7 @@ services in that module.
 
 import unicodedata
 from collections.abc import Collection
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -19,6 +19,10 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.encryption.fields import (
+    EncryptedCharField,
+    EncryptedPositiveSmallIntegerField,
+)
 from apps.players.age import is_old_enough
 from apps.public_ids.codes import CodeType
 from apps.public_ids.models import PublicCodeModel
@@ -76,6 +80,8 @@ _NOT_TEXT = "Enter text."
 BIRTH_FIELDS = ("birth_year", "birth_month")
 
 EARLIEST_BIRTH_YEAR = 1900
+# Fields save() checks, since the database cannot (ADR 0046).
+ENCRYPTED_CHECKED_FIELDS = (*BIRTH_FIELDS, "gender_division")
 
 # One setting per profile detail other than the display name, which has
 # none (ADR 0002). ``rating_visibility`` covers current Ratings (#53): it
@@ -108,6 +114,10 @@ class GenderDivision(models.TextChoices):
     WOMENS = "womens", "Women's"
 
 
+# The values save() accepts: a division, or "" for a later removal.
+_STORED_DIVISIONS = frozenset({"", *GenderDivision.values})
+
+
 class Player(PublicCodeModel):
     """A person who plays matches and has ratings (CONTEXT.md, Player).
 
@@ -124,19 +134,22 @@ class Player(PublicCodeModel):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="player"
     )
     display_name = models.CharField(max_length=64)
-    legal_name = models.CharField(max_length=200, blank=True)
-    birth_year = models.PositiveSmallIntegerField(
+    # Legal name, birth year and month, and gender division are stored
+    # encrypted (ADR 0046). The database cannot check them, so save()
+    # applies their rules (_check_encrypted_fields).
+    legal_name = EncryptedCharField(max_length=200, blank=True)
+    birth_year = EncryptedPositiveSmallIntegerField(
         validators=[MinValueValidator(EARLIEST_BIRTH_YEAR)],
         error_messages=_INTEGER_MESSAGES,
     )
     # Never the day (ADR 0009).
-    birth_month = models.PositiveSmallIntegerField(
+    birth_month = EncryptedPositiveSmallIntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(12)],
         error_messages=_INTEGER_MESSAGES,
     )
-    # Required for every new Player (issue #215). The check constraint
-    # below still allows "", for a later removal (#190, #116).
-    gender_division = models.CharField(
+    # Required for every new Player (issue #215). save() still allows "",
+    # for a later removal (#190, #116).
+    gender_division = EncryptedCharField(
         max_length=8,
         choices=GenderDivision,
         error_messages=_GENDER_DIVISION_MESSAGES,
@@ -151,23 +164,61 @@ class Player(PublicCodeModel):
                 condition=~Q(display_name__regex=r"^\s*$"),
                 name="players_player_display_name_not_empty",
             ),
-            models.CheckConstraint(
-                condition=Q(birth_month__gte=1, birth_month__lte=12),
-                name="players_player_birth_month_range",
-            ),
-            models.CheckConstraint(
-                condition=Q(birth_year__gte=EARLIEST_BIRTH_YEAR),
-                name="players_player_birth_year_min",
-            ),
-            models.CheckConstraint(
-                condition=Q(gender_division__in=["", *GenderDivision.values]),
-                name="players_player_gender_division_valid",
-            ),
         ]
+        permissions = (
+            (
+                "view_personal_data",
+                "Can view a player's legal name, birth year and month, "
+                "and gender division",
+            ),
+        )
 
     def __str__(self) -> str:
         # The OPEN Code, never a name (ADR 0009).
         return self.public_code
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Check the encrypted fields, then save.
+
+        The database cannot check an encrypted value, so this applies the
+        rules its check constraints did (ADR 0046) on every save, to the
+        fields an ``update_fields`` save names. Raw writes
+        (``QuerySet.update``, ``bulk_create``, raw SQL, ``loaddata``) skip
+        it.
+        """
+        update_fields = kwargs.get("update_fields")
+        self._check_encrypted_fields(
+            ENCRYPTED_CHECKED_FIELDS if update_fields is None else update_fields
+        )
+        super().save(*args, **kwargs)
+
+    def _check_encrypted_fields(self, fields: Collection[str]) -> None:
+        """Refuse a bad birth year, birth month, or gender division.
+
+        A None birth year or month is left to the database's NOT NULL.
+        Messages are the model's fixed ones, never the value.
+        """
+        errors: dict[str, list[ValidationError]] = {}
+        for name in BIRTH_FIELDS:
+            value = getattr(self, name)
+            if name not in fields or value is None:
+                continue
+            if not _is_int(value):
+                errors[name] = [ValidationError(_WHOLE_NUMBER)]
+                continue
+            field = self._meta.get_field(name)
+            assert isinstance(field, models.Field)
+            try:
+                field.run_validators(value)
+            except ValidationError as error:
+                errors[name] = error.error_list
+        division = self.gender_division
+        if "gender_division" in fields and division not in _STORED_DIVISIONS:
+            errors["gender_division"] = [
+                ValidationError(_CHOICE_MESSAGES["invalid_choice"])
+            ]
+        if errors:
+            raise ValidationError(errors)
 
     def clean_fields(self, exclude: Collection[str] | None = None) -> None:
         """Normalize and check the input before Django's field validation.

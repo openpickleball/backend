@@ -3,6 +3,8 @@
 from typing import Any
 
 import pytest
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import connection
 
 from apps.encryption.fields import (
@@ -70,3 +72,31 @@ def test_deconstructs_to_its_own_path() -> None:
     assert kwargs == {"max_length": 8}
     _, path, _, _ = _small().deconstruct()
     assert path == "apps.encryption.fields.EncryptedPositiveSmallIntegerField"
+
+
+def test_schema_changes_treat_the_column_as_text() -> None:
+    # Django chooses a type change's USING cast and drops the integer
+    # field's ">= 0" check by the internal type, so both must say text.
+    for field in (_char(), _small()):
+        assert field.get_internal_type() == "TextField"
+
+
+def test_the_integer_field_keeps_the_smallint_range() -> None:
+    field = _small()
+    with pytest.raises(ValidationError):
+        field.clean(-1, None)
+    with pytest.raises(ValidationError):
+        field.clean(32768, None)
+    assert field.clean(32767, None) == 32767
+
+
+def test_own_range_validators_replace_the_default_ones() -> None:
+    field = EncryptedPositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(12)]
+    )
+    limits = sorted(
+        (type(v).__name__, v.limit_value)
+        for v in field.validators
+        if isinstance(v, MinValueValidator | MaxValueValidator)
+    )
+    assert limits == [("MaxValueValidator", 12), ("MinValueValidator", 1)]
