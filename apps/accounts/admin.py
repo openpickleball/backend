@@ -72,6 +72,9 @@ class UserAdmin(AccessAuditAdminMixin, BaseUserAdmin[User]):
         ),
     )
     list_display = ("email", "is_staff", "is_active")
+    # Set by Django, never by staff. Their split date-time fields also drop
+    # microseconds, so a save would rewrite them (#101).
+    readonly_fields = ("last_login", "date_joined")
     search_fields = ("email",)
     ordering = ("email",)
 
