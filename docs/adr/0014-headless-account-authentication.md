@@ -1,6 +1,7 @@
 # 0014. Headless account authentication
 
 - Status: Proposed
+- Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (MFA with TOTP and recovery codes; a session of an Account with MFA counts only once it passed MFA)
 - Date: 2026-11-17
 
 ## Context
@@ -34,7 +35,7 @@ allauth keeps its own `EmailAddress` table next to `accounts.User.email`, and it
 - Email links open web pages. Opening them in the mobile apps needs Universal Links and App Links on the `FRONTEND_URL` domain, which is the apps' work.
 - Until #35, a deployment with DEBUG off discarded mail, so nobody could verify an address or log in through allauth there. ADR 0016 adds a real provider (Resend) and sends account email from the email queue.
 - An Account made with `createsuperuser` or the admin has no `EmailAddress` row. Its first headless login creates one, unverified, and asks for verification.
-- The Django admin login does not check email verification, so a staff Account's admin session also authenticates `account_auth`. Staff Accounts are made by operators.
+- The Django admin login does not check email verification, so a staff Account's admin session also authenticates `account_auth`. Staff Accounts are made by operators. Since ADR 0043 that session is password-only, so the API answers it with 403 `mfa_required`.
 - A login typed with the Kelvin sign (U+212A) for a `k` still logs in. allauth's email field lowercases it to ASCII before OPEN's check, so it reaches the same Account that ADR 0003's normalization maps it to. It needs the password, stores nothing, and a reset with it mails only the stored address. This is accepted.
 - allauth keys its per-address rate limits on the lowercased address as typed, so each refused variant has its own counter. Variants never log in, and the per-IP limits still apply. #100 sets the limits and the client IP behind the proxy.
 - allauth sends at most one verification mail per address every three minutes. If allauth just mailed an address (for example for another Account's change of address), a sign-up with it in that window is created and answered as usual, but no verification mail is sent; the next login after the cooldown sends it. #100 sets the limits.
