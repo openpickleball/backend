@@ -96,7 +96,7 @@ from typing import TYPE_CHECKING, Annotated, cast
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.http import Http404, HttpRequest
 from ninja import File, Form, Router, Status, UploadedFile
 from ninja.errors import HttpError
@@ -110,6 +110,7 @@ from apps.matches.models import (
     MATCH_LOCATION_MAX,
     GameTarget,
     Match,
+    MatchParticipant,
     MatchStatus,
     ResultsFile,
 )
@@ -200,11 +201,16 @@ def _check_submitter_plays(account: "_User", payload: MatchCreateIn) -> None:
         raise MatchPermissionDenied
 
 
-def _resolve_teams(payload: MatchCreateIn) -> dict[str, list[Player]]:
+def _resolve_teams(
+    payload: MatchCreateIn, *, corrected: Match | None = None
+) -> dict[str, list[Player]]:
     """Each team's Players, in one query.
 
     A malformed code and a code no Player has get the same issue, with
-    fixed text: the message never repeats what was sent.
+    fixed text: the message never repeats what was sent. So does a Player
+    whose Account is inactive (deleted or deactivated): no new Match names
+    one (ADR 0048), except a correction, which may keep the players of
+    the Match it ``corrected``.
     """
     codes = {
         team: [normalize(raw, CodeType.PLAYER) for raw in getattr(payload, team)]
@@ -213,7 +219,9 @@ def _resolve_teams(payload: MatchCreateIn) -> dict[str, list[Player]]:
     wanted = {code for team in codes.values() for code in team if code is not None}
     found = {
         player.public_code: player
-        for player in Player.objects.filter(public_code__in=wanted)
+        for player in Player.objects.filter(public_code__in=wanted).filter(
+            _nameable(corrected)
+        )
     }
     issues = [
         MatchIssue(f"body.{team}.{index}", "unknown_player", UNKNOWN_PLAYER_MESSAGE)
@@ -227,6 +235,19 @@ def _resolve_teams(payload: MatchCreateIn) -> dict[str, list[Player]]:
         team: [found[code] for code in codes[team] if code is not None]
         for team in _TEAMS
     }
+
+
+def _nameable(corrected: Match | None) -> Q:
+    """The Players a new Match may name: active Accounts' Players, and for
+    a correction also the corrected Match's own players."""
+    allowed = Q(account__is_active=True)
+    if corrected is not None:
+        allowed |= Q(
+            pk__in=MatchParticipant.objects.filter(match_id=corrected.pk).values(
+                "player_id"
+            )
+        )
+    return allowed
 
 
 def _loaded(match: Match) -> Match:
@@ -416,7 +437,7 @@ def correct_match(
         raise Http404
     if match.status not in (MatchStatus.PENDING, MatchStatus.DISPUTED):
         raise workflow.MatchStateError
-    teams = _resolve_teams(payload)
+    teams = _resolve_teams(payload, corrected=match)
     if (
         corrects_as_player(
             account,
@@ -538,7 +559,7 @@ def correct_disputed_match(
     404, as for an unknown code.
     """
     account, match = _settled_match(request, code)
-    teams = _resolve_teams(payload)
+    teams = _resolve_teams(payload, corrected=match)
     new_player_ids = [player.pk for team in teams.values() for player in team]
     if not settles_dispute(account, match, new_player_ids=new_player_ids):
         raise Http404

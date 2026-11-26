@@ -26,7 +26,7 @@ This amends ADR 0009 (only the player sets these fields, and now only once), ADR
 
 - The web and Expo apps must not offer to edit these fields after the Player exists.
 - A Player stored with an empty gender division (before ADR 0019, or after a removal) cannot set one. Nothing with an empty value was deployed.
-- A correction needs Account deletion (#116) first. Until #116 lands, a player with a wrong value has no way to fix it.
+- A correction needs Account deletion (#116) first. ADR 0048 makes that path work: after `DELETE /api/v1/accounts/me` the same email signs up again and creates a new Player, even when the old Player stays in the Ledger.
 - If a correction path is needed later (for example, staff fixing a value with evidence and an Audit Event), a new ADR must add it.
 
 ## Alternatives considered

@@ -171,10 +171,11 @@ def test_an_inactive_account_gets_no_email(
     member: User,
     django_capture_on_commit_callbacks: Capture,
 ) -> None:
-    _deactivate(players[3].account)
-
     with django_capture_on_commit_callbacks(execute=True):
         _event_match(players, event, member)
+        # After the match is recorded: no new Match names an inactive
+        # Account's Player (ADR 0048). The notice reads the Account again.
+        _deactivate(players[3].account)
 
     assert set(_sent()) == {player.account.email for player in players[:3]}
 

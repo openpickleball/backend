@@ -186,6 +186,7 @@ def test_players_get_made_up_personal_data_stored_encrypted() -> None:
     for legal_name, birth_year, birth_month, division in players:
         assert legal_name == ""
         assert isinstance(birth_year, int)
+        assert birth_month is not None
         assert 1 <= birth_month <= 12
         assert division in GenderDivision.values
     with connection.cursor() as cursor:

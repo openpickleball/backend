@@ -15,7 +15,11 @@ Organizer member can reach.
 Lock order: ``report_organizer`` and ``unverify_organizer`` lock the
 Organizer row first, so a report never lands open after an unverify
 closed the others. ``close_report`` locks only the report row, never the
-Organizer, so it cannot form a cycle with them.
+Organizer, so it cannot form a cycle with them. ``report_organizer``
+takes the reporter's Account row (FOR KEY SHARE) before the Organizer,
+and Account deletion takes the Account, then every Organizer it needs,
+then the report rows (``delete_reporter_reports``), so the orders agree
+(ADR 0048).
 """
 
 from dataclasses import dataclass
@@ -29,6 +33,7 @@ from django.db.models import CharField, Count, Q
 from django.db.models.functions import Cast
 from django.utils import timezone
 
+from apps.accounts.locks import hold_active_account
 from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
 from apps.clubs.models import (
@@ -47,6 +52,7 @@ if TYPE_CHECKING:
 OPEN_REPORT_CONSTRAINT = "clubs_one_open_report_per_account"
 RULE_MODERATOR = "moderator"
 RULE_ORGANIZER_UNVERIFIED = "organizer_unverified"
+RULE_REPORTER_DELETED = "reporter_deleted"
 
 # Fixed texts, never a submitted value.
 _REFUSED = "This organizer cannot be reported."
@@ -102,6 +108,11 @@ def report_organizer(
         raise ReportRefused
     try:
         with transaction.atomic():
+            # The reporter's Account first, FOR KEY SHARE, and checked
+            # again: an Account deletion (FOR UPDATE, before any Organizer)
+            # that this call waited on leaves no report behind (ADR 0048).
+            if not hold_active_account(actor.pk):
+                raise ReportRefused
             # FOR NO KEY UPDATE: waits for an unverify (FOR UPDATE) to
             # commit, and is waited on by one, without blocking inserts
             # that point at the Organizer.
@@ -193,10 +204,37 @@ def close_open_reports(
     return count
 
 
+def delete_reporter_reports(
+    reporter: "_User", *, actor: "_User | AnonymousUser | None"
+) -> int:
+    """Delete every report ``reporter`` filed, for Account deletion (#116).
+
+    Call inside the deletion's transaction, after it has locked the
+    Organizers of the reporter's reports. Each open report is closed
+    first, with one ``organizer_report.close`` Audit Event naming rule
+    ``reporter_deleted``, so a moderator's queue never loses a report
+    without a trace. Then every report row of the reporter goes; the
+    ``organizer_report.create`` events stay (append-only, ADR 0037).
+    Returns how many rows it deleted.
+    """
+    reports = list(
+        OrganizerReport.objects.select_for_update()
+        .filter(reporter_id=reporter.pk)
+        .order_by("pk")
+    )
+    for report in reports:
+        if report.closed_at is None:
+            _close(report, actor=actor, reason="", rule=RULE_REPORTER_DELETED)
+    deleted, _ = OrganizerReport.objects.filter(
+        pk__in=[report.pk for report in reports]
+    ).delete()
+    return int(deleted)
+
+
 def _close(
     locked: OrganizerReport,
     *,
-    actor: "_User | AnonymousUser",
+    actor: "_User | AnonymousUser | None",
     reason: str,
     rule: str,
 ) -> None:

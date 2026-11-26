@@ -2,7 +2,8 @@
 
 Deleting it would drop the only link from an Organizer that may be that
 person to the person, and leave the name, which is personal data, with no
-owner (ADR 0009, Retention; #116 plans account deletion).
+owner (ADR 0009, Retention). Account deletion removes the membership
+first (ADR 0048).
 """
 
 import pytest

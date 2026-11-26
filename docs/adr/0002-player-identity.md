@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-14
-- Amended by: [ADR 0031](0031-rating-lookup-and-history.md) (current Ratings follow a privacy setting: a player created aged 13 to 17 starts hidden and cannot widen it before 18; nobody can narrow it)
+- Amended by: [ADR 0031](0031-rating-lookup-and-history.md) (current Ratings follow a privacy setting: a player created aged 13 to 17 starts hidden and cannot widen it before 18; nobody can narrow it), [ADR 0048](0048-account-deletion.md) (a deleted Account's Player is kept, cleared, and hidden as an inactive Account's Player, and no new Match names it)
 
 ## Context
 

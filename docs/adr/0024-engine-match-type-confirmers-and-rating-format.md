@@ -1,7 +1,7 @@
 # 0024. Engine match type, confirmers, and a stored rating format
 
 - Status: Proposed
-- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer confirm self-reported matches, so the every-participant confirmers rule has nothing to apply to); [ADR 0035](0035-stored-match-type-and-event-changes.md) (the match type is stored on each Match when it is recorded, and the adapter reads it instead of the Event's current kind)
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer confirm self-reported matches, so the every-participant confirmers rule has nothing to apply to); [ADR 0035](0035-stored-match-type-and-event-changes.md) (the match type is stored on each Match when it is recorded, and the adapter reads it instead of the Event's current kind); [ADR 0048](0048-account-deletion.md) (Account deletion keeps stored rating formats)
 - Date: 2026-11-23
 
 ## Context
@@ -31,7 +31,7 @@ The project owner decided all three on 2026-11-23 (comment on issue #44).
 - The adapter depends on those audit rows. Audit rows are append-only (ADR 0007), so the record cannot be changed after the fact. A match whose rows were written outside the workflow (raw SQL, `loaddata`) gets only its Match Confirmations.
 - A self-reported match confirmed through the duplicate path with one team's confirmation counts in the backend (`counted()`) but not in the engine, until the other team confirms. A partner or the web app that reads "confirmed" as "rated" must allow for this.
 - A stored category format reveals the gender division of all four players. It is listed in the personal data inventory, and the API does not return it.
-- Removing a gender division does not change any stored rating format, so past matches keep their category. Account deletion (#116) decides what happens to the stored formats of a deleted player's matches.
+- Removing a gender division does not change any stored rating format, so past matches keep their category. Account deletion leaves them as they are (ADR 0048).
 - The field's default is `singles`, the only value the check constraint allows for a singles match. A doubles match must set its own value, or the constraint refuses it. Nothing has been deployed. A local database that already holds a doubles match fails the migration when it adds the constraint. Reset it (`docker compose down -v`) and migrate again.
 
 ## Alternatives considered

@@ -68,7 +68,7 @@ no such input (CLAUDE.md, hard rule 7).
 
 import hashlib
 import json
-from collections.abc import Callable, Hashable, Sequence
+from collections.abc import Callable, Collection, Hashable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
@@ -81,6 +81,7 @@ from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 from oauth2_provider.models import get_application_model
 
+from apps.accounts.locks import hold_active_account
 from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
 from apps.events.models import Event
@@ -103,7 +104,12 @@ from apps.matches.models import (
     source_match_type,
 )
 from apps.matches.notices import schedule_hold_notices, schedule_recorded_notice
-from apps.matches.permissions import Actor, MatchSubmission, check_can_create_match
+from apps.matches.permissions import (
+    Actor,
+    MatchPermissionDenied,
+    MatchSubmission,
+    check_can_create_match,
+)
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
 from apps.players.models import GenderDivision, Player
 
@@ -790,6 +796,68 @@ def _near_matches(
     return near
 
 
+INACTIVE_PLAYER_MESSAGE = "No player has this OPEN Code."
+
+
+def hold_submitting_account(account: object) -> None:
+    """Lock an acting Account's row ``FOR KEY SHARE`` and check it is active.
+
+    Call first in a write transaction that records or corrects a Match.
+    Raises ``MatchPermissionDenied`` (fixed text) for an Account that is
+    gone or inactive under the lock. Anything that is not a saved Account
+    (an application, None) is left alone.
+    """
+    if not isinstance(account, get_user_model()) or account.pk is None:
+        return
+    if not hold_active_account(account.pk):
+        raise MatchPermissionDenied
+
+
+def refuse_inactive_players(
+    keys_a: Sequence[int],
+    keys_b: Sequence[int],
+    *,
+    lock: bool = False,
+    allowed: Collection[int] = (),
+) -> None:
+    """Refuse a new Match that names a Player whose Account is inactive.
+
+    A deleted or deactivated Account's Player stays in the Ledger, but no
+    new Match names it (ADR 0048). The submission paths already treat
+    such a Player as unknown; this is the same rule for any other caller,
+    with the same code and fixed text. With ``lock``, inside the write
+    transaction, the Players are first locked ``FOR KEY SHARE`` (the lock
+    the participant inserts take anyway), so a concurrent Account
+    deletion, which holds the Player ``FOR UPDATE``, commits first and is
+    seen. A Player whose row is gone counts as inactive. ``allowed`` are
+    Players a correction keeps from the Match it corrects (``edit_match``):
+    they may stay even when inactive.
+    """
+    keys = [*keys_a, *keys_b]
+    if lock:
+        table = connection.ops.quote_name(Player._meta.db_table)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT id FROM {table} WHERE id = ANY(%s) ORDER BY id FOR KEY SHARE",
+                [sorted(set(keys))],
+            )
+            present = {row[0] for row in cursor.fetchall()}
+    else:
+        present = set(keys)
+    inactive = {key for key in keys if key not in present} | set(
+        Player.objects.filter(pk__in=keys, account__is_active=False).values_list(
+            "pk", flat=True
+        )
+    )
+    issues = [
+        MatchIssue(team, "unknown_player", INACTIVE_PLAYER_MESSAGE)
+        for team, keys in (("team_a", keys_a), ("team_b", keys_b))
+        if any(key in inactive and key not in allowed for key in keys)
+    ]
+    if issues:
+        raise MatchValidationError(issues)
+
+
 def _player_keys(team: object) -> list[int]:
     """Each team member's pk. A member that is not a saved Player is a
     programming error, not user input."""
@@ -1025,7 +1093,8 @@ def hold_event(
 ) -> None:
     """Share-lock the draft's Event row, check authority again, set the type.
 
-    Call first inside the write transaction, before ``lock_draft`` and any
+    Call first inside the write transaction (after only
+    ``hold_submitting_account``), before ``lock_draft`` and any
     lookup, lock, or write. ``FOR KEY SHARE`` conflicts with the
     ``FOR UPDATE`` that ``Event.save()`` takes on every save, so the two
     serialize: either the Event change waits until this match commits (an
@@ -1352,6 +1421,10 @@ def record_match(
     ``match_changed`` with ``change=hold``. Signals are sent inside the
     transaction (``apps.matches.signals``).
 
+    A team that names a Player whose Account is inactive raises
+    ``MatchValidationError`` (code ``unknown_player``) right after the
+    batch check (ADR 0048).
+
     For a match with an Event, the write transaction first share-locks the
     Event row and checks every submitter again (``hold_event``), so an
     organizer change made after the first check is caught before any
@@ -1390,6 +1463,7 @@ def record_match(
             event=event,
             club=club,
         )
+    refuse_inactive_players(keys_a, keys_b)
     draft = draft_match(
         format=format,
         team_a=team_a,
@@ -1418,10 +1492,17 @@ def record_match(
     submitter: Actor | None = submitted_by_user or submitted_by_application
 
     with transaction.atomic():
+        # The submitting Account first: an Account deletion this call
+        # waited on refuses it, and a later one waits for its commit
+        # (ADR 0048).
+        hold_submitting_account(submitted_by_user)
         # Holds the Event fixed until commit, checks the submitters again,
         # and takes the kind under that lock (ADR 0035).
         hold_event(draft, check_submitters)
         lock_draft(draft)
+        # Again under the Players' share locks: an Account deletion that
+        # holds a Player commits before this reads it (ADR 0048).
+        refuse_inactive_players(keys_a, keys_b, lock=True)
         check_external_id(draft)
         existing = exact_duplicate(draft)
         # A batch submission never confirms a pending match: it is reported

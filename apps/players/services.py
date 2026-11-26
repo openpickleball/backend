@@ -51,6 +51,9 @@ class NotOwnPlayer(PermissionError):
     """The actor is not the Player's own active Account."""
 
 
+INACTIVE_ACCOUNT_MESSAGE = "This account cannot have a player."
+
+
 def create_player(
     *,
     account: "_User",
@@ -65,8 +68,9 @@ def create_player(
     """Create a Player for ``account``, with its privacy settings.
 
     Raises ``ValidationError`` for an invalid or missing value, for a
-    player under 13 on the age limit date (``apps.players.age``), or when
-    the Account already has a Player. ``gender_division`` is required,
+    player under 13 on the age limit date (``apps.players.age``), when
+    the Account already has a Player, or when the stored Account is gone
+    or inactive (read under its lock). ``gender_division`` is required,
     ``mens`` or ``womens`` (issue #215). None for an optional text field
     means empty. A player aged 13 to 17 starts with every privacy setting
     ``PRIVATE``; an older one starts with every setting ``SIGNED_IN``,
@@ -77,7 +81,13 @@ def create_player(
     with transaction.atomic():
         # Lock the Account row, so two calls for one Account run their
         # one-Player check in turn and the second gets a ValidationError.
-        get_user_model().objects.select_for_update().filter(pk=account.pk).first()
+        # An Account deleted while this call waited is refused, so no
+        # Player lands on a cleared row (ADR 0048).
+        locked = (
+            get_user_model().objects.select_for_update().filter(pk=account.pk).first()
+        )
+        if locked is None or not locked.is_active:
+            raise ValidationError({"account": [INACTIVE_ACCOUNT_MESSAGE]})
         player = Player(
             account=account,
             display_name=display_name,

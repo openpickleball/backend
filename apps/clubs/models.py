@@ -298,7 +298,7 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
     )
     # PROTECT: the membership may be the only link from an Organizer that
     # is a person to that person, so an Account is not hard-deleted out
-    # from under it (ADR 0009, Retention; #116 plans account deletion).
+    # from under it (ADR 0009, Retention). Account deletion removes it first (ADR 0048).
     account = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

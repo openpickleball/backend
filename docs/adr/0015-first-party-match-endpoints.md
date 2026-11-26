@@ -1,7 +1,7 @@
 # 0015. First-party match endpoints
 
 - Status: Proposed
-- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (#269: a member of the Event's verified Organizer reads the disputed matches of its Events, and settles one through its own operations, which return the match or its correction and answer 409 for a match that is not disputed)
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (#269: a member of the Event's verified Organizer reads the disputed matches of its Events, and settles one through its own operations, which return the match or its correction and answer 409 for a match that is not disputed); [ADR 0048](0048-account-deletion.md) (no new match names a Player whose Account is inactive)
 - Date: 2026-11-17
 
 ## Context
@@ -49,7 +49,7 @@ Issue #31 asked to show a private player as "Private player" in other players' m
 
 - A player whose match history is private still appears by name in the history of an opponent or partner whose history is visible. Hiding them there would hide a display name, which ADR 0002 rules out.
 - Display names appear in match history before any Rating is published. ADR 0002 makes them visible once Ratings are published and does not forbid this earlier.
-- A submitter can name any Player by OPEN Code, including one whose Account is inactive, and can tell from `unknown_player` whether a code names a Player. The match then holds `PROTECT` rows for that Player. Whether new matches may name a Player whose Account is inactive or deleted is #116's open question (ADR 0002).
+- A submitter can name any Player by OPEN Code, including one whose Account is inactive, and can tell from `unknown_player` whether a code names a Player. The match then holds `PROTECT` rows for that Player. ADR 0048 settles that no new match names a Player whose Account is inactive: its code gets `unknown_player`, as an unknown one does.
 - A refused confirm, dispute, or single match read can run a few more queries than an unknown code before its 404. The response bytes are the same.
 - `create_match` returns 403 both for a refused submitter and for a signed-in session without its CSRF token. The `message` tells them apart.
 

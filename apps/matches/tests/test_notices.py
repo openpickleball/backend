@@ -369,10 +369,11 @@ def test_a_hold_ended_before_the_callback_sends_nothing(
 def test_a_hold_skips_an_inactive_account(
     players: list[Player], confirmed: Match, django_capture_on_commit_callbacks: Capture
 ) -> None:
-    _deactivate(players[1].account)
-
     with django_capture_on_commit_callbacks(execute=True):
         _self_reported(players, OTHER_GAMES)
+        # After the match is recorded: no new Match names an inactive
+        # Account's Player (ADR 0048). The notice reads the Account again.
+        _deactivate(players[1].account)
 
     assert players[1].account.email not in _sent()
     assert len(mail.outbox) == 6

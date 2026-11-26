@@ -36,8 +36,12 @@ session is saved by Django's middleware; a view that changes the token
 session saves it itself (`save()` keeps its key, so the token still works).
 """
 
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
+from allauth.account.internal.flows.reauthentication import (
+    did_recently_reauthenticate,
+)
 from allauth.headless.contrib.ninja.security import XSessionTokenAuth
 from allauth.headless.internal.sessionkit import authenticate_by_x_session_token
 from allauth.usersessions.internal import usersessionkit
@@ -65,6 +69,40 @@ class MFARequired(HttpError):
 
     def __init__(self) -> None:
         super().__init__(MFA_REQUIRED_STATUS, MFA_REQUIRED_MESSAGE)
+
+
+REAUTHENTICATION_REQUIRED_STATUS = 403
+REAUTHENTICATION_REQUIRED_MESSAGE = (
+    "Confirm your password or a two-factor code again, then retry."
+)
+
+
+class ReauthenticationRequired(HttpError):
+    """The operation needs a recent reauthentication (403, #116).
+
+    Fixed text. The client reauthenticates through allauth
+    (``auth/reauthenticate`` with the password, or ``auth/2fa/reauthenticate``
+    with a code) and sends the request again.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            REAUTHENTICATION_REQUIRED_STATUS, REAUTHENTICATION_REQUIRED_MESSAGE
+        )
+
+
+def require_recent_reauthentication(request: HttpRequest) -> None:
+    """Raise ``ReauthenticationRequired`` unless the request's Account
+    reauthenticated within ``ACCOUNT_REAUTHENTICATION_TIMEOUT``.
+
+    allauth's own check, run on the session behind the request's
+    authentication (``auth_session``), so it works for both clients: the
+    app client's reauthentication is recorded in its token's session. A
+    login alone does not count, only allauth's reauthentication flows.
+    """
+    view = SimpleNamespace(user=request.auth, session=auth_session(request))  # type: ignore[attr-defined]
+    if not did_recently_reauthenticate(cast("HttpRequest", view)):
+        raise ReauthenticationRequired
 
 
 def require_mfa(account: Any, session: SessionBase | None) -> Any:

@@ -5,11 +5,11 @@ The shared vocabulary for this repository. Use these terms in models, endpoints,
 ## People and accounts
 
 **Player**:
-A person who plays matches and has ratings. Every Player is created by one Account and belongs to it. Deleting the Account (#116) keeps the Player and its Matches. Once Ratings are published, the display name of a Player whose Account is active is always visible to every signed-in Account. So are their current Ratings, unless the Player was created aged 13 to 17 and has not widened that Privacy Setting at 18 or later (ADR 0031). Authenticated partner applications see them too, except for players aged 13 to 17 (ADR 0009). There are no unclaimed Player records, and no Submission creates a Player (ADR 0002). Engine: `Player`. Backend: `players.Player`.
+A person who plays matches and has ratings. Every Player is created by one Account and belongs to it. Deleting the Account keeps a Player that played, with its OPEN Code and Matches and its personal data cleared, and no new Match can name it (ADR 0048). Once Ratings are published, the display name of a Player whose Account is active is always visible to every signed-in Account. So are their current Ratings, unless the Player was created aged 13 to 17 and has not widened that Privacy Setting at 18 or later (ADR 0031). Authenticated partner applications see them too, except for players aged 13 to 17 (ADR 0009). There are no unclaimed Player records, and no Submission creates a Player (ADR 0002). Engine: `Player`. Backend: `players.Player`.
 _Avoid_: user, member, athlete.
 
 **Account**:
-A registered OPEN login. An Account creates its own Player, and has at most one. The engine allows a Player with no Account, but the backend never creates one. #116 decides what a deleted Account leaves behind (ADR 0002). Engine: `Player.account_user_id`, `RatingEngine.link_account`. Backend: `accounts.User`, keyed on email.
+A registered OPEN login. An Account creates its own Player, and has at most one. The engine allows a Player with no Account, but the backend never creates one. Deleting an Account removes its personal data: a Player in the Ledger stays with its OPEN Code and its personal data cleared, and an Account row that something points at stays deactivated, with a placeholder email, so the address can sign up again (ADR 0048). Engine: `Player.account_user_id`, `RatingEngine.link_account`. Backend: `accounts.User`, keyed on email.
 _Avoid_: profile (a profile is the view of a Player that others see behind authentication).
 
 **Display Name**:

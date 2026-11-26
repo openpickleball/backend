@@ -100,11 +100,16 @@ def test_player_needs_an_account() -> None:
 
 
 @pytest.mark.parametrize("field", ["birth_year", "birth_month"])
-def test_player_without_birth_year_or_month_fails_in_the_database(
+def test_a_new_player_without_birth_year_or_month_is_refused(
     field: str,
 ) -> None:
-    with pytest.raises(IntegrityError), transaction.atomic():
+    # The column allows NULL only for Account deletion (ADR 0048): a new
+    # Player is refused before the insert.
+    with pytest.raises(ValidationError) as raised:
         _player(**{field: None})
+
+    assert field in raised.value.message_dict
+    assert not Player.objects.exists()
 
 
 def test_deleting_an_account_with_a_player_is_refused() -> None:
