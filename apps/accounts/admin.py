@@ -10,6 +10,8 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.http import HttpRequest, HttpResponse
+from django_celery_beat.admin import PeriodicTaskAdmin as BasePeriodicTaskAdmin
+from django_celery_beat.models import PeriodicTask
 
 from apps.accounts.forms import UserChangeForm, UserCreationForm
 from apps.accounts.mfa import has_mfa
@@ -28,6 +30,9 @@ admin.site.unregister(Authenticator)
 # Django's Group admin, replaced below: only a superuser changes groups.
 # django.contrib.auth also comes before apps.accounts.
 admin.site.unregister(Group)
+# django_celery_beat's PeriodicTask admin, replaced below: only a
+# superuser runs tasks. django_celery_beat also comes before apps.accounts.
+admin.site.unregister(PeriodicTask)
 
 # The fields that grant admin and API power (#101). Only a superuser
 # changes them; anyone else sees them read-only.
@@ -171,3 +176,24 @@ class GroupAdmin(BaseGroupAdmin):
 
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
         return _is_superuser(request) and super().has_delete_permission(request, obj)
+
+
+@admin.register(PeriodicTask)
+class PeriodicTaskAdmin(BasePeriodicTaskAdmin):  # type: ignore[misc]
+    """django_celery_beat's admin, with "Run selected tasks" for superusers
+    only (#101): it sends any registered task at once. Enabling, disabling,
+    and toggling stay with the periodic task permissions."""
+
+    def has_superuser_permission(self, request: HttpRequest) -> bool:
+        """Django offers an action marked ``permissions=["superuser"]`` only
+        when this is True."""
+        return _is_superuser(request)
+
+    @admin.action(
+        permissions=["superuser"],
+        description=BasePeriodicTaskAdmin.run_tasks.short_description,
+    )
+    def run_tasks(self, request: HttpRequest, queryset: QuerySet[PeriodicTask]) -> None:
+        if not _is_superuser(request):
+            raise PermissionDenied
+        super().run_tasks(request, queryset)
