@@ -471,14 +471,11 @@ def test_every_registered_admin_is_audited() -> None:
 
     from apps.audit.admin_audit import AdminAuditMixin
 
-    service_audited = {Event, ClubOrganizerGrant}
     for model, model_admin in admin.site._registry.items():
-        if model in service_audited or model._meta.label == (
-            "partners.OrganizerApplicationGrant"
-        ):
-            assert not isinstance(model_admin, AdminAuditMixin), model
-        else:
-            assert isinstance(model_admin, AdminAuditMixin), model
+        assert isinstance(model_admin, AdminAuditMixin), model
+    # These record their own events, so they skip only the generic ones.
+    for model in (Event, ClubOrganizerGrant):
+        assert admin.site._registry[model].audited_by_service is True
 
 
 @pytest.mark.parametrize(

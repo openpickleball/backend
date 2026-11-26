@@ -37,7 +37,8 @@ transaction.
 
 An admin that already saves and deletes through an audited service sets
 ``audited_by_service = True`` on its class (the Event admin, the grant
-admins) and is registered without this mixin.
+admins): it records no ``admin.add``, ``admin.change``, or
+``admin.delete``, but its custom actions are wrapped like any other's.
 
 When a delete removes the acting Account itself, its events have no
 actor, as ``apps.audit.access`` does: an event naming a deleted Account
@@ -155,18 +156,22 @@ class AdminAuditMixin(admin.ModelAdmin[Any]):
         )
         return captured.pop((_label(type(obj)), str(obj.pk)), None)
 
+    def _model_events(self) -> bool:
+        """False for an admin whose service records its own events."""
+        return not getattr(self, "audited_by_service", False)
+
     def get_object(
         self, request: HttpRequest, object_id: str, from_field: str | None = None
     ) -> Any:
         obj = super().get_object(request, object_id, from_field)
-        if obj is not None and request.method == "POST":
+        if obj is not None and request.method == "POST" and self._model_events():
             self._capture(request, obj.pk)
         return obj
 
     def save_model(
         self, request: HttpRequest, obj: Any, form: ModelForm[Any], change: bool
     ) -> None:
-        if change and obj.pk is not None:
+        if change and obj.pk is not None and self._model_events():
             self._capture(request, obj.pk)
         super().save_model(request, obj, form, change)
 
@@ -174,6 +179,8 @@ class AdminAuditMixin(admin.ModelAdmin[Any]):
 
     def log_addition(self, request: HttpRequest, obj: Any, message: Any) -> Any:
         logged = super().log_addition(request, obj, message)
+        if not self._model_events():
+            return logged
         stored = _stored(type(obj), obj.pk)
         record_event(
             action=AuditAction.ADMIN_ADD,
@@ -185,6 +192,8 @@ class AdminAuditMixin(admin.ModelAdmin[Any]):
 
     def log_change(self, request: HttpRequest, obj: Any, message: Any) -> Any:
         logged = super().log_change(request, obj, message)
+        if not self._model_events():
+            return logged
         stored = _stored(type(obj), obj.pk)
         if stored is None:
             return logged
@@ -219,11 +228,17 @@ class AdminAuditMixin(admin.ModelAdmin[Any]):
     # Deletes
 
     def delete_model(self, request: HttpRequest, obj: Any) -> None:
+        if not self._model_events():
+            super().delete_model(request, obj)
+            return
         with transaction.atomic():
             self._record_deletes(request, [obj])
             super().delete_model(request, obj)
 
     def delete_queryset(self, request: HttpRequest, queryset: QuerySet[Any]) -> None:
+        if not self._model_events():
+            super().delete_queryset(request, queryset)
+            return
         with transaction.atomic():
             self._record_deletes(request, list(queryset.order_by("pk")))
             super().delete_queryset(request, queryset)
@@ -272,6 +287,7 @@ def _audited_action(func: Callable[..., Any], name: str) -> Callable[..., Any]:
             response: HttpResponseBase | None = func(modeladmin, request, queryset)
             return response
 
+    audited.records_admin_action = True  # type: ignore[attr-defined]
     audited.__name__ = getattr(func, "__name__", name)
     audited.__doc__ = func.__doc__
     return audited
@@ -281,10 +297,8 @@ def audited_admin_class(
     admin_class: type[admin.ModelAdmin[Any]],
 ) -> type[admin.ModelAdmin[Any]]:
     """``admin_class`` with ``AdminAuditMixin`` first, unless it already
-    has it or is audited by its own services."""
-    if issubclass(admin_class, AdminAuditMixin) or getattr(
-        admin_class, "audited_by_service", False
-    ):
+    has it."""
+    if issubclass(admin_class, AdminAuditMixin):
         return admin_class
     return type(
         admin_class.__name__,
