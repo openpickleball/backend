@@ -96,4 +96,5 @@ Add each record here when it merges.
 - [0046. Encrypt personal data fields and audit staff access](0046-encrypt-personal-data-fields.md) (issue #115)
 - [0047. Account security: login limits, breached passwords, session lifetimes, and sign-in alerts](0047-account-security-limits-and-sessions.md) (issue #100)
 - [0048. Account deletion: what goes, what stays, and how a Player is shown](0048-account-deletion.md) (issue #116)
+- [0049. Flag unusual submissions from trusted submitters](0049-flag-unusual-submissions.md) (issue #206)
 - [0050. An Account reads its own Organizer memberships](0050-own-organizer-memberships.md) (issue #301)
