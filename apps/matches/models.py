@@ -1097,7 +1097,8 @@ class FlagRule(models.TextChoices):
 # counting, so they stay out of ``counted()`` (ADR 0029). They hold
 # nothing, change no rating, and send no signal or notice. The Organizer
 # admin's moderator review counts flags with these reasons (#271), and
-# the match admin shows none of them (ADR 0049). #207 adds its reason.
+# the match admin shows none of them (ADR 0049). #207 adds its rule to
+# ``FlagRule``.
 SIGNAL_FLAG_REASONS: frozenset[str] = frozenset({FlagReason.UNUSUAL_SUBMISSION.value})
 
 
