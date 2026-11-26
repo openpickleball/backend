@@ -1015,6 +1015,9 @@ API_CLIENT_IP_THROTTLE_PER_DAY = _rate("API_CLIENT_IP_THROTTLE_PER_DAY", 3_000)
 API_ORGANIZER_REPORT_THROTTLE_PER_DAY = _rate(
     "API_ORGANIZER_REPORT_THROTTLE_PER_DAY", 5
 )
+# Data export requests per Account per day (#39, ADR 0051), the request
+# operation's own throttle, apart from the Account throttle.
+API_DATA_EXPORT_THROTTLE_PER_DAY = _rate("API_DATA_EXPORT_THROTTLE_PER_DAY", 3)
 # The request header the proxy in front of the app sets to the client IP.
 # DigitalOcean App Platform sets do-connecting-ip. X-Forwarded-For is never
 # read: a client can forge it.

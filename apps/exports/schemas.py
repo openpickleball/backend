@@ -44,8 +44,10 @@ class DataExportDownloadIn(Schema):
     """The download key from the data export email."""
 
     key: str = Field(
-        max_length=128,
-        description="The key from the link in the data export email.",
+        description=(
+            "The key from the link in the data export email. A key longer "
+            "than 128 characters gets the same 404 as an unknown one."
+        )
     )
 
 
