@@ -1,0 +1,28 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+{% comment %}
+A Player's personal data, shown once after a reveal recorded an Audit
+Event (issue #115, ADR 0046). The response is never cached.
+{% endcomment %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">Home</a>
+&rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; <a href="{% url opts|admin_urlname:'change' original.pk|admin_urlquote %}">{{ original }}</a>
+&rsaquo; Personal data
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+<p>This view was recorded in the audit log.</p>
+<table>
+<tbody>
+{% for label, value in values %}
+<tr><th scope="row">{{ label }}</th><td>{{ value|default:"-" }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endblock %}

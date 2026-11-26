@@ -2,12 +2,15 @@
 
 It serves the suite over plain http, swaps the cache for an in-memory
 one, runs Celery tasks eagerly, stores static files without the
-collectstatic manifest, hashes passwords with a fast hasher, and serves the admin at admin/, so the tests need no cache server, broker, or
-collectstatic step.
+collectstatic manifest, hashes passwords with a fast hasher, serves the
+admin at admin/, and encrypts personal data fields with a key generated
+when this module is imported, so the tests need no cache server, broker,
+collectstatic step, or stored key.
 """
 
 from typing import Any
 
+from cryptography.fernet import Fernet
 from django.conf import global_settings, settings
 from django.test.runner import DiscoverRunner, ParallelTestSuite
 from django.test.utils import override_settings
@@ -21,6 +24,9 @@ from django.test.utils import override_settings
 # Settings hash passwords with production-strength PBKDF2. Tests hash with
 # fast MD5 first and keep the defaults, so identify_hasher still knows them.
 # A developer's .env may give the admin a private path. Tests use admin/.
+# Personal data fields need an encryption key (ADR 0046). Each process
+# generates its own when it imports this module, so no key is ever
+# stored; config/settings_test.py reads this one, so the two sets match.
 _TEST_OVERRIDES: dict[str, Any] = {
     "SECURE_SSL_REDIRECT": False,
     "ADMIN_URL": "admin/",
@@ -37,6 +43,7 @@ _TEST_OVERRIDES: dict[str, Any] = {
         "django.contrib.auth.hashers.MD5PasswordHasher",
         *global_settings.PASSWORD_HASHERS,
     ],
+    "FIELD_ENCRYPTION_KEYS": [Fernet.generate_key().decode()],
 }
 
 

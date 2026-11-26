@@ -91,7 +91,11 @@ jobs:
       # Fails on any check --deploy warning (ADR 0040). The values are
       # made up and production-like: DEBUG off, example.org hosts, and keys
       # that are not secrets. They win over .env. Nothing connects to them.
-      - run: uv run python manage.py check --deploy --fail-level WARNING
+      # The field encryption key is generated in the step, never stored.
+      - run: >-
+          FIELD_ENCRYPTION_KEYS="$(uv run python -c 'from cryptography.fernet
+          import Fernet; print(Fernet.generate_key().decode())')"
+          uv run python manage.py check --deploy --fail-level WARNING
         env:
           DJANGO_DEBUG: "false"
           DJANGO_SECRET_KEY: ci-only-made-up-deploy-check-key-not-a-secret-7Qx2Lm9Vr4Tz

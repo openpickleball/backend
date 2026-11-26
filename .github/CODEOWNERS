@@ -20,6 +20,9 @@
 # Public identifiers partners store forever; codes must resist enumeration.
 /apps/public_ids/ @openpickleball/maintainers
 
+# Field-level encryption of personal data and its keys (ADR 0046).
+/apps/encryption/ @openpickleball/maintainers
+
 # Player personal data, privacy settings, and the Player to Account link,
 # the base for identity linking.
 /apps/players/ @openpickleball/maintainers

@@ -33,7 +33,7 @@ uv run python manage.py migrate
 uv run pytest
 ```
 
-The `.env` copy gives every command the settings it needs, and its values point at the local services. `uv sync` installs the dependencies from `uv.lock`. `docker compose up -d --wait` starts Postgres and Valkey and returns once both are healthy.
+The `.env` copy gives every command the settings it needs, and its values point at the local services. Before you run the app, set `FIELD_ENCRYPTION_KEYS` in `.env` to a key of your own (see [Settings](#settings)); the tests generate their own. `uv sync` installs the dependencies from `uv.lock`. `docker compose up -d --wait` starts Postgres and Valkey and returns once both are healthy.
 
 To run the app, start the development server:
 
@@ -52,6 +52,8 @@ uv run python manage.py check
 ```
 
 Without a `.env` or the variables in your environment, every command that loads settings stops with an error. Django's commands name the missing variable; mypy does not (see below). `DJANGO_DEBUG` is off unless set to a true value, and with it off `DJANGO_SECRET_KEY` is required. `FRONTEND_URL` is required too: it is the web app's origin, which links in account emails open, and it must be https when `DJANGO_DEBUG` is off. If your `.env` predates it, copy the line from `.env.example`.
+
+`FIELD_ENCRYPTION_KEYS` holds the keys that encrypt a Player's legal name, birth year and month, and gender division, and every MFA secret (ADR 0046): Fernet keys, comma separated, newest first. With `DJANGO_DEBUG` off it is required. With it on it may be empty, but then reading or writing a Player fails, so set one for local work. Generate a key with `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Never commit a key, and never reuse a local key in production. Losing every key loses the encrypted data, so keep production's keys backed up apart from the database. To rotate, put the new key first, keep the old one after it, run `uv run python manage.py reencrypt_fields`, then remove the old key.
 
 Docker Compose also reads `.env` and treats a `$` in a value as a variable reference. If your secret key contains `$`, wrap it in single quotes: `DJANGO_SECRET_KEY='...'`.
 
@@ -78,7 +80,7 @@ Run only one beat process. Tests run tasks eagerly, so they need no worker and n
 
 ### Serving like production
 
-To serve the app the way production does, with `DJANGO_DEBUG` off, collect the static files first and then start gunicorn. gunicorn reads `gunicorn.conf.py`, which takes `PORT` (default 8000) and `WEB_CONCURRENCY` (default 2 workers) from the process environment, not from `.env`. With `DJANGO_DEBUG` off, settings redirect plain http to https, so a local request needs the `X-Forwarded-Proto: https` header that the hosting proxy would set, and `DJANGO_ALLOWED_HOSTS` must name the host you request (for example `127.0.0.1`). The two health checks answer a plain http request with any host (see [App Platform](#app-platform)). `FRONTEND_URL` must be https, for example `https://app.example.org`, and `ADMIN_URL` must name the admin's private path, for example `staff-x7k2/` (never `admin/`, the local default).
+To serve the app the way production does, with `DJANGO_DEBUG` off, collect the static files first and then start gunicorn. gunicorn reads `gunicorn.conf.py`, which takes `PORT` (default 8000) and `WEB_CONCURRENCY` (default 2 workers) from the process environment, not from `.env`. With `DJANGO_DEBUG` off, settings redirect plain http to https, so a local request needs the `X-Forwarded-Proto: https` header that the hosting proxy would set, and `DJANGO_ALLOWED_HOSTS` must name the host you request (for example `127.0.0.1`). The two health checks answer a plain http request with any host (see [App Platform](#app-platform)). `FRONTEND_URL` must be https, for example `https://app.example.org`, `ADMIN_URL` must name the admin's private path, for example `staff-x7k2/` (never `admin/`, the local default), and `FIELD_ENCRYPTION_KEYS` must hold at least one key (see [Settings](#settings)).
 
 ```bash
 uv run python manage.py collectstatic --noinput
@@ -139,13 +141,13 @@ Production runs on DigitalOcean App Platform, from one app spec: `.do/production
 - `web`: the image's gunicorn on port 8000. Its readiness check is `/api/v1/health/ready`, which stops traffic while the database or cache is down. A database connect gives up after 5 seconds, but a query is not bounded: if the pool answers and Postgres behind it hangs, the check can wait past gunicorn's worker timeout (ADR 0042; bounding it is left to #66). Its liveness check is `/api/v1/health/live`, which restarts the container only when the process stops answering.
 - `worker`: `celery -A config worker -Q ratings,email,webhooks,default -l info --concurrency 2`, every queue.
 - `beat`: `celery -A config beat` with the database scheduler, exactly one instance. During a deploy App Platform may run the old and the new beat together for a short time, so a periodic task can be sent twice. Every task must already be safe to run twice (ADR 0006).
-- `migrate`: a pre-deploy job, `python manage.py migrate`. It runs before each deploy goes live and migrates on the direct connection by itself (ADR 0038). A failed migration stops the deploy.
+- `migrate`: a pre-deploy job, `python manage.py migrate`. It runs before each deploy goes live and migrates on the direct connection by itself (ADR 0038). A failed migration stops the deploy. The release that encrypts personal data (ADR 0046) must deploy with no traffic to the old release, before production opens to players or with the app stopped while `migrate` runs: the old release keeps serving during the pre-deploy job, and after the data migrations it would read tokens as plain values and write plain-text Players and TOTP secrets that the new release cannot read.
 - `pg`: a managed Postgres cluster (`open-production-pg`), database `open`, user `open`.
 - `valkey`: a managed Valkey cluster (`open-production-valkey`), the cache and Celery broker (ADR 0006). DigitalOcean's Valkey takes TLS only (`rediss://`).
 
 Every component runs the same image on the smallest instance size, `apps-s-1vcpu-0.5gb`. The variables are set once, at app level, so every component gets them: `DATABASE_URL` is the pool `open-pool` (`${pg.open-pool.DATABASE_URL}`), `DIRECT_DATABASE_URL` the database itself (`${pg.DATABASE_URL}`), `REDIS_URL` the Valkey cluster (`${valkey.DATABASE_URL}`), and `DJANGO_ALLOWED_HOSTS` the app's domain (`${APP_DOMAIN}`). `FRONTEND_URL` is `https://app.openpb.org` (#182). Until the web app answers there (#183), the links in verification and reset emails open a page that does not exist yet. `CLIENT_IP_HEADER` stays at its default, `do-connecting-ip`.
 
-The spec holds no secret values. `DJANGO_SECRET_KEY`, `RESEND_API_KEY`, and `ADMIN_URL` (the admin's private path, such as `staff-x7k2/`, never `admin/`) are declared as secrets with no value. Set them in the App Platform console, or in a spec exported from the running app, where App Platform shows them encrypted (`EV[...]`). Never commit a value.
+The spec holds no secret values. `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (see [Settings](#settings)), `RESEND_API_KEY`, and `ADMIN_URL` (the admin's private path, such as `staff-x7k2/`, never `admin/`) are declared as secrets with no value. Set them in the App Platform console, or in a spec exported from the running app, where App Platform shows them encrypted (`EV[...]`). Never commit a value.
 
 App Platform's HTTP health probes reach the container directly, over plain http, with a Host header that `DJANGO_ALLOWED_HOSTS` refuses. `HealthProbeMiddleware` (`config/health_probe.py`, ADR 0042) answers a GET of exactly the two health paths in that case. Every other request keeps the host check and the https redirect.
 
@@ -158,7 +160,7 @@ The spec does not set these. #68 and #63 do:
 - Set Valkey's eviction policy to `volatile-lru`: `doctl databases configuration update <cluster-id> --engine valkey --config-json '{"valkey_maxmemory_policy":"volatile-lru"}'`. Valkey holds the cache and the Celery queues. Cache and throttle keys all expire, and queued tasks never do, so `volatile-lru` evicts only cache keys. An `allkeys-*` policy could drop queued tasks, and `noeviction` would make every cache write fail once Valkey is full.
 - Make user `open` the owner of database `open`: as `doadmin`, run `ALTER DATABASE open OWNER TO open;`. On Postgres 15 and later the `public` schema belongs to the database owner, so a user that does not own the database cannot create tables, and the first migrate fails. Today both URLs use `open`, so the runtime user owns every table, the audit table included. #103 decides separate migration and runtime users, as the Audit log rules require.
 - Limit each cluster's trusted sources to the app (#68, #103).
-- Set the three secret values: `DJANGO_SECRET_KEY`, `RESEND_API_KEY`, and `ADMIN_URL` (a path only staff know, letters, digits, hyphens, and underscores ending in `/`).
+- Set the four secret values: `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (a newly generated Fernet key, backed up apart from the database), `RESEND_API_KEY`, and `ADMIN_URL` (a path only staff know, letters, digits, hyphens, and underscores ending in `/`).
 - Give App Platform access to the image on GHCR, and deploy by digest instead of the `main` tag (#63).
 - On the first deploy, confirm that `${valkey.DATABASE_URL}` is Valkey's `rediss://` connection string. DigitalOcean documents `DATABASE_URL` for every database and `REDIS_URL` only for its older Redis engine.
 

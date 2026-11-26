@@ -14,6 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from cryptography.fernet import Fernet
 from django.test import SimpleTestCase
 
 from config.tests.test_settings import SETTINGS_VARS, TEST_SECRET_KEY
@@ -48,6 +49,8 @@ RESEND_API_KEY=re_made_up_test_only_dotenv
 DEFAULT_FROM_EMAIL=OPEN <noreply@dotenv.example>
 ADMIN_URL=dotenv-staff-x7/
 """
+# Generated at test time: no key is ever committed (ADR 0046).
+DOT_ENV += f"FIELD_ENCRYPTION_KEYS={Fernet.generate_key().decode()}\n"
 
 
 class EnvFileTests(SimpleTestCase):

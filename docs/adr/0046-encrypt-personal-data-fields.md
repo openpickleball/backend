@@ -1,0 +1,34 @@
+# 0046. Encrypt personal data fields and audit staff access
+
+- Status: Proposed
+- Date: 2026-11-26
+
+## Context
+
+ADR 0009 says a Player's legal name, birth year and month, and gender division are encrypted at the field level, that staff whose role needs them see them only with an Audit Event each time, and that a check keeps the personal data inventory complete. Issue #115 does this. allauth also stores each TOTP secret and recovery code seed in plain text unless its MFA adapter encrypts them (ADR 0043), so a database leak would hand out every enrolled Account's second factor.
+
+An encrypted value cannot be checked or compared by the database, so the check constraints on birth year, birth month, and gender division can no longer stay. The maintainer settled four questions on the issue; this record holds those decisions.
+
+## Decision
+
+This amends ADR 0009 (the fields are now encrypted and staff access is audited as it said) and ADR 0043 (MFA secrets are encrypted).
+
+- **What is encrypted.** `players.Player.legal_name`, `birth_year`, `birth_month`, and `gender_division`, and in allauth's `mfa.Authenticator.data` each TOTP `secret`, each recovery code `seed`, and any `migrated_codes`. The display name, city, and region stay plain: they are shown to signed-in players. The Account's email stays a plain login column (ADR 0003).
+- **How.** A small model field in `apps/encryption` on `cryptography`'s `MultiFernet` (AES-128-CBC with HMAC-SHA256), storing a Fernet token in a `text` column. The keys come from `FIELD_ENCRYPTION_KEYS`, a comma-separated list, newest first: the newest encrypts and every listed key decrypts. Settings refuse a missing list with DEBUG off, and a malformed entry in any mode, naming the variable and the entry's position, never a value. With DEBUG on the list may be empty, and then reading or writing an encrypted field raises `ImproperlyConfigured`. The MFA secrets go through OPEN's MFA adapter (`MFA_ADAPTER`), whose `encrypt()` and `decrypt()` use the same keys and never fall back to plain text. No key is committed anywhere: tests and the CI deploy check generate theirs when they run.
+- **Lookups.** Fernet tokens differ each time the same text is encrypted, so every lookup on an encrypted field but `isnull` raises `FieldError`, rather than an exact match that silently finds nothing. `order_by()` and `distinct()` on these fields are not refused: they run on the ciphertext, so their results mean nothing, and code must not use them. `values()` and `values_list()` decrypt.
+- **Checks move to `save()` (option A).** A migration drops `players_player_birth_month_range`, `players_player_birth_year_min`, and `players_player_gender_division_valid`. `Player.save()` applies the same rules, and the length and type limits the text columns no longer enforce (a legal name is text of at most 200 characters, a gender division text and one of `mens`, `womens`, or empty), on every save and on the fields an `update_fields` save names, with the model's fixed messages. Raw writes (`QuerySet.update`, `bulk_create`, raw SQL, `loaddata`) skip them. The display name check constraint stays.
+- **Migrations.** A data migration encrypts the stored Player values, and another the stored MFA secrets. The forward encrypts any value the keys do not decrypt, since a player may type a token-shaped legal name. Each reverse decrypts every value, so the Player columns can be cast back to their old types and the check constraints restored, and stops with the model and row id (never the value), changing nothing, when one does not decrypt. Neither reads a key while no row needs a change; with rows and no key, they stop with fixed text.
+- **Rotation.** `manage.py reencrypt_fields` rewrites every encrypted value with the newest key, one row per transaction, and prints counts only. A value no listed key decrypts stops it with the model and row id. It records no Audit Event, since no value changes. Rotate by putting the new key first, running the command, then removing the old key.
+- **Staff access.** A new permission, `players.view_personal_data`, is not in the Moderator group. Superusers hold it implicitly, as they hold every permission. The Player admin is read-only for everyone and shows the four fields only as "Hidden"; it never lists, searches, filters, or sorts on them, and its queries defer them, so its list and detail pages never decrypt them (only the reveal does). An Account with the permission (and `players.view_player`) reveals them with a POST, which records one `player.personal_data_view` Audit Event (the staff Account as actor, the Player as target, the field names in `after`, never a value) and shows the values in that uncached response only. A POST through the admin needs a recent MFA step (ADR 0045).
+- **Not encrypted.** Two session values stay plain text, as before: the pending TOTP secret allauth holds during setup, and the signup hold (`open_signup_details`, ADR 0017, ADR 0022), which holds the legal name and birth year and month until the Player is created. Both are short-lived and live in the session store, not in a Player or Authenticator row.
+- **Inventory check.** A test fails when an installed model is not named in `docs/privacy/personal-data-inventory.md` by its label, or a first-party field is not named under its model.
+
+## Consequences
+
+- Losing every key loses the encrypted data, with no recovery. Back up the keys apart from the database, and keep an old key listed until `reencrypt_fields` has run.
+- A token's length shows the rough length of its value, such as a long or short legal name. This is accepted.
+- No query can filter on these fields, and sorting or deduplicating on them gives meaningless results. A later feature that needs to (such as matching a legal name) needs its own design, for example a keyed hash column, and its own record.
+- A raw write can store a value `save()` would refuse, now that the database checks nothing. CLAUDE.md lists these writes.
+- Every process that touches a Player needs the keys: the web app, the worker, beat, and the migrate job. Local development needs a key in `.env` before it can read or write a Player.
+- This release must deploy with no traffic to the old release: before production opens to players (#68), or with the app stopped while the migrate job runs. App Platform runs `migrate` as a pre-deploy job while the old release still serves. The old code would read tokens as plain values and write plain-text Players and TOTP secrets after the data migrations ran, and the new code, which never falls back to plain text, could then not read them, and `reencrypt_fields` would stop on them.
+- An Audit Event or log never holds a decrypted value, and the API returns these fields only to the Player's own Account, as before.

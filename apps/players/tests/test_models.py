@@ -268,16 +268,31 @@ def test_birth_month_this_month_is_not_in_the_future() -> None:
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [
-        ("display_name", ""),
-        ("birth_month", 0),
-        ("birth_month", 13),
-        ("birth_year", 1899),
-        ("gender_division", "other"),
-    ],
+    [("display_name", "")],
 )
 def test_database_refuses_raw_invalid_writes(field: str, value: object) -> None:
     player = _player()
 
     with pytest.raises(IntegrityError), transaction.atomic():
         Player.objects.filter(pk=player.pk).update(**{field: value})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("birth_month", 0),
+        ("birth_month", 13),
+        ("birth_year", 1899),
+        ("gender_division", "other"),
+    ],
+)
+def test_save_refuses_invalid_encrypted_values(field: str, value: object) -> None:
+    # The database cannot check an encrypted value, so save() does
+    # (ADR 0046). Raw writes skip it.
+    player = _player()
+    setattr(player, field, value)
+
+    with pytest.raises(ValidationError) as caught:
+        player.save()
+
+    assert set(caught.value.message_dict) == {field}

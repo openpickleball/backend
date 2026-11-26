@@ -1,7 +1,7 @@
 # 0019. Gender division required at signup
 
 - Status: Proposed
-- Amended by: [ADR 0023](0023-birth-and-division-set-once.md) (the player cannot change the gender division once the Player exists)
+- Amended by: [ADR 0023](0023-birth-and-division-set-once.md) (the player cannot change the gender division once the Player exists), [ADR 0046](0046-encrypt-personal-data-fields.md) (the gender division is encrypted, so the database no longer checks it; `Player.save()` allows an empty value)
 - Date: 2026-11-23
 
 ## Context

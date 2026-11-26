@@ -17,6 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from cryptography.fernet import Fernet
 from django.test import SimpleTestCase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -98,6 +99,8 @@ class ParallelSpawnTests(SimpleTestCase):
                 "DEFAULT_FROM_EMAIL": "OPEN <noreply@example.org>",
                 # DEBUG off needs a private admin path. Made up.
                 "ADMIN_URL": "staff-test-x7/",
+                # DEBUG off needs a field encryption key. Generated here.
+                "FIELD_ENCRYPTION_KEYS": Fernet.generate_key().decode(),
             }
             if "HOME" in os.environ:
                 env["HOME"] = os.environ["HOME"]

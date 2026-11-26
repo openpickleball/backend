@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from cryptography.fernet import Fernet
 from django.test import SimpleTestCase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -22,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SETTINGS_VARS = (
     "DJANGO_SECRET_KEY",
     "DJANGO_DEBUG",
+    "FIELD_ENCRYPTION_KEYS",
     "DJANGO_ALLOWED_HOSTS",
     "DATABASE_URL",
     "DIRECT_DATABASE_URL",
@@ -45,6 +47,10 @@ SETTINGS_VARS = (
 )
 
 DEPLOY_CHECK = "uv run python manage.py check --deploy --fail-level WARNING"
+GENERATED_KEY_PREFIX = (
+    "FIELD_ENCRYPTION_KEYS=\"$(uv run python -c 'from cryptography.fernet "
+    "import Fernet; print(Fernet.generate_key().decode())')\" "
+)
 
 # Made-up values for tests only. Not a real secret.
 TEST_SECRET_KEY = "test-only-" + "k3y" * 16
@@ -53,6 +59,8 @@ RESEND_BACKEND = "anymail.backends.resend.EmailBackend"
 
 PRODUCTION_LIKE = {
     "DJANGO_SECRET_KEY": TEST_SECRET_KEY,
+    # Generated at test time: no key is ever committed (ADR 0046).
+    "FIELD_ENCRYPTION_KEYS": Fernet.generate_key().decode(),
     "DJANGO_DEBUG": "False",
     "DJANGO_ALLOWED_HOSTS": "api.example.org,www.example.org",
     "DATABASE_URL": "postgres://open@db.example.org:5432/open",
@@ -449,9 +457,14 @@ class SecurityBlockTests(SimpleTestCase):
         [step] = [
             step
             for step in workflow["jobs"]["test"]["steps"]
-            if step.get("run") == DEPLOY_CHECK
+            if str(step.get("run", "")).endswith(DEPLOY_CHECK)
         ]
+        # The step generates its field encryption key when it runs, so no
+        # key is stored in the workflow (ADR 0046). This test does the same.
+        self.assertEqual(step["run"], GENERATED_KEY_PREFIX + DEPLOY_CHECK)
         env = {name: str(value) for name, value in step["env"].items()}
+        self.assertNotIn("FIELD_ENCRYPTION_KEYS", env)
+        env["FIELD_ENCRYPTION_KEYS"] = Fernet.generate_key().decode()
         self.assertEqual(env["DJANGO_DEBUG"], "false")
         self.assertTrue(set(env) <= set(SETTINGS_VARS))
         result = _check(env, "--deploy", "--fail-level", "WARNING")

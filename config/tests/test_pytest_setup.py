@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import connection
@@ -133,6 +134,8 @@ def test_debug_off_run_keeps_test_overrides() -> None:
             "DEFAULT_FROM_EMAIL": "OPEN <noreply@example.org>",
             # DEBUG off needs a private admin path. Made up.
             "ADMIN_URL": "staff-test-x7/",
+            # DEBUG off needs a field encryption key. Generated here.
+            "FIELD_ENCRYPTION_KEYS": Fernet.generate_key().decode(),
         }
         if "HOME" in os.environ:
             env["HOME"] = os.environ["HOME"]

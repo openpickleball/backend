@@ -17,7 +17,7 @@ The name a Player shows to others. As ADR 0002 sets out, once Ratings are publis
 _Avoid_: username, nickname.
 
 **Legal Name**:
-A Player's full legal name, private, used only for identity checks and Organizer verification. Encrypted once #115 lands, and never returned to Partners (ADR 0009).
+A Player's full legal name, private, used only for identity checks and Organizer verification. Encrypted (ADR 0046), and never returned to Partners (ADR 0009).
 _Avoid_: real name.
 
 **Age Group**:
