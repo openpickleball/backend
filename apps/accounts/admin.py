@@ -183,13 +183,20 @@ class UserAdmin(AccessAuditAdminMixin, BaseUserAdmin[User]):
         """Django's set-password view, in one transaction, so the new
         password and its Audit Event commit together (#101). A new password
         ends the Account's sessions and their user session rows, or, for
-        the staff member's own Account, the other sessions (#100)."""
+        the staff member's own Account, the other sessions (#100). Only when
+        the stored password hash really changed: Django also answers 302
+        for conflicting form data, which saves nothing."""
         old_key = request.session.session_key
+        before = (
+            User._default_manager.filter(pk=id)
+            .values_list("password", flat=True)
+            .first()
+        )
         with transaction.atomic():
             response: HttpResponse = super().user_change_password(request, id, form_url)
             if request.method == "POST" and response.status_code == 302:
                 account = User._default_manager.filter(pk=id).first()
-                if account is not None:
+                if account is not None and account.password != before:
                     end_sessions_after_password_change(request, account, old_key)
             return response
 
