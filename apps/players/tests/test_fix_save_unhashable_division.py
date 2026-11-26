@@ -17,7 +17,7 @@ def test_an_unhashable_division_is_a_validation_error(value: object) -> None:
         display_name="Made-up Player",
         birth_year=1990,
         birth_month=6,
-        gender_division=value,
+        gender_division=value,  # type: ignore[misc]
     )
 
     with pytest.raises(ValidationError) as caught:
