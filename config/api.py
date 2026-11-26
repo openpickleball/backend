@@ -17,8 +17,8 @@ the Events of the signed-in Account's Organizers (list, create, change,
 delete), at /api/v1/organizer/ the CSV results upload
 (/api/v1/organizer/events/{code}/results-files) and its report
 (/api/v1/organizer/results-files/{code}) and the signed-in Account's own
-Organizer memberships (/api/v1/organizer/organizers), and at /api/v1/organizers/ a
-report of a verified Organizer to OPEN Moderators
+Organizer memberships (/api/v1/organizer/organizers), and at
+/api/v1/organizers/ a report of a verified Organizer to OPEN Moderators
 (/api/v1/organizers/{code}/reports).
 
 Adding an app's endpoints (usually one router per app):

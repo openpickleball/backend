@@ -140,3 +140,18 @@ def test_sign_in_is_required() -> None:
     response = Client().get(ORGANIZERS)
     assert response.status_code == 401
     assert response.json()["code"] == "unauthorized"
+
+
+def test_memberships_come_back_ordered_by_code() -> None:
+    organizers = sorted(
+        (OrganizerFactory.create() for _ in range(4)),
+        key=lambda organizer: organizer.public_code,
+        reverse=True,
+    )
+    account: User = UserFactory.create()
+    # Joined in reverse code order, so insertion order is not code order.
+    for organizer in organizers:
+        _member(organizer, account=account)
+
+    codes = [item["organizer"] for item in _list(account)]
+    assert codes == sorted(organizer.public_code for organizer in organizers)
