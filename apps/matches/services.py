@@ -102,7 +102,7 @@ from apps.matches.models import (
     Team,
     source_match_type,
 )
-from apps.matches.notices import schedule_hold_notices
+from apps.matches.notices import schedule_hold_notices, schedule_recorded_notice
 from apps.matches.permissions import Actor, MatchSubmission, check_can_create_match
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
 from apps.players.models import GenderDivision, Player
@@ -1134,7 +1134,11 @@ def insert_draft(
     were counting before it was written: each is now held by its flag.
     When it writes flags, it schedules the hold notices for the new Match
     and the matches its flags hold (``schedule_hold_notices``), queued
-    after commit (#272).
+    after commit (#272). When it writes a confirmed Match with an Event
+    and no Submission Batch (a trusted submitter's match, or the Event's
+    Organizer's correction), it schedules the recorded match notice for
+    its players (``schedule_recorded_notice``, #208); a batch path sends
+    one notice per player for the whole batch instead.
     """
     match = draft.match
     near = _near_matches(draft.keys_a, draft.keys_b, match.played_on)
@@ -1161,6 +1165,12 @@ def insert_draft(
     )
     if near:
         schedule_hold_notices(match)
+    if (
+        status == MatchStatus.CONFIRMED
+        and match.event_id is not None
+        and match.submission_batch_id is None
+    ):
+        schedule_recorded_notice(match)
     return match, was_counting
 
 

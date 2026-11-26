@@ -1,0 +1,1 @@
+{% autoescape off %}{% if matches|length == 1 %}A match you played in was recorded on OPEN{% else %}Matches you played in were recorded on OPEN{% endif %}{% endautoescape %}

@@ -93,6 +93,7 @@ from apps.matches.models import (
     ResultsFileStatus,
     SubmissionBatch,
 )
+from apps.matches.notices import schedule_batch_notices
 from apps.matches.permissions import MatchPermissionDenied, can_manage_events
 from apps.matches.services import (
     BATCH_REFUSED,
@@ -451,6 +452,11 @@ def _finish(
     stored when ``report`` is None. Either way the held-match warning is
     applied to the stored rows (``_mark_held``). The stored rows describe
     the state at this moment: nothing updates them afterward.
+
+    Unless a bulk void stopped the file (``VOIDED``), it schedules the
+    batch's recorded match notices after commit (``schedule_batch_notices``,
+    #208): one email per player for the whole upload. It runs once per
+    file, since only the call that finds the file pending gets this far.
     """
     with transaction.atomic():
         results_file = (
@@ -473,6 +479,8 @@ def _finish(
         results_file.save(
             update_fields=["report", "status", "error_code", "content", "processed_at"]
         )
+        if error_code != VOIDED:
+            schedule_batch_notices(results_file.submission_batch_id)
 
 
 def fail_for_void(batch_id: int) -> None:
