@@ -52,7 +52,8 @@ Recipients are the players ``permissions.participant_player`` allows to
 dispute the match: each participant whose Account is active.
 
 A failure while building or queuing notices is logged with the match's
-(or the batch's) row id and the error class only, and never fails the change, which has
+(or the batch's) row id and the error class only (Celery's soft time
+limit is raised again, so a task out of time stops), and never fails the change, which has
 already committed. It is caught per recipient and per held match, so one
 failed notice never drops the others.
 """
@@ -194,6 +195,8 @@ def send_dispute_notices(match_pk: int, disputer_team: str) -> int:
     # an error's text can quote an address.
     try:
         return _send_dispute_notices(match_pk, disputer_team)
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:
         return _failed(match_pk, exc)
 
@@ -206,6 +209,8 @@ def send_hold_notices(new_match_pk: int) -> int:
     # send_dispute_notices.
     try:
         return _send_hold_notices(new_match_pk)
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:
         return _failed(new_match_pk, exc)
 
@@ -309,6 +314,8 @@ def _send_hold_notices(new_match_pk: int) -> int:
         # one held match's failure never drops the other held matches.
         try:
             count += _send_hold_target(target_pk, new_match_pk, flag_pks)
+        except SoftTimeLimitExceeded:
+            raise
         except Exception as exc:
             _failed(target_pk, exc)
     return count
@@ -417,6 +424,8 @@ def send_recorded_notice(match_pk: int) -> int:
     try:
         matches = list(Match.objects.filter(pk=match_pk, status__in=_RECORDED_STATUSES))
         return _send_recorded(matches, match_pk, what="match")
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:
         return _failed(match_pk, exc)
 

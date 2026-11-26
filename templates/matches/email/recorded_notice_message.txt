@@ -5,5 +5,5 @@ Match {{ match.code }}, played {{ match.played_on|date:"F j, Y" }}
 Scores: {{ match.scores }}
 View or dispute: {{ match.url }}
 {% endfor %}
-If a score is wrong, or you did not play in a match, dispute it from its page. A disputed match stops counting until the event's organizer settles the dispute. If you think the organizer is at fault, you can report the organizer to OPEN from the app.{% endblock content %}
+If a score is wrong, or you did not play in a match, dispute it from its page. A disputed match stops counting until the dispute is settled. If you think the organizer that recorded it is at fault, you can report the organizer to OPEN from the app.{% endblock content %}
 {% block reason %}You received this email because an event organizer recorded a match you played in on OPEN. These notices are always sent, so you can catch a wrong result.{% endblock reason %}

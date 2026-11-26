@@ -139,6 +139,7 @@ def test_an_event_match_emails_each_player_once(
         assert "Scores show your team first." in body
         assert "dispute it from its page" in body
         assert "counts toward ratings without your confirmation" in body
+        assert "until the dispute is settled" in body
     assert "7-11, 11-9, 4-11" in team_b.body
     assert "June 1, 2026" in team_b.body
 
@@ -244,6 +245,10 @@ def test_an_organizer_confirming_a_pending_duplicate_emails_the_players(
     assert recorded.created is False
     assert recorded.match.pk == pending.pk
     assert _sent() == {player.account.email: [ONE] for player in players}
+    # The match has no Event, so the email does not say an organizer
+    # settles its dispute.
+    for message in mail.outbox:
+        assert "event's organizer settles" not in message.body
 
     # A retry of the same submission confirms nothing and sends nothing.
     mail.outbox.clear()
@@ -651,3 +656,27 @@ def test_a_disputed_match_is_still_listed(
     message = render_recorded_notice(players[0], [match])
 
     assert str(match.public_code) in message.body
+
+
+def test_the_soft_time_limit_stops_the_other_notices(
+    players: list[Player], confirmed: Match, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def out_of_time(*args: object, **kwargs: object) -> None:
+        raise SoftTimeLimitExceeded
+
+    monkeypatch.setattr(notices, "render_dispute_notice", out_of_time)
+    monkeypatch.setattr(notices, "render_hold_notice", out_of_time)
+    dispute_match(confirmed, actor=players[0].account)
+    newer = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=((11, 2), (11, 3)),
+        played_on=WORKFLOW_PLAYED_ON,
+        submitted_by_user=players[1].account,
+    ).match
+
+    with pytest.raises(SoftTimeLimitExceeded):
+        notices.send_dispute_notices(confirmed.pk, Team.A)
+    with pytest.raises(SoftTimeLimitExceeded):
+        notices.send_hold_notices(newer.pk)
