@@ -16,7 +16,8 @@ and the signed-in Account's own Player, at /api/v1/organizer/events
 the Events of the signed-in Account's Organizers (list, create, change,
 delete), at /api/v1/organizer/ the CSV results upload
 (/api/v1/organizer/events/{code}/results-files) and its report
-(/api/v1/organizer/results-files/{code}), and at /api/v1/organizers/ a
+(/api/v1/organizer/results-files/{code}) and the signed-in Account's own
+Organizer memberships (/api/v1/organizer/organizers), and at /api/v1/organizers/ a
 report of a verified Organizer to OPEN Moderators
 (/api/v1/organizers/{code}/reports).
 
@@ -43,8 +44,8 @@ signed-in player's own match lists and is mounted at `me/`.
 `apps.players.api.me_router`, the Account's own Player, is mounted at
 `me/` too: ninja accepts several routers under one prefix. `players/` is
 shared the same way, by the players router and the ratings router
-(`apps.ratings.api.router`), and `organizer/` by the events router and
-`apps.matches.api.organizer_router`.
+(`apps.ratings.api.router`), and `organizer/` by the events router,
+`apps.matches.api.organizer_router`, and `apps.clubs.api.organizer_router`.
 
 Every operation needs an explicit `operation_id`: it names the method in the
 generated client, so it must not change when a view is renamed. Building the
@@ -88,6 +89,7 @@ from ninja.openapi.schema import OpenAPISchema
 from ninja.schema import NinjaGenerateJsonSchema
 
 from apps.accounts.api import router as accounts_router
+from apps.clubs.api import organizer_router as clubs_organizer_router
 from apps.clubs.api import router as organizers_router
 from apps.events.api import router as events_router
 from apps.matches.api import me_router
@@ -344,4 +346,5 @@ api.add_router("me/", me_router)
 api.add_router("me/", players_me_router)
 api.add_router("organizer/", events_router)
 api.add_router("organizer/", matches_organizer_router)
+api.add_router("organizer/", clubs_organizer_router)
 api.add_router("organizers/", organizers_router)
