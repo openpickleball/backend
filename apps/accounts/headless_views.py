@@ -95,7 +95,11 @@ from apps.accounts.mfa_views import (
     ReauthenticateView,
 )
 from apps.accounts.openapi import open_schema
-from apps.accounts.session_views import SessionsView
+from apps.accounts.session_views import (
+    ChangePasswordView,
+    ResetPasswordView,
+    SessionsView,
+)
 from apps.accounts.validators import is_canonical_email, normalize_email_address
 from apps.players.age import is_old_enough
 from apps.players.signup import (
@@ -575,6 +579,14 @@ def headless_urlpatterns() -> list[URLPattern]:
         patterns += [
             path(f"{prefix}login", LoginView.as_api_view(client=client)),
             path(f"{prefix}sessions", SessionsView.as_api_view(client=client)),
+            path(
+                f"{prefix}password/reset",
+                ResetPasswordView.as_api_view(client=client),
+            ),
+            path(
+                f"{client.value}/v1/account/password/change",
+                ChangePasswordView.as_api_view(client=client),
+            ),
             path(f"{prefix}signup", SignupView.as_api_view(client=client)),
             path(
                 f"{prefix}signup/age-check",
