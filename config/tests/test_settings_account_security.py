@@ -101,7 +101,6 @@ def test_values_from_the_environment() -> None:
         ("PASSWORD_MIN_LENGTH", "eight-MARKER"),
         ("PASSWORD_BREACH_TIMEOUT_SECONDS", "0"),
         ("PASSWORD_BREACH_TIMEOUT_SECONDS", "11"),
-        ("PASSWORD_BREACH_API_URL", "ftp://example.org/range/-MARKER"),
         ("SESSION_MAX_AGE_DAYS", "0"),
         ("SESSION_IDLE_DAYS", "1.5"),
         ("SIGN_IN_DEVICE_COOKIE_DAYS", "36501"),
@@ -122,11 +121,9 @@ def test_an_idle_expiry_longer_than_the_lifetime_stops_startup() -> None:
     assert "SESSION_MAX_AGE_DAYS" in result.stderr
 
 
-def test_production_needs_an_https_breach_service() -> None:
-    result = _run(
-        ["manage.py", "check"],
-        {**PRODUCTION_LIKE, "PASSWORD_BREACH_API_URL": "http://example.org/range/"},
-    )
+def test_the_breach_service_is_not_read_from_the_environment() -> None:
+    env = {"PASSWORD_BREACH_API_URL": "https://elsewhere.example.org/range/"}
+    result = _run(["-c", PRINT], {**LOCAL_DEBUG, **env})
 
-    assert result.returncode != 0
-    assert "PASSWORD_BREACH_API_URL" in result.stderr
+    assert result.returncode == 0, result.stderr
+    assert "elsewhere" not in result.stdout

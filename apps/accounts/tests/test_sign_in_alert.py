@@ -20,7 +20,6 @@ from django.core.mail import EmailMultiAlternatives
 
 from apps.accounts.devices import (
     DEVICE_TOKEN_HEADER,
-    MAX_DEVICE_TAGS,
     NEW_SIGN_IN,
     account_tag,
     read_tags,
@@ -213,7 +212,8 @@ def test_the_cookie_attributes() -> None:
 def test_the_marker_is_capped() -> None:
     browser = Browser()
     accounts = [
-        _account(f"cap{n}.player@example.org") for n in range(MAX_DEVICE_TAGS + 3)
+        _account(f"cap{n}.player@example.org")
+        for n in range(settings.SIGN_IN_DEVICE_MAX_TAGS + 3)
     ]
     response = None
     for account in accounts:
@@ -221,7 +221,7 @@ def test_the_marker_is_capped() -> None:
     assert response is not None
 
     tags = read_tags(browser.session.client.cookies[COOKIE].value)
-    assert len(tags) == MAX_DEVICE_TAGS
+    assert len(tags) == settings.SIGN_IN_DEVICE_MAX_TAGS == 10
     assert tags[0] == account_tag(accounts[-1])
 
 

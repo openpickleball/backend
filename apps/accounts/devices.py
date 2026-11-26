@@ -4,7 +4,7 @@ When a login completes (``AccountAdapter.login``, after every login
 stage, MFA included), OPEN reads the device marker the client sent: the
 browser client's ``SIGN_IN_DEVICE_COOKIE_NAME`` cookie, or the app
 client's ``X-Device-Token`` request header. The marker is a list of at
-most ``MAX_DEVICE_TAGS`` tags, newest first, signed by the server
+most ``SIGN_IN_DEVICE_MAX_TAGS`` tags, newest first, signed by the server
 (``django.core.signing``, refused after ``SIGN_IN_DEVICE_COOKIE_DAYS``).
 A tag is a keyed hash of an Account's primary key (``account_tag``):
 never an email address or a row id. Nothing is stored on the server, and
@@ -51,7 +51,6 @@ Client = Literal["browser", "app"]
 
 NEW_SIGN_IN = "accounts/email/new_sign_in"
 DEVICE_TOKEN_HEADER = "X-Device-Token"
-MAX_DEVICE_TAGS = 10
 _TAG_LENGTH = 32
 _TAG_SALT = "apps.accounts.devices.account_tag"
 _MARKER_SALT = "apps.accounts.devices.marker"
@@ -82,11 +81,11 @@ def read_tags(value: str | None) -> list[str]:
         return []
     if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
         return []
-    return tags[:MAX_DEVICE_TAGS]
+    return tags[: settings.SIGN_IN_DEVICE_MAX_TAGS]
 
 
 def _marker(tags: list[str]) -> str:
-    return signing.dumps(tags[:MAX_DEVICE_TAGS], salt=_MARKER_SALT)
+    return signing.dumps(tags[: settings.SIGN_IN_DEVICE_MAX_TAGS], salt=_MARKER_SALT)
 
 
 def _client(request: HttpRequest) -> Client:

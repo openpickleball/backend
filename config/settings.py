@@ -1149,6 +1149,10 @@ SESSION_SEEN_REFRESH_SECONDS = 3600
 SIGN_IN_DEVICE_COOKIE_DAYS = _days("SIGN_IN_DEVICE_COOKIE_DAYS", 365)
 SIGN_IN_DEVICE_COOKIE_NAME = "open_device" if DEBUG else "__Host-open_device"
 SIGN_IN_DEVICE_COOKIE_SECURE = not DEBUG
+# The most Accounts one marker remembers, newest first: a browser or app
+# shared by more Accounts forgets the oldest, whose next sign-in from it
+# sends an alert. It keeps the cookie small.
+SIGN_IN_DEVICE_MAX_TAGS = 10
 # allauth's session token strategy, with the lifetimes above.
 HEADLESS_TOKEN_STRATEGY = "apps.accounts.token_strategy.SessionTokenStrategy"
 
@@ -1240,14 +1244,11 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # The k-anonymity range API the breached password check asks (#100): the
-# first five hex characters of a password's SHA-1 are appended. An
-# absolute URL whose path ends in /, https when DEBUG is off. Unset or
-# empty gives Pwned Passwords' range API.
-PASSWORD_BREACH_API_URL = _base_url(
-    "PASSWORD_BREACH_API_URL",
-    "https://api.pwnedpasswords.com/range/",
-    require_https=not DEBUG,
-)
+# first five hex characters of a password's SHA-1 are appended. Fixed
+# here, never read from the environment, so no deployment setting can send
+# hash prefixes to another host; changing it is a reviewed code change.
+# The test settings point it at a local port nothing listens on.
+PASSWORD_BREACH_API_URL = "https://api.pwnedpasswords.com/range/"
 # Seconds the check waits for the range API before it accepts the
 # password (it fails open, ADR 0047). Unset or empty gives 3.
 PASSWORD_BREACH_TIMEOUT_SECONDS = _seconds("PASSWORD_BREACH_TIMEOUT_SECONDS", 3)
