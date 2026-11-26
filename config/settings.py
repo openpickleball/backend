@@ -166,6 +166,30 @@ def _seconds(name: str, default: int, minimum: int = 1) -> int:
     return int(value)
 
 
+_MIN_PASSWORD_LENGTH = 8
+_MAX_PASSWORD_LENGTH = 128
+# A slow breach check holds the request that sets a password.
+_MAX_BREACH_TIMEOUT_SECONDS = 10
+
+
+def _password_min_length(name: str, default: int) -> int:
+    """A minimum password length from 8 to 128, or ``default`` when unset
+    or empty. Never below Django's 8. Only ASCII digits, at most 3. The
+    error names the variable and the range and never echoes the value.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return default
+    if not re.fullmatch(r"[0-9]{1,3}", value) or not (
+        _MIN_PASSWORD_LENGTH <= int(value) <= _MAX_PASSWORD_LENGTH
+    ):
+        raise ImproperlyConfigured(
+            f"Set {name} to a whole number from {_MIN_PASSWORD_LENGTH} to "
+            f"{_MAX_PASSWORD_LENGTH}, or leave it empty (see .env.example)."
+        )
+    return int(value)
+
+
 # The local default admin path. Production must use another (#101).
 _LOCAL_ADMIN_URL = "admin/"
 # First path segments other routes own.
@@ -1129,12 +1153,20 @@ MFA_ADAPTER = "apps.accounts.mfa_adapter.MFAAdapter"
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
+# The shortest password allowed (#100): at least 8, Django's default.
+# Unset or empty gives 8.
+PASSWORD_MIN_LENGTH = _password_min_length("PASSWORD_MIN_LENGTH", 8)
+
+# Django's four standard rules, then the breached password check
+# (apps/accounts/breached.py, #100, ADR 0047). Every path that sets a
+# password runs them all.
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": PASSWORD_MIN_LENGTH},
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
@@ -1142,7 +1174,28 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
+    {
+        "NAME": "apps.accounts.breached.BreachedPasswordValidator",
+    },
 ]
+
+# The k-anonymity range API the breached password check asks (#100): the
+# first five hex characters of a password's SHA-1 are appended. An
+# absolute URL whose path ends in /, https when DEBUG is off. Unset or
+# empty gives Pwned Passwords' range API.
+PASSWORD_BREACH_API_URL = _base_url(
+    "PASSWORD_BREACH_API_URL",
+    "https://api.pwnedpasswords.com/range/",
+    require_https=not DEBUG,
+)
+# Seconds the check waits for the range API before it accepts the
+# password (it fails open, ADR 0047). Unset or empty gives 3.
+PASSWORD_BREACH_TIMEOUT_SECONDS = _seconds("PASSWORD_BREACH_TIMEOUT_SECONDS", 3)
+if PASSWORD_BREACH_TIMEOUT_SECONDS > _MAX_BREACH_TIMEOUT_SECONDS:
+    raise ImproperlyConfigured(
+        "Set PASSWORD_BREACH_TIMEOUT_SECONDS to a whole number of seconds "
+        f"from 1 to {_MAX_BREACH_TIMEOUT_SECONDS} (see .env.example)."
+    )
 
 
 # Internationalization

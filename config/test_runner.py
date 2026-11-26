@@ -3,9 +3,10 @@
 It serves the suite over plain http, swaps the cache for an in-memory
 one, runs Celery tasks eagerly, stores static files without the
 collectstatic manifest, hashes passwords with a fast hasher, serves the
-admin at admin/, and encrypts personal data fields with a key generated
-when this module is imported, so the tests need no cache server, broker,
-collectstatic step, or stored key.
+admin at admin/, encrypts personal data fields with a key generated
+when this module is imported, and points the breached password check at
+a local port nothing listens on, so the tests need no cache server,
+broker, collectstatic step, stored key, or network.
 """
 
 from typing import Any
@@ -27,6 +28,10 @@ from django.test.utils import override_settings
 # Personal data fields need an encryption key (ADR 0046). Each process
 # generates its own when it imports this module, so no key is ever
 # stored; config/settings_test.py reads this one, so the two sets match.
+# The breached password check (#100) would ask a public service. Tests
+# point it at a local port nothing listens on, so a test that misses the
+# pytest stand-in (conftest.py) fails open instead of reaching the network.
+_UNREACHABLE_BREACH_API_URL = "http://127.0.0.1:9/range/"
 _TEST_OVERRIDES: dict[str, Any] = {
     "SECURE_SSL_REDIRECT": False,
     "ADMIN_URL": "admin/",
@@ -44,6 +49,7 @@ _TEST_OVERRIDES: dict[str, Any] = {
         *global_settings.PASSWORD_HASHERS,
     ],
     "FIELD_ENCRYPTION_KEYS": [Fernet.generate_key().decode()],
+    "PASSWORD_BREACH_API_URL": _UNREACHABLE_BREACH_API_URL,
 }
 
 

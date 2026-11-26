@@ -5,7 +5,9 @@ It applies the same overrides as config/test_runner.py, the `manage.py test`
 counterpart, and nothing else: tests run over plain http, with an
 in-memory cache, with Celery tasks run eagerly in the caller, with
 plain static file storage, with a fast password hasher, with the
-admin at admin/, and with a field encryption key generated at import. The overrides live in the settings module, so
+admin at admin/, with a field encryption key generated at import, and
+with the breached password check pointed at a local port nothing listens
+on. The overrides live in the settings module, so
 every process that loads it, parallel workers included, gets them. A test
 fails if the two sets of overrides drift apart.
 """
@@ -50,3 +52,8 @@ PASSWORD_HASHERS = [
 # runner module generates one per process at import, so no key is ever
 # stored and both sets of overrides hold the same one.
 FIELD_ENCRYPTION_KEYS = _test_runner._TEST_OVERRIDES["FIELD_ENCRYPTION_KEYS"]
+
+# The breached password check (#100) asks a public service. Tests point
+# it at a local port nothing listens on; conftest.py also replaces its
+# transport for every test.
+PASSWORD_BREACH_API_URL = _test_runner._TEST_OVERRIDES["PASSWORD_BREACH_API_URL"]
