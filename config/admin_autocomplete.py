@@ -1,13 +1,20 @@
-"""Admin autocomplete widgets that never crash on a tampered id (issue #161).
+"""Admin autocomplete widgets that survive a tampered id (issue #161).
 
 Django's ``ModelChoiceField`` refuses a value that is not a valid key with
 fixed text. When the admin shows the form again with that error,
 Django's autocomplete widget filters the related model on the raw posted
 values, and an integer key raises ``ValueError``: a 500 instead of the
 form. The safe widgets here drop every value the related key field
-refuses (and any value with a NUL character, which Postgres refuses in
-text) before that query. A dropped value can never match a row, so the
+refuses before that query. A dropped value can never match a row, so the
 widget simply shows no selected option for it.
+
+This covers autocomplete fields whose target key is an integer, which
+every current one is. The widgets also drop any value with a NUL
+character, but that only keeps the widget's own lookup safe. For a text
+key (a CharField primary key or ``to_field``), the form field's own
+lookup in ``clean()`` runs first and Postgres refuses the NUL there, so
+such a field would also need its form field to refuse NUL. None needs it
+today.
 
 ``OpenAdminSite.register`` (``config/admin.py``) adds
 ``SafeAutocompleteAdminMixin`` to every registered admin, right after
@@ -45,6 +52,8 @@ class _SafeOptgroupsMixin:
     field: Any
 
     def _usable(self, value: str) -> bool:
+        # Keeps the widget's own lookup safe for a text key. The form
+        # field's lookup runs earlier and is not covered (module docstring).
         if "\x00" in value:
             return False
         remote = self.field.remote_field
