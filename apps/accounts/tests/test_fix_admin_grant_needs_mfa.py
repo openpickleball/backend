@@ -42,10 +42,22 @@ def test_granting_power_to_an_account_without_mfa_is_refused(
 
     response = _change(superuser_client, account, **{field: "on"})
 
-    content = response.content.decode()
     assert response.status_code == 200
-    assert GRANT_NEEDS_MFA_MESSAGE in content
-    assert account.email not in content.replace(f'value="{account.email}"', "")
+    assert GRANT_NEEDS_MFA_MESSAGE in response.content.decode()
+    # The refusal names no Account. The change page's title and
+    # breadcrumbs show the Account's __str__ (its email), the known
+    # exception in CLAUDE.md, so only the error text is checked.
+    form = response.context["adminform"].form
+    errors = [
+        str(error)
+        for error in [
+            *form.non_field_errors(),
+            *form.errors.get("is_staff", []),
+            *form.errors.get("is_superuser", []),
+        ]
+    ]
+    assert GRANT_NEEDS_MFA_MESSAGE in errors
+    assert all(account.email not in error for error in errors)
     account.refresh_from_db()
     assert not account.is_staff
     assert not account.is_superuser
