@@ -10,8 +10,24 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.http import HttpRequest, HttpResponse
+from django_celery_beat.admin import (
+    ClockedScheduleAdmin as BaseClockedScheduleAdmin,
+)
+from django_celery_beat.admin import (
+    CrontabScheduleAdmin as BaseCrontabScheduleAdmin,
+)
+from django_celery_beat.admin import (
+    IntervalScheduleAdmin as BaseIntervalScheduleAdmin,
+)
 from django_celery_beat.admin import PeriodicTaskAdmin as BasePeriodicTaskAdmin
-from django_celery_beat.models import PeriodicTask
+from django_celery_beat.admin import SolarScheduleAdmin as BaseSolarScheduleAdmin
+from django_celery_beat.models import (
+    ClockedSchedule,
+    CrontabSchedule,
+    IntervalSchedule,
+    PeriodicTask,
+    SolarSchedule,
+)
 
 from apps.accounts.forms import UserChangeForm, UserCreationForm
 from apps.accounts.mfa import has_mfa
@@ -30,9 +46,11 @@ admin.site.unregister(Authenticator)
 # Django's Group admin, replaced below: only a superuser changes groups.
 # django.contrib.auth also comes before apps.accounts.
 admin.site.unregister(Group)
-# django_celery_beat's PeriodicTask admin, replaced below: only a
-# superuser runs tasks. django_celery_beat also comes before apps.accounts.
-admin.site.unregister(PeriodicTask)
+# django_celery_beat's admins, replaced below: only a superuser writes
+# tasks or schedules. django_celery_beat also comes before apps.accounts.
+admin.site.unregister(
+    [PeriodicTask, IntervalSchedule, CrontabSchedule, SolarSchedule, ClockedSchedule]
+)
 
 # The fields that grant admin and API power (#101). Only a superuser
 # changes them; anyone else sees them read-only.
@@ -178,22 +196,76 @@ class GroupAdmin(BaseGroupAdmin):
         return _is_superuser(request) and super().has_delete_permission(request, obj)
 
 
-@admin.register(PeriodicTask)
-class PeriodicTaskAdmin(BasePeriodicTaskAdmin):  # type: ignore[misc]
-    """django_celery_beat's admin, with "Run selected tasks" for superusers
-    only (#101): it sends any registered task at once. Enabling, disabling,
-    and toggling stay with the periodic task permissions."""
+class _SuperuserWrites(admin.ModelAdmin[Any]):
+    """Add, change, and delete for superusers only; viewing stays with
+    Django's permissions."""
+
+    def has_add_permission(self, request: HttpRequest, *args: Any) -> bool:
+        return _is_superuser(request) and super().has_add_permission(request, *args)
+
+    def has_change_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return _is_superuser(request) and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return _is_superuser(request) and super().has_delete_permission(request, obj)
 
     def has_superuser_permission(self, request: HttpRequest) -> bool:
         """Django offers an action marked ``permissions=["superuser"]`` only
         when this is True."""
         return _is_superuser(request)
 
-    @admin.action(
-        permissions=["superuser"],
-        description=BasePeriodicTaskAdmin.run_tasks.short_description,
-    )
-    def run_tasks(self, request: HttpRequest, queryset: QuerySet[PeriodicTask]) -> None:
+
+def _superuser_action(name: str) -> Any:
+    """django_celery_beat's PeriodicTask action ``name``, offered to and
+    allowed for superusers only."""
+    base = getattr(BasePeriodicTaskAdmin, name)
+
+    def action(
+        self: BasePeriodicTaskAdmin,
+        request: HttpRequest,
+        queryset: QuerySet[PeriodicTask],
+    ) -> Any:
         if not _is_superuser(request):
             raise PermissionDenied
-        super().run_tasks(request, queryset)
+        return base(self, request, queryset)
+
+    action.__name__ = name
+    return admin.action(permissions=["superuser"], description=base.short_description)(
+        action
+    )
+
+
+@admin.register(PeriodicTask)
+class PeriodicTaskAdmin(_SuperuserWrites, BasePeriodicTaskAdmin):  # type: ignore[misc]
+    """django_celery_beat's admin, for superusers only to write (#101).
+
+    DatabaseScheduler sends whatever this table says, so a task added or
+    changed here can send any registered task with chosen arguments, as
+    often as every second. Adding, changing, deleting, and every action
+    (enable, disable, toggle, and run, which sends tasks at once) are
+    superuser-only. Viewing stays with the periodic task permissions."""
+
+    enable_tasks = _superuser_action("enable_tasks")
+    disable_tasks = _superuser_action("disable_tasks")
+    toggle_tasks = _superuser_action("toggle_tasks")
+    run_tasks = _superuser_action("run_tasks")
+
+
+@admin.register(IntervalSchedule)
+class IntervalScheduleAdmin(_SuperuserWrites, BaseIntervalScheduleAdmin):  # type: ignore[misc]
+    """Superuser-only writes: a schedule decides when its tasks run (#101)."""
+
+
+@admin.register(CrontabSchedule)
+class CrontabScheduleAdmin(_SuperuserWrites, BaseCrontabScheduleAdmin):  # type: ignore[misc]
+    """Superuser-only writes: a schedule decides when its tasks run (#101)."""
+
+
+@admin.register(SolarSchedule)
+class SolarScheduleAdmin(_SuperuserWrites, BaseSolarScheduleAdmin):  # type: ignore[misc]
+    """Superuser-only writes: a schedule decides when its tasks run (#101)."""
+
+
+@admin.register(ClockedSchedule)
+class ClockedScheduleAdmin(_SuperuserWrites, BaseClockedScheduleAdmin):  # type: ignore[misc]
+    """Superuser-only writes: a schedule decides when its tasks run (#101)."""

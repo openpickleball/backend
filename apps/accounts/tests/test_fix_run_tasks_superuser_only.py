@@ -2,8 +2,9 @@
 
 django_celery_beat's "Run selected tasks" action sends any registered
 task at once. A staff Account with the periodic task permissions may
-still enable, disable, and toggle tasks, but is neither offered the run
-action nor allowed to run it. Made-up data only.
+not offered the run action nor allowed to run it. (A later fix made every
+task action and every write superuser-only:
+``test_fix_beat_admin_superuser_only.py``.) Made-up data only.
 """
 
 from typing import TYPE_CHECKING, Any
@@ -66,7 +67,6 @@ def test_staff_is_not_offered_the_run_action(client: Client) -> None:
     page = client.get(reverse(CHANGELIST)).content.decode()
 
     assert 'value="run_tasks"' not in page
-    assert 'value="enable_tasks"' in page
 
 
 def test_staff_cannot_run_a_task(client: Client) -> None:
@@ -92,7 +92,7 @@ def test_the_run_action_refuses_staff_even_when_called(rf: Any) -> None:
         run(request, PeriodicTask.objects.filter(pk=task.pk))
 
 
-def test_staff_can_still_enable_a_task(client: Client) -> None:
+def test_staff_cannot_enable_a_task_either(client: Client) -> None:
     client.force_login(_staff())
     task = _task()
 
@@ -102,7 +102,7 @@ def test_staff_can_still_enable_a_task(client: Client) -> None:
     )
 
     task.refresh_from_db()
-    assert task.enabled
+    assert not task.enabled
 
 
 def test_a_superuser_runs_tasks_and_it_is_audited(client: Client) -> None:
