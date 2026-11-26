@@ -95,6 +95,29 @@ def _days(name: str, default: int) -> int:
     return default if value is None else value
 
 
+_TRUE_VALUES = frozenset({"true", "yes", "on", "1"})
+_FALSE_VALUES = frozenset({"false", "no", "off", "0"})
+
+
+def _flag(name: str, default: bool) -> bool:
+    """A true or false value, or ``default`` when unset or empty.
+
+    Stripped and case-insensitive: true, yes, on, or 1, and false, no,
+    off, or 0. Anything else stops startup, so a typo never picks a mode.
+    The error names the variable and never echoes the value.
+    """
+    value = _raw(name).strip().lower()
+    if not value:
+        return default
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    raise ImproperlyConfigured(
+        f"Set {name} to true or false, or leave it empty (see .env.example)."
+    )
+
+
 def _version(name: str, default: int) -> int:
     """A whole number from 1 to 1,000,000, or ``default`` when unset or empty.
 
@@ -1112,17 +1135,11 @@ _CSP_POLICY = {
     },
 }
 # CSP_REPORT_ONLY sends the policy as Content-Security-Policy-Report-Only,
-# which browsers report on but do not enforce. Unset or empty: report-only
-# with DEBUG on (Django's debug pages use inline script and style),
-# enforced with DEBUG off. An explicit true or false wins. It is read into
-# a private name: django-csp refuses a CSP_REPORT_ONLY setting, its old
-# format.
-_csp_report_only_value = _raw("CSP_REPORT_ONLY").strip()
-_csp_report_only = (
-    environ.Env.parse_value(_csp_report_only_value, bool)
-    if _csp_report_only_value
-    else DEBUG
-)
+# which browsers do not enforce. Unset or empty: report-only with DEBUG on
+# (Django's debug pages use inline script and style), enforced with DEBUG
+# off. An explicit true or false wins. It is read into a private name:
+# django-csp refuses a CSP_REPORT_ONLY setting, its old format.
+_csp_report_only = _flag("CSP_REPORT_ONLY", DEBUG)
 CONTENT_SECURITY_POLICY = None if _csp_report_only else _CSP_POLICY
 CONTENT_SECURITY_POLICY_REPORT_ONLY = _CSP_POLICY if _csp_report_only else None
 
