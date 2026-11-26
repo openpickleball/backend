@@ -18,7 +18,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 
 from apps.accounts.models import User
-from apps.accounts.tests.factories import UserFactory
+from apps.accounts.tests.factories import UserFactory, totp_code, totp_secret
 from apps.accounts.tests.headless import (
     APP,
     BROWSER,
@@ -212,7 +212,8 @@ def test_both_headless_clients_can_upload(
         user=account, email=account.email, verified=True, primary=True
     )
     session = HeadlessSession(base)
-    login = session.post("auth/login", {"email": account.email, "password": PASSWORD})
+    # A member has TOTP (ADR 0043), so the login passes the MFA stage too.
+    login = session.mfa_login(account.email, totp_code(totp_secret(account)))
     assert login.status_code == 200
     headers = (
         csrf_header(session.client)

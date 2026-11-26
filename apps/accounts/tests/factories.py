@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from allauth.mfa import app_settings as mfa_settings
+from allauth.mfa.models import Authenticator
 from allauth.mfa.recovery_codes.internal.auth import RecoveryCodes
 from allauth.mfa.totp.internal.auth import (
     TOTP,
@@ -19,6 +20,7 @@ from allauth.mfa.totp.internal.auth import (
     generate_totp_secret,
     hotp_value,
 )
+from allauth.mfa.utils import decrypt
 from django.conf import settings
 from factory.declarations import PostGeneration, Sequence
 from factory.django import DjangoModelFactory
@@ -59,6 +61,15 @@ def enroll_totp(account: "_User") -> Enrollment:
     TOTP.activate(account, secret)
     codes: list[str] = RecoveryCodes.activate(account).get_unused_codes()
     return Enrollment(secret=secret, recovery_codes=codes)
+
+
+def totp_secret(account: "_User") -> str:
+    """The TOTP secret of an enrolled Account, as its authenticator app holds it."""
+    authenticator = Authenticator.objects.get(
+        user_id=account.pk, type=Authenticator.Type.TOTP
+    )
+    secret: str = decrypt(authenticator.data["secret"])
+    return secret
 
 
 def _enroll(account: "_User", create: bool, extracted: object, **kwargs: Any) -> None:

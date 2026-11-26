@@ -1,13 +1,19 @@
-"""Factories for Clubs, Organizers, and their roles. Made-up data only."""
+"""Factories for Clubs, Organizers, and their roles. Made-up data only.
+
+``OrganizerMemberFactory`` enrolls its Account in TOTP (ADR 0043), since
+Organizer authority needs MFA, unless the Account already has a method
+or the test passes ``mfa=False``.
+"""
 
 from typing import Any
 
 from django.contrib.auth.models import Permission
-from factory.declarations import LazyFunction, SubFactory
+from factory.declarations import LazyFunction, PostGeneration, SubFactory
 from factory.django import DjangoModelFactory
 from faker import Faker
 
-from apps.accounts.tests.factories import UserFactory
+from apps.accounts.mfa import has_mfa
+from apps.accounts.tests.factories import UserFactory, enroll_totp
 from apps.clubs.models import (
     Club,
     ClubOrganizerGrant,
@@ -47,15 +53,27 @@ class OrganizerFactory(DjangoModelFactory[Organizer]):
     name = LazyFunction(_company_name)  # type: ignore[no-untyped-call]
 
 
+def _enroll_member(
+    member: OrganizerMember, create: bool, extracted: object, **kwargs: Any
+) -> None:
+    """The ``mfa`` flag: enroll the member's Account unless told not to."""
+    if create and extracted is not False and not has_mfa(member.account):
+        enroll_totp(member.account)
+
+
 class OrganizerMemberFactory(DjangoModelFactory[OrganizerMember]):
-    """An Account acting for an Organizer, as a match manager by default."""
+    """An Account acting for an Organizer, as a match manager by default,
+    enrolled in TOTP (``mfa=False`` leaves it without a method)."""
 
     class Meta:
         model = OrganizerMember
+        # ``mfa`` writes its own rows; the member needs no second save.
+        skip_postgeneration_save = True
 
     organizer = SubFactory(OrganizerFactory)  # type: ignore[no-untyped-call]
     account = SubFactory(UserFactory)  # type: ignore[no-untyped-call]
     role = MemberRole.MATCH_MANAGER
+    mfa = PostGeneration(_enroll_member)  # type: ignore[no-untyped-call]
 
 
 class ClubRoleFactory(DjangoModelFactory[ClubRole]):

@@ -71,6 +71,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from kombu.exceptions import OperationalError
 
+from apps.accounts.mfa import accounts_with_mfa
 from apps.clubs.models import OrganizerMember
 from apps.emails.services import queue_email
 from apps.events.models import Event
@@ -216,7 +217,8 @@ def send_hold_notices(new_match_pk: int) -> int:
 
 
 def _organizer_members(match: Match) -> list["_User"]:
-    """The active member Accounts of the match's Event's Organizer, by id."""
+    """The active member Accounts of the match's Event's Organizer, by id,
+    that have a method: Organizer authority needs MFA (ADR 0043)."""
     if match.event_id is None:
         return []
     organizer_id = (
@@ -232,6 +234,7 @@ def _organizer_members(match: Match) -> list["_User"]:
                 "account_id"
             ),
         )
+        .filter(pk__in=accounts_with_mfa())
         .order_by("pk")
     )
 
