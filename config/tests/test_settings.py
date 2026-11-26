@@ -39,6 +39,9 @@ SETTINGS_VARS = (
     "RESEND_API_KEY",
     "DEFAULT_FROM_EMAIL",
     "CSP_REPORT_ONLY",
+    "ADMIN_URL",
+    "ADMIN_SESSION_SECONDS",
+    "ADMIN_REAUTHENTICATION_SECONDS",
 )
 
 DEPLOY_CHECK = "uv run python manage.py check --deploy --fail-level WARNING"
@@ -60,6 +63,8 @@ PRODUCTION_LIKE = {
     "EMAIL_BACKEND": RESEND_BACKEND,
     "RESEND_API_KEY": TEST_RESEND_API_KEY,
     "DEFAULT_FROM_EMAIL": "OPEN <noreply@example.org>",
+    # Made up: production's path is a secret set by hand (#101).
+    "ADMIN_URL": "staff-test-x7/",
 }
 
 LOCAL_DEBUG = {

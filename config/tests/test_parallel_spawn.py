@@ -96,6 +96,8 @@ class ParallelSpawnTests(SimpleTestCase):
                 "EMAIL_BACKEND": "anymail.backends.resend.EmailBackend",
                 "RESEND_API_KEY": "re_made_up_test_only_" + "x" * 16,
                 "DEFAULT_FROM_EMAIL": "OPEN <noreply@example.org>",
+                # DEBUG off needs a private admin path. Made up.
+                "ADMIN_URL": "staff-test-x7/",
             }
             if "HOME" in os.environ:
                 env["HOME"] = os.environ["HOME"]

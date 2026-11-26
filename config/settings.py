@@ -142,6 +142,71 @@ def _rate(name: str, default: int) -> int:
     return _version(name, default)
 
 
+_MAX_SECONDS = 86400
+
+
+def _seconds(name: str, default: int) -> int:
+    """A whole number of seconds from 1 to 86400, or ``default`` when unset
+    or empty. Only ASCII digits, at most 5, checked before the conversion.
+    The error names the variable and the range and never echoes the value.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return default
+    if not re.fullmatch(r"[0-9]{1,5}", value) or not 1 <= int(value) <= _MAX_SECONDS:
+        raise ImproperlyConfigured(
+            f"Set {name} to a whole number of seconds from 1 to {_MAX_SECONDS}, "
+            "or leave it empty (see .env.example)."
+        )
+    return int(value)
+
+
+# The local default admin path. Production must use another (#101).
+_LOCAL_ADMIN_URL = "admin/"
+# First path segments other routes own.
+_RESERVED_ADMIN_SEGMENTS = frozenset({"api", "_allauth", "oauth", "static"})
+_ADMIN_URL_SHAPE = re.compile(r"(?:[A-Za-z0-9_-]+/)+")
+
+
+def _admin_url(name: str, *, debug: bool) -> str:
+    """The admin's path, such as ``staff-x7/``.
+
+    One or more segments of ASCII letters, digits, ``-``, and ``_``, each
+    ending in ``/``, no leading slash, at most 100 characters, and a first
+    segment other routes do not own. With DEBUG on, unset or empty gives
+    ``admin/``. With DEBUG off it is required, and ``admin/`` is refused
+    in any case, so production never serves the admin at the well-known
+    path. The errors name the variable and never echo the value.
+    """
+    value = _raw(name).strip()
+    if not value:
+        if debug:
+            return _LOCAL_ADMIN_URL
+        raise ImproperlyConfigured(
+            f"Set the {name} environment variable when DJANGO_DEBUG is off: "
+            "a private path for the admin, such as staff-x7k2/ (see "
+            ".env.example)."
+        )
+    if (
+        len(value) > 100
+        or not value.isascii()
+        or not _ADMIN_URL_SHAPE.fullmatch(value)
+        or value.split("/", 1)[0].lower() in _RESERVED_ADMIN_SEGMENTS
+    ):
+        raise ImproperlyConfigured(
+            f"Set {name} to path segments of letters, digits, hyphens, and "
+            "underscores, each ending in /, with no leading slash, at most "
+            "100 characters, not starting with api/, _allauth/, oauth/, or "
+            "static/ (see .env.example)."
+        )
+    if not debug and value.lower() == _LOCAL_ADMIN_URL:
+        raise ImproperlyConfigured(
+            f"Set {name} to a private path when DJANGO_DEBUG is off, not the "
+            "well-known admin path (see .env.example)."
+        )
+    return value
+
+
 # Header names CLIENT_IP_HEADER refuses: X-Forwarded-For and Forwarded,
 # which a client can fill with any value, and Content-Type and
 # Content-Length, which WSGI passes without the HTTP_ prefix, so the
@@ -414,6 +479,19 @@ if not SECRET_KEY.strip():
     SECRET_KEY = DEVELOPMENT_SECRET_KEY
 
 ALLOWED_HOSTS = _list("DJANGO_ALLOWED_HOSTS")
+
+# The admin (#101). ADMIN_URL is its path (config/urls.py), required and
+# never admin/ with DEBUG off. A staff session opens it for
+# ADMIN_SESSION_SECONDS after its latest MFA step, and a write needs an
+# MFA step within ADMIN_REAUTHENTICATION_SECONDS (config/admin.py).
+ADMIN_URL = _admin_url("ADMIN_URL", debug=DEBUG)
+ADMIN_SESSION_SECONDS = _seconds("ADMIN_SESSION_SECONDS", 3600)
+ADMIN_REAUTHENTICATION_SECONDS = _seconds("ADMIN_REAUTHENTICATION_SECONDS", 300)
+if ADMIN_REAUTHENTICATION_SECONDS > ADMIN_SESSION_SECONDS:
+    raise ImproperlyConfigured(
+        "Set ADMIN_REAUTHENTICATION_SECONDS to at most ADMIN_SESSION_SECONDS "
+        "(see .env.example)."
+    )
 
 # Origins Django's CSRF check trusts for unsafe requests, beyond the
 # request's own host, for example https://app.example.org. Exact origins

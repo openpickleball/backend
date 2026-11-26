@@ -1,7 +1,7 @@
 # DigitalOcean App Platform spec for OPEN's production backend (issue #61).
 # README.md, "App Platform", explains how to deploy it and what is still
-# set by hand. This file holds no secret values: DJANGO_SECRET_KEY and
-# RESEND_API_KEY are set in the App Platform console.
+# set by hand. This file holds no secret values: DJANGO_SECRET_KEY,
+# RESEND_API_KEY, and ADMIN_URL are set in the App Platform console.
 name: open-backend-production
 
 # Set once here, so every component gets them (ADR 0038).
@@ -38,6 +38,10 @@ envs:
     scope: RUN_TIME
   - key: DEFAULT_FROM_EMAIL
     value: OPEN <noreply@mail.openpb.org>
+    scope: RUN_TIME
+  # The admin's private path (#101), kept out of this public file.
+  - key: ADMIN_URL
+    type: SECRET
     scope: RUN_TIME
 
 # Every component runs the same image. The tag is a placeholder: #63
