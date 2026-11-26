@@ -14,6 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
 from django.test import SimpleTestCase
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -39,6 +40,8 @@ SETTINGS_VARS = (
     "DEFAULT_FROM_EMAIL",
     "CSP_REPORT_ONLY",
 )
+
+DEPLOY_CHECK = "uv run python manage.py check --deploy --fail-level WARNING"
 
 # Made-up values for tests only. Not a real secret.
 TEST_SECRET_KEY = "test-only-" + "k3y" * 16
@@ -435,6 +438,19 @@ class SecurityBlockTests(SimpleTestCase):
         result = _check(values, "--deploy", "--fail-level", "WARNING")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("security.W009", result.stdout + result.stderr)
+
+    def test_ci_runs_the_deploy_check_with_values_that_pass(self) -> None:
+        workflow = yaml.safe_load((BASE_DIR / ".github/workflows/ci.yml").read_text())
+        [step] = [
+            step
+            for step in workflow["jobs"]["test"]["steps"]
+            if step.get("run") == DEPLOY_CHECK
+        ]
+        env = {name: str(value) for name, value in step["env"].items()}
+        self.assertEqual(env["DJANGO_DEBUG"], "false")
+        self.assertTrue(set(env) <= set(SETTINGS_VARS))
+        result = _check(env, "--deploy", "--fail-level", "WARNING")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_no_system_check_is_silenced(self) -> None:
         for env in (PRODUCTION_LIKE, LOCAL_DEBUG):

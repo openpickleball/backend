@@ -112,6 +112,22 @@ def test_preflight_from_other_origin_gets_no_cors_headers(
     assert _cors_headers(response) == {}
 
 
+def test_null_origin_gets_no_cors_headers(allowed_client: Client) -> None:
+    # Sandboxed frames, file: pages, and some redirects send Origin: null.
+    response = allowed_client.get(LIVE_URL, HTTP_ORIGIN="null")
+    assert response.status_code == 200
+    assert _cors_headers(response) == {}
+
+
+def test_null_origin_preflight_gets_no_cors_headers(allowed_client: Client) -> None:
+    response = allowed_client.options(
+        LIVE_URL,
+        HTTP_ORIGIN="null",
+        HTTP_ACCESS_CONTROL_REQUEST_METHOD="GET",
+    )
+    assert _cors_headers(response) == {}
+
+
 def test_allowed_origin_on_a_non_api_path_gets_no_cors_headers(
     allowed_client: Client,
 ) -> None:
