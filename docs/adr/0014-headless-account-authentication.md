@@ -3,6 +3,7 @@
 - Status: Proposed
 - Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (MFA with TOTP and recovery codes; a session of an Account with MFA counts only once it passed MFA)
 - Amended by: [ADR 0045](0045-harden-the-admin.md) (the admin login is allauth's headless login with MFA; Django's admin login form is gone)
+- Amended by: [ADR 0047](0047-account-security-limits-and-sessions.md) (rate limits from settings on OPEN's client IP, session and token lifetimes, a session list, and sessions ended on a password change)
 - Date: 2026-11-17
 
 ## Context

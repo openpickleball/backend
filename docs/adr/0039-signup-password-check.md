@@ -1,6 +1,7 @@
 # 0039. A password check before the rest of signup
 
 - Status: Proposed
+- Amended by: [ADR 0047](0047-account-security-limits-and-sessions.md) (the password rules also refuse a password found in a data breach, `password_breached`)
 - Date: 2026-11-25
 
 ## Context
