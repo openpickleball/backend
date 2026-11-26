@@ -20,9 +20,11 @@ Account's id, never from an instance cache:
   login, an MFA reauthentication, or enrolling in it). The API
   (``config/auth.py``) and the MFA management views
   (``apps/accounts/mfa_views.py``) need it for an Account with MFA, so a
-  password-only session (one made before the Account enrolled, or one
-  that stopped at the MFA stage's password step) gets no MFA-protected
-  access. The admin needs it too (``config/admin.py``).
+  password-only session (one made before the Account enrolled, or by a
+  password login outside allauth's MFA stage, such as Django's own) gets
+  no MFA-protected access. A login that stops after the password, at the
+  MFA stage, is not signed in at all. The admin needs it too
+  (``config/admin.py``).
 - ``last_mfa_at``: when the session last passed the second factor, for
   the admin's session and reauthentication limits (``config/admin.py``).
 - ``record_mfa_change``: the one Audit Event per MFA change, written in

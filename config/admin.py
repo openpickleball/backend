@@ -12,7 +12,7 @@ void matches, so the admin asks more than Django's (issue #99, #101, ADR
   (``apps.accounts.mfa.last_mfa_at``).
 - A signed-in Account that is not active staff gets 404 on every admin
   URL, the login page included, the same answer as an unknown path.
-- Logout works for any signed-in staff Account, whatever the limits.
+- Logout works for any signed-in active staff Account, whatever the limits.
 - Every unsafe request (anything but GET, HEAD, OPTIONS), logout aside,
   needs an MFA step within ``ADMIN_REAUTHENTICATION_SECONDS``. Otherwise
   nothing runs and it is redirected to the login page, which then asks
