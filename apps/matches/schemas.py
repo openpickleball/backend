@@ -9,9 +9,10 @@ with no code, unless the viewer is that participant's own Account.
 No schema here carries a row id, the submitter, a flag, or any personal
 field other than a display name. A match names its Event (OPEN Code and
 name), the Event's Organizer by OPEN Code only, never its name, and its
-Club (OPEN Code and name), for any viewer who gets the match (#302). Confirmation state shows only as values
-derived for the viewer (issue #193): their own team, their own latest
-decision, and, for a participant, whether each team has a confirmation.
+Club (OPEN Code and name), for any viewer who gets the match (#302).
+Confirmation state shows only as values derived for the viewer (issue
+#193): their own team, their own latest decision, and, for a
+participant, whether each team has a confirmation.
 No confirmation row is shown, and nothing names who confirmed or
 disputed, though a participant can sometimes infer it (ADR 0015).
 """
@@ -232,9 +233,10 @@ class TeamConfirmationsOut(Schema):
 class MatchEventOut(Schema):
     """The Event a match was recorded under.
 
-    ``organizer`` is the OPEN Code of the Event's Organizer, the code
-    ``POST /api/v1/organizers/{code}/reports`` takes. The Organizer's name
-    is never shown, since it may be a person's name.
+    ``organizer`` is the Event's Organizer's OPEN Code, the value
+    ``report_organizer`` (``POST /api/v1/organizers/{code}/reports``)
+    takes, which accepts it only while the Organizer is verified. The
+    Organizer's name is never shown, since it may be a person's name.
     """
 
     code: str
@@ -376,7 +378,8 @@ def match_out(match: Match, viewer: "_User | None") -> MatchOut:
     """The response for ``match`` as ``viewer`` sees it.
 
     Reads the participants, their players and Accounts, the games, the
-    confirmations, and the Event, its Organizer, and the Club, so load the match through ``with_match_details`` first.
+    confirmations, and the Event, its Organizer, and the Club, so load
+    the match through ``with_match_details`` first.
     """
     participants = list(match.participants.all())
     my_team, my_decision, confirmed_by_team = _viewer_fields(

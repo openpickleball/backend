@@ -41,6 +41,8 @@ pytestmark = pytest.mark.django_db
 
 PLAYED_ON = date(2026, 6, 1)
 GAMES = ((11, 7), (11, 9))
+# A fixed made-up name, so no Faker Club or Event name can contain it.
+ORGANIZER_NAME = "Made-up Organizer Name Zeta"
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +67,9 @@ def _member(event: Event) -> User:
 
 
 def _event_with_club() -> Event:
-    event: Event = EventFactory.create(organizer=verified_organizer())
+    event: Event = EventFactory.create(
+        organizer=verified_organizer(name=ORGANIZER_NAME)
+    )
     ClubOrganizerGrantFactory.create(
         club=ClubFactory.create(), organizer=event.organizer
     )
@@ -133,7 +137,8 @@ def test_get_match_shows_the_event_organizer_code_and_club() -> None:
     assert body["event"] == _expected_event(match)
     assert body["club"] == _expected_club(match)
     assert match.event is not None
-    assert match.event.organizer.name not in response.content.decode()
+    assert match.event.organizer.name == ORGANIZER_NAME
+    assert ORGANIZER_NAME not in response.content.decode()
     assert "rating_format" not in body
 
 
@@ -184,14 +189,14 @@ def test_the_player_match_list_shows_the_event_and_club() -> None:
     players = _four()
     match = _event_match(players)
 
-    body = (
-        signed_in(players[2].account)
-        .get(f"/api/v1/players/{players[0].public_code}/matches")
-        .json()
+    response = signed_in(players[2].account).get(
+        f"/api/v1/players/{players[0].public_code}/matches"
     )
+    body = response.json()
 
     assert body["items"][0]["event"] == _expected_event(match)
     assert body["items"][0]["club"] == _expected_club(match)
+    assert ORGANIZER_NAME not in response.content.decode()
 
 
 def test_the_awaiting_confirmation_list_shows_the_event() -> None:

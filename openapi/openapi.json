@@ -615,7 +615,7 @@
         "type": "object"
       },
       "MatchEventOut": {
-        "description": "The Event a match was recorded under.\n\n``organizer`` is the OPEN Code of the Event's Organizer, the code\n``POST /api/v1/organizers/{code}/reports`` takes. The Organizer's name\nis never shown, since it may be a person's name.",
+        "description": "The Event a match was recorded under.\n\n``organizer`` is the Event's Organizer's OPEN Code, the value\n``report_organizer`` (``POST /api/v1/organizers/{code}/reports``)\ntakes, which accepts it only while the Organizer is verified. The\nOrganizer's name is never shown, since it may be a person's name.",
         "properties": {
           "code": {
             "title": "Code",
