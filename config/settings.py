@@ -122,7 +122,8 @@ def _flag(name: str, default: bool) -> bool:
 def _version(name: str, default: int) -> int:
     """A whole number from 1 to 1,000,000, or ``default`` when unset or empty.
 
-    Only ASCII digits are accepted, at most 7 of them, checked before the
+    Used for agreement versions and for the unusual submission counts
+    (#206). Only ASCII digits are accepted, at most 7 of them, checked before the
     conversion. The error names the variable and the range and never
     echoes the value.
     """
@@ -970,6 +971,16 @@ MATCH_CONFIRMATION_EXPIRY_DAYS = _positive_days("MATCH_CONFIRMATION_EXPIRY_DAYS"
 # Unset or empty gives 30 and 14; there is no value that turns either off.
 MATCH_DISPUTE_EXPIRY_DAYS = _days("MATCH_DISPUTE_EXPIRY_DAYS", 30)
 MATCH_DUPLICATE_HOLD_DAYS = _days("MATCH_DUPLICATE_HOLD_DAYS", 14)
+
+# Unusual submission thresholds (#206, ADR 0049). A match recorded with an
+# Event gets a signal-only flag (it still counts) when it is among the first
+# this many of its Organizer since verification or of its application since
+# approval, when its Submission Batch expects more than this many matches,
+# or when it is past this many matches of its submitter on one UTC day.
+# Unset or empty gives 25, 100, and 200.
+UNUSUAL_SUBMISSION_FIRST_MATCHES = _version("UNUSUAL_SUBMISSION_FIRST_MATCHES", 25)
+UNUSUAL_SUBMISSION_BATCH_SIZE = _version("UNUSUAL_SUBMISSION_BATCH_SIZE", 100)
+UNUSUAL_SUBMISSION_DAILY_MATCHES = _version("UNUSUAL_SUBMISSION_DAILY_MATCHES", 200)
 
 
 # Organizer review (#271)

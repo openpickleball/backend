@@ -4,7 +4,10 @@ Matches are read-only here: nothing is added, changed, or deleted through
 a form, and moderators do not review single matches (#273, ADR 0034).
 The list shows every match by default; the "Disputed or held" filter
 narrows it to disputed matches and ones an open flag links to a match
-that is not voided. Moderators
+that is not voided. Signal flags (``SIGNAL_FLAG_REASONS``, such as the
+unusual submission flags, #206) hold nothing and are not shown at all:
+moderators see them only as counts in the Organizer review (ADR 0049).
+Moderators
 (``apps.matches.permissions.is_moderator``) get two actions, each through
 ``apps.matches.workflow``:
 
@@ -37,6 +40,7 @@ from apps.audit.admin_actions import (
 )
 from apps.audit.admin_audit import audited_by_service
 from apps.matches.models import (
+    SIGNAL_FLAG_REASONS,
     FlagReason,
     Match,
     MatchFlag,
@@ -58,7 +62,12 @@ BULK_SELECT_ONE = "Select exactly one match to void in bulk."
 NO_BATCH = "The selected match did not come in an upload batch."
 BULK_CONFIRMATION = "admin/matches/match/bulk_void_confirmation.html"
 
-_OPEN_FLAGS = MatchFlag.objects.filter(resolved_at__isnull=True)
+# Open flags that hold a match. Signal flags (SIGNAL_FLAG_REASONS, #206)
+# hold nothing and are never shown here: moderators see them only as
+# counts in the Organizer review (ADR 0049).
+_OPEN_FLAGS = MatchFlag.objects.filter(resolved_at__isnull=True).exclude(
+    reason__in=SIGNAL_FLAG_REASONS
+)
 
 
 def _open_flags_on() -> QuerySet[MatchFlag]:
@@ -102,6 +111,10 @@ class _FlagInline(admin.TabularInline[MatchFlag, Match]):
     model = MatchFlag
     extra = 0
     can_delete = False
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet[MatchFlag]:
+        # Signal flags are shown only as Organizer review counts (#206).
+        return super().get_queryset(request).exclude(reason__in=SIGNAL_FLAG_REASONS)
 
     def has_add_permission(self, request: HttpRequest, obj: Any = None) -> bool:
         return False

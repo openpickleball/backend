@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
+from django.db.models import QuerySet
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
@@ -145,6 +146,12 @@ def _record(
     return record_match(**values).match
 
 
+def _duplicate_flags(match: Match) -> "QuerySet[MatchFlag]":
+    """The match's possible duplicate flags. Event matches also carry
+    signal-only unusual submission flags (#206), which hold nothing."""
+    return match.flags.filter(reason=FlagReason.POSSIBLE_DUPLICATE)
+
+
 def _counts() -> tuple[int, int, int, int]:
     return (
         Match.objects.count(),
@@ -187,7 +194,7 @@ def test_records_match_with_participants_games_and_defaults(
     assert match.fingerprint == match_fingerprint(
         [p.pk for p in team_a], [p.pk for p in team_b], PLAYED_ON, GAMES
     )
-    assert not match.flags.exists()
+    assert not _duplicate_flags(match).exists()
 
 
 def test_records_the_given_options(
@@ -445,11 +452,11 @@ def test_near_duplicate_is_saved_with_a_flag(
 
     second = _record(team_b, team_a, submitter=other_user, games=OTHER_GAMES)
 
-    flags = list(second.flags.all())
+    flags = list(_duplicate_flags(second).all())
     assert [(f.reason, f.duplicate_of_id) for f in flags] == [
         (FlagReason.POSSIBLE_DUPLICATE, first.pk)
     ]
-    assert not first.flags.exists()
+    assert not _duplicate_flags(first).exists()
 
 
 def test_two_earlier_near_duplicates_give_two_flags(
@@ -460,8 +467,11 @@ def test_two_earlier_near_duplicates_give_two_flags(
 
     third = _record(team_a, team_b, submitter=user, games=((11, 0), (11, 1)))
 
-    assert {f.duplicate_of_id for f in third.flags.all()} == {first.pk, second.pk}
-    assert [f.duplicate_of_id for f in second.flags.all()] == [first.pk]
+    assert {f.duplicate_of_id for f in _duplicate_flags(third).all()} == {
+        first.pk,
+        second.pk,
+    }
+    assert [f.duplicate_of_id for f in _duplicate_flags(second).all()] == [first.pk]
 
 
 def test_near_duplicate_of_a_match_without_fingerprint_is_flagged(
@@ -472,7 +482,7 @@ def test_near_duplicate_of_a_match_without_fingerprint_is_flagged(
 
     second = _record(team_a, team_b, submitter=user)
 
-    assert [f.duplicate_of_id for f in second.flags.all()] == [first.pk]
+    assert [f.duplicate_of_id for f in _duplicate_flags(second).all()] == [first.pk]
 
 
 def test_other_teams_on_the_same_day_are_not_flagged(
@@ -485,7 +495,7 @@ def test_other_teams_on_the_same_day_are_not_flagged(
 
     second = _record(other_a, other_b, submitter=user, games=OTHER_GAMES)
 
-    assert not second.flags.exists()
+    assert not _duplicate_flags(second).exists()
 
 
 def test_players_moved_between_teams_are_not_flagged(
@@ -500,7 +510,7 @@ def test_players_moved_between_teams_are_not_flagged(
         games=OTHER_GAMES,
     )
 
-    assert not second.flags.exists()
+    assert not _duplicate_flags(second).exists()
 
 
 def test_same_teams_on_another_day_are_not_flagged(
@@ -512,7 +522,7 @@ def test_same_teams_on_another_day_are_not_flagged(
         team_a, team_b, submitter=user, played_on=date(2026, 6, 2), games=OTHER_GAMES
     )
 
-    assert not second.flags.exists()
+    assert not _duplicate_flags(second).exists()
 
 
 def test_same_scores_on_another_day_are_not_a_duplicate(
@@ -523,7 +533,7 @@ def test_same_scores_on_another_day_are_not_a_duplicate(
     second = _record(team_a, team_b, submitter=user, played_on=date(2026, 6, 2))
 
     assert Match.objects.count() == 2
-    assert not second.flags.exists()
+    assert not _duplicate_flags(second).exists()
 
 
 # Criterion 6: a voided match is ignored.
@@ -543,7 +553,7 @@ def test_voided_exact_duplicate_is_ignored(
 
     assert second.pk != first.pk
     assert second.fingerprint == first.fingerprint
-    assert not second.flags.exists()
+    assert not _duplicate_flags(second).exists()
 
 
 def test_voided_near_duplicate_is_not_flagged(
@@ -553,7 +563,7 @@ def test_voided_near_duplicate_is_not_flagged(
 
     second = _record(team_a, team_b, submitter=user, games=OTHER_GAMES)
 
-    assert not second.flags.exists()
+    assert not _duplicate_flags(second).exists()
 
 
 # Criterion 4: a repeated external id for one application is refused.

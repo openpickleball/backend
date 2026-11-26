@@ -8,6 +8,7 @@ and each match that counts again sends ``release``. Made-up data only.
 """
 
 import pytest
+from django.db.models import QuerySet
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
@@ -46,6 +47,12 @@ from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
 pytestmark = pytest.mark.django_db
+
+
+def _duplicate_flags() -> "QuerySet[MatchFlag]":
+    """Possible duplicate flags only. Event matches also carry signal-only
+    unusual submission flags (#206), which hold nothing."""
+    return MatchFlag.objects.filter(reason=FlagReason.POSSIBLE_DUPLICATE)
 
 
 def _self_reported(
@@ -208,7 +215,7 @@ def test_organizer_and_one_team_keep_the_hold(
     vouch_for_match(later, actor=players[0].account)
     vouch_for_match(later, actor=players[1].account)
 
-    assert MatchFlag.objects.get().resolved_at is None
+    assert _duplicate_flags().get().resolved_at is None
     assert _counted() == set()
 
 
@@ -217,11 +224,11 @@ def test_organizer_and_both_teams_resolve_the_flag(
 ) -> None:
     earlier, later = mixed
     _vouch_both_teams(later, players)
-    assert MatchFlag.objects.get().resolved_at is None
+    assert _duplicate_flags().get().resolved_at is None
 
     vouch_for_match(earlier, actor=_member(event))
 
-    assert MatchFlag.objects.get().resolution == FlagResolution.APPROVED
+    assert _duplicate_flags().get().resolution == FlagResolution.APPROVED
     assert _counted() == {earlier.pk, later.pk}
     assert signals.changes(earlier) == [MatchChange.RELEASE]
     assert signals.changes(later) == [MatchChange.RELEASE]
@@ -247,7 +254,7 @@ def test_the_submitting_application_vouches_for_its_event_match(
     )
     assert event_row.actor_application_id == application.pk
     assert event_row.actor_user_id is None
-    assert MatchFlag.objects.get().resolution == FlagResolution.APPROVED
+    assert _duplicate_flags().get().resolution == FlagResolution.APPROVED
 
 
 # Vouch rows and Audit Events (AC 4).

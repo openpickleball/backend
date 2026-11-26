@@ -12,7 +12,7 @@ A match from a trusted submitter counts as soon as it is recorded (ADR 0012, ADR
 ## Decision
 
 - **A Submission Batch record.** `matches.SubmissionBatch` holds exactly one submitter (an Account or a Partner Application), an optional Event and Club, and the time. A batch path creates one and passes it to `record_match(submission_batch=...)` for every match, which sets `Match.submission_batch`. A single submission leaves the link empty.
-- **Set once.** The link is set only when the Match is created. The ledger guard refuses any later change, and a batch row is insert-only like the ledger rows: never changed or deleted. Every link uses `PROTECT`.
+- **Set once.** The link is set only when the Match is created. The ledger guard refuses any later change, and a batch row is insert-only like the ledger rows: never changed or deleted, except its `expected_size`, which may be set once while empty (ADR 0049). Every link uses `PROTECT`.
 - **No OPEN Code.** No API shows a batch, so it has none. A later issue that shows batches in the API adds one.
 - **A batch must fit its matches.** `record_match()` refuses a batch whose stored row does not exist, whose submitter is not exactly the match's submitter, or whose Event or Club, when set, is not the match's. It reads the batch from the database by id. A batch with no Event or Club accepts any, so a bulk request can span Events. The check runs after the permission checks and before validation. A refusal is a `ValueError` with fixed text: only code passes a batch, never a request.
 - **Two bulk void services** in `apps.matches.workflow`:
