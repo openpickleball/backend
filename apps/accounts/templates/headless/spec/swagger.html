@@ -1,0 +1,22 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OPEN account API</title>
+    {% comment %}
+    allauth's OpenAPI page (HEADLESS_SPECIFICATION_TEMPLATE_NAME). It uses
+    django-ninja's bundled Swagger UI from the static files, so it loads
+    nothing from another host and runs no inline script, as the Content
+    Security Policy requires (ADR 0040). swagger-ui-init.js reads the JSON
+    block below and the CSRF token on the body, for the browser client.
+    {% endcomment %}
+    <link rel="stylesheet" href="{% static 'ninja/swagger-ui.css' %}">
+</head>
+<body data-csrf-token="{{ csrf_token }}" data-api-csrf="true">
+    <script type="application/json" id="swagger-settings">{"url": "{% url 'headless:openapi_json' %}"}</script>
+    <div id="swagger-ui"></div>
+    <script src="{% static 'ninja/swagger-ui-bundle.js' %}"></script>
+    <script src="{% static 'ninja/swagger-ui-init.js' %}"></script>
+</body>
+</html>

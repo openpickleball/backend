@@ -875,6 +875,10 @@ HEADLESS_ADAPTER = "apps.accounts.headless_adapter.HeadlessAdapter"
 # .html. OPEN serves the JSON and YAML with its signup age and password
 # checks added (apps/accounts/openapi.py, ADR 0020, ADR 0039).
 HEADLESS_SERVE_SPECIFICATION = True
+# The .html page is OPEN's template (apps/accounts/templates/): Swagger UI
+# from django-ninja's bundled static files, since allauth's default loads
+# a CDN script that the Content Security Policy blocks (ADR 0040).
+HEADLESS_SPECIFICATION_TEMPLATE_NAME = "headless/spec/swagger.html"
 # The web app's origin, for example https://app.example.org. Links in
 # account emails (verify an address, reset a password) open pages there.
 # Required, and an exact origin like a CORS_ALLOWED_ORIGINS entry. With
