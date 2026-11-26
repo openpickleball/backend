@@ -26,11 +26,11 @@ allauth keeps its own `EmailAddress` table next to `accounts.User.email`, and it
 - `ModelBackend` stays first in `AUTHENTICATION_BACKENDS` for the Django admin, and it also authenticates every successful headless login, through the manager. OPEN's allauth backend comes second and also looks up through the manager.
 - First-party API operations use `config.auth.account_auth`, which accepts either client. A failed check returns a 401 `ErrorResponse` with code `unauthorized`. The first such operation is `GET /api/v1/accounts/me`. ADR 0015 adds that a request with no signed-in user gets the 401 before any CSRF check, and that `request.auth` is the Account itself on both clients.
 - allauth's user payload carries no row id. Its verification key (a signed `EmailAddress` id) and reset key (the Account id in base36) do encode one. They are accepted as an exception to the row-id rule, because only the mailbox owner sees them.
-- The browser client works same-origin only: the web app is served from, or proxied through, the API host. `CORS_ALLOW_CREDENTIALS` stays False until #102 allows credentials for first-party origins. The app client works cross-origin: CORS allows the three headers allauth reads.
+- The browser client works same-origin only: the web app is served from, or proxied through, the API host. `CORS_ALLOW_CREDENTIALS` stays False; ADR 0040 (#102) keeps it so while the browser client is same-origin. The app client works cross-origin: CORS allows the three headers allauth reads.
 
 ## Consequences
 
-- iOS and Android apps use the app client. A web app can use the app client from any allowed origin, or the browser client same-origin. A session token kept in browser storage is exposed to any injected script, so the browser client is the safer choice for web once #102 lands.
+- iOS and Android apps use the app client. A web app can use the app client from any allowed origin, or the browser client same-origin. A session token kept in browser storage is exposed to any injected script, so the browser client is the safer choice for web, with the `__Host-` cookies and the Content Security Policy of ADR 0040.
 - Email links open web pages. Opening them in the mobile apps needs Universal Links and App Links on the `FRONTEND_URL` domain, which is the apps' work.
 - Until #35, a deployment with DEBUG off discarded mail, so nobody could verify an address or log in through allauth there. ADR 0016 adds a real provider (Resend) and sends account email from the email queue.
 - An Account made with `createsuperuser` or the admin has no `EmailAddress` row. Its first headless login creates one, unverified, and asks for verification.
@@ -48,5 +48,5 @@ allauth keeps its own `EmailAddress` table next to `accounts.User.email`, and it
 
 - **Emailed codes instead of links.** Codes carry no row id. The issue asks for links, and the keys are visible only to the mailbox owner.
 - **Mount at `/api/auth/`.** It keeps CORS to `/api/` unchanged, but puts allauth's own versioned paths next to `/api/v1/` and departs from allauth's documentation.
-- **Allow CORS credentials now.** That is #102's decision, which also has to keep embed origins (#96) from getting credentials.
+- **Allow CORS credentials now.** That was #102's decision, which also has to keep embed origins (#96) from getting credentials. ADR 0040 keeps them off.
 - **Use allauth's lookups unchanged.** They match pending and stale addresses, as described above.

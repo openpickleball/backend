@@ -87,6 +87,8 @@ uv run gunicorn
 
 With `DJANGO_DEBUG` off, the admin and the API docs page return an error until `collectstatic` has run. This also applies to `runserver` and the compose `web` profile.
 
+With `DJANGO_DEBUG` off, the session and CSRF cookies are named `__Host-sessionid` and `__Host-csrftoken` (with it on, `sessionid` and `csrftoken`), so a web app that reads the CSRF token must use the name for its mode. Every response carries a Content Security Policy that allows scripts, styles, and requests from the same origin only (ADR 0040). It is enforced with `DJANGO_DEBUG` off and report-only with it on; set `CSP_REPORT_ONLY` to `true` or `false` to choose. A request that declares a body over 2.5 MiB gets a 413 before it is read, except a CSV results upload, which has its own limit.
+
 ### Production image
 
 The `Dockerfile` builds the image production runs. It installs only the runtime packages from `uv.lock`, collects the static files at build time, and runs as a non-root user. The image has no uv, git, tests, or dev packages. `.dockerignore` lets only the app's files into the build, so a `.env`, key, or local database in your checkout never reaches the image. Pass every setting as an environment variable when you run it.
