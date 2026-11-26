@@ -112,9 +112,10 @@ Messages are fixed text. They name columns, game numbers, and allowed values, an
 The upload's report gives each row one result:
 
 - `recorded`, with the new match's OPEN Code. A `name_mismatch` warning on a name column means the name differs from the player's display name. A `possible_duplicate` warning means the match is held from counting until review, because another match has the same two teams and date with other scores.
-- Matches from an upload of more than 100 data rows (`UNUSUAL_SUBMISSION_BATCH_SIZE`), every row counted, a failed one included, are each flagged as an unusual submission, and so are an Organizer's first matches after it is verified and a submitter's matches past a daily number (ADR 0049). These flags are signals only: the match counts at once, and the report does not show them.
 - `duplicate`, when the same match is already recorded, or waits for confirmation. The report gives its OPEN Code when you may know it. The upload never confirms a waiting match.
 - `failed`, with each reason. Besides the codes below, `forbidden` means you may not submit for this Event, and `voided` means the row's match was voided.
+
+An upload of more than 100 match rows (`UNUSUAL_SUBMISSION_BATCH_SIZE`), counting every row, failed ones included, has each of its matches flagged as an unusual submission. So are an Organizer's first matches after it is verified and a submitter's matches past a daily number (ADR 0049). These flags are signals only: they do not stop a match counting, and the report does not show them.
 
 A whole file can also fail: `too_many_rows`, the file errors above, `expired` when it could not be processed within three days, or `voided` when a moderator voided the upload or the uploader's matches. The rows processed before it stopped stay in the report as they were then: after a void, a row can still read `recorded` though its match is voided.
 

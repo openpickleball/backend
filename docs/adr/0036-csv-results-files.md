@@ -30,7 +30,7 @@ The project owner decided all three on 2026-11-25 (comment on issue #71).
 - A failed file's report describes the rows as they stood when processing stopped. After a bulk void, its rows still read `recorded`; the file's `voided` error is what tells the uploader. A bulk void of a submitter stops every pending file of that submitter, whatever its date.
 - An Event with any Results File cannot be deleted, even when every row failed, because its batch names it.
 - A pending file holds other players' names and IDs for about three days at most (the sweep also waits until 35 minutes after the file was last queued), inside ADR 0009's 30 days for raw results files, so Account deletion needs no scrubbing of files.
-- Uploads share the Account's API throttle (ADR 0030). Large and first uploads are flagged, not held, by #206 (ADR 0049).
+- Uploads share the Account's API throttle (ADR 0030). Large uploads and an Organizer's first matches are flagged, not held, by #206 (ADR 0049).
 
 ## Alternatives considered
 
