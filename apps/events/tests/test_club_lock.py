@@ -8,7 +8,6 @@ refused. Made-up data only.
 """
 
 import pytest
-from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.db.models import QuerySet
 from django.test import Client
@@ -17,7 +16,12 @@ from django.urls import reverse
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditEvent
 from apps.clubs.models import Club
-from apps.clubs.tests.factories import ClubFactory, ClubOrganizerGrantFactory
+from apps.clubs.tests.factories import (
+    ClubFactory,
+    ClubOrganizerGrantFactory,
+    OrganizerMemberFactory,
+    verify,
+)
 from apps.events.models import Event
 from apps.events.services import save_event
 from apps.events.tests.factories import EventFactory
@@ -76,14 +80,11 @@ def test_removing_the_club_is_refused_too() -> None:
 
 def test_an_event_whose_only_match_was_voided_still_refuses() -> None:
     event = _event_at_club()
+    verify(event.organizer)
     match = MatchFactory.create(event=event)
-    moderator = UserFactory.create()
-    moderator.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
-    void_match(match, actor=moderator, reason="Made-up void")
+    member = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=member)
+    void_match(match, actor=member)
     assert Match.objects.get(pk=match.pk).status == MatchStatus.VOIDED
     event.club = _granted_club(event)
 

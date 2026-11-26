@@ -2,10 +2,12 @@
 
 ``void_submission_batch`` voids every match of one Submission Batch, found
 by the batch link, and ``void_submitter_matches`` every match one
-submitter recorded on or after a date. Each match goes through
-``void_match`` in its own transaction, with its own ``match.void`` Audit
-Event and signals, and each run records one ``match.bulk_void`` event.
-Only a moderator may run them, and a rerun voids nothing.
+submitter recorded on or after a date. Each match is voided in its own
+transaction, with its own ``match.void`` Audit Event and signals, and each
+run records one ``match.bulk_void`` event. Only a moderator may run them
+(the bulk void is a moderator's only match action, #273), a match whose
+correction chain holds the moderator's own Player counts as refused, and
+a rerun voids nothing.
 """
 
 import re
@@ -189,7 +191,8 @@ def test_a_match_already_voided_is_skipped(
     players: list[Player], event: Event, member: User, moderator: User
 ) -> None:
     batch, matches = _batch_of(3, players, event, member)
-    void_match(matches[1], actor=moderator, reason=REASON)
+    # Voided first by the Organizer's member, outside the bulk void.
+    void_match(matches[1], actor=member)
 
     result = void_submission_batch(batch, actor=moderator, reason=REASON)
 

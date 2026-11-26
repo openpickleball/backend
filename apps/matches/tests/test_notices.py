@@ -39,12 +39,11 @@ from apps.matches.models import (
 )
 from apps.matches.services import record_match
 from apps.matches.tests.conftest import WORKFLOW_GAMES, WORKFLOW_PLAYED_ON
-from apps.matches.tests.factories import MatchFactory
+from apps.matches.tests.factories import MatchFactory, raw_update
 from apps.matches.workflow import (
     confirm_match,
     dispute_match,
     dispute_started_at,
-    void_match,
     withdraw_dispute,
 )
 from apps.players.models import Player
@@ -358,12 +357,11 @@ def test_a_club_only_match_hold_emails_nobody_for_it(
 def test_a_hold_ended_before_the_callback_sends_nothing(
     players: list[Player],
     confirmed: Match,
-    moderator: User,
     django_capture_on_commit_callbacks: Capture,
 ) -> None:
     with django_capture_on_commit_callbacks(execute=True):
         _self_reported(players, OTHER_GAMES)
-        void_match(confirmed, actor=moderator, reason=REASON)
+        raw_update(confirmed, status=MatchStatus.VOIDED)
 
     assert mail.outbox == []
 

@@ -44,7 +44,7 @@ def test_record_and_edit_share_lock_the_event_before_any_other_lock() -> None:
             **values, games=((11, 7),), submitted_by_user=account, event=event
         ).match
     with CaptureQueriesContext(connection) as edited:
-        edit_match(match, actor=account, **values, games=((11, 2),), as_moderator=False)
+        edit_match(match, actor=account, **values, games=((11, 2),))
 
     for queries in (recorded, edited):
         sqls = [q["sql"] for q in queries]

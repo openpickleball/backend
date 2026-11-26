@@ -1,5 +1,5 @@
-"""An edit creates a match, so a non-moderator editor needs the authority to
-create it (review finding B, #26).
+"""An edit creates a match, so the editor needs the authority to create it
+(review finding B, #26).
 
 ``can_change_match`` alone let a Club admin without event authority edit
 an Event and Club match, and let an application edit after losing its
@@ -166,12 +166,3 @@ def test_an_organizer_member_may_edit_with_the_club_s_grant(event: Event) -> Non
 
     assert corrected.corrects_id == match.pk
     assert corrected.club_id == club.pk
-
-
-def test_a_moderator_may_still_edit_any_match(event: Event, moderator: User) -> None:
-    club = ClubFactory.create()
-    match: Match = MatchFactory.create(event=event, club=club)
-
-    corrected = _edit(match, moderator, NEW_GAMES)
-
-    assert corrected.corrects_id == match.pk

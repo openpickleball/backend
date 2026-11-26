@@ -11,15 +11,15 @@ from typing import Any
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Permission
 from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 
 from apps.accounts.tests.factories import UserFactory
-from apps.matches.models import Match, MatchFormat
+from apps.matches.models import Match, MatchFormat, MatchStatus
 from apps.matches.services import record_match
-from apps.matches.workflow import confirm_match, dispute_match, void_match
+from apps.matches.tests.factories import raw_update
+from apps.matches.workflow import confirm_match, dispute_match
 from apps.players.models import Player, PlayerPrivacy, Visibility
 from apps.players.tests.factories import PlayerFactory
 from apps.public_ids.codes import CodeType, generate
@@ -46,17 +46,6 @@ def players() -> list[Player]:
     return [PlayerFactory.create() for _ in range(4)]
 
 
-@pytest.fixture
-def moderator() -> Any:
-    account = UserFactory.create()
-    account.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
-    return account
-
-
 def play(players: list[Player], day: int) -> Match:
     """A pending singles match, players 0 against 1, ``day`` days in."""
     return record_match(
@@ -75,14 +64,16 @@ def confirm(match: Match, players: list[Player]) -> Match:
 
 
 @pytest.fixture
-def every_status(players: list[Player], moderator: Any) -> dict[str, Match]:
+def every_status(players: list[Player]) -> dict[str, Match]:
     """One match of player 0 in each status, newest last."""
     pending = play(players, 1)
     confirmed = confirm(play(players, 2), players)
     disputed = play(players, 3)
     dispute_match(disputed, actor=players[1].account)
     voided = play(players, 4)
-    void_match(voided, actor=moderator, reason="Entered by mistake.")
+    # Nobody voids a single self-reported match since #273; the history
+    # reads only the stored status.
+    raw_update(voided, status=MatchStatus.VOIDED)
     return {
         "pending": pending,
         "confirmed": confirmed,

@@ -4,7 +4,9 @@ Over the last ``ORGANIZER_REVIEW_WINDOW_DAYS`` days, the disputes on the
 Organizer's Events' matches: opened, withdrawn, resolved as confirmed or
 voided, and expired, from the Audit Events the real workflow writes, and
 the signal flags on those matches. Other Organizers' and self-reported
-matches never count. Made-up data only.
+matches never count. Disputes are resolved by a member of the Event's
+verified Organizer whose Player is not in the match (ADR 0034), since
+moderators no longer resolve single matches (#273). Made-up data only.
 """
 
 from datetime import date, timedelta
@@ -40,6 +42,7 @@ from apps.players.tests.factories import PlayerFactory
 pytestmark = pytest.mark.django_db
 
 REASON = "Made-up moderator reason."
+SETTLE_REASON = "Made-up organizer reason."
 
 
 def _moderator() -> User:
@@ -56,6 +59,13 @@ def players() -> list[Player]:
 def _event(organizer: Organizer) -> Event:
     event: Event = EventFactory.create(organizer=organizer)
     return event
+
+
+def _settler(event: Event) -> User:
+    """A member of ``event``'s Organizer with no Player in its matches."""
+    member: User = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=member)
+    return member
 
 
 def _record(
@@ -92,16 +102,16 @@ def _build(players: list[Player]) -> Organizer:
     organizer = verified_organizer()
     event = _event(organizer)
     second_event = _event(organizer)
-    moderator = _moderator()
+    settler = _settler(event)
     disputer = players[0].account
 
     confirmed = _record(players, event, date(2026, 5, 1), (11, 3))
     dispute_match(confirmed, actor=disputer)
-    resolve_dispute(confirmed, actor=moderator, outcome="confirmed", reason=REASON)
+    resolve_dispute(confirmed, actor=settler, outcome="confirmed", reason=SETTLE_REASON)
 
     voided = _record(players, event, date(2026, 5, 2), (11, 4))
     dispute_match(voided, actor=disputer)
-    resolve_dispute(voided, actor=moderator, outcome="voided", reason=REASON)
+    resolve_dispute(voided, actor=settler, outcome="voided", reason=SETTLE_REASON)
 
     withdrawn = _record(players, second_event, date(2026, 5, 3), (11, 5))
     dispute_match(withdrawn, actor=disputer)
@@ -111,12 +121,16 @@ def _build(players: list[Player]) -> Organizer:
     dispute_match(expiring, actor=disputer)
 
     # Another Organizer's dispute, and a self-reported one: never counted.
-    other = _record(players, _event(verified_organizer()), date(2026, 5, 5), (11, 7))
+    other_event = _event(verified_organizer())
+    other = _record(players, other_event, date(2026, 5, 5), (11, 7))
     dispute_match(other, actor=disputer)
-    resolve_dispute(other, actor=moderator, outcome="voided", reason=REASON)
+    resolve_dispute(
+        other, actor=_settler(other_event), outcome="voided", reason=SETTLE_REASON
+    )
+    # A self-reported match has no Organizer level: its dispute is withdrawn.
     own = _self_reported(players, date(2026, 5, 6))
     dispute_match(own, actor=disputer)
-    resolve_dispute(own, actor=moderator, outcome="voided", reason=REASON)
+    withdraw_dispute(own, actor=disputer)
 
     expire_disputes_and_holds(now=timezone.now() + timedelta(days=31))
     return organizer

@@ -49,6 +49,21 @@ def _events(match: Match, action: AuditAction) -> list[AuditEvent]:
     )
 
 
+def _event_match(event: Event, players: list[Player]) -> tuple[Match, User]:
+    """A confirmed Event match and a member of its verified Organizer."""
+    member: User = OrganizerMemberFactory.create(organizer=event.organizer).account
+    match = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=WORKFLOW_GAMES,
+        played_on=WORKFLOW_PLAYED_ON,
+        submitted_by_user=member,
+        event=event,
+    ).match
+    return match, member
+
+
 def _decisions(match: Match, player: Player) -> list[str]:
     return list(
         MatchConfirmation.objects.filter(match=match, player=player)
@@ -194,45 +209,46 @@ def test_a_match_never_disputed_is_refused(
         withdraw_dispute(confirmed, actor=players[0].account)
 
 
-def test_a_voided_match_is_refused(
-    confirmed: Match, players: list[Player], moderator: User
-) -> None:
-    dispute_match(confirmed, actor=players[0].account)
-    void_match(confirmed, actor=moderator, reason="checked")
+def test_a_voided_match_is_refused(event: Event, players: list[Player]) -> None:
+    match, member = _event_match(event, players)
+    dispute_match(match, actor=players[0].account)
+    void_match(match, actor=member)
 
     with pytest.raises(MatchStateError):
-        withdraw_dispute(confirmed, actor=players[0].account)
+        withdraw_dispute(match, actor=players[0].account)
 
-    assert Match.objects.get(pk=confirmed.pk).status == MatchStatus.VOIDED
+    assert Match.objects.get(pk=match.pk).status == MatchStatus.VOIDED
 
 
 def test_a_dispute_from_a_settled_period_cannot_be_withdrawn(
-    confirmed: Match, players: list[Player], moderator: User
+    event: Event, players: list[Player]
 ) -> None:
-    dispute_match(confirmed, actor=players[0].account)
+    match, member = _event_match(event, players)
+    dispute_match(match, actor=players[0].account)
     resolve_dispute(
-        confirmed, actor=moderator, outcome=MatchStatus.CONFIRMED, reason="checked"
+        match, actor=member, outcome=MatchStatus.CONFIRMED, reason="checked"
     )
-    dispute_match(confirmed, actor=players[2].account)
+    dispute_match(match, actor=players[2].account)
 
     with pytest.raises(MatchStateError):
-        withdraw_dispute(confirmed, actor=players[0].account)
+        withdraw_dispute(match, actor=players[0].account)
 
-    assert Match.objects.get(pk=confirmed.pk).status == MatchStatus.DISPUTED
+    assert Match.objects.get(pk=match.pk).status == MatchStatus.DISPUTED
 
 
 def test_a_redispute_after_a_resolution_then_withdrawn_confirms_again(
-    confirmed: Match, players: list[Player], moderator: User
+    event: Event, players: list[Player]
 ) -> None:
-    dispute_match(confirmed, actor=players[0].account)
+    match, member = _event_match(event, players)
+    dispute_match(match, actor=players[0].account)
     resolve_dispute(
-        confirmed, actor=moderator, outcome=MatchStatus.CONFIRMED, reason="checked"
+        match, actor=member, outcome=MatchStatus.CONFIRMED, reason="checked"
     )
-    dispute_match(confirmed, actor=players[2].account)
+    dispute_match(match, actor=players[2].account)
 
-    withdraw_dispute(confirmed, actor=players[2].account)
+    withdraw_dispute(match, actor=players[2].account)
 
-    assert Match.objects.get(pk=confirmed.pk).status == MatchStatus.CONFIRMED
+    assert Match.objects.get(pk=match.pk).status == MatchStatus.CONFIRMED
 
 
 def test_an_event_match_created_confirmed_returns_to_confirmed(

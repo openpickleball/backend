@@ -9,7 +9,7 @@ import logging
 
 from celery import Task, shared_task
 
-from apps.matches import results_files, workflow
+from apps.matches import notices, results_files, workflow
 
 logger = logging.getLogger(__name__)
 
@@ -109,3 +109,20 @@ def sweep_results_files() -> int:
     own update.
     """
     return results_files.sweep_results_files()
+
+
+@shared_task(
+    name="apps.matches.tasks.send_batch_notices",
+    soft_time_limit=600,
+    time_limit=720,
+)
+def send_batch_notices(batch_id: int) -> int:
+    """Queue the recorded match notices of one Submission Batch (#208).
+
+    Takes the batch's row id only and returns only the count, so no
+    personal data passes through the broker or the worker log. Each
+    recipient's failure is logged by row id and error class and skipped.
+    Not retried. A redelivery after a crash sends the notices again (at
+    least once, like the outbox, ADR 0016).
+    """
+    return notices.send_batch_notices(batch_id)

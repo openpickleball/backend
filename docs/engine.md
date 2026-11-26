@@ -79,6 +79,12 @@ The tests in `apps/ratings/tests/test_engine_adapter.py` check that the tag in
 stale lock is caught earlier: CI's `uv sync --locked` fails when `uv.lock` does
 not match `pyproject.toml`, and so does `uv lock --check`.
 
+The dependency audit (`scripts/audit_dependencies.py`, see CONTRIBUTING.md)
+leaves the engine out of pip-audit, since no vulnerability database tracks it,
+and fails instead unless `uv.lock` pins it to a version tag and a full commit
+SHA. Dependabot is set to leave it alone (`.github/dependabot.yml`): follow the
+steps below.
+
 ## Upgrading the engine
 
 1. Read the engine's `CHANGELOG.md` for every version between the current tag

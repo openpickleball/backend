@@ -7,10 +7,11 @@ SecurityMiddleware answers plain http first: building its redirect asks
 for the host, so a refused host raises DisallowedHost (400), and an
 allowed host gets a redirect to https. Either way the readiness check
 would fail and a deploy never go live.
-The platform offers no way to set the probe's Host header. ADR 0039
+The platform offers no way to set the probe's Host header. ADR 0042
 records the decision.
 
-This middleware comes first. For a GET of exactly one of PROBE_PATHS
+This middleware comes right after the header middlewares (ADR 0040)
+and ahead of SecurityMiddleware. For a GET of exactly one of PROBE_PATHS
 (``request.path_info``, no trailing slash or other variant), it calls the
 health view itself, with no other middleware, when the host is not
 allowed, or when SECURE_SSL_REDIRECT is on and the request is not secure.
@@ -20,7 +21,9 @@ path still gets 400.
 
 The health views take no auth, read no session, cookie, or input, and
 answer only "ok" or "fail" per check, so skipping the other middleware
-exposes nothing. A probe answer sets no cookie and no security headers.
+exposes nothing. A probe answer sets no cookie and gets no HSTS or CORS
+headers; the header middlewares ahead of it still add the Content
+Security Policy, Permissions-Policy, and X-Frame-Options.
 The refused host is never logged: Django's own DisallowedHost log line
 quotes it, and this path never raises it.
 """

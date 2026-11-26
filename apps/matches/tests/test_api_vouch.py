@@ -30,11 +30,13 @@ from apps.matches.models import (
     Match,
     MatchFlag,
     MatchFormat,
+    MatchStatus,
     MatchVouch,
 )
 from apps.matches.services import record_match
 from apps.matches.tests.conftest import WORKFLOW_PLAYED_ON
-from apps.matches.workflow import confirm_match, edit_match, void_match
+from apps.matches.tests.factories import raw_update
+from apps.matches.workflow import confirm_match, edit_match
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
@@ -154,10 +156,10 @@ def test_a_repeat_vouch_returns_the_match_and_writes_nothing(
 
 
 def test_a_voided_match_gets_409(
-    pair: tuple[Match, Match], players: list[Player], moderator: User
+    pair: tuple[Match, Match], players: list[Player]
 ) -> None:
     earlier, _later = pair
-    void_match(earlier, actor=moderator, reason="Made-up reason.")
+    raw_update(earlier, status=MatchStatus.VOIDED)
 
     response = _vouch(players[0].account, earlier.public_code)
 
@@ -184,10 +186,10 @@ def test_a_non_participant_gets_the_unknown_code_404(
 
 
 def test_a_refused_actor_on_a_voided_match_gets_404_not_409(
-    pair: tuple[Match, Match], moderator: User
+    pair: tuple[Match, Match],
 ) -> None:
     earlier, _later = pair
-    void_match(earlier, actor=moderator, reason="Made-up reason.")
+    raw_update(earlier, status=MatchStatus.VOIDED)
     outsider = PlayerFactory.create().account
 
     _same_404(_vouch(outsider, earlier.public_code), _vouch(outsider, UNKNOWN_MATCH))

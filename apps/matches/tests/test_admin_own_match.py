@@ -1,11 +1,13 @@
-"""The admin refuses a moderator's action on a match they played in (#40).
+"""The admin's bulk void refuses a match the moderator played in (#40, #273).
 
-The refusal shows only the fixed "not allowed" text, never which rule
-failed, and changes nothing. A moderator who did not play still acts.
-Made-up data only.
+A moderator's only match actions are the bulk voids. A match whose
+correction chain holds the moderator's own Player is counted as refused:
+it stays as it was, and the message shows only the counts, never which
+rule failed. A moderator who did not play voids every match. Made-up data
+only.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from django.contrib.auth.models import Group
@@ -16,15 +18,14 @@ from django.urls import reverse
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
-from apps.audit.models import AuditEvent
-from apps.clubs.models import MemberRole
+from apps.audit.models import AuditAction, AuditEvent
 from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
-from apps.matches.models import Match, MatchFormat, MatchStatus
-from apps.matches.permissions import MODERATOR_GROUP, MatchActionDenied
+from apps.matches.models import Match, MatchFormat, MatchStatus, SubmissionBatch
+from apps.matches.permissions import MODERATOR_GROUP
 from apps.matches.services import record_match
-from apps.matches.workflow import confirm_match, dispute_match
+from apps.matches.workflow import dispute_match
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
@@ -32,7 +33,6 @@ pytestmark = pytest.mark.django_db
 
 REASON = "Made-up moderator reason."
 PLAYED_ON = date(2026, 2, 14)
-DENIED = MatchActionDenied.message
 OTHER_RULES = ("Only a moderator", "current status", "nothing to", "reason")
 
 
@@ -56,139 +56,104 @@ def players(playing_moderator: User) -> list[Player]:
     ]
 
 
-def _confirmed(players: list[Player], **extra: object) -> Match:
-    match = record_match(
-        format=MatchFormat.DOUBLES,
-        team_a=players[:2],
-        team_b=players[2:],
-        games=((11, 7), (11, 9)),
-        played_on=PLAYED_ON,
-        submitted_by_user=players[0].account,
-        **extra,  # type: ignore[arg-type]
-    ).match
-    if match.status == MatchStatus.PENDING:
-        confirm_match(match, actor=players[0].account)
-        confirm_match(match, actor=players[2].account)
-    return Match.objects.get(pk=match.pk)
+@pytest.fixture
+def event() -> Event:
+    made: Event = EventFactory.create(organizer=verified_organizer())
+    return made
+
+
+@pytest.fixture
+def member(event: Event) -> User:
+    account: User = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=account)
+    return account
+
+
+def _batch(players: list[Player], event: Event, member: User) -> tuple[Match, Match]:
+    """Two confirmed matches of one upload batch: the moderator's Player
+    plays in the first only."""
+    batch = SubmissionBatch.objects.create(submitted_by_user=member, event=event)
+    others = [PlayerFactory.create() for _ in range(4)]
+    own, other = (
+        record_match(
+            format=MatchFormat.DOUBLES,
+            team_a=lineup[:2],
+            team_b=lineup[2:],
+            games=((11, 7), (11, 9)),
+            played_on=PLAYED_ON + timedelta(days=day),
+            event=event,
+            submitted_by_user=member,
+            submission_batch=batch,
+        ).match
+        for day, lineup in enumerate((players, others))
+    )
+    return own, other
 
 
 def _run(client: Client, action: str, match: Match) -> list[Message]:
     response = client.post(
-        reverse("admin:matches_match_changelist") + "?review=all",
-        {"action": action, "_selected_action": [str(match.pk)], "reason": REASON},
+        reverse("admin:matches_match_changelist"),
+        {
+            "action": action,
+            "_selected_action": [str(match.pk)],
+            "reason": REASON,
+            "post": "yes",
+        },
         follow=True,
     )
     assert response.status_code == 200
     return list(get_messages(response.wsgi_request))
 
 
-def _assert_denied(messages: list[Message], match: Match) -> None:
+def _status(match: Match) -> str:
+    return Match.objects.get(pk=match.pk).status
+
+
+@pytest.mark.parametrize("action", ["void_batch_selected", "void_submitter_selected"])
+@pytest.mark.parametrize("disputed", [False, True])
+def test_a_match_they_played_in_is_refused(
+    client: Client,
+    playing_moderator: User,
+    players: list[Player],
+    event: Event,
+    member: User,
+    action: str,
+    disputed: bool,
+) -> None:
+    own, other = _batch(players, event, member)
+    if disputed:
+        dispute_match(own, actor=players[1].account)
+    status = _status(own)
+    client.force_login(playing_moderator)
+
+    messages = _run(client, action, other)
+
     assert [str(m) for m in messages] == [
-        f"{match.public_code} was not changed: {DENIED}"
+        "1 match(es) voided, 0 already voided, 1 refused."
     ]
-    assert messages[0].level_tag == "warning"
     for wording in OTHER_RULES:
         assert wording not in str(messages[0])
+    assert _status(own) == status
+    assert _status(other) == MatchStatus.VOIDED
+    voids = AuditEvent.objects.filter(action=AuditAction.MATCH_VOID)
+    assert [e.target_object_id for e in voids] == [str(other.pk)]
 
 
-def test_approve_a_disputed_match_they_played_in_is_refused(
-    client: Client, playing_moderator: User, players: list[Player]
+@pytest.mark.parametrize("action", ["void_batch_selected", "void_submitter_selected"])
+def test_a_moderator_who_did_not_play_voids_every_match(
+    client: Client,
+    players: list[Player],
+    event: Event,
+    member: User,
+    action: str,
 ) -> None:
-    match = _confirmed(players)
-    dispute_match(match, actor=players[1].account)
-    events = AuditEvent.objects.count()
-    client.force_login(playing_moderator)
-
-    messages = _run(client, "approve_selected", match)
-
-    _assert_denied(messages, match)
-    assert Match.objects.get(pk=match.pk).status == MatchStatus.DISPUTED
-    assert AuditEvent.objects.count() == events
-
-
-@pytest.mark.parametrize("disputed", [False, True])
-def test_void_a_match_they_played_in_is_refused(
-    client: Client, playing_moderator: User, players: list[Player], disputed: bool
-) -> None:
-    match = _confirmed(players)
-    if disputed:
-        dispute_match(match, actor=players[1].account)
-    status = Match.objects.get(pk=match.pk).status
-    events = AuditEvent.objects.count()
-    client.force_login(playing_moderator)
-
-    messages = _run(client, "void_selected", match)
-
-    _assert_denied(messages, match)
-    assert Match.objects.get(pk=match.pk).status == status
-    assert AuditEvent.objects.count() == events
-
-
-def _member_event(account: User) -> Event:
-    """An Event of a verified Organizer that ``account`` is an admin of."""
-    organizer = verified_organizer()
-    OrganizerMemberFactory.create(
-        organizer=organizer, account=account, role=MemberRole.ADMIN
-    )
-    event: Event = EventFactory.create(organizer=organizer)
-    return event
-
-
-def test_void_with_event_authority_still_shows_only_the_fixed_text(
-    client: Client, playing_moderator: User, players: list[Player]
-) -> None:
-    """The fallback path may allow the change but refuses the reason:
-    the message is still the fixed denied text, never a 500."""
-    match = _confirmed(players, event=_member_event(playing_moderator))
-    events = AuditEvent.objects.count()
-    client.force_login(playing_moderator)
-
-    messages = _run(client, "void_selected", match)
-
-    _assert_denied(messages, match)
-    assert Match.objects.get(pk=match.pk).status == MatchStatus.CONFIRMED
-    assert AuditEvent.objects.count() == events
-
-
-@pytest.mark.parametrize("with_event", [False, True])
-def test_edit_page_post_shows_the_fixed_text(
-    client: Client, playing_moderator: User, players: list[Player], with_event: bool
-) -> None:
-    extra: dict[str, object] = {}
-    if with_event:
-        extra["event"] = _member_event(playing_moderator)
-    match = _confirmed(players, **extra)
-    events = AuditEvent.objects.count()
-    client.force_login(playing_moderator)
-
-    response = client.post(
-        reverse("admin:matches_match_edit", args=[match.pk]),
-        {
-            "reason": REASON,
-            "played_on": PLAYED_ON.isoformat(),
-            "team_a": " ".join(p.public_code for p in players[:2]),
-            "team_b": " ".join(p.public_code for p in players[2:]),
-            "games": "11-2\n11-3",
-        },
-    )
-
-    page = response.content.decode()
-    assert response.status_code == 200
-    assert DENIED in page
-    assert "Only a moderator" not in page
-    assert Match.objects.get(pk=match.pk).status == MatchStatus.CONFIRMED
-    assert not Match.objects.filter(corrects=match).exists()
-    assert AuditEvent.objects.count() == events
-
-
-def test_a_moderator_who_did_not_play_still_succeeds(
-    client: Client, players: list[Player]
-) -> None:
-    match = _confirmed(players)
-    dispute_match(match, actor=players[1].account)
+    own, other = _batch(players, event, member)
     client.force_login(_moderator())
 
-    messages = _run(client, "approve_selected", match)
+    messages = _run(client, action, own)
 
-    assert [str(m) for m in messages] == ["1 match(es) approved."]
-    assert Match.objects.get(pk=match.pk).status == MatchStatus.CONFIRMED
+    assert [str(m) for m in messages] == [
+        "2 match(es) voided, 0 already voided, 0 refused."
+    ]
+    assert _status(own) == MatchStatus.VOIDED
+    assert _status(other) == MatchStatus.VOIDED

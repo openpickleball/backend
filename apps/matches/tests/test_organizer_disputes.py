@@ -4,8 +4,9 @@ ADR 0034 makes the Event's verified Organizer the level that settles a
 dispute after the players: a member of it, or the approved application
 that submitted the match while it still acts for that Organizer. A member
 whose Player is in the match's correction chain, or in the correction's
-teams, is refused; another member is not. A reason is required and
-stored in the Audit Event. Made-up data only.
+teams, is refused; another member is not. A moderator who is not a
+member is refused (#273). A reason is required and stored in the Audit
+Event. Made-up data only.
 """
 
 from datetime import date
@@ -540,36 +541,32 @@ def test_a_member_still_corrects_a_confirmed_match_without_a_reason(
     assert audit.reason == ""
 
 
-# as_moderator=False keeps a moderator to the Organizer's rules.
+# A moderator has no Organizer level: only membership settles a dispute
+# (#273).
 
 
-def test_a_moderator_without_the_moderator_path_cannot_resolve(
+def test_a_moderator_who_is_not_a_member_cannot_resolve(
     players: list[Player], event: Event, moderator: User
 ) -> None:
     match = _disputed(players, event)
 
     with pytest.raises(MatchActionDenied):
         resolve_dispute(
-            match,
-            actor=moderator,
-            outcome=MatchStatus.CONFIRMED,
-            reason=REASON,
-            as_moderator=False,
+            match, actor=moderator, outcome=MatchStatus.CONFIRMED, reason=REASON
         )
-    resolve_dispute(
-        match, actor=moderator, outcome=MatchStatus.CONFIRMED, reason=REASON
-    )
 
-    assert _status(match) == MatchStatus.CONFIRMED
+    assert _status(match) == MatchStatus.DISPUTED
+    assert _audits(match, AuditAction.DISPUTE_OUTCOME) == []
 
 
-def test_a_moderator_without_the_moderator_path_cannot_correct(
+def test_a_moderator_who_is_not_a_member_cannot_correct(
     players: list[Player], event: Event, moderator: User
 ) -> None:
     match = _disputed(players, event)
+    count = Match.objects.count()
 
     with pytest.raises(MatchActionDenied):
-        _correct(match, moderator, as_moderator=False)
-    corrected = _correct(match, moderator)
+        _correct(match, moderator)
 
-    assert corrected.status == MatchStatus.CONFIRMED
+    assert _status(match) == MatchStatus.DISPUTED
+    assert Match.objects.count() == count

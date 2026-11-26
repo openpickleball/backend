@@ -1,0 +1,16 @@
+{% extends "emails/base_message.html" %}
+{% block title %}{% if matches|length == 1 %}A match you played in was recorded on OPEN{% else %}Matches you played in were recorded on OPEN{% endif %}{% endblock title %}
+{% block content %}
+<p style="margin: 0 0 16px;">{% if matches|length == 1 %}An event organizer recorded a match you played in on OPEN.{% else %}An event organizer recorded matches you played in on OPEN.{% endif %} A match an organizer records counts toward ratings without your confirmation. Scores show your team first.</p>
+{% for match in matches %}
+<div style="margin: 0 0 16px; padding: 12px 16px; border: 1px solid #dddddd; border-radius: 4px;">
+<p style="margin: 0 0 4px; font-weight: bold;">Match {{ match.code }}</p>
+<p style="margin: 0 0 4px;">Played {{ match.played_on|date:"F j, Y" }}</p>
+<p style="margin: 0 0 8px;">Scores: {{ match.scores }}</p>
+<p style="margin: 0;"><a href="{{ match.url }}" style="color: #1a5c38; font-weight: bold;">View or dispute</a></p>
+<p style="margin: 4px 0 0; font-size: 14px; color: #555555;"><span style="word-break: break-all;">{{ match.url }}</span></p>
+</div>
+{% endfor %}
+<p style="margin: 0;">If a score is wrong, or you did not play in a match, dispute it from its page. A disputed match stops counting until the dispute is settled. If you think the organizer that recorded it is at fault, you can report the organizer to OPEN from the app.</p>
+{% endblock content %}
+{% block reason %}You received this email because an event organizer recorded a match you played in on OPEN. These notices are always sent, so you can catch a wrong result.{% endblock reason %}

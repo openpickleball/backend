@@ -27,8 +27,13 @@ allauth's URLconf (`config/urls.py`).
   with the age screen's rules, order, rate limit, and refusal. A pass keeps
   nothing in the session; under 13 flags it as a refused sign-up does.
   It is OPEN's own view, at a new path under allauth's sign-up.
-- allauth's OpenAPI document: served with the age check added
-  (`apps/accounts/openapi.py`).
+- Sign-up password check (issue #289, ADR 0039): the password alone, with
+  the email only for the similarity rule, through the same validators and
+  error format as sign-up, before the app asks for the age. It finds no
+  Account and writes nothing to the session. Sign-up checks the password
+  against its email the same way (`clean_signup_password`).
+- allauth's OpenAPI document: served with the age and password checks
+  added (`apps/accounts/openapi.py`).
 - Email verification: an address that is another Account's login cannot
   be verified (allauth's `email_taken`, a 400). allauth checks only other
   verified EmailAddress rows, so verifying would set the address as this
@@ -56,6 +61,7 @@ from allauth.headless.account.views import VerifyEmailView as BaseVerifyEmailVie
 from allauth.headless.base.response import ConflictResponse, ForbiddenResponse
 from allauth.headless.base.views import APIView
 from allauth.headless.constants import Client
+from allauth.headless.internal.restkit import inputs
 from allauth.headless.internal.restkit.response import APIResponse, ErrorResponse
 from allauth.headless.spec.views import OpenAPIJSONView as BaseOpenAPIJSONView
 from allauth.headless.spec.views import OpenAPIYAMLView as BaseOpenAPIYAMLView
@@ -71,7 +77,7 @@ from django.utils.decorators import method_decorator
 from apps.accounts.agreements import current_versions, record_acceptance
 from apps.accounts.forms import SignupAgeForm, SignupBirthForm, signup_full_name
 from apps.accounts.openapi import open_schema
-from apps.accounts.validators import is_canonical_email
+from apps.accounts.validators import is_canonical_email, normalize_email_address
 from apps.players.age import is_old_enough
 from apps.players.signup import (
     SIGNUP_DETAILS_SESSION_KEY,
@@ -132,6 +138,31 @@ def is_any_accounts_login(email: str) -> bool:
     return True
 
 
+def clean_signup_password(password: str, email: str | None) -> None:
+    """Sign-up's password rules (issue #289, ADR 0039), or ValidationError.
+
+    allauth's own password check, with an unsaved Account that holds only
+    the address, so ``AUTH_PASSWORD_VALIDATORS`` runs whole: the similarity
+    rule included, which allauth's headless sign-up skips (it passes no
+    Account). Nothing is saved or looked up. The error lists one entry per
+    failed rule, with Django's message and code. Sign-up and the password
+    check both call this, so they always agree.
+    """
+    account = get_user_model()(email=email or "")
+    get_adapter().clean_password(password, user=account)
+
+
+def _check_password(form: "inputs.Input", email: str | None) -> None:
+    """Add sign-up's password errors to ``form``'s ``password`` field."""
+    password = form.cleaned_data.get("password")
+    if not password:
+        return
+    try:
+        clean_signup_password(password, email)
+    except ValidationError as error:
+        form.add_error("password", error)
+
+
 class SignupInput(BaseSignupInput):
     """allauth's sign-up input, with an address taken only by a login.
 
@@ -140,12 +171,25 @@ class SignupInput(BaseSignupInput):
     only an Account whose `User.email` it is takes it. A taken address keeps
     allauth's enumeration-safe answer (the owner is mailed that an account
     exists); any other address signs up and gets a verification link.
+
+    The password is checked in ``clean()``, against the cleaned address,
+    by ``clean_signup_password`` (ADR 0039), as the password check does.
     """
 
     def validate_unique_email(self, value: str) -> str:
         self.account_already_exists = is_any_accounts_login(value)
         email: str = get_adapter().validate_unique_email(value)
         return email
+
+    def clean_password(self) -> str:
+        # Checked in clean(), once the address is cleaned.
+        password: str = self.cleaned_data["password"]
+        return password
+
+    def clean(self) -> dict[str, Any]:
+        cleaned: dict[str, Any] = super().clean()
+        _check_password(self, cleaned.get("email"))
+        return cleaned
 
     def try_save(
         self, request: "HttpRequest"
@@ -320,6 +364,77 @@ class SignupAgeCheckView(APIView):
         return passed
 
 
+_NOT_TEXT = "Enter text."
+
+
+class SignupPasswordField(inputs.CharField):
+    """Sign-up's password field, refusing anything but a JSON string.
+
+    Django's conversion would turn a number or a list into text. Otherwise
+    the same as allauth's sign-up field (stripped, then required).
+    """
+
+    def to_python(self, value: object) -> str:
+        if value not in self.empty_values and not isinstance(value, str):
+            raise ValidationError(_NOT_TEXT, code="invalid")
+        text: str = super().to_python(value)
+        return text
+
+
+class SignupPasswordCheckInput(inputs.Input):
+    """The password check's input: the password, and the address only for
+    the similarity rule.
+
+    The address is never validated or looked up: a missing, non-string, or
+    malformed one is simply not compared (the password still gets every
+    other rule), so the answer never depends on whether an Account has it.
+    It is normalized as sign-up normalizes it, so both compare the same
+    text.
+    """
+
+    password = SignupPasswordField()
+
+    def clean(self) -> dict[str, Any]:
+        cleaned: dict[str, Any] = super().clean() or {}
+        email = self.data.get("email")
+        _check_password(
+            self, normalize_email_address(email) if isinstance(email, str) else None
+        )
+        return cleaned
+
+
+# allauth's own signup limit, on the same counter as sign-up and the age
+# check, so a 429 comes first.
+@method_decorator(rate_limit(action="signup"), name="handle")
+class SignupPasswordCheckView(APIView):
+    """The sign-up password check (issue #289, ADR 0039).
+
+    In the age check's order: allauth's rate limit, its 409 and 403, the
+    session's refusal flag, then the input. A pass is ``{"status": 200}``;
+    a failed rule is allauth's 400 with one ``password`` error per rule,
+    the same errors sign-up gives. It finds no Account or address, writes
+    nothing to the session, and sends no mail.
+    """
+
+    # The body is parsed only after allauth's 409 and 403, as at sign-up.
+    handle_json_input = False
+
+    def post(
+        self, request: "HttpRequest", *args: object, **kwargs: object
+    ) -> "HttpResponseBase":
+        answer = _signup_not_allowed(request)
+        if answer is None and is_signup_refused(request.session):
+            answer = _refusal(request)
+        if answer is not None:
+            return answer
+        form = SignupPasswordCheckInput(data=self._parse_json(request) or {})
+        if not form.is_valid():
+            invalid: HttpResponseBase = ErrorResponse(request, input=form)
+            return invalid
+        passed: HttpResponseBase = APIResponse(request)
+        return passed
+
+
 # One fixed answer, whatever was sent: no field, no age, no detail.
 _SIGNUP_REFUSED = "We can't create an account with these details."
 
@@ -370,7 +485,7 @@ class VerifyEmailView(BaseVerifyEmailView):
 
 
 class OpenAPIJSONView(BaseOpenAPIJSONView):
-    """allauth's OpenAPI document as JSON, with OPEN's age check."""
+    """allauth's OpenAPI document as JSON, with OPEN's signup checks."""
 
     def get(self, request: "HttpRequest") -> HttpResponse:
         return HttpResponse(
@@ -381,7 +496,7 @@ class OpenAPIJSONView(BaseOpenAPIJSONView):
 
 
 class OpenAPIYAMLView(BaseOpenAPIYAMLView):
-    """allauth's OpenAPI document as YAML, with OPEN's age check."""
+    """allauth's OpenAPI document as YAML, with OPEN's signup checks."""
 
     def get(self, request: "HttpRequest") -> HttpResponse:
         return HttpResponse(
@@ -393,7 +508,7 @@ class OpenAPIYAMLView(BaseOpenAPIYAMLView):
 
 def headless_urlpatterns() -> list[URLPattern]:
     """OPEN's views at allauth's paths, for each enabled headless client,
-    and its own age check under allauth's sign-up."""
+    and its own age and password checks under allauth's sign-up."""
     patterns = []
     if settings.HEADLESS_SERVE_SPECIFICATION:
         patterns += [
@@ -409,6 +524,10 @@ def headless_urlpatterns() -> list[URLPattern]:
             path(
                 f"{prefix}signup/age-check",
                 SignupAgeCheckView.as_api_view(client=client),
+            ),
+            path(
+                f"{prefix}signup/password-check",
+                SignupPasswordCheckView.as_api_view(client=client),
             ),
             path(
                 f"{prefix}password/request",

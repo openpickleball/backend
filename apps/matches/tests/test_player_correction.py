@@ -36,7 +36,6 @@ from apps.matches.workflow import (
     confirm_match,
     dispute_match,
     edit_match,
-    void_match,
 )
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
@@ -171,10 +170,10 @@ def test_a_confirmed_match_is_refused(confirmed: Match, players: list[Player]) -
     assert _status(confirmed) == MatchStatus.CONFIRMED
 
 
-def test_a_voided_match_is_refused(
-    pending: Match, players: list[Player], moderator: User
-) -> None:
-    void_match(pending, actor=moderator, reason="checked")
+def test_a_voided_match_is_refused(pending: Match, players: list[Player]) -> None:
+    # A first correction voids the old match.
+    _correct(pending, players[0].account, players[:2], players[2:])
+    assert _status(pending) == MatchStatus.VOIDED
 
     with pytest.raises(MatchStateError):
         _correct(pending, players[0].account, players[:2], players[2:])
@@ -197,7 +196,7 @@ def test_without_as_player_a_participant_is_refused(
     assert _status(pending) == MatchStatus.PENDING
 
 
-def test_a_moderator_with_as_player_takes_only_the_player_path(
+def test_a_moderator_with_as_player_is_refused(
     confirmed: Match, moderator: User, players: list[Player]
 ) -> None:
     with pytest.raises(MatchActionDenied):

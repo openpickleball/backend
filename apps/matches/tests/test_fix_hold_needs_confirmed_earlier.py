@@ -5,8 +5,9 @@ voids its newer match (the flag's ``match``) after the hold period only
 when the earlier match (``duplicate_of``) is confirmed. Otherwise a
 player's own pending self-submission could void the verified Organizer's
 real result just by waiting. A correction keeps its original's place
-in that order (maintainer's follow-up decision on #268). Made-up data
-only.
+in that order (maintainer's follow-up decision on #268). The corrections
+here are made by a member of the match's Event's verified Organizer, or
+by a player for a self-reported match (#267). Made-up data only.
 """
 
 from datetime import date, datetime, timedelta
@@ -36,7 +37,6 @@ from apps.players.tests.factories import PlayerFactory
 
 pytestmark = pytest.mark.django_db
 
-REASON = "Made-up review reason."
 OTHER_GAMES = ((11, 5), (11, 6))
 
 
@@ -77,6 +77,39 @@ def _near_duplicate(players: list[Player]) -> Match:
 def _confirm(match: Match, players: list[Player]) -> Match:
     confirm_match(match, actor=players[0].account)
     return confirm_match(match, actor=players[2].account)
+
+
+@pytest.fixture
+def member(event: Event) -> User:
+    """A member of ``event``'s verified Organizer, with no Player."""
+    account: User = OrganizerMemberFactory.create(organizer=event.organizer).account
+    return account
+
+
+def _event_match(
+    event: Event,
+    member: User,
+    players: list[Player],
+    games: tuple[tuple[int, int], ...] = WORKFLOW_GAMES,
+) -> Match:
+    """``players``' lineup on WORKFLOW_PLAYED_ON at ``event``: confirmed."""
+    match = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=games,
+        played_on=WORKFLOW_PLAYED_ON,
+        event=event,
+        submitted_by_user=member,
+    ).match
+    assert match.status == MatchStatus.CONFIRMED
+    return match
+
+
+@pytest.fixture
+def organizer_confirmed(event: Event, member: User, players: list[Player]) -> Match:
+    """The Organizer's confirmed result on the lineup, recorded first."""
+    return _event_match(event, member, players)
 
 
 def test_a_pending_self_submission_never_voids_the_organizers_result(
@@ -123,13 +156,13 @@ def test_a_disputed_earlier_match_voids_nothing_until_its_dispute_expires(
 def _correct(
     match: Match,
     players: list[Player],
-    moderator: User,
+    member: User,
     games: tuple[tuple[int, int], ...] = WORKFLOW_GAMES,
 ) -> Match:
+    """The Organizer member's correction of the Event match ``match``."""
     return edit_match(
         match,
-        actor=moderator,
-        reason=REASON,
+        actor=member,
         format=MatchFormat.DOUBLES,
         team_a=players[:2],
         team_b=players[2:],
@@ -144,10 +177,13 @@ def _correct(
 
 
 def test_a_confirmed_correction_of_an_older_match_stays_and_the_other_is_voided(
-    confirmed: Match, players: list[Player], moderator: User, signals: SignalLog
+    organizer_confirmed: Match,
+    players: list[Player],
+    member: User,
+    signals: SignalLog,
 ) -> None:
     confirmed_dup = _confirm(_near_duplicate(players), players)
-    correction = _correct(confirmed, players, moderator)
+    correction = _correct(organizer_confirmed, players, member)
     assert correction.status == MatchStatus.CONFIRMED
     assert MatchFlag.objects.filter(
         match=correction, duplicate_of=confirmed_dup
@@ -171,10 +207,10 @@ def test_a_confirmed_correction_of_an_older_match_stays_and_the_other_is_voided(
 
 
 def test_a_pending_match_held_by_a_confirmed_correction_of_an_older_match_is_voided(
-    confirmed: Match, players: list[Player], moderator: User
+    organizer_confirmed: Match, players: list[Player], member: User
 ) -> None:
     pending_dup = _near_duplicate(players)
-    correction = _correct(confirmed, players, moderator)
+    correction = _correct(organizer_confirmed, players, member)
     assert MatchFlag.objects.filter(match=correction, duplicate_of=pending_dup).exists()
 
     assert expire_disputes_and_holds(now=_days_from_now(15)) == 1
@@ -185,11 +221,11 @@ def test_a_pending_match_held_by_a_confirmed_correction_of_an_older_match_is_voi
 
 
 def test_a_correction_of_a_correction_keeps_the_first_matchs_place(
-    confirmed: Match, players: list[Player], moderator: User
+    organizer_confirmed: Match, players: list[Player], member: User
 ) -> None:
-    first = _correct(confirmed, players, moderator, games=((11, 1), (11, 2)))
+    first = _correct(organizer_confirmed, players, member, games=((11, 1), (11, 2)))
     confirmed_dup = _confirm(_near_duplicate(players), players)
-    second = _correct(first, players, moderator)
+    second = _correct(first, players, member)
     assert MatchFlag.objects.filter(match=second, duplicate_of=confirmed_dup).exists()
 
     assert expire_disputes_and_holds(now=_days_from_now(15)) == 1
@@ -199,10 +235,10 @@ def test_a_correction_of_a_correction_keeps_the_first_matchs_place(
 
 
 def test_a_correction_of_a_match_recorded_after_the_other_is_still_the_newer_one(
-    confirmed: Match, players: list[Player], moderator: User
+    confirmed: Match, players: list[Player], event: Event, member: User
 ) -> None:
-    later = _confirm(_near_duplicate(players), players)
-    correction = _correct(later, players, moderator, games=((11, 2), (11, 3)))
+    later = _event_match(event, member, players, games=OTHER_GAMES)
+    correction = _correct(later, players, member, games=((11, 2), (11, 3)))
     assert MatchFlag.objects.filter(match=correction, duplicate_of=confirmed).exists()
 
     assert expire_disputes_and_holds(now=_days_from_now(15)) == 1
@@ -213,15 +249,15 @@ def test_a_correction_of_a_match_recorded_after_the_other_is_still_the_newer_one
 
 
 def test_corrections_on_both_sides_compare_their_first_matches(
-    confirmed: Match, players: list[Player], moderator: User
+    organizer_confirmed: Match, players: list[Player], event: Event, member: User
 ) -> None:
-    # Recorded in this order: confirmed, second, then a correction of
-    # each. The correction of ``second`` is the flag's ``match`` and
-    # corrects a match recorded before the correction of ``confirmed``,
-    # but that correction keeps the place of ``confirmed``, the first.
-    second = _confirm(_near_duplicate(players), players)
-    first_fix = _correct(confirmed, players, moderator)
-    second_fix = _correct(second, players, moderator, games=((11, 2), (11, 3)))
+    # Recorded in this order: the first match, second, then a correction
+    # of each. The correction of ``second`` is the flag's ``match`` and
+    # corrects a match recorded before the correction of the first, but
+    # that correction keeps the place of the first.
+    second = _event_match(event, member, players, games=OTHER_GAMES)
+    first_fix = _correct(organizer_confirmed, players, member)
+    second_fix = _correct(second, players, member, games=((11, 2), (11, 3)))
     assert MatchFlag.objects.filter(match=second_fix, duplicate_of=first_fix).exists()
 
     assert expire_disputes_and_holds(now=_days_from_now(15)) == 1
@@ -232,10 +268,20 @@ def test_corrections_on_both_sides_compare_their_first_matches(
 
 
 def test_a_pending_correction_of_an_older_match_voids_nothing(
-    pending: Match, players: list[Player], moderator: User
+    pending: Match, players: list[Player]
 ) -> None:
     confirmed_dup = _confirm(_near_duplicate(players), players)
-    correction = _correct(pending, players, moderator)
+    # A player's correction of their pending self-reported match (#267).
+    correction = edit_match(
+        pending,
+        actor=players[0].account,
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=WORKFLOW_GAMES,
+        played_on=WORKFLOW_PLAYED_ON,
+        as_player=True,
+    )
     assert correction.status == MatchStatus.PENDING
     assert MatchFlag.objects.filter(
         match=correction, duplicate_of=confirmed_dup
@@ -250,10 +296,10 @@ def test_a_pending_correction_of_an_older_match_voids_nothing(
 
 
 def test_the_recheck_under_the_locks_never_voids_the_earlier_match(
-    confirmed: Match, players: list[Player], moderator: User
+    organizer_confirmed: Match, players: list[Player], member: User
 ) -> None:
     confirmed_dup = _confirm(_near_duplicate(players), players)
-    correction = _correct(confirmed, players, moderator)
+    correction = _correct(organizer_confirmed, players, member)
     cutoff = _days_from_now(15) - timedelta(days=14)
 
     # The correction is the flag's ``match`` but the earlier match, so
@@ -301,7 +347,6 @@ def _organizer_edit(match: Match, member: User, players: list[Player]) -> Match:
         team_b=players[2:],
         games=((11, 1), (11, 0)),
         played_on=WORKFLOW_PLAYED_ON,
-        as_moderator=False,
     )
 
 
@@ -332,13 +377,12 @@ def test_an_edit_onto_another_organizers_result_gets_no_old_place(
 
 
 def test_a_correction_that_swaps_the_teams_keeps_its_place(
-    confirmed: Match, players: list[Player], moderator: User
+    organizer_confirmed: Match, players: list[Player], member: User
 ) -> None:
     confirmed_dup = _confirm(_near_duplicate(players), players)
     swapped = edit_match(
-        confirmed,
-        actor=moderator,
-        reason=REASON,
+        organizer_confirmed,
+        actor=member,
         format=MatchFormat.DOUBLES,
         team_a=players[2:],
         team_b=players[:2],
@@ -354,13 +398,12 @@ def test_a_correction_that_swaps_the_teams_keeps_its_place(
 
 
 def test_a_chain_that_leaves_and_returns_to_the_lineup_keeps_no_old_place(
-    confirmed: Match, players: list[Player], moderator: User
+    organizer_confirmed: Match, players: list[Player], member: User
 ) -> None:
-    # confirmed (lineup L) -> away (other date) -> back (lineup L again).
+    # first (lineup L) -> away (other date) -> back (lineup L again).
     away = edit_match(
-        confirmed,
-        actor=moderator,
-        reason=REASON,
+        organizer_confirmed,
+        actor=member,
         format=MatchFormat.DOUBLES,
         team_a=players[:2],
         team_b=players[2:],
@@ -368,7 +411,7 @@ def test_a_chain_that_leaves_and_returns_to_the_lineup_keeps_no_old_place(
         played_on=WORKFLOW_PLAYED_ON - timedelta(days=1),
     )
     confirmed_dup = _confirm(_near_duplicate(players), players)
-    back = _correct(away, players, moderator)
+    back = _correct(away, players, member)
     assert MatchFlag.objects.filter(match=back, duplicate_of=confirmed_dup).exists()
 
     assert expire_disputes_and_holds(now=_days_from_now(15)) == 1
@@ -379,13 +422,13 @@ def test_a_chain_that_leaves_and_returns_to_the_lineup_keeps_no_old_place(
 
 
 def test_a_match_newer_in_one_flag_and_earlier_in_another(
-    confirmed: Match, players: list[Player], moderator: User
+    organizer_confirmed: Match, players: list[Player], member: User
 ) -> None:
-    # Recorded in this order: confirmed (A), middle (B), then a confirmed
-    # correction of A (C, place A), then newest (D). B is newer than C but
-    # earlier than D, and D is newer than both.
+    # Recorded in this order: the first match (A), middle (B), then a
+    # confirmed correction of A (C, place A), then newest (D). B is newer
+    # than C but earlier than D, and D is newer than both.
     middle = _confirm(_near_duplicate(players), players)
-    correction = _correct(confirmed, players, moderator)
+    correction = _correct(organizer_confirmed, players, member)
     newest = _confirm(
         record_match(
             format=MatchFormat.DOUBLES,
@@ -420,7 +463,7 @@ def test_a_match_newer_in_one_flag_and_earlier_in_another(
 
 
 def test_a_match_only_on_the_duplicate_of_side_of_several_flags_is_voided_once(
-    confirmed: Match, players: list[Player], moderator: User
+    organizer_confirmed: Match, players: list[Player], member: User
 ) -> None:
     # B and C are both newer than A but held only against each other and
     # A; after A is corrected (D, place A), D is flagged against B and C,
@@ -438,7 +481,7 @@ def test_a_match_only_on_the_duplicate_of_side_of_several_flags_is_voided_once(
         ).match,
         players,
     )
-    d = _correct(confirmed, players, moderator)
+    d = _correct(organizer_confirmed, players, member)
     assert MatchFlag.objects.filter(match=d, duplicate_of=b).exists()
     assert MatchFlag.objects.filter(match=d, duplicate_of=c).exists()
 

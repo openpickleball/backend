@@ -229,7 +229,8 @@ def test_messages_are_clean_and_queueable() -> None:
 def test_template_files_are_clean() -> None:
     files = sorted(TEMPLATES_DIR.glob("*_notice_*"))
 
-    assert len(files) == 6
+    # The dispute, hold, and recorded match notices (#208), three files each.
+    assert len(files) == 9
     for path in files:
         assert_clean_template(path)
 

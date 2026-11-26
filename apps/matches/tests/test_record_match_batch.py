@@ -12,7 +12,6 @@ from datetime import date
 from typing import Any
 
 import pytest
-from django.contrib.auth.models import Permission
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
@@ -381,17 +380,10 @@ def test_a_correction_is_not_in_the_batch(
     match = _record(
         players, event=event, submitted_by_user=member, submission_batch=batch
     )
-    moderator: User = UserFactory.create()
-    moderator.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
 
     corrected = edit_match(
         match,
-        actor=moderator,
-        reason="Made-up reason for a test.",
+        actor=member,
         format=MatchFormat.SINGLES,
         team_a=players[:1],
         team_b=players[1:],

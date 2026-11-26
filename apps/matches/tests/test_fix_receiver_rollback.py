@@ -16,16 +16,23 @@ from django.test import override_settings
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditEvent
+from apps.clubs.models import MemberRole
+from apps.clubs.tests.factories import OrganizerMemberFactory
+from apps.events.models import Event
 from apps.matches.models import (
     FlagReason,
     Match,
     MatchConfirmation,
     MatchFlag,
+    MatchFormat,
     MatchStatus,
     Team,
 )
+from apps.matches.services import record_match
 from apps.matches.signals import match_changed, match_confirmed
+from apps.matches.tests.conftest import WORKFLOW_GAMES, WORKFLOW_PLAYED_ON
 from apps.matches.tests.factories import MatchFactory, raw_update
 from apps.matches.workflow import (
     confirm_match,
@@ -94,44 +101,69 @@ def test_dispute(confirmed: Match, players: list[Player]) -> None:
     )
 
 
-def test_resolve(confirmed: Match, players: list[Player], moderator: User) -> None:
-    dispute_match(confirmed, actor=players[1].account)
+@pytest.fixture
+def member(event: Event) -> User:
+    account: User = UserFactory.create()
+    OrganizerMemberFactory.create(
+        organizer=event.organizer, account=account, role=MemberRole.MATCH_MANAGER
+    )
+    return account
+
+
+@pytest.fixture
+def event_confirmed(event: Event, players: list[Player], member: User) -> Match:
+    """An Event match the Organizer's member recorded: confirmed at once."""
+    return record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=WORKFLOW_GAMES,
+        played_on=WORKFLOW_PLAYED_ON,
+        submitted_by_user=member,
+        event=event,
+    ).match
+
+
+def test_resolve(event_confirmed: Match, players: list[Player], member: User) -> None:
+    dispute_match(event_confirmed, actor=players[1].account)
 
     _assert_rolled_back(
-        confirmed,
+        event_confirmed,
         match_confirmed,
         lambda: resolve_dispute(
-            confirmed,
-            actor=moderator,
+            event_confirmed,
+            actor=member,
             outcome=MatchStatus.CONFIRMED,
             reason="checked",
         ),
     )
 
 
-def test_void(confirmed: Match, moderator: User) -> None:
+def test_void(event_confirmed: Match, member: User) -> None:
     _assert_rolled_back(
-        confirmed, match_changed, lambda: void_match(confirmed, actor=moderator)
+        event_confirmed,
+        match_changed,
+        lambda: void_match(event_confirmed, actor=member),
     )
 
 
-def test_edit(confirmed: Match, moderator: User) -> None:
+def test_edit(event_confirmed: Match, member: User) -> None:
     teams = {
-        team: [p.player for p in confirmed.participants.filter(team=team)]
+        team: [p.player for p in event_confirmed.participants.filter(team=team)]
         for team in Team
     }
 
     _assert_rolled_back(
-        confirmed,
+        event_confirmed,
         match_changed,
         lambda: edit_match(
-            confirmed,
-            actor=moderator,
-            format=confirmed.format,
+            event_confirmed,
+            actor=member,
+            format=event_confirmed.format,
             team_a=teams[Team.A],
             team_b=teams[Team.B],
             games=[(11, 5), (11, 8)],
-            played_on=confirmed.played_on,
+            played_on=event_confirmed.played_on,
         ),
     )
 

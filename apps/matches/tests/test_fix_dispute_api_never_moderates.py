@@ -1,9 +1,10 @@
-"""The Organizer's dispute operations never act as moderator (#269).
+"""The Organizer's dispute operations never act as moderator (#269, #273).
 
-An Account that is both a moderator and a member of the Event's verified
-Organizer passes the operations' Organizer check. The operations are for
-the Organizer level only (moderators use the admin, ADR 0029), so the
-workflow must apply the Organizer's rules to it: a correction still needs
+The operations are for the Organizer level only, and a moderator has no
+match review of its own (#273). A moderator who is not a member of the
+Event's verified Organizer gets the unknown-code 404 and nothing changes.
+An Account that is both a moderator and a member passes the Organizer
+check, and gets only the Organizer's rules: a correction still needs
 every named Club's consent, and a duplicate's code is shown only under
 the normal rule. Made-up data only.
 """
@@ -88,6 +89,37 @@ def _body(players: list[Player], games: list[dict[str, int]]) -> dict[str, Any]:
         "games": games,
         "reason": REASON,
     }
+
+
+def _resolve(account: User, match: Match) -> Any:
+    client = Client()
+    client.force_login(account)
+    return client.post(
+        f"/api/v1/matches/{match.public_code}/resolve-dispute",
+        json.dumps({"outcome": "confirmed", "reason": REASON}),
+        content_type="application/json",
+    )
+
+
+def test_a_moderator_who_is_not_a_member_is_refused(
+    event: Event, moderator: User
+) -> None:
+    players = [PlayerFactory.create() for _ in range(4)]
+    match = _record(players, event)
+    dispute_match(match, actor=players[0].account)
+    count = Match.objects.count()
+
+    resolved = _resolve(moderator, match)
+    corrected = _correct(
+        moderator,
+        match,
+        _body(players, [{"team_a": 11, "team_b": 3}, {"team_a": 11, "team_b": 5}]),
+    )
+
+    assert resolved.status_code == 404
+    assert corrected.status_code == 404
+    assert Match.objects.get(pk=match.pk).status == MatchStatus.DISPUTED
+    assert Match.objects.count() == count
 
 
 def test_a_moderator_member_cannot_correct_without_club_consent(

@@ -1,4 +1,4 @@
-"""Tests for HealthProbeMiddleware (issue #61, ADR 0039).
+"""Tests for HealthProbeMiddleware (issue #61, ADR 0042).
 
 App Platform probes the container over plain http with a Host header
 that ALLOWED_HOSTS refuses. The middleware answers a GET of exactly the
@@ -42,8 +42,11 @@ def deployed() -> Iterator[None]:
         yield
 
 
-def test_probe_middleware_comes_first() -> None:
-    assert settings.MIDDLEWARE[0] == MIDDLEWARE_PATH
+def test_probe_middleware_comes_right_after_the_header_middlewares() -> None:
+    # The header middlewares (ADR 0040) wrap it, and it runs ahead of
+    # SecurityMiddleware's https redirect and host check.
+    assert settings.MIDDLEWARE[3] == MIDDLEWARE_PATH
+    assert settings.MIDDLEWARE[4] == "django.middleware.security.SecurityMiddleware"
 
 
 def test_probe_paths_are_the_health_operations() -> None:
@@ -177,3 +180,12 @@ def test_a_probe_answer_never_logs_the_host(
 
     assert response.status_code == 200
     assert marker not in caplog.text
+
+
+def test_a_probe_answer_carries_the_header_middlewares_headers(deployed: None) -> None:
+    response = Client().get(LIVE_URL, HTTP_HOST=INSTANCE_HOST)
+
+    assert response.status_code == 200
+    assert response["X-Frame-Options"] == "DENY"
+    assert "Permissions-Policy" in response
+    assert "Strict-Transport-Security" not in response

@@ -112,7 +112,7 @@ def browser_client() -> Client:
 
 
 def csrf_header(client: Client) -> dict[str, str]:
-    return {"X-CSRFToken": client.cookies["csrftoken"].value}
+    return {"X-CSRFToken": client.cookies[settings.CSRF_COOKIE_NAME].value}
 
 
 def run_on_commit_after_each_request(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -170,6 +170,20 @@ class HeadlessSession:
         data: dict[str, object] = {**ADULT_BIRTH, **fields}
         return self.post(
             "auth/signup/age-check", {k: v for k, v in data.items() if v is not ...}
+        )
+
+    def password_check(self, **fields: object) -> Any:
+        """The signup password check (#289), with ``SESSION_EMAIL`` and
+        ``PASSWORD`` unless ``fields`` replace them. A field set to ``...``
+        is left out."""
+        data: dict[str, object] = {
+            "email": SESSION_EMAIL,
+            "password": PASSWORD,
+            **fields,
+        }
+        return self.post(
+            "auth/signup/password-check",
+            {k: v for k, v in data.items() if v is not ...},
         )
 
     def store(self) -> SessionBase:

@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Amended by: [ADR 0036](0036-csv-results-files.md) (a batch never confirms a pending duplicate, which closes the gap below; each bulk void first fails the pending Results Files in its scope)
-- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (a player's correction of a self-reported match has the correcting player as its submitter)
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (a player's correction of a self-reported match has the correcting player as its submitter. #273 removed the single void action and `void_match`'s moderator path. The bulk void now voids each match through `_void_as_moderator`. It applies `moderates` to each match and records the same `match.void` event.)
 - Date: 2026-11-24
 
 ## Context

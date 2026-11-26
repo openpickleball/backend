@@ -93,6 +93,7 @@ from apps.matches.models import (
     ResultsFileStatus,
     SubmissionBatch,
 )
+from apps.matches.notices import schedule_batch_notices
 from apps.matches.permissions import MatchPermissionDenied, can_manage_events
 from apps.matches.services import (
     BATCH_REFUSED,
@@ -443,14 +444,23 @@ def _finish(
     *,
     report: list[RowResult] | None,
     error_code: str = "",
-) -> None:
+) -> int | None:
     """End processing, once, while the file is still pending.
+
+    Returns the file's Submission Batch id when this call ended it, else
+    None.
 
     Sets the status (failed when ``error_code`` is set, else done), empties
     the file, and stores ``report``, or keeps the row results already
     stored when ``report`` is None. Either way the held-match warning is
     applied to the stored rows (``_mark_held``). The stored rows describe
     the state at this moment: nothing updates them afterward.
+
+    Unless a bulk void stopped the file (``VOIDED``), it schedules the
+    batch's recorded match notices after commit (``schedule_batch_notices``,
+    #208): one email per player for the whole upload. It runs once per
+    file, since only the call that finds the file pending gets this far.
+    A bulk void schedules them itself, once it has voided the matches.
     """
     with transaction.atomic():
         results_file = (
@@ -460,7 +470,7 @@ def _finish(
             .first()
         )
         if results_file is None or results_file.status != ResultsFileStatus.PENDING:
-            return
+            return None
         if report is not None:
             results_file.report = [result.as_json() for result in report]
         results_file.report = _mark_held(results_file.report)
@@ -473,9 +483,12 @@ def _finish(
         results_file.save(
             update_fields=["report", "status", "error_code", "content", "processed_at"]
         )
+        if error_code != VOIDED:
+            schedule_batch_notices(results_file.submission_batch_id)
+        return results_file.submission_batch_id
 
 
-def fail_for_void(batch_id: int) -> None:
+def fail_for_void(batch_id: int) -> list[int]:
     """Fail the batch's Results File as ``voided``, if it is still pending.
 
     ``apps.matches.workflow.void_submission_batch`` calls it, in its own
@@ -483,25 +496,31 @@ def fail_for_void(batch_id: int) -> None:
     row of the file afterward. The row results stored so far are kept as
     they are: the void then voids their matches, so they still read
     ``recorded``, and the file's ``voided`` error tells the uploader.
+
+    Returns the batch ids of the files it failed (``[batch_id]`` or
+    none), whose recorded match notices the bulk void sends afterward.
     """
     results_file_id = (
         ResultsFile.objects.filter(submission_batch_id=batch_id)
         .values_list("pk", flat=True)
         .first()
     )
-    if results_file_id is not None:
-        _finish(results_file_id, report=None, error_code=VOIDED)
+    if results_file_id is None:
+        return []
+    ended = _finish(results_file_id, report=None, error_code=VOIDED)
+    return [] if ended is None else [ended]
 
 
 def fail_for_submitter_void(
     *, user_id: int | None = None, application_id: int | None = None
-) -> None:
+) -> list[int]:
     """Fail every pending Results File of a submitter as ``voided``.
 
     ``apps.matches.workflow.void_submitter_matches`` calls it before it
     reads or voids any match. Each file is failed in its own short
     transaction, under its row lock (``_finish``), keeping its stored row
-    results, so no run of it records a row afterward.
+    results, so no run of it records a row afterward. Returns the batch
+    ids of the files it failed, as ``fail_for_void`` does.
     """
     files = ResultsFile.objects.filter(status=ResultsFileStatus.PENDING)
     if user_id is not None:
@@ -511,9 +530,13 @@ def fail_for_submitter_void(
             submission_batch__submitted_by_application_id=application_id
         )
     else:
-        return
+        return []
+    failed = []
     for results_file_id in files.values_list("pk", flat=True):
-        _finish(results_file_id, report=None, error_code=VOIDED)
+        ended = _finish(results_file_id, report=None, error_code=VOIDED)
+        if ended is not None:
+            failed.append(ended)
+    return failed
 
 
 def _existing_result(row: CsvMatch, match: Match) -> RowResult:

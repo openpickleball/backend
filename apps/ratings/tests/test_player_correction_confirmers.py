@@ -1,10 +1,9 @@
-"""A player's correction of a disputed self-reported match (#267, ADR 0024).
+"""A player's correction of a disputed self-reported match (#267).
 
-Its ``match.edit`` Audit Event has ``before`` status disputed, but the
-correction is created pending (``after.correction_status``), so it is not
-a correction created confirmed. Once the other team confirms it, only the
-players who confirmed it are sent as ``confirmed_by``, never every
-participant. Made-up data only.
+The correction is created pending with the corrector's ``confirm`` row, so
+it does not count until a player on the other team confirms it. Once they
+do, ``confirmed_by`` is exactly the corrector and that player, the players
+with a ``confirm`` decision. Made-up data only.
 """
 
 from datetime import date

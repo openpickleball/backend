@@ -259,9 +259,8 @@ class MatchQuerySet(LedgerQuerySet["Match"]):
         ``possible_duplicate`` flag links it, as ``match`` or as
         ``duplicate_of``, to a match that is not voided. This is ADR 0011's
         hold, refined so that a voided match (expired or corrected) stops
-        holding the other one, and a resolved flag holds nothing (a
-        moderator's ``apps.matches.workflow.resolve_flags``, or vouches
-        through ``vouch_for_match``).
+        holding the other one, and a resolved flag holds nothing (resolved
+        by vouches through ``apps.matches.workflow.vouch_for_match``).
         """
         flags = MatchFlag.objects.filter(
             reason=FlagReason.POSSIBLE_DUPLICATE, resolved_at__isnull=True
@@ -657,7 +656,7 @@ class Match(_LinkMessagesModel, _CleanedTextModel):
         # Django's internal queries use the base manager, so it must be the
         # guarded one too.
         base_manager_name = "objects"
-        permissions = (("moderate_match", "Can void matches and resolve disputes"),)
+        permissions = (("moderate_match", "Can void matches in bulk"),)
         constraints: ClassVar[list[models.BaseConstraint]] = [
             models.CheckConstraint(
                 condition=(
@@ -993,19 +992,25 @@ class FlagReason(models.TextChoices):
     POSSIBLE_DUPLICATE = "possible_duplicate", "Possible duplicate"
 
 
-# Flag reasons that are signals only: a moderator sees them, but they never
-# hold a Match from counting, so they stay out of ``counted()`` (ADR 0029).
+# Flag reasons that are signals only: they never hold a Match from
+# counting, so they stay out of ``counted()`` (ADR 0029).
 # Empty until #206 and #207 add their reasons. The Organizer admin's
 # moderator review counts flags with these reasons (#271).
 SIGNAL_FLAG_REASONS: frozenset[str] = frozenset()
 
 
 class FlagResolution(models.TextChoices):
-    """How a flag was closed (#40): by a moderator, or by vouches (#270).
+    """How a flag was closed: by vouches (#270).
 
-    ``approved``: the flagged result stands. Vouching always approves.
-    ``dismissed``: the flag was not a real concern. Either way the flag
-    stops holding its matches.
+    ``approved``: the flagged result stands, and the flag stops holding its
+    matches. Moderators resolve no flag (#273), so vouching, which always
+    approves, is the only way a flag is closed now.
+
+    ``dismissed`` is a legacy stored value: a moderator's flag resolution
+    wrote it before #273, and nothing writes it any more. It is kept so
+    those rows stay valid under the field's choices and its check
+    constraint, as the club-only ``rec_verified`` match type is kept for
+    legacy matches. A dismissed flag holds nothing, like an approved one.
     """
 
     APPROVED = "approved", "Approved"
@@ -1046,9 +1051,8 @@ class MatchFlag(_LinkMessagesModel):
     vouch is a ``MatchVouch`` row. Once both matches are vouched for, the
     flag is resolved as approved.
 
-    A flag is resolved by vouching or by a moderator
-    (``apps.matches.workflow.resolve_flags``), which set ``resolution``
-    and ``resolved_at`` together (a check constraint). Both are empty while
+    A flag is resolved only by vouching, which sets ``resolution`` and
+    ``resolved_at`` together (a check constraint). Both are empty while
     the flag is open. A flag row is never deleted. The resolver and reason
     are in its Audit Event, not on the flag.
     """

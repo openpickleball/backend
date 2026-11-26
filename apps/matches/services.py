@@ -102,7 +102,7 @@ from apps.matches.models import (
     Team,
     source_match_type,
 )
-from apps.matches.notices import schedule_hold_notices
+from apps.matches.notices import schedule_hold_notices, schedule_recorded_notice
 from apps.matches.permissions import Actor, MatchSubmission, check_can_create_match
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
 from apps.players.models import GenderDivision, Player
@@ -1111,21 +1111,16 @@ def near_duplicates(draft: MatchDraft) -> list[Match]:
     return _near_matches(draft.keys_a, draft.keys_b, draft.match.played_on)
 
 
-def duplicate_error(
-    existing: Match, viewer: "Actor | None", *, reveal: bool = False
-) -> DuplicateMatchError:
+def duplicate_error(existing: Match, viewer: "Actor | None") -> DuplicateMatchError:
     """The error for an exact duplicate of ``existing``.
 
     It names the code when ``viewer`` (the Account or application that
     acted: the submitter, or an edit's editor) may know it, by
-    ``_visible_code``'s rules, or when ``reveal`` is set (a moderator).
+    ``_visible_code``'s rules.
     """
-    if reveal:
-        code: str | None = existing.public_code
-    else:
-        user = viewer if isinstance(viewer, get_user_model()) else None
-        application = viewer if isinstance(viewer, get_application_model()) else None
-        code = _visible_code(existing, user, application)
+    user = viewer if isinstance(viewer, get_user_model()) else None
+    application = viewer if isinstance(viewer, get_application_model()) else None
+    code = _visible_code(existing, user, application)
     return DuplicateMatchError(DuplicateKind.DUPLICATE_MATCH, code)
 
 
@@ -1139,7 +1134,11 @@ def insert_draft(
     were counting before it was written: each is now held by its flag.
     When it writes flags, it schedules the hold notices for the new Match
     and the matches its flags hold (``schedule_hold_notices``), queued
-    after commit (#272).
+    after commit (#272). When it writes a confirmed Match with an Event
+    and no Submission Batch (a trusted submitter's match, or the Event's
+    Organizer's correction), it schedules the recorded match notice for
+    its players (``schedule_recorded_notice``, #208); a batch path sends
+    one notice per player for the whole batch instead.
     """
     match = draft.match
     near = _near_matches(draft.keys_a, draft.keys_b, match.played_on)
@@ -1166,6 +1165,12 @@ def insert_draft(
     )
     if near:
         schedule_hold_notices(match)
+    if (
+        status == MatchStatus.CONFIRMED
+        and match.event_id is not None
+        and match.submission_batch_id is None
+    ):
+        schedule_recorded_notice(match)
     return match, was_counting
 
 
@@ -1211,7 +1216,9 @@ def _confirm_pending_duplicate(existing: Match, actor: "Actor") -> Match | None:
 
     Returns the confirmed Match, or None when it is no longer pending. A
     confirmed Match that ``actor`` itself confirmed (a retry of the same
-    submission) is returned unchanged, with no new Audit Event or signal.
+    submission) is returned unchanged, with no new Audit Event, signal, or
+    notice. A Match it confirms schedules the recorded match notice for
+    its players (``schedule_recorded_notice``, #208).
     """
     locked = Match.objects.select_for_update().get(pk=existing.pk)
     if locked.status == MatchStatus.CONFIRMED and _confirmed_by(locked, actor):
@@ -1229,6 +1236,9 @@ def _confirm_pending_duplicate(existing: Match, actor: "Actor") -> Match | None:
         **audit_actor(actor),
     )
     match_confirmed.send(sender=Match, match=locked)
+    # The other team never confirmed it: its players are told, as for a
+    # match the Organizer recorded (#208, ADR 0041).
+    schedule_recorded_notice(locked)
     return locked
 
 

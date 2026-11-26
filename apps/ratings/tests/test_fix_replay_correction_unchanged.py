@@ -11,13 +11,13 @@ from contextlib import AbstractContextManager
 from datetime import date
 
 import pytest
-from django.contrib.auth.models import Permission
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
 from apps.events.models import EventKind
 from apps.events.tests.factories import EventFactory
-from apps.matches.models import MatchFormat, Team
+from apps.matches.models import Match, MatchFormat, Team
 from apps.matches.workflow import edit_match
 from apps.players.models import GenderDivision
 from apps.ratings.models import RatingReplay, RatingReplayRequest
@@ -30,13 +30,11 @@ Capture = Callable[..., AbstractContextManager[list[Callable[[], None]]]]
 MENS_SINGLES = {Team.A: (GenderDivision.MENS,), Team.B: (GenderDivision.MENS,)}
 
 
-def _moderator() -> User:
+def _member(match: Match) -> User:
+    """A member of the verified Organizer of ``match``'s Event."""
+    assert match.event is not None
     account: User = UserFactory.create()
-    account.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
+    OrganizerMemberFactory.create(organizer=match.event.organizer, account=account)
     return account
 
 
@@ -46,7 +44,9 @@ def test_a_replayed_correction_is_unchanged_and_requests_nothing(
     match, players = saved_match(
         match_format=MatchFormat.SINGLES,
         divisions=MENS_SINGLES,
-        event=EventFactory.create(kind=EventKind.TOURNAMENT),
+        event=EventFactory.create(
+            kind=EventKind.TOURNAMENT, organizer=verified_organizer()
+        ),
         played_on=date(2026, 3, 1),
     )
     a, b = players[Team.A][0], players[Team.B][0]
@@ -55,8 +55,7 @@ def test_a_replayed_correction_is_unchanged_and_requests_nothing(
     with django_capture_on_commit_callbacks(execute=True):
         correction = edit_match(
             match,
-            actor=_moderator(),
-            reason="Made-up reason for a test.",
+            actor=_member(match),
             format=MatchFormat.SINGLES,
             team_a=[a],
             team_b=[b],
