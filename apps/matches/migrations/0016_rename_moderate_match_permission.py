@@ -5,10 +5,12 @@ from django.db import migrations
 from django.db.backends.base.schema import BaseDatabaseSchemaEditor
 
 # Copied at the time of writing. A migration never imports app code.
-# AlterModelOptions (0015) changes only the model state: Django creates a
-# missing permission after migrate but never renames a stored one, so the
-# stored row is renamed here (#273). A database whose row does not exist
-# yet gets the new name from Django's post_migrate permission creation.
+# AlterModelOptions (0015) changes only the model state, and Django never
+# renames a stored permission, so the stored row is renamed here (#273).
+# Every database has the row with the old name by now: 0007 creates it
+# from the historical state (0004's options), on a fresh database too. The
+# row is missing only when someone deleted it by hand, and then this
+# migration changes nothing.
 NEW_NAME = "Can void matches in bulk"
 OLD_NAME = "Can void matches and resolve disputes"
 

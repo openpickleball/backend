@@ -58,6 +58,11 @@ def test_the_migration_renames_an_old_row_and_reverses(
 def test_the_migration_does_nothing_without_the_row(
     executor: MigrationExecutor,
 ) -> None:
+    """A row deleted by hand stays missing: the rename creates nothing.
+
+    0007 creates the row on every database, so this happens only after a
+    manual delete.
+    """
     executor.migrate(BEFORE_RENAME)
     Permission.objects.filter(pk=_permission().pk).delete()
 

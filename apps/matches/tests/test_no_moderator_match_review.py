@@ -8,14 +8,13 @@ lists every match by default.
 
 import inspect
 from datetime import date
-from pathlib import Path
+from typing import Any
 
 import pytest
 from django.contrib.auth.models import Group
 from django.test import Client, RequestFactory
 from django.urls import NoReverseMatch, reverse
 
-import apps.matches
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditEvent
@@ -198,13 +197,29 @@ def test_vouching_resolves_a_flag_as_approved(players: list[Player]) -> None:
     assert flag.resolution == FlagResolution.APPROVED
 
 
-def test_dismissed_is_kept_for_legacy_rows_and_written_by_no_code() -> None:
+def test_dismissed_is_kept_for_legacy_rows() -> None:
     # Kept so flags a moderator dismissed before #273 stay valid.
     assert FlagResolution.DISMISSED in FlagResolution.values
-    root = Path(apps.matches.__file__).parent
-    for path in root.rglob("*.py"):
-        if "tests" in path.parts or "migrations" in path.parts:
-            continue
-        if path.name == "models.py":
-            continue
-        assert "DISMISSED" not in path.read_text(), path
+
+
+def test_a_full_vouch_resolves_through_the_flag_rows_as_approved(
+    monkeypatch: pytest.MonkeyPatch, players: list[Player]
+) -> None:
+    """Vouching is the one caller of ``_resolve_flag_rows``; it never
+    resolves a flag as dismissed."""
+    outcomes: list[FlagResolution] = []
+    resolve = workflow._resolve_flag_rows
+
+    def recording(flags: Any, *, outcome: FlagResolution, **kwargs: Any) -> None:
+        outcomes.append(outcome)
+        resolve(flags, outcome=outcome, **kwargs)
+
+    monkeypatch.setattr(workflow, "_resolve_flag_rows", recording)
+    first = _self_reported(players, GAMES)
+    second = _self_reported(players, ((11, 2), (11, 3)))
+    for match in (first, second):
+        vouch_for_match(match, actor=players[0].account)
+        vouch_for_match(match, actor=players[2].account)
+
+    assert outcomes == [FlagResolution.APPROVED]
+    assert MatchFlag.objects.get().resolution == FlagResolution.APPROVED
