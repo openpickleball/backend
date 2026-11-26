@@ -2,7 +2,7 @@
 and whether a session passed the second factor."""
 
 from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from allauth.account.models import EmailAddress
@@ -37,6 +37,13 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture(autouse=True)
 def _clear_cache() -> None:
     cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _one_step_of_clock_drift(settings: Any) -> None:
+    """Accept the neighbouring TOTP step, so a login never fails on a
+    period boundary between computing a code and posting it."""
+    settings.MFA_TOTP_TOLERANCE = 1
 
 
 def test_has_mfa_is_true_with_totp() -> None:

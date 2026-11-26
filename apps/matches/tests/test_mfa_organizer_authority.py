@@ -213,3 +213,22 @@ def test_a_member_without_mfa_gets_no_dispute_notice(
     recipients = {address for message in mail.outbox for address in message.to}
     assert with_mfa.email in recipients
     assert without.email not in recipients
+
+
+def test_a_member_without_mfa_gets_no_hold_notice(
+    players: list[Player],
+    event: Event,
+    django_capture_on_commit_callbacks: Any,
+) -> None:
+    _event_match(players, event)
+    without = _member(event, mfa=False)
+    with_mfa = _member(event, mfa=True)
+    mail.outbox.clear()
+
+    # Same teams and date, other scores: a near duplicate holds both.
+    with django_capture_on_commit_callbacks(execute=True):
+        _record(players, event, with_mfa, ((11, 5), (11, 5)))
+
+    recipients = {address for message in mail.outbox for address in message.to}
+    assert with_mfa.email in recipients
+    assert without.email not in recipients

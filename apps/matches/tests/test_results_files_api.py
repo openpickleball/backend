@@ -205,8 +205,11 @@ def test_the_same_file_again_reports_duplicates_with_the_codes(
 
 @pytest.mark.parametrize("base", [APP, BROWSER])
 def test_both_headless_clients_can_upload(
-    event: Event, base: str, django_capture_on_commit_callbacks: Any
+    event: Event, base: str, django_capture_on_commit_callbacks: Any, settings: Any
 ) -> None:
+    # Accept the neighbouring TOTP step, so the MFA login never fails on a
+    # period boundary.
+    settings.MFA_TOTP_TOLERANCE = 1
     account = _member(event.organizer, password=PASSWORD)
     EmailAddress.objects.create(
         user=account, email=account.email, verified=True, primary=True
