@@ -89,7 +89,8 @@ def fetch_range(prefix: str) -> str:
     ``PASSWORD_BREACH_TIMEOUT_SECONDS`` (each socket wait is bounded by
     it too, so the worst case is about twice that). Raises on a timeout,
     a connection, HTTP, or protocol error, a redirect, an answer other
-    than 200, a body over ``MAX_BODY_BYTES``, or a body that is not ASCII.
+    than 200, a body shorter than its Content-Length, a body over
+    ``MAX_BODY_BYTES``, or a body that is not ASCII.
     """
     timeout = settings.PASSWORD_BREACH_TIMEOUT_SECONDS
     deadline = time.monotonic() + timeout
@@ -112,6 +113,10 @@ def fetch_range(prefix: str) -> str:
             if size > MAX_BODY_BYTES:
                 raise BreachServiceError
             chunks.append(chunk)
+        if response.length:
+            # read1 ends quietly when the server closes early: bytes the
+            # Content-Length promised are missing.
+            raise BreachServiceError
     return b"".join(chunks).decode("ascii")
 
 

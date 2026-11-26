@@ -151,6 +151,8 @@ def test_a_malformed_answer_accepts_and_logs(
 
 class _Answer(BytesIO):
     status = 200
+    # What http.client leaves when the whole Content-Length was read.
+    length: int | None = 0
 
 
 def test_the_request_sends_only_the_prefix_with_padding_and_the_timeout(
