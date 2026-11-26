@@ -89,8 +89,10 @@ def test_a_login_starts_both_clocks(base: str) -> None:
     assert expiry <= store[SESSION_STARTED_KEY] + settings.SESSION_IDLE_DAYS * DAY + 1
 
 
-def test_the_cookie_age_is_the_lifetime() -> None:
-    assert settings.SESSION_COOKIE_AGE == settings.SESSION_MAX_AGE_DAYS * DAY
+def test_a_signed_in_session_can_outlive_the_cookie_age() -> None:
+    # Signed-out sessions keep Django's two weeks; signed-in ones set
+    # their own expiry from the lifetimes.
+    assert settings.SESSION_MAX_AGE_DAYS * DAY > settings.SESSION_COOKIE_AGE
 
 
 @pytest.mark.parametrize("base", [APP, BROWSER])

@@ -1132,8 +1132,11 @@ if SESSION_IDLE_DAYS > SESSION_MAX_AGE_DAYS:
     raise ImproperlyConfigured(
         "Set SESSION_IDLE_DAYS to at most SESSION_MAX_AGE_DAYS (see .env.example)."
     )
-# Every session, signed in or not, expires in the store after the lifetime.
-SESSION_COOKIE_AGE = SESSION_MAX_AGE_DAYS * 86400
+# A signed-out session (a signup in progress holds the legal name and birth
+# year and month there, and TOTP setup a pending secret) expires after
+# Django's default two weeks. A signed-in session sets its own expiry
+# from the lifetimes above, so this never lengthens one.
+SESSION_COOKIE_AGE = 14 * 86400
 # How often a session's last seen time is written: at most hourly, so a
 # request rarely writes.
 SESSION_SEEN_REFRESH_SECONDS = 3600

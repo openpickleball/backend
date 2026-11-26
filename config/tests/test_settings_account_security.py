@@ -60,7 +60,7 @@ def test_the_defaults() -> None:
         "PASSWORD_BREACH_TIMEOUT_SECONDS": 3,
         "SESSION_MAX_AGE_DAYS": 30,
         "SESSION_IDLE_DAYS": 7,
-        "SESSION_COOKIE_AGE": 30 * DAY,
+        "SESSION_COOKIE_AGE": 14 * DAY,
         "SIGN_IN_DEVICE_COOKIE_DAYS": 365,
         "SIGN_IN_DEVICE_COOKIE_NAME": "open_device",
         "SIGN_IN_DEVICE_COOKIE_SECURE": False,
@@ -88,6 +88,7 @@ def test_values_from_the_environment() -> None:
     assert values["PASSWORD_MIN_LENGTH"] == values["MIN_LENGTH_OPTION"] == 12
     assert values["PASSWORD_BREACH_TIMEOUT_SECONDS"] == 5
     assert values["SESSION_MAX_AGE_DAYS"] == values["SESSION_IDLE_DAYS"] == 14
+    # Signed-out sessions keep two weeks, whatever the lifetime.
     assert values["SESSION_COOKIE_AGE"] == 14 * DAY
     assert values["SIGN_IN_DEVICE_COOKIE_DAYS"] == 90
 
