@@ -122,7 +122,7 @@ from apps.matches.models import (
     SubmissionBatch,
     Team,
 )
-from apps.matches.notices import schedule_dispute_notices
+from apps.matches.notices import schedule_batch_notices, schedule_dispute_notices
 from apps.matches.permissions import (
     Actor,
     MatchActionDenied,
@@ -1676,15 +1676,18 @@ def void_submission_batch(
     _check_bulk(actor, reason)
     if not _stored(batch, SubmissionBatch):
         raise ValueError(_UNSAVED_BATCH)
-    fail_for_void(batch.pk)
-    return _bulk_void(
-        submission_batch_matches(batch),
-        actor=actor,
-        reason=reason,
-        target=batch,
-        scope="batch",
-        recorded_since=None,
-    )
+    failed = fail_for_void(batch.pk)
+    try:
+        return _bulk_void(
+            submission_batch_matches(batch),
+            actor=actor,
+            reason=reason,
+            target=batch,
+            scope="batch",
+            recorded_since=None,
+        )
+    finally:
+        _notify_left_counting(failed)
 
 
 def void_submitter_matches(
@@ -1722,17 +1725,35 @@ def void_submitter_matches(
     if not stored:
         raise ValueError(_UNKNOWN_SUBMITTER)
     if isinstance(submitter, account_model):
-        fail_for_submitter_void(user_id=submitter.pk)
+        failed = fail_for_submitter_void(user_id=submitter.pk)
     else:
-        fail_for_submitter_void(application_id=submitter.pk)
-    return _bulk_void(
-        submitter_matches(submitter, recorded_since),
-        actor=actor,
-        reason=reason,
-        target=submitter,
-        scope="submitter",
-        recorded_since=recorded_since,
-    )
+        failed = fail_for_submitter_void(application_id=submitter.pk)
+    try:
+        return _bulk_void(
+            submitter_matches(submitter, recorded_since),
+            actor=actor,
+            reason=reason,
+            target=submitter,
+            scope="submitter",
+            recorded_since=recorded_since,
+        )
+    finally:
+        _notify_left_counting(failed)
+
+
+def _notify_left_counting(batch_ids: list[int]) -> None:
+    """Send the recorded match notices of the batches whose Results Files
+    this bulk void stopped (#208, ADR 0041).
+
+    The file's own end sent none, since the void was about to void its
+    matches. Some can stay: a match the moderator may not void (their own
+    Player plays in it), one recorded before a submitter void's date, or
+    every match left when the void stops partway. The notices list only
+    the matches still confirmed or disputed, so a batch the void emptied
+    sends nothing.
+    """
+    for batch_id in batch_ids:
+        schedule_batch_notices(batch_id)
 
 
 def _void_as_moderator(match: Match, *, actor: Actor, reason: str) -> None:

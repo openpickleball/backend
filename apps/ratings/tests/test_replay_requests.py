@@ -183,7 +183,11 @@ def test_two_quick_edits_cause_one_replay(
             )
 
     assert RatingReplayRequest.objects.count() == 2
-    replay_callbacks = [c for c in callbacks if "replay" in c.__qualname__]
+    # A functools.partial callback (the recorded match notice) has no
+    # __qualname__.
+    replay_callbacks = [
+        c for c in callbacks if "replay" in getattr(c, "__qualname__", "")
+    ]
     assert len(replay_callbacks) == 2
     for callback in callbacks:
         callback()

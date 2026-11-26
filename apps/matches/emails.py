@@ -1,9 +1,9 @@
-"""The match emails: the confirmation request (issue #36) and the dispute
-and hold notices (#272).
+"""The match emails: the confirmation request (issue #36), the dispute
+and hold notices (#272), and the recorded match notice (#208).
 
 They render only. #37 decides when to send the confirmation request;
-``apps.matches.notices`` queues the dispute and hold notices with
-``apps.emails.services.queue_email``.
+``apps.matches.notices`` queues the dispute, hold, and recorded match
+notices with ``apps.emails.services.queue_email``.
 """
 
 from collections.abc import Sequence
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 TEMPLATE_PREFIX = "matches/email/confirmation_request"
 DISPUTE_NOTICE = "matches/email/dispute_notice"
 HOLD_NOTICE = "matches/email/hold_notice"
+RECORDED_NOTICE = "matches/email/recorded_notice"
 
 
 @dataclass(frozen=True)
@@ -53,9 +54,13 @@ def _line(player: Player, match: Match) -> PendingMatchLine:
         raise ValueError("The player did not play in every match.")
     if match.status != MatchStatus.PENDING:
         raise ValueError("A confirmation request is only for pending matches.")
+    return _line_for(match, team, "A confirmation request needs a match with games.")
+
+
+def _line_for(match: Match, team: str, no_games: str) -> PendingMatchLine:
     scores = _scores(match, team)
     if not scores:
-        raise ValueError("A confirmation request needs a match with games.")
+        raise ValueError(no_games)
     return PendingMatchLine(
         code=str(match.public_code),
         played_on=match.played_on,
@@ -179,3 +184,47 @@ def render_hold_notice(
     if match.status == MatchStatus.VOIDED:
         raise ValueError("A hold notice is not for a voided match.")
     return _notice(HOLD_NOTICE, account, match, team=team, ends_on=ends_on)
+
+
+def render_recorded_notice(
+    player: Player, matches: Sequence[Match]
+) -> EmailMultiAlternatives:
+    """Tell a Player that a trusted submitter recorded matches for them (#208).
+
+    A match from a verified Organizer's Event (or an approved application
+    acting for it) counts at once, without the players' confirmation, so
+    the players are told and can dispute a wrong one (ADR 0041). Each
+    Match is listed in the order given, as in the confirmation request:
+    its OPEN Code, date, scores from the Player's side, and a link to it
+    (``match_url``). The email names no player, location, submitter,
+    Event, Club, or Organizer, and quotes no text another person wrote.
+
+    Refuses, with fixed text that names no address or code: a Player
+    whose Account is inactive (``is_active`` is read from the instance
+    given, so pass a freshly fetched row), an empty list, the same Match
+    more than once, a Match the Player did not play in, a Match that is
+    neither confirmed nor disputed, and a Match with no games.
+    """
+    if not player.account.is_active:
+        raise ValueError("A recorded match notice needs an active account.")
+    if not matches:
+        raise ValueError("A recorded match notice needs at least one match.")
+    if len({match.pk for match in matches}) != len(matches):
+        raise ValueError("A recorded match notice lists each match once.")
+    lines = []
+    for match in matches:
+        team = (
+            match.participants.filter(player=player)
+            .values_list("team", flat=True)
+            .first()
+        )
+        if team is None:
+            raise ValueError("The player did not play in every match.")
+        if match.status not in (MatchStatus.CONFIRMED, MatchStatus.DISPUTED):
+            raise ValueError(
+                "A recorded match notice is only for confirmed or disputed matches."
+            )
+        lines.append(
+            _line_for(match, team, "A recorded match notice needs a match with games.")
+        )
+    return render_email(RECORDED_NOTICE, player.account.email, {"matches": lines})

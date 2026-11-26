@@ -1,4 +1,5 @@
-"""Dispute and hold notices: tell the Accounts that can act on a match (#272).
+"""Dispute, hold, and recorded match notices: tell the Accounts that can
+act on a match (#272, #208).
 
 ``dispute_match`` calls ``schedule_dispute_notices`` when a match becomes
 disputed, and ``insert_draft`` (so ``record_match`` and ``edit_match``)
@@ -28,8 +29,31 @@ their own:
   that has vouched on every older hold is told, since the new flag needs
   its new vouch. The new match's recipients are always notified.
 
+Recorded match notices (#208, ADR 0041) tell the players of a match a
+trusted submitter recorded, which counts without their confirmation, so
+they can dispute a wrong one:
+
+- ``insert_draft`` (so ``record_match`` and ``edit_match``) calls
+  ``schedule_recorded_notice`` when it writes a confirmed match with an
+  Event and no Submission Batch. The callback reads the match again and
+  sends nothing once it is neither confirmed nor disputed.
+- ``record_match``'s duplicate path calls it too when the Organizer's
+  exact duplicate confirms a pending self-submission, since the other
+  team never confirmed it.
+- A batch path calls ``schedule_batch_notices`` once, when the batch is
+  done, so a player gets one email for the whole batch, listing each of
+  their matches in it that is confirmed or disputed when the task runs.
+  For a CSV upload that is when its Results File stops processing, or,
+  when a bulk void stopped it, after that bulk void, for the matches it
+  left counting. The ``send_batch_notices`` task in
+  ``apps.matches.tasks`` sends them.
+
+Recipients are the players ``permissions.participant_player`` allows to
+dispute the match: each participant whose Account is active.
+
 A failure while building or queuing notices is logged with the match's
-row id and the error class only, and never fails the change, which has
+(or the batch's) row id and the error class only (Celery's soft time
+limit is raised again, so a task out of time stops), and never fails the change, which has
 already committed. It is caught per recipient and per held match, so one
 failed notice never drops the others.
 """
@@ -40,10 +64,12 @@ from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
+from kombu.exceptions import OperationalError
 
 from apps.clubs.models import OrganizerMember
 from apps.emails.services import queue_email
@@ -51,8 +77,10 @@ from apps.events.models import Event
 from apps.matches.emails import (
     DISPUTE_NOTICE,
     HOLD_NOTICE,
+    RECORDED_NOTICE,
     render_dispute_notice,
     render_hold_notice,
+    render_recorded_notice,
 )
 from apps.matches.models import (
     FlagReason,
@@ -62,7 +90,12 @@ from apps.matches.models import (
     MatchStatus,
     MatchVouch,
 )
-from apps.matches.permissions import settles_dispute, vouch_level
+from apps.matches.permissions import (
+    participant_player,
+    settles_dispute,
+    vouch_level,
+)
+from apps.players.models import Player
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -81,9 +114,42 @@ def schedule_hold_notices(match: Match) -> None:
     transaction.on_commit(partial(send_hold_notices, match.pk))
 
 
-def _failed(match_pk: int, exc: Exception) -> int:
+def schedule_recorded_notice(match: Match) -> None:
+    """Queue the recorded match notices for ``match`` once the transaction
+    commits (#208)."""
+    transaction.on_commit(partial(send_recorded_notice, match.pk))
+
+
+def schedule_batch_notices(batch_id: int) -> None:
+    """Queue the ``send_batch_notices`` task for the Submission Batch
+    ``batch_id`` once the transaction commits (#208).
+
+    The task sends one recorded match notice per player. It runs on its
+    own, with its own time limits, so a large batch never shares the time
+    of the task that finished it. Outside a transaction it is queued at
+    once.
+    """
+    transaction.on_commit(partial(_enqueue_batch_notices, batch_id))
+
+
+def _enqueue_batch_notices(batch_id: int) -> None:
+    """Queue the task. A broker error is logged by id and class only, and
+    the batch's notices are lost (ADR 0041)."""
+    from apps.matches.tasks import send_batch_notices as task
+
+    try:
+        task.delay(batch_id)
+    except (OperationalError, OSError) as exc:
+        logger.error(
+            "Could not queue notices for submission batch %s (%s).",
+            batch_id,
+            type(exc).__name__,
+        )
+
+
+def _failed(match_pk: int, exc: Exception, *, what: str = "match") -> int:
     logger.warning(
-        "Could not queue notices for match %s (%s).", match_pk, type(exc).__name__
+        "Could not queue notices for %s %s (%s).", what, match_pk, type(exc).__name__
     )
     return 0
 
@@ -92,6 +158,8 @@ def _queue_one(
     match_pk: int,
     template: str,
     build: Callable[[], EmailMultiAlternatives | None],
+    *,
+    what: str = "match",
 ) -> bool:
     """Build and queue one recipient's notice; True when one was queued.
 
@@ -106,8 +174,12 @@ def _queue_one(
         if message is None:
             return False
         queue_email(message, template=template)
+    except SoftTimeLimitExceeded:
+        # The task's time is up: stop, rather than log every recipient
+        # left as a failure until the hard limit.
+        raise
     except Exception as exc:
-        _failed(match_pk, exc)
+        _failed(match_pk, exc, what=what)
         return False
     return True
 
@@ -123,6 +195,8 @@ def send_dispute_notices(match_pk: int, disputer_team: str) -> int:
     # an error's text can quote an address.
     try:
         return _send_dispute_notices(match_pk, disputer_team)
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:
         return _failed(match_pk, exc)
 
@@ -135,6 +209,8 @@ def send_hold_notices(new_match_pk: int) -> int:
     # send_dispute_notices.
     try:
         return _send_hold_notices(new_match_pk)
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:
         return _failed(new_match_pk, exc)
 
@@ -238,6 +314,8 @@ def _send_hold_notices(new_match_pk: int) -> int:
         # one held match's failure never drops the other held matches.
         try:
             count += _send_hold_target(target_pk, new_match_pk, flag_pks)
+        except SoftTimeLimitExceeded:
+            raise
         except Exception as exc:
             _failed(target_pk, exc)
     return count
@@ -329,6 +407,81 @@ def _side_vouched(flag: MatchFlag, match: Match, team: str | None) -> bool:
         "player__account_id"
     )
     return vouches.filter(account_id__in=teammates).exists()
+
+
+_RECORDED_STATUSES = (MatchStatus.CONFIRMED, MatchStatus.DISPUTED)
+
+
+def send_recorded_notice(match_pk: int) -> int:
+    """Queue the recorded match notices for match ``match_pk``. Returns how
+    many.
+
+    Runs after the match committed, so it reads the match again and sends
+    nothing when it is gone, or no longer confirmed or disputed.
+    """
+    # The broad catch is safe for the same reasons as in
+    # send_dispute_notices.
+    try:
+        matches = list(Match.objects.filter(pk=match_pk, status__in=_RECORDED_STATUSES))
+        return _send_recorded(matches, match_pk, what="match")
+    except SoftTimeLimitExceeded:
+        raise
+    except Exception as exc:
+        return _failed(match_pk, exc)
+
+
+def send_batch_notices(batch_id: int) -> int:
+    """Queue one recorded match notice per player for the Submission Batch
+    ``batch_id``, listing each of their matches in it that is confirmed or
+    disputed, in the batch's order. Returns how many."""
+    # The broad catch is safe for the same reasons as in
+    # send_dispute_notices.
+    try:
+        matches = list(
+            Match.objects.filter(
+                submission_batch_id=batch_id, status__in=_RECORDED_STATUSES
+            ).order_by("sequence", "pk")
+        )
+        return _send_recorded(matches, batch_id, what="submission batch")
+    except SoftTimeLimitExceeded:
+        raise
+    except Exception as exc:
+        return _failed(batch_id, exc, what="submission batch")
+
+
+def _send_recorded(matches: list[Match], log_pk: int, *, what: str) -> int:
+    """One notice per participating Player listing their ``matches``."""
+    order = {match.pk: index for index, match in enumerate(matches)}
+    by_pk = {match.pk: match for match in matches}
+    players: dict[int, tuple[Player, list[Match]]] = {}
+    participants = MatchParticipant.objects.filter(
+        match_id__in=list(by_pk)
+    ).select_related("player__account")
+    for participant in sorted(participants, key=lambda p: (order[p.match_id], p.pk)):
+        player = participant.player
+        _player, listed = players.setdefault(player.pk, (player, []))
+        listed.append(by_pk[participant.match_id])
+    count = 0
+    for player, listed in players.values():
+        count += _queue_one(
+            log_pk,
+            RECORDED_NOTICE,
+            partial(_recorded_notice, player, listed),
+            what=what,
+        )
+    return count
+
+
+def _recorded_notice(
+    player: Player, matches: list[Match]
+) -> EmailMultiAlternatives | None:
+    """The player's notice, listing only the matches they may dispute."""
+    if not player.account.is_active:
+        return None
+    mine = [match for match in matches if participant_player(player.account, match)]
+    if not mine:
+        return None
+    return render_recorded_notice(player, mine)
 
 
 def _ends_on(start: datetime, days: int) -> date:
