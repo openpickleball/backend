@@ -2,6 +2,8 @@ from allauth.account.models import EmailAddress
 from allauth.mfa.models import Authenticator
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.db import transaction
+from django.http import HttpRequest, HttpResponse
 
 from apps.accounts.forms import UserChangeForm, UserCreationForm
 from apps.accounts.models import User
@@ -50,3 +52,12 @@ class UserAdmin(AccessAuditAdminMixin, BaseUserAdmin[User]):
     list_display = ("email", "is_staff", "is_active")
     search_fields = ("email",)
     ordering = ("email",)
+
+    def user_change_password(
+        self, request: HttpRequest, id: str, form_url: str = ""
+    ) -> HttpResponse:
+        """Django's set-password view, in one transaction, so the new
+        password and its Audit Event commit together (#101)."""
+        with transaction.atomic():
+            response: HttpResponse = super().user_change_password(request, id, form_url)
+            return response

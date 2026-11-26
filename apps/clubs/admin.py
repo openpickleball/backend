@@ -34,6 +34,7 @@ from apps.audit.admin_actions import (
     action_reason,
     reason_problem,
 )
+from apps.audit.admin_audit import audited_by_service
 from apps.clubs.models import (
     REPORT_VIEW_PERMISSION,
     VERIFY_PERMISSION,
@@ -87,6 +88,8 @@ class ClubOrganizerGrantAdmin(
     Only this admin manages grants until the self-service issues land.
     """
 
+    # apps.audit.access records the Audit Events (#101).
+    audited_by_service = True
     list_display = ("club", "organizer", "created_at")
     list_select_related = ("club", "organizer")
     raw_id_fields = ("club", "organizer")
@@ -279,12 +282,14 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
     def is_verified(self, organizer: Organizer) -> bool:
         return organizer.is_verified
 
+    @audited_by_service
     @admin.action(permissions=["verify"], description="Verify selected organizers")
     def verify_selected(
         self, request: HttpRequest, queryset: QuerySet[Organizer]
     ) -> None:
         self._apply(request, queryset, verify_organizer, "verified")
 
+    @audited_by_service
     @admin.action(
         permissions=["verify"], description="Remove verification from selected"
     )
@@ -462,6 +467,7 @@ class OrganizerReportAdmin(admin.ModelAdmin[OrganizerReport]):
         )
         return code or "-"
 
+    @audited_by_service
     @admin.action(permissions=["verify"], description="Close selected reports")
     def close_selected(
         self, request: HttpRequest, queryset: QuerySet[OrganizerReport]

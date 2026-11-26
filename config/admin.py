@@ -17,6 +17,9 @@ void matches, so the admin asks more than Django's (issue #99, #101, ADR
   nothing runs and it is redirected to the login page, which then asks
   for a code. A redirected form's data is lost: the admin enters it
   again.
+- Every add, change, delete, and custom action made through it records
+  an Audit Event (``register`` adds ``apps.audit.admin_audit``'s mixin
+  to every admin).
 - The login page takes no password. Its script
   (``apps/accounts/static/accounts/admin_login.js``) signs in through
   allauth's headless browser client (``auth/login``, then
@@ -55,6 +58,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.accounts.mfa import has_mfa, last_mfa_at
+from apps.audit.admin_audit import audited_admin_class
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -91,6 +95,21 @@ def _mfa_within(request: HttpRequest, account: "_User", seconds: int) -> bool:
 
 class OpenAdminSite(admin.AdminSite):
     """Django's admin site, open only to active staff with a recent code."""
+
+    def register(
+        self,
+        model_or_iterable: Any,
+        admin_class: type[admin.ModelAdmin[Any]] | None = None,
+        **options: Any,
+    ) -> None:
+        """Register with ``AdminAuditMixin`` first in the admin's bases
+        (``apps/audit/admin_audit.py``), so every admin change is audited.
+        """
+        super().register(
+            model_or_iterable,
+            audited_admin_class(admin_class or admin.ModelAdmin),
+            **options,
+        )
 
     def has_permission(self, request: HttpRequest) -> bool:
         account = _account(request)
