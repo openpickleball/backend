@@ -24,7 +24,10 @@ decide the match) is ``apps.matches.services.validate_match``, duplicate
 detection is ``apps.matches.services.record_match``, and confirmation and
 status changes are ``apps.matches.workflow``. Which matches count is
 ``MatchQuerySet.counted``. A possible duplicate is held for review as a
-``MatchFlag``, so reviewing it (#40) writes a flag row, never the Match.
+``MatchFlag``, so reviewing it (#40) writes a flag row, never the Match:
+an open ``possible_duplicate`` flag holds its matches from counting. An
+``unusual_submission`` flag (#206) is a signal only: it holds nothing,
+and the match counts at once.
 
 ``ScoringType`` values equal ``open_engine.ScoringType``'s and
 ``GameTarget`` values equal the points in the engine's ``ALL_GAME_FORMATS``,
@@ -535,6 +538,9 @@ class SubmissionBatch(_LinkMessagesModel, _InsertOnlyModel):
             return
         # The set-once exception: only the size, only on a stored batch,
         # only while the stored size is empty, read under the row's lock.
+        # FOR NO KEY UPDATE: the size is no key, so Match inserts that
+        # point at the batch (FOR KEY SHARE at their foreign key check)
+        # are not blocked.
         if (
             raw
             or force_insert
@@ -546,7 +552,7 @@ class SubmissionBatch(_LinkMessagesModel, _InsertOnlyModel):
         with transaction.atomic(using=using):
             stored = (
                 SubmissionBatch.objects.using(using)
-                .select_for_update()
+                .select_for_update(no_key=True)
                 .filter(pk=self.pk)
                 .values_list("expected_size", flat=True)
             )
@@ -1114,7 +1120,11 @@ class FlagResolution(models.TextChoices):
 
 
 class MatchFlag(_LinkMessagesModel):
-    """A reason to hold a Match from counting until it is resolved (#40).
+    """A flag on a Match: a hold, or a signal only (#40, #206).
+
+    An open ``possible_duplicate`` flag holds its matches from counting
+    until it is resolved. An ``unusual_submission`` flag is a signal only
+    and holds nothing.
 
     See CONTEXT.md, Flagged Match. ``record_match()`` creates a
     ``possible_duplicate`` flag for each earlier Match that is not voided,
