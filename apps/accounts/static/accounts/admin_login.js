@@ -65,6 +65,11 @@ async function send(endpoint, body) {
   return { status: response.status, payload };
 }
 
+function hasErrorCode(payload, code) {
+  const errors = payload?.errors ?? [];
+  return errors.some((error) => error.code === code);
+}
+
 function pendingFlow(payload) {
   const flows = payload?.data?.flows ?? [];
   const pending = flows.find((flow) => flow.is_pending);
@@ -99,6 +104,10 @@ async function logIn() {
     showCodeStep();
   } else if (status === 401 && pendingFlow(payload) === "verify_email") {
     showError("verify");
+  } else if (status === 400 && hasErrorCode(payload, "too_many_login_attempts")) {
+    // allauth's lockout after failed attempts answers 400, like a wrong
+    // password, with its own code.
+    showError("throttled");
   } else if (status === 400) {
     showError("credentials");
   } else if (status === 429) {
