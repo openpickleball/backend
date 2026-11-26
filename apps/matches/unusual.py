@@ -21,9 +21,14 @@ that fires (ADR 0049):
   match's UTC ``created_at`` day; the match past that number and every
   later one that day are flagged.
 
-Every count includes matches in any status, voided ones too, and the new
-match itself. Values are read from the database by id, and thresholds
-from settings at call time.
+Every count includes only new trusted submissions: matches with an Event
+that correct nothing (``_new_submissions``). An ``edit_match()``
+correction keeps its original's submitter and Event with a new
+``created_at``, but it is not a new submission, so it never uses up a
+first count or raises a daily number; a player's self-submission (no
+Event) is not a trusted submission. Matches in any status count, voided
+ones too, and the new match itself. Values are read from the database by
+id, and thresholds from settings at call time.
 
 A flag is a signal only (``SIGNAL_FLAG_REASONS``): it never holds a match
 from counting (``Match.objects.counted()`` ignores it), changes no
@@ -55,6 +60,12 @@ if TYPE_CHECKING:
     from apps.partners.models import PartnerApplication
 
 
+def _new_submissions() -> QuerySet[Match]:
+    """Matches recorded as new trusted submissions: with an Event, and not
+    a correction. Any status, voided included."""
+    return Match.objects.filter(event__isnull=False, corrects__isnull=True)
+
+
 def _within_first(matches: QuerySet[Match], number: int) -> bool:
     """True when ``matches``, the new match among them, are at most ``number``.
 
@@ -75,7 +86,7 @@ def _first_matches(match: Match) -> bool:
     if organizer is not None and organizer["organizer__verified_at"] is not None:
         since: datetime = organizer["organizer__verified_at"]
         if _within_first(
-            Match.objects.filter(
+            _new_submissions().filter(
                 event__organizer_id=organizer["organizer_id"], created_at__gte=since
             ),
             number,
@@ -93,7 +104,7 @@ def _first_matches(match: Match) -> bool:
     if approved_at is None:
         return False
     return _within_first(
-        Match.objects.filter(
+        _new_submissions().filter(
             submitted_by_application_id=match.submitted_by_application_id,
             created_at__gte=approved_at,
         ),
@@ -118,11 +129,11 @@ def _daily_volume(match: Match) -> bool:
         hour=0, minute=0, second=0, microsecond=0
     )
     if match.submitted_by_user_id is not None:
-        submitted = Match.objects.filter(
+        submitted = _new_submissions().filter(
             submitted_by_user_id=match.submitted_by_user_id
         )
     elif match.submitted_by_application_id is not None:
-        submitted = Match.objects.filter(
+        submitted = _new_submissions().filter(
             submitted_by_application_id=match.submitted_by_application_id
         )
     else:
