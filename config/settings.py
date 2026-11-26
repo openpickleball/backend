@@ -122,7 +122,8 @@ def _flag(name: str, default: bool) -> bool:
 def _version(name: str, default: int) -> int:
     """A whole number from 1 to 1,000,000, or ``default`` when unset or empty.
 
-    Only ASCII digits are accepted, at most 7 of them, checked before the
+    Used for agreement versions and for the unusual submission counts
+    (#206). Only ASCII digits are accepted, at most 7 of them, checked before the
     conversion. The error names the variable and the range and never
     echoes the value.
     """
