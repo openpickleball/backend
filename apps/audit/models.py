@@ -52,6 +52,10 @@ class AuditAction(models.TextChoices):
     OAUTH_APP_REVOKE = "oauth_app.revoke", "OAuth application revocation"
     PRIVACY_CHANGE = "privacy.change", "Privacy setting change"
     PLAYER_PROFILE_CHANGE = "player.profile_change", "Player profile change"
+    PLAYER_PERSONAL_DATA_VIEW = (
+        "player.personal_data_view",
+        "Player personal data viewed",
+    )
     ORGANIZER_VERIFY = "organizer.verify", "Organizer verification"
     ORGANIZER_UNVERIFY = "organizer.unverify", "Organizer verification removed"
     ORGANIZER_REPORT_CREATE = "organizer_report.create", "Organizer reported"
