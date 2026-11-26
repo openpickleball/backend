@@ -19,6 +19,7 @@ from apps.accounts.mfa import (
     accounts_with_mfa,
     has_mfa,
     lacks_required_mfa,
+    last_mfa_at,
     mfa_required,
     mfa_status,
     session_passed_mfa,
@@ -251,3 +252,54 @@ def test_mfa_status_answers_both_questions_in_one_query(
     assert mfa_status(enrolled) == MFAStatus(required=False, enrolled=True)
     assert mfa_status(UserFactory.create()) == MFAStatus(False, False)
     assert mfa_status(AnonymousUser()) == MFAStatus(False, False)
+
+
+def _session_with(records: list[dict[str, Any]], account: "_User") -> SessionBase:
+    from allauth.account.internal.flows.login import (
+        _AUTHENTICATION_METHODS_USER_SESSION_KEY,
+        AUTHENTICATION_METHODS_SESSION_KEY,
+    )
+    from allauth.account.internal.userkit import user_id_to_str
+
+    store: SessionBase = import_module(settings.SESSION_ENGINE).SessionStore()
+    store[AUTHENTICATION_METHODS_SESSION_KEY] = records
+    store[_AUTHENTICATION_METHODS_USER_SESSION_KEY] = user_id_to_str(account)
+    return store
+
+
+def test_last_mfa_at_is_the_latest_mfa_step() -> None:
+    account = UserFactory.create()
+    session = _session_with(
+        [
+            {"method": "mfa", "at": 100.0, "type": "totp"},
+            {"method": "password", "at": 500.0},
+            {"method": "mfa", "at": 300.0, "type": "recovery_codes"},
+            {"method": "mfa", "at": 200.0, "type": "totp"},
+        ],
+        account,
+    )
+
+    assert last_mfa_at(session, account) == 300.0
+
+
+def test_last_mfa_at_is_none_without_an_mfa_step() -> None:
+    account = UserFactory.create()
+    session = _session_with([{"method": "password", "at": 500.0}], account)
+
+    assert last_mfa_at(session, account) is None
+    assert last_mfa_at(_session_with([], account), account) is None
+
+
+def test_last_mfa_at_ignores_another_accounts_steps() -> None:
+    account, other = UserFactory.create(), UserFactory.create()
+    session = _session_with([{"method": "mfa", "at": 300.0}], other)
+
+    assert last_mfa_at(session, account) is None
+
+
+@pytest.mark.parametrize("at", [None, "300", True, float("nan")])
+def test_last_mfa_at_ignores_a_step_without_a_time(at: object) -> None:
+    account = UserFactory.create()
+    session = _session_with([{"method": "mfa", "at": at}], account)
+
+    assert last_mfa_at(session, account) is None
