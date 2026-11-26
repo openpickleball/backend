@@ -138,6 +138,7 @@ uv run python scripts/audit_dependencies.py
 uv run python manage.py export_openapi_schema
 ```
 
+- Run the export and the check with `DJANGO_DEBUG` on, as `.env.example` sets it. With it off, the document names the session cookie `__Host-sessionid`, so the export rewrites the file and the check fails.
 - CI runs `export_openapi_schema --check` and fails when the committed file differs from the API. The test suite checks it too. Run the check yourself before you push:
 
 ```bash
