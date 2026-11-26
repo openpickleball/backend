@@ -81,6 +81,7 @@ from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 from oauth2_provider.models import get_application_model
 
+from apps.accounts.locks import hold_active_account
 from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
 from apps.events.models import Event
@@ -103,7 +104,12 @@ from apps.matches.models import (
     source_match_type,
 )
 from apps.matches.notices import schedule_hold_notices, schedule_recorded_notice
-from apps.matches.permissions import Actor, MatchSubmission, check_can_create_match
+from apps.matches.permissions import (
+    Actor,
+    MatchPermissionDenied,
+    MatchSubmission,
+    check_can_create_match,
+)
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
 from apps.players.models import GenderDivision, Player
 
@@ -793,6 +799,20 @@ def _near_matches(
 INACTIVE_PLAYER_MESSAGE = "No player has this OPEN Code."
 
 
+def hold_submitting_account(account: object) -> None:
+    """Lock an acting Account's row ``FOR KEY SHARE`` and check it is active.
+
+    Call first in a write transaction that records or corrects a Match.
+    Raises ``MatchPermissionDenied`` (fixed text) for an Account that is
+    gone or inactive under the lock. Anything that is not a saved Account
+    (an application, None) is left alone.
+    """
+    if not isinstance(account, get_user_model()) or account.pk is None:
+        return
+    if not hold_active_account(account.pk):
+        raise MatchPermissionDenied
+
+
 def refuse_inactive_players(
     keys_a: Sequence[int],
     keys_b: Sequence[int],
@@ -1073,7 +1093,8 @@ def hold_event(
 ) -> None:
     """Share-lock the draft's Event row, check authority again, set the type.
 
-    Call first inside the write transaction, before ``lock_draft`` and any
+    Call first inside the write transaction (after only
+    ``hold_submitting_account``), before ``lock_draft`` and any
     lookup, lock, or write. ``FOR KEY SHARE`` conflicts with the
     ``FOR UPDATE`` that ``Event.save()`` takes on every save, so the two
     serialize: either the Event change waits until this match commits (an
@@ -1471,6 +1492,10 @@ def record_match(
     submitter: Actor | None = submitted_by_user or submitted_by_application
 
     with transaction.atomic():
+        # The submitting Account first: an Account deletion this call
+        # waited on refuses it, and a later one waits for its commit
+        # (ADR 0048).
+        hold_submitting_account(submitted_by_user)
         # Holds the Event fixed until commit, checks the submitters again,
         # and takes the kind under that lock (ADR 0035).
         hold_event(draft, check_submitters)

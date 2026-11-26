@@ -14,8 +14,10 @@ from apps.accounts.tests.factories import UserFactory
 from apps.clubs.tests.factories import OrganizerMemberFactory
 from apps.events.models import Event
 from apps.matches.models import Match, MatchFormat, MatchStatus, Team
+from apps.matches.permissions import MatchPermissionDenied
 from apps.matches.services import (
     MatchValidationError,
+    hold_submitting_account,
     record_match,
     refuse_inactive_players,
 )
@@ -169,3 +171,14 @@ def test_the_locked_check_counts_a_missing_player_as_unknown() -> None:
 
     with pytest.raises(MatchValidationError):
         refuse_inactive_players([player.pk], [player.pk + 100000], lock=True)
+
+
+def test_the_acting_account_is_checked_again_under_its_lock() -> None:
+    account = UserFactory.create()
+    hold_submitting_account(account)
+    hold_submitting_account(None)
+    account.is_active = False
+    account.save(update_fields=["is_active"])
+
+    with pytest.raises(MatchPermissionDenied):
+        hold_submitting_account(account)

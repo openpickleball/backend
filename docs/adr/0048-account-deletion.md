@@ -56,7 +56,7 @@ The placeholder frees the address, so the same email can sign up again and creat
 
 ### Locks
 
-`delete_account` takes the Account row (`FOR UPDATE`), then the Player row (`FOR UPDATE`, so a participant insert waits and then sees the Account inactive), then every Organizer of its memberships and its reports by id (`FOR UPDATE`, the order `unverify_organizer` and `apps.audit.access` use: Organizer before report or membership rows), then those rows. `report_organizer` takes the reporter's Account `FOR KEY SHARE` and checks it is still active before it takes the Organizer, and `create_player` checks `is_active` under its Account lock, so neither leaves a report or a Player on a deleted Account.
+`delete_account` takes the Account row (`FOR UPDATE`), then the Player row (`FOR UPDATE`), then every Organizer of its memberships and its reports by id (`FOR UPDATE`, the order `unverify_organizer` and `apps.audit.access` use: Organizer before report or membership rows), then those rows. `record_match` and `edit_match` take the acting Account `FOR KEY SHARE` first and check it is still active (`hold_submitting_account`), then lock the Players `FOR KEY SHARE` before checking them; `report_organizer` takes the reporter's Account the same way before it takes the Organizer (`apps.accounts.locks.hold_active_account`); and `create_player` checks `is_active` under its Account lock. So a submission, correction, report, or Player create that waited on a deletion is refused, and a deletion that comes later waits for it to commit and then sees its rows. Other actions racing a deletion (a confirmation, a vouch) may fail at commit on a foreign key and answer 500; nothing is written then.
 
 ### Retention task
 

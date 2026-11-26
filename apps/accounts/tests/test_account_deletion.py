@@ -372,3 +372,11 @@ def test_no_player_is_created_for_an_inactive_account() -> None:
 
     assert "account" in raised.value.message_dict
     assert not Player.objects.filter(account_id=account.pk).exists()
+
+
+def test_an_active_account_with_a_placeholder_like_email_is_still_deleted() -> None:
+    account = UserFactory.create(email=f"deleted-made-up@{DELETED_EMAIL_DOMAIN}")
+
+    result = delete_account(account, actor=account)
+
+    assert result.account_kept is False

@@ -127,6 +127,7 @@ from apps.matches.notices import schedule_batch_notices, schedule_dispute_notice
 from apps.matches.permissions import (
     Actor,
     MatchActionDenied,
+    MatchPermissionDenied,
     MatchSubmission,
     can_change_match,
     can_confirm_as_organizer,
@@ -148,6 +149,7 @@ from apps.matches.services import (
     duplicate_error,
     exact_duplicate,
     hold_event,
+    hold_submitting_account,
     insert_draft,
     lock_draft,
     near_duplicates,
@@ -843,6 +845,11 @@ def edit_match(
         sequence=sequence,
     )
     with transaction.atomic():
+        # The editing Account first, as record_match does (ADR 0048).
+        try:
+            hold_submitting_account(actor)
+        except MatchPermissionDenied:
+            raise MatchActionDenied from None
         # Holds the Event fixed until commit and checks the editor again.
         # The correction keeps the old match's type (the maintainer's
         # decision on #163).

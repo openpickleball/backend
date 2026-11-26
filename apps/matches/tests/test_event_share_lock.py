@@ -48,7 +48,14 @@ def test_record_and_edit_share_lock_the_event_before_any_other_lock() -> None:
 
     for queries in (recorded, edited):
         sqls = [q["sql"] for q in queries]
-        share = _first_index(sqls, "FOR KEY SHARE")
-        assert '"events_event"' in sqls[share]
+        share = next(
+            i
+            for i, sql in enumerate(sqls)
+            if "FOR KEY SHARE" in sql and '"events_event"' in sql
+        )
+        # Only the acting Account's own share lock comes first (ADR 0048).
+        earlier = [sql for sql in sqls[:share] if "FOR " in sql]
+        assert earlier == [sql for sql in earlier if '"accounts_user"' in sql]
+        assert len(earlier) == 1
         assert share < _first_index(sqls, "pg_advisory_xact_lock")
         assert share < _first_index(sqls, "INSERT")

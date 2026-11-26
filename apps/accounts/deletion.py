@@ -44,8 +44,9 @@ identifying value.
 
 Lock order: the Account row (``FOR UPDATE``, as ``create_player`` takes
 it, and before ``report_organizer`` can take it ``FOR KEY SHARE``), then
-the Player row (``FOR UPDATE``, so a participant insert waits and then
-sees the Account inactive), then every Organizer of its memberships and
+the Player row (``FOR UPDATE``, so ``record_match`` and ``edit_match``,
+which take the acting Account and then the Players ``FOR KEY SHARE``,
+wait and then see the Account inactive), then every Organizer of its memberships and
 of its reports by id (``FOR UPDATE``, as ``unverify_organizer`` and
 ``apps.audit.access`` take an Organizer before its report or membership
 rows), then the membership and report rows.
@@ -147,8 +148,8 @@ def delete_account(
     """Delete ``account``'s personal data, as the module docstring says.
 
     ``actor`` is who asked: the Account itself for self-service deletion.
-    Raises ``AccountAlreadyDeleted`` when the stored Account is gone or
-    already carries a placeholder email, and changes nothing then. An
+    Raises ``AccountAlreadyDeleted`` when the stored Account is gone, or
+    inactive with a placeholder email, and changes nothing then. An
     Account staff deactivated, with its data still on it, is deleted as
     any other. Call it outside any other transaction: the
     session and access row writes rely on this one.
@@ -157,7 +158,7 @@ def delete_account(
     event_actor = None if actor is None or actor.pk == account.pk else actor
     with transaction.atomic():
         locked = user_model.objects.select_for_update().filter(pk=account.pk).first()
-        if locked is None or is_deleted_email(locked.email):
+        if locked is None or (not locked.is_active and is_deleted_email(locked.email)):
             raise AccountAlreadyDeleted
         player = Player.objects.select_for_update().filter(account_id=locked.pk).first()
         _lock_organizers(locked)
