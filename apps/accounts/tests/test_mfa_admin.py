@@ -5,7 +5,13 @@ from allauth.mfa.models import Authenticator
 from django.contrib import admin
 from django.test import Client
 
-from apps.accounts.tests.factories import DEFAULT_PASSWORD, UserFactory, enroll_totp
+from apps.accounts.tests.admin import (
+    sign_in_to_admin,
+    staff_with_totp,
+    verified_account,
+)
+from apps.accounts.tests.factories import UserFactory, enroll_totp
+from apps.accounts.tests.headless import BROWSER, HeadlessSession
 from config.admin import MFA_REQUIRED_MESSAGE, OpenAdminSite
 
 pytestmark = pytest.mark.django_db
@@ -51,42 +57,39 @@ def test_staff_with_mfa_reaches_every_admin_page(client: Client) -> None:
         assert client.get(page).status_code == 200, page
 
 
-def test_staff_without_mfa_cannot_log_in_to_the_admin(client: Client) -> None:
-    staff = UserFactory.create(is_staff=True, mfa=False)
+def test_staff_without_mfa_cannot_use_the_admin_after_signing_in() -> None:
+    staff = verified_account(is_staff=True)
+    session = HeadlessSession(BROWSER)
 
-    response = client.post(
-        ADMIN_LOGIN, {"username": staff.email, "password": DEFAULT_PASSWORD}
-    )
+    # allauth signs the Account in: it has no second factor to ask for.
+    assert session.login(staff.email).status_code == 200
+    page = session.client.get(ADMIN_LOGIN)
 
-    assert response.status_code == 200
-    assert MFA_REQUIRED_MESSAGE in response.content.decode()
-    assert staff.email not in response.content.decode().replace(
-        f'value="{staff.email}"', ""
-    )
-    assert "_auth_user_id" not in client.session
-
-
-def test_staff_with_mfa_logs_in_to_the_admin(client: Client) -> None:
-    staff = UserFactory.create(is_staff=True, mfa=False)
-    enroll_totp(staff)
-
-    response = client.post(
-        ADMIN_LOGIN, {"username": staff.email, "password": DEFAULT_PASSWORD}
-    )
-
-    assert response.status_code == 302
-    assert client.session["_auth_user_id"] == str(staff.pk)
+    assert page.status_code == 403
+    assert MFA_REQUIRED_MESSAGE in page.content.decode()
+    assert staff.email not in page.content.decode()
+    assert session.client.get("/admin/").status_code == 302
 
 
-def test_a_wrong_password_still_gets_djangos_message(client: Client) -> None:
-    staff = UserFactory.create(is_staff=True, mfa=False)
+def test_staff_with_mfa_logs_in_to_the_admin() -> None:
+    staff, secret = staff_with_totp()
 
-    response = client.post(
-        ADMIN_LOGIN, {"username": staff.email, "password": "not-the-password"}
-    )
+    session = sign_in_to_admin(staff, secret)
 
-    assert response.status_code == 200
+    assert session.client.session["_auth_user_id"] == str(staff.pk)
+    assert session.client.get("/admin/").status_code == 200
+
+
+def test_a_wrong_password_signs_nobody_in() -> None:
+    staff, _ = staff_with_totp()
+    session = HeadlessSession(BROWSER)
+
+    response = session.login(staff.email, "not-the-password")
+
+    assert response.status_code == 400
     assert MFA_REQUIRED_MESSAGE not in response.content.decode()
+    assert "_auth_user_id" not in session.client.session
+    assert session.client.get("/admin/").status_code == 302
 
 
 def test_recovery_codes_alone_do_not_open_the_admin(client: Client) -> None:

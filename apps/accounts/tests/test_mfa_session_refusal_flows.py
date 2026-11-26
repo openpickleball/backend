@@ -4,7 +4,6 @@ only."""
 
 import pytest
 from allauth.account.models import EmailAddress
-from django.conf import settings
 
 from apps.accounts.tests.factories import UserFactory
 from apps.accounts.tests.headless import (
@@ -24,16 +23,8 @@ def test_the_refusal_lists_only_the_mfa_reauthentication_flow() -> None:
     )
     session = HeadlessSession(BROWSER)
     session.client = browser_client()
-    session.client.post(
-        "/admin/login/",
-        {
-            "username": staff.email,
-            "password": PASSWORD,
-            "csrfmiddlewaretoken": session.client.cookies[
-                settings.CSRF_COOKIE_NAME
-            ].value,
-        },
-    )
+    # A password-only session (Django's own login).
+    assert session.client.login(username=staff.email, password=PASSWORD)
     session.reauthenticate()
 
     response = session.delete("account/authenticators/totp")

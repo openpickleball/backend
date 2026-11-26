@@ -20,12 +20,18 @@ Account's id, never from an instance cache:
   login, an MFA reauthentication, or enrolling in it). The API
   (``config/auth.py``) and the MFA management views
   (``apps/accounts/mfa_views.py``) need it for an Account with MFA, so a
-  password-only session (the admin login's, or one made before the
-  Account enrolled) gets no MFA-protected access.
+  password-only session (one made before the Account enrolled, or by a
+  password login outside allauth's MFA stage, such as Django's own) gets
+  no MFA-protected access. A login that stops after the password, at the
+  MFA stage, is not signed in at all. The admin needs it too
+  (``config/admin.py``).
+- ``last_mfa_at``: when the session last passed the second factor, for
+  the admin's session and reauthentication limits (``config/admin.py``).
 - ``record_mfa_change``: the one Audit Event per MFA change, written in
   the change's transaction (``apps/accounts/mfa_views.py``).
 """
 
+import math
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Literal, cast
@@ -199,6 +205,26 @@ def session_passed_mfa(session: SessionBase, account: "_User") -> bool:
     """
     records = get_authentication_records(SimpleNamespace(session=session), account)
     return any(record.get("method") == "mfa" for record in records)
+
+
+def last_mfa_at(session: SessionBase, account: "_User") -> float | None:
+    """When ``account`` last passed the second factor in ``session``.
+
+    The latest ``at`` (seconds since the epoch, allauth's ``time.time()``)
+    of the session's ``mfa`` records bound to ``account``, or None when it
+    has none. A record without a finite number for its time is skipped.
+    The admin's time limits read it (``config/admin.py``).
+    """
+    records = get_authentication_records(SimpleNamespace(session=session), account)
+    times = [
+        float(record["at"])
+        for record in records
+        if record.get("method") == "mfa"
+        and isinstance(record.get("at"), int | float)
+        and not isinstance(record.get("at"), bool)
+        and math.isfinite(record["at"])
+    ]
+    return max(times, default=None)
 
 
 def record_mfa_change(account: "_User", change: MFAChange, kind: str) -> None:

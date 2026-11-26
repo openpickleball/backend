@@ -92,3 +92,4 @@ Add each record here when it merges.
 - [0042. Health probes from the platform](0042-health-probes-from-the-platform.md) (issue #61)
 - [0043. Two-factor authentication with TOTP and recovery codes](0043-mfa-totp-and-recovery-codes.md) (issue #99)
 - [0044. OPEN branding and logo in emails](0044-email-branding.md) (issue #306)
+- [0045. A private, MFA-only, fully audited admin](0045-harden-the-admin.md) (issue #101)

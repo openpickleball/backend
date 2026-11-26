@@ -51,6 +51,8 @@ class EventAdminForm(forms.ModelForm[Event]):
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin[Event]):
+    # save_event and delete_event record the Audit Events (#101).
+    audited_by_service = True
     form = EventAdminForm
     list_display = (
         "public_code",

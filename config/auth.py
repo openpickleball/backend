@@ -23,8 +23,8 @@ owners of a production Partner Application) and has no method
 protects. It can still sign in and use allauth's endpoints, where it sets
 up a method. An Account with a method counts only with a session that
 passed the second factor (``session_passed_mfa``): a password-only
-session, such as the admin login's or one made before the Account
-enrolled, gets the same 403. The check runs after authentication, so a request with no
+session, such as one made before the Account enrolled, gets the same
+403. The check runs after authentication, so a request with no
 Account still gets 401, and for a browser session after ninja's CSRF
 check, so an unsafe request without its token still gets the CSRF 403.
 

@@ -15,6 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
@@ -22,7 +23,8 @@ from apps.accounts.headless_views import headless_urlpatterns
 from config.api import api
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    # A private path in production, admin/ only locally (#101).
+    path(settings.ADMIN_URL, admin.site.urls),
     path("api/v1/", api.urls),
     # Only the token and revoke views (apps/partners/urls.py).
     path("oauth/", include("apps.partners.urls")),

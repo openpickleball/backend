@@ -35,6 +35,7 @@ from apps.audit.admin_actions import (
     action_reason,
     reason_problem,
 )
+from apps.audit.admin_audit import audited_by_service
 from apps.matches.models import (
     FlagReason,
     Match,
@@ -239,6 +240,9 @@ class MatchAdmin(admin.ModelAdmin[Match]):
 
     # Actions
 
+    # The bulk void services record their own events, and must never run
+    # inside an outer transaction (#101).
+    @audited_by_service
     @admin.action(
         permissions=["moderate"],
         description="Void every match in the selected match's upload batch",
@@ -248,6 +252,7 @@ class MatchAdmin(admin.ModelAdmin[Match]):
     ) -> HttpResponse | None:
         return self._bulk(request, queryset, "batch")
 
+    @audited_by_service
     @admin.action(
         permissions=["moderate"],
         description=(

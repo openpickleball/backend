@@ -31,10 +31,11 @@ cannot deadlock with a regeneration.
 Sessions. For an Account that has MFA, the management views (TOTP add
 and remove, recovery codes view and regenerate) need a session that
 passed the second factor (``session_passed_mfa``: an MFA login, an MFA
-reauthentication, or this enrollment). Any other session, such as the
-admin login's password-only session, gets allauth's 401 listing only the
-MFA reauthentication flow; a password reauthentication does not satisfy
-it, a code reauthentication (``auth/2fa/reauthenticate``) does. Adding
+reauthentication, or this enrollment). Any other session, such as a
+password-only session made before the Account enrolled, gets allauth's
+401 listing only the MFA reauthentication flow; a password
+reauthentication does not satisfy it, a code reauthentication
+(``auth/2fa/reauthenticate``) does. Adding
 TOTP records an ``mfa`` authentication record for the enrolling session
 (no row id, not a reauthentication, so allauth's recent reauthentication
 rule is unaffected), so that session keeps its access.

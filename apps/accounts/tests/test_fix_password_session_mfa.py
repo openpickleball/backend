@@ -2,8 +2,9 @@
 
 An enrolled Account's session counts for the API only when it passed the
 second factor (a TOTP or recovery code login, an MFA reauthentication,
-or the enrollment itself). A password-only session, such as the admin
-login's or one made before the Account enrolled, gets 403
+or the enrollment itself). A password-only session, such as one made
+before the Account enrolled (Django's own password login makes one in
+these tests), gets 403
 ``mfa_required``, and cannot change or view the Account's methods after
 a password reauthentication: only an MFA reauthentication lets it.
 Made-up data only.
@@ -14,7 +15,6 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from allauth.account.models import EmailAddress
 from allauth.mfa.models import Authenticator
-from django.conf import settings
 from django.test import Client
 
 from apps.accounts.tests.factories import UserFactory, enroll_totp, totp_code
@@ -49,21 +49,16 @@ def _verified(**fields: Any) -> "_User":
     return account
 
 
-def _admin_session(account: "_User") -> HeadlessSession:
-    """A browser session made by the admin login, password only."""
+def _password_only_session(account: "_User") -> HeadlessSession:
+    """A browser session signed in with the password only.
+
+    The admin login once made one (#101 replaced it with allauth's MFA
+    login). Django's own password login still makes one, as does a
+    session from before the Account enrolled.
+    """
     session = HeadlessSession(BROWSER)
     session.client = browser_client()
-    token = session.client.cookies[settings.CSRF_COOKIE_NAME].value
-    response = session.client.post(
-        "/admin/login/",
-        {
-            "username": account.email,
-            "password": PASSWORD,
-            "csrfmiddlewaretoken": token,
-            "next": "/admin/",
-        },
-    )
-    assert response.status_code == 302
+    assert session.client.login(username=account.email, password=PASSWORD)
     return session
 
 
@@ -77,16 +72,16 @@ def _mfa_required(response: Any) -> bool:
     return response.status_code == 403 and response.json()["code"] == "mfa_required"
 
 
-def test_an_admin_login_session_is_refused_by_the_api() -> None:
+def test_a_password_only_session_is_refused_by_the_api() -> None:
     staff = _verified(is_staff=True)
-    session = _admin_session(staff)
+    session = _password_only_session(staff)
 
     assert _mfa_required(_get(session, ME))
 
 
-def test_an_admin_login_session_cannot_touch_totp_after_a_password_reauth() -> None:
+def test_a_password_only_session_cannot_touch_totp_after_a_password_reauth() -> None:
     staff = _verified(is_staff=True)
-    session = _admin_session(staff)
+    session = _password_only_session(staff)
     assert session.reauthenticate().status_code == 200
 
     removed = session.delete(TOTP_PATH)
@@ -102,10 +97,10 @@ def test_an_admin_login_session_cannot_touch_totp_after_a_password_reauth() -> N
     ).exists()
 
 
-def test_an_admin_login_session_acts_after_an_mfa_reauth() -> None:
+def test_a_password_only_session_acts_after_an_mfa_reauth() -> None:
     staff = _verified(is_staff=True, mfa=False)
     secret = enroll_totp(staff).secret
-    session = _admin_session(staff)
+    session = _password_only_session(staff)
 
     reauth = session.post("auth/2fa/reauthenticate", {"code": totp_code(secret)})
 
@@ -154,7 +149,7 @@ def test_a_totp_login_session_is_unaffected(base: str) -> None:
 
 def test_a_password_session_without_csrf_still_gets_the_csrf_403() -> None:
     staff = _verified(is_staff=True)
-    session = _admin_session(staff)
+    session = _password_only_session(staff)
 
     response = session.client.post(
         "/api/v1/me/player", {}, content_type="application/json"

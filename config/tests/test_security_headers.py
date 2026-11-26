@@ -53,7 +53,9 @@ PERMISSIONS_POLICY_FEATURES = (
     "xr-spatial-tracking",
 )
 
-PAGES = ("/api/v1/health/live", "/admin/login/", "/_allauth/openapi.html")
+# The admin's login page at the made-up private path both drives set (#101).
+ADMIN_LOGIN = f"/{PRODUCTION_LIKE['ADMIN_URL']}login/"
+PAGES = ("/api/v1/health/live", ADMIN_LOGIN, "/_allauth/openapi.html")
 
 # A refused age saves the signup refusal flag in the session.
 AGE_CHECK = "/_allauth/browser/v1/auth/signup/age-check"
@@ -158,7 +160,11 @@ def production_report_only() -> dict[str, Any]:
 
 @pytest.fixture(scope="module")
 def local() -> dict[str, Any]:
-    return _drive(LOCAL_DEBUG, host="localhost", secure=False)
+    return _drive(
+        {**LOCAL_DEBUG, "ADMIN_URL": PRODUCTION_LIKE["ADMIN_URL"]},
+        host="localhost",
+        secure=False,
+    )
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -207,13 +213,13 @@ def test_permissions_policy_turns_off_every_listed_feature(
 def test_permissions_policy_leaves_passkeys_and_fullscreen(
     production: dict[str, Any],
 ) -> None:
-    header = production["/admin/login/"]["headers"]["Permissions-Policy"]
+    header = production[ADMIN_LOGIN]["headers"]["Permissions-Policy"]
     assert "publickey-credentials-get" not in header
     assert "fullscreen" not in header
 
 
 def test_csrf_cookie_is_a_host_cookie(production: dict[str, Any]) -> None:
-    cookies = production["/admin/login/"]["cookies"]
+    cookies = production[ADMIN_LOGIN]["cookies"]
     assert set(cookies) == {"__Host-csrftoken"}
     assert cookies["__Host-csrftoken"] == {
         "secure": True,
@@ -255,7 +261,7 @@ def test_debug_on_reports_csp_only(local: dict[str, Any], page: str) -> None:
 
 
 def test_debug_on_keeps_plain_cookie_names(local: dict[str, Any]) -> None:
-    assert set(local["/admin/login/"]["cookies"]) == {"csrftoken"}
+    assert set(local[ADMIN_LOGIN]["cookies"]) == {"csrftoken"}
     assert "sessionid" in local[AGE_CHECK]["cookies"]
     assert local[AGE_CHECK]["cookies"]["sessionid"]["secure"] is False
 

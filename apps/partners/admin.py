@@ -64,6 +64,8 @@ class PartnerApplicationAdmin(AccessAuditAdminMixin, ApplicationAdmin):
 class OrganizerApplicationGrantAdmin(
     AccessAuditAdminMixin, admin.ModelAdmin[OrganizerApplicationGrant]
 ):
+    # apps.audit.access records the Audit Events (#101).
+    audited_by_service = True
     list_display = ("organizer", "application", "created_at")
     list_select_related = ("organizer", "application")
     raw_id_fields = ("organizer", "application")

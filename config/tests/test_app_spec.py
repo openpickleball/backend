@@ -108,7 +108,7 @@ BEAT_COMMAND = (
 )
 MIGRATE_COMMAND = "python manage.py migrate"
 
-SECRETS = {"DJANGO_SECRET_KEY", "RESEND_API_KEY"}
+SECRETS = {"DJANGO_SECRET_KEY", "RESEND_API_KEY", "ADMIN_URL"}
 BINDINGS = {
     "DATABASE_URL": "${pg.open-pool.DATABASE_URL}",
     "DIRECT_DATABASE_URL": "${pg.DATABASE_URL}",
@@ -295,6 +295,7 @@ def _bound_env() -> dict[str, str]:
         values[key] = BOUND.get(value, value)
     values["DJANGO_SECRET_KEY"] = TEST_SECRET_KEY
     values["RESEND_API_KEY"] = PRODUCTION_LIKE["RESEND_API_KEY"]
+    values["ADMIN_URL"] = PRODUCTION_LIKE["ADMIN_URL"]
     return values
 
 

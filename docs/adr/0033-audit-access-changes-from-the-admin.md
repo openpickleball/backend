@@ -1,6 +1,7 @@
 # 0033. Audit access changes from the admin and services, with an explicit actor
 
 - Status: Accepted
+- Amended by: [ADR 0045](0045-harden-the-admin.md) (every admin also gets `AdminAuditMixin` first in its bases at registration, which records `admin.*` events for the parent objects; access rows keep their own events)
 - Date: 2026-11-24
 
 ## Context
