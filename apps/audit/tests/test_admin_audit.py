@@ -475,7 +475,7 @@ def test_every_registered_admin_is_audited() -> None:
         assert isinstance(model_admin, AdminAuditMixin), model
     # These record their own events, so they skip only the generic ones.
     for model in (Event, ClubOrganizerGrant):
-        assert admin.site._registry[model].audited_by_service is True
+        assert getattr(admin.site._registry[model], "audited_by_service", False)
 
 
 @pytest.mark.parametrize(

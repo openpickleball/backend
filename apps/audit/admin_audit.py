@@ -295,13 +295,14 @@ def _audited_action(func: Callable[..., Any], name: str) -> Callable[..., Any]:
 
 def audited_admin_class(
     admin_class: type[admin.ModelAdmin[Any]],
-) -> type[admin.ModelAdmin[Any]]:
+) -> type[AdminAuditMixin]:
     """``admin_class`` with ``AdminAuditMixin`` first, unless it already
     has it."""
     if issubclass(admin_class, AdminAuditMixin):
         return admin_class
-    return type(
+    audited: type[AdminAuditMixin] = type(
         admin_class.__name__,
         (AdminAuditMixin, admin_class),
         {"__module__": admin_class.__module__, "__doc__": admin_class.__doc__},
     )
+    return audited
