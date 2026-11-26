@@ -119,9 +119,13 @@ async function logIn() {
 
 async function confirmCode(endpoint) {
   const code = codeInput.value.trim();
-  const { status } = await send(endpoint, { code });
+  const { status, payload } = await send(endpoint, { code });
   if (status === 200) {
     done();
+  } else if (status === 400 && hasErrorCode(payload, "too_many_login_attempts")) {
+    // allauth's lockout after failed codes answers 400, like a wrong
+    // code, with its own code.
+    showError("throttled");
   } else if (status === 400) {
     codeInput.value = "";
     showError("code");
