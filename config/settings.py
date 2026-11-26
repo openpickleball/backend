@@ -1099,6 +1099,9 @@ MFA_REAUTHENTICATION_REQUIRED = True
 MFA_TOTP_ISSUER = "OPEN"
 # No method before the login address is verified (allauth's default).
 MFA_ALLOW_UNVERIFIED_EMAIL = False
+# TOTP secrets and recovery code seeds are stored encrypted with
+# FIELD_ENCRYPTION_KEYS (ADR 0046).
+MFA_ADAPTER = "apps.accounts.mfa_adapter.MFAAdapter"
 
 
 # Password validation
