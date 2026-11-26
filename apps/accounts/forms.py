@@ -12,6 +12,7 @@ from apps.players.models import (
     has_refused_character,
     has_visible_character,
 )
+from config.admin_autocomplete import CHOICE_ERRORS
 
 if TYPE_CHECKING:
     from django.contrib.auth.base_user import AbstractBaseUser
@@ -19,12 +20,31 @@ if TYPE_CHECKING:
 
 
 class UserCreationForm(auth_forms.AdminUserCreationForm[User]):
-    """Admin add form for `User`, keyed on email instead of username."""
+    """Admin add form for `User`, keyed on email instead of username.
+
+    ``usable_password`` is Django's declared field, whose message repeats a
+    tampered value (issue #162), so it gets fixed text.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["usable_password"].error_messages.update(CHOICE_ERRORS)
 
     class Meta(auth_forms.AdminUserCreationForm.Meta):
         model = User
         fields = ("email",)
         field_classes: ClassVar[dict[str, type[forms.Field]]] = {}
+
+
+class AdminPasswordChangeForm(auth_forms.AdminPasswordChangeForm):  # type: ignore[type-arg]
+    """Django's admin set-password form, with fixed text for a tampered
+    ``usable_password`` (issue #162). Django adds that field in
+    ``__init__``, only for an Account with a usable password."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        if "usable_password" in self.fields:
+            self.fields["usable_password"].error_messages.update(CHOICE_ERRORS)
 
 
 class UserChangeForm(auth_forms.UserChangeForm[User]):

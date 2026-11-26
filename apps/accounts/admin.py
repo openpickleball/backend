@@ -22,6 +22,7 @@ from django_celery_beat.admin import (
     IntervalScheduleAdmin as BaseIntervalScheduleAdmin,
 )
 from django_celery_beat.admin import PeriodicTaskAdmin as BasePeriodicTaskAdmin
+from django_celery_beat.admin import PeriodicTaskForm as BasePeriodicTaskForm
 from django_celery_beat.admin import SolarScheduleAdmin as BaseSolarScheduleAdmin
 from django_celery_beat.models import (
     ClockedSchedule,
@@ -31,11 +32,16 @@ from django_celery_beat.models import (
     SolarSchedule,
 )
 
-from apps.accounts.forms import UserChangeForm, UserCreationForm
+from apps.accounts.forms import (
+    AdminPasswordChangeForm,
+    UserChangeForm,
+    UserCreationForm,
+)
 from apps.accounts.mfa import has_mfa
 from apps.accounts.models import User
 from apps.accounts.sessions import end_sessions_after_password_change
 from apps.audit.admin_access import AccessAuditAdminMixin
+from config.admin_autocomplete import CHOICE_ERRORS
 
 # allauth registers an admin for EmailAddress, whose __str__ returns the
 # address, so the admin log's object_repr would hold an identifying field
@@ -107,6 +113,7 @@ class AccountChangeForm(UserChangeForm):
 class UserAdmin(AccessAuditAdminMixin, BaseUserAdmin[User]):
     form = AccountChangeForm
     add_form = UserCreationForm
+    change_password_form = AdminPasswordChangeForm
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         (
@@ -256,6 +263,15 @@ def _superuser_action(name: str) -> Any:
     )
 
 
+class PeriodicTaskForm(BasePeriodicTaskForm):  # type: ignore[misc]
+    """django_celery_beat's form, with fixed text for ``regtask``, whose
+    declared message repeats the value (issue #162)."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["regtask"].error_messages.update(CHOICE_ERRORS)
+
+
 @admin.register(PeriodicTask)
 class PeriodicTaskAdmin(_SuperuserWrites, BasePeriodicTaskAdmin):  # type: ignore[misc]
     """django_celery_beat's admin, for superusers only to write (#101).
@@ -265,6 +281,8 @@ class PeriodicTaskAdmin(_SuperuserWrites, BasePeriodicTaskAdmin):  # type: ignor
     often as every second. Adding, changing, deleting, and every action
     (enable, disable, toggle, and run, which sends tasks at once) are
     superuser-only. Viewing stays with the periodic task permissions."""
+
+    form = PeriodicTaskForm
 
     enable_tasks = _superuser_action("enable_tasks")
     disable_tasks = _superuser_action("disable_tasks")

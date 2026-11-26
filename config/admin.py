@@ -23,7 +23,8 @@ void matches, so the admin asks more than Django's (issue #99, #101, ADR
   to every admin).
 - A tampered autocomplete id gets the form's error, never a 500
   (``config.admin_autocomplete``, issue #161): ``register`` gives every
-  admin and its inlines safe autocomplete widgets.
+  admin and its inlines safe autocomplete widgets, and fixed error text
+  on their choice and many-to-many fields (issue #162).
 - A staff Account's own password change records ``password.change``.
 - The login page takes no password. Its script
   (``apps/accounts/static/accounts/admin_login.js``) signs in through
