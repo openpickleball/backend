@@ -141,7 +141,8 @@ def mfa_required(actor: object) -> bool:
 
 def lacks_required_mfa(actor: object) -> bool:
     """True when ``actor`` needs a method (``mfa_required``) and has none
-    (``has_mfa``). One query, the API's check on every signed-in request."""
+    (``has_mfa``), in one query. The API uses ``mfa_status`` instead, since
+    it also needs ``has_mfa`` alone for its session rule."""
     pk = _saved_account_pk(actor)
     if pk is None:
         return False
