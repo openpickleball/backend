@@ -17,6 +17,12 @@ allows, nothing is refused here.
 The middleware comes right after ``CorsMiddleware``, so the 413 carries
 CORS headers, and before every middleware that may read the body
 (``CsrfViewMiddleware``).
+
+The limit holds only under WSGI, which production uses (gunicorn serves
+``config.wsgi``). Django's ASGI handler reads the whole body into memory
+or a temporary file before any middleware runs, whatever
+``Content-Length`` says, so serving ``config.asgi`` needs a body limit in
+the server first.
 """
 
 from collections.abc import Callable

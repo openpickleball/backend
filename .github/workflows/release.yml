@@ -31,7 +31,8 @@ jobs:
         with:
           enable-cache: false
       - run: uv sync --locked
-      # Settings need the variables in .env.example.
+      # Settings need the variables in .env.example. Its DEBUG on also gives
+      # the cookie names the committed document was generated with.
       - run: cp .env.example .env
       # Never attach a document that differs from the tagged API.
       - run: uv run python manage.py export_openapi_schema --check
