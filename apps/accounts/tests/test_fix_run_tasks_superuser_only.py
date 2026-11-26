@@ -1,8 +1,8 @@
 """Only a superuser runs periodic tasks from the admin (issue #101).
 
 django_celery_beat's "Run selected tasks" action sends any registered
-task at once. A staff Account with the periodic task permissions may
-not offered the run action nor allowed to run it. (A later fix made every
+task at once. A staff Account with the periodic task permissions is
+neither offered the run action nor allowed to run it. (A later fix made every
 task action and every write superuser-only:
 ``test_fix_beat_admin_superuser_only.py``.) Made-up data only.
 """
