@@ -1043,8 +1043,30 @@ ACCOUNT_ADAPTER = "apps.accounts.adapter.AccountAdapter"
 # Subjects are exactly the text of OPEN's templates (templates/account/
 # email/). allauth would otherwise prefix the request's host, "[host] ".
 ACCOUNT_EMAIL_SUBJECT_PREFIX = ""
-# Rate limits stay at allauth's defaults (#100 tunes them). They live in
-# the cache.
+# allauth's rate limits (#100, ADR 0047), each "amount/period/per" with
+# per ip (OPEN's client IP from CLIENT_IP_HEADER, through the adapter's
+# get_client_ip), key (the address), or user (the signed-in Account).
+# They live in the default cache (Valkey), so they hold across web
+# instances. A failed login limit answers 429 (OPEN's login view). The
+# actions not named here keep allauth's defaults (codes and phones, which
+# OPEN does not use).
+ACCOUNT_RATE_LIMITS = {
+    # Every login request, per client IP.
+    "login": "30/m/ip",
+    # Failed logins: per client IP, and per address, so an Account is
+    # locked for a while after 5 failures, wherever they come from.
+    "login_failed": "10/m/ip,5/5m/key,20/h/key",
+    "signup": "20/m/ip",
+    # Reset requests, per client IP and per address, against email floods.
+    "reset_password": "20/m/ip,3/h/key",
+    # Setting a new password with a reset key.
+    "reset_password_from_key": "20/m/ip",
+    # Resending the verification email, once per 3 minutes per address.
+    "confirm_email": "1/3m/key",
+    "reauthenticate": "10/m/user",
+    "change_password": "5/m/user",
+    "manage_email": "10/m/user",
+}
 
 # JSON only, at /_allauth/browser/v1/ (session cookie and CSRF) and
 # /_allauth/app/v1/ (X-Session-Token header). No server-rendered allauth

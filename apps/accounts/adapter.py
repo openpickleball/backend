@@ -1,5 +1,6 @@
 """OPEN's django-allauth account adapter (``ACCOUNT_ADAPTER``)."""
 
+import ipaddress
 from typing import TYPE_CHECKING, Any
 
 from allauth.account.adapter import DefaultAccountAdapter
@@ -17,6 +18,11 @@ from apps.accounts.validators import (
 )
 from apps.emails.services import queue_email
 from apps.players.signup import is_signup_refused, refuse_signup
+from config.throttling import client_ip
+
+# The client IP allauth stores and counts when the request carries none:
+# every such request shares it, as the API throttles share one bucket.
+FALLBACK_CLIENT_IP = "0.0.0.0"
 
 if TYPE_CHECKING:
     from allauth.account.models import EmailAddress
@@ -36,6 +42,23 @@ class AccountAdapter(DefaultAccountAdapter):
         super().logout(request)
         if refused:
             refuse_signup(request.session)
+
+    def get_client_ip(self, request: HttpRequest) -> str:
+        """OPEN's client IP, for allauth's rate limits and user sessions.
+
+        Only the ``CLIENT_IP_HEADER`` value, parsed by the API throttles'
+        ``client_ip`` (ADR 0030): never ``X-Forwarded-For``,
+        ``Forwarded``, or ``REMOTE_ADDR``. An IPv6 address is its /64
+        network address, an IPv4-mapped one its IPv4 address. A missing
+        or invalid value is ``FALLBACK_CLIENT_IP``, so allauth never
+        refuses a request for want of an address (#100).
+        """
+        address = client_ip(request)
+        if address is None:
+            return FALLBACK_CLIENT_IP
+        if isinstance(address, ipaddress.IPv6Network):
+            return str(address.network_address)
+        return str(address)
 
     def clean_email(self, email: str) -> str:
         """Normalize an address, then apply the Account email rules to it.

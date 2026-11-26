@@ -56,12 +56,17 @@ from allauth.headless.account.inputs import (
 )
 from allauth.headless.account.inputs import SignupInput as BaseSignupInput
 from allauth.headless.account.inputs import VerifyEmailInput as BaseVerifyEmailInput
+from allauth.headless.account.views import LoginView as BaseLoginView
 from allauth.headless.account.views import (
     RequestPasswordResetView as BaseRequestPasswordResetView,
 )
 from allauth.headless.account.views import SignupView as BaseSignupView
 from allauth.headless.account.views import VerifyEmailView as BaseVerifyEmailView
-from allauth.headless.base.response import ConflictResponse, ForbiddenResponse
+from allauth.headless.base.response import (
+    ConflictResponse,
+    ForbiddenResponse,
+    RateLimitResponse,
+)
 from allauth.headless.base.views import APIView
 from allauth.headless.constants import Client
 from allauth.headless.internal.restkit import inputs
@@ -117,6 +122,37 @@ def account_for_login(email: str) -> "AbstractBaseUser | None":
     except manager.model.DoesNotExist:
         return None
     return account if account.is_active else None
+
+
+# allauth's error code when its failed login limit refuses a login.
+_TOO_MANY_LOGIN_ATTEMPTS = "too_many_login_attempts"
+
+
+class LoginView(BaseLoginView):
+    """allauth's login, answering its failed login limit with 429 (#100).
+
+    allauth refuses a login over ``login_failed`` (per client IP, and per
+    address) with a 400 and ``too_many_login_attempts``, like a wrong
+    password. OPEN answers it with allauth's own 429, as every other rate
+    limit answers. allauth's ``login`` limit still decorates ``handle``.
+    """
+
+    def handle_invalid_input(self, input: "inputs.Input") -> "HttpResponseBase":
+        if _TOO_MANY_LOGIN_ATTEMPTS in _error_codes(input):
+            limited: HttpResponseBase = RateLimitResponse(self.request)
+            return limited
+        invalid: HttpResponseBase = super().handle_invalid_input(input)
+        return invalid
+
+
+def _error_codes(form: "inputs.Input") -> set[str]:
+    """Every error code on ``form``, its non-field errors included."""
+    return {
+        str(error.code)
+        for errors in form.errors.as_data().values()
+        for error in errors
+        if error.code
+    }
 
 
 class RequestPasswordResetInput(BaseRequestPasswordResetInput):
@@ -532,6 +568,7 @@ def headless_urlpatterns() -> list[URLPattern]:
             continue
         prefix = f"{client.value}/v1/auth/"
         patterns += [
+            path(f"{prefix}login", LoginView.as_api_view(client=client)),
             path(f"{prefix}signup", SignupView.as_api_view(client=client)),
             path(
                 f"{prefix}signup/age-check",

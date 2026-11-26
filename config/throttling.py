@@ -175,22 +175,39 @@ class AccountThrottle(FixedWindowThrottle):
         )
 
 
-def client_ip_bucket(request: HttpRequest) -> str:
-    """The client IP bucket for a request, from ``CLIENT_IP_HEADER`` only."""
+ClientAddress = ipaddress.IPv4Address | ipaddress.IPv6Network
+
+
+def client_ip(request: HttpRequest) -> ClientAddress | None:
+    """The client IP from ``CLIENT_IP_HEADER`` only, or None.
+
+    None for a missing or invalid value, a comma list included. An
+    IPv4-mapped IPv6 address is its IPv4 address; any other IPv6 address
+    is its /64 network. ``X-Forwarded-For``, ``Forwarded``, and
+    ``REMOTE_ADDR`` are never read. The API throttles and allauth's rate
+    limits and user sessions (``AccountAdapter.get_client_ip``) both use
+    this, so they always agree (#100).
+    """
     meta_key = "HTTP_" + settings.CLIENT_IP_HEADER.upper().replace("-", "_")
     value = request.META.get(meta_key)
     if not isinstance(value, str):
-        return FALLBACK_BUCKET
+        return None
     try:
         address = ipaddress.ip_address(value.strip())
     except ValueError:
-        return FALLBACK_BUCKET
+        return None
     if isinstance(address, ipaddress.IPv6Address):
         if address.ipv4_mapped is not None:
-            return str(address.ipv4_mapped)
+            return address.ipv4_mapped
         prefix = int(address) >> (128 - _IPV6_PREFIX) << (128 - _IPV6_PREFIX)
-        return str(ipaddress.IPv6Network((prefix, _IPV6_PREFIX)))
-    return str(address)
+        return ipaddress.IPv6Network((prefix, _IPV6_PREFIX))
+    return address
+
+
+def client_ip_bucket(request: HttpRequest) -> str:
+    """The client IP bucket for a request, from ``CLIENT_IP_HEADER`` only."""
+    address = client_ip(request)
+    return FALLBACK_BUCKET if address is None else str(address)
 
 
 class ClientIPThrottle(FixedWindowThrottle):
