@@ -1,7 +1,7 @@
 # 0017. The signup age screen and the 13-and-older rule
 
 - Status: Proposed
-- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (signup also takes the gender division, held with the age as `open_signup_details`), [ADR 0020](0020-signup-age-check.md) (the app asks for the email and password first, then checks the age with `POST /_allauth/{client}/v1/auth/signup/age-check` before the rest of signup), [ADR 0022](0022-name-and-place-at-signup.md) (signup also takes the name and place, held with the age), [ADR 0023](0023-birth-and-division-set-once.md) (the player cannot change the birth year and month once the Player exists), [ADR 0026](0026-legal-agreements-at-signup.md) (signup also requires accepting the legal agreements, whose versions are held with the age)
+- Amended by: [ADR 0019](0019-gender-division-required-at-signup.md) (signup also takes the gender division, held with the age as `open_signup_details`), [ADR 0020](0020-signup-age-check.md) (the app asks for the email and password first, then checks the age with `POST /_allauth/{client}/v1/auth/signup/age-check` before the rest of signup), [ADR 0022](0022-name-and-place-at-signup.md) (signup also takes the name and place, held with the age), [ADR 0023](0023-birth-and-division-set-once.md) (the player cannot change the birth year and month once the Player exists), [ADR 0026](0026-legal-agreements-at-signup.md) (signup also requires accepting the legal agreements, whose versions are held with the age), [ADR 0045](0045-harden-the-admin.md) (the admin login is allauth's, so it no longer flushes another Account's session)
 - Date: 2026-11-17
 
 ## Context
@@ -40,7 +40,7 @@ Signup creates an Account (allauth's headless API, ADR 0014), but the Player com
 
 - The web and Expo apps must send the two fields with every signup.
 - #124's create endpoint takes the age from the session. When the session no longer holds it (the player verified on another device, logged out, or the session expired), #124 must ask for the age again, with the same rule.
-- The flag stops a simple retry, not a determined one. A browser that clears its cookies, or an app client that drops its token, starts a fresh session. So do the rare paths where Django flushes a session without a logout (a password change on another session, or a staff admin login to another Account). OPEN does not track people across sessions, because that would keep data from a refused attempt.
+- The flag stops a simple retry, not a determined one. A browser that clears its cookies, or an app client that drops its token, starts a fresh session. So do the rare paths where Django flushes a session without a logout (a password change on another session; a staff admin login to another Account did so until ADR 0045, whose admin login is allauth's, which refuses a session that is already signed in). OPEN does not track people across sessions, because that would keep data from a refused attempt.
 - A session refused once stays flagged even after a login to an existing Account in it, until the session ends.
 - An age held for a taken address can never be taken. It stays in the session until the session ends.
 - `SignupView` skips allauth's own decorated `handle` to count each signup once against the rate limit. Logic a future allauth version adds to that method would be skipped too. Check this when upgrading allauth.

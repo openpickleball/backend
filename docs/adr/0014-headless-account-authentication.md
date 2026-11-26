@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (MFA with TOTP and recovery codes; a session of an Account with MFA counts only once it passed MFA)
+- Amended by: [ADR 0045](0045-harden-the-admin.md) (the admin login is allauth's headless login with MFA; Django's admin login form is gone)
 - Date: 2026-11-17
 
 ## Context
@@ -24,7 +25,7 @@ allauth keeps its own `EmailAddress` table next to `accounts.User.email`, and it
 - An address allauth stores (sign-up, change of address) is normalized and passes the Account email rules (`AccountAdapter.clean_email`). An address used to find an Account (login, password reset) must be canonical (`is_canonical_email`): stripped and lowercased, it equals its normalized form, and it is ASCII. Anything else finds no Account.
 - Sign-up counts an address as taken only when it is some Account's login, so a pending change of address on another Account blocks nobody.
 - Password reset finds an active Account only through the manager's natural-key lookup, and mails the key only to that Account's `User.email`. Verifying an address that is another Account's login is refused with allauth's `email_taken` error, and allauth's verify writes run in one transaction. OPEN serves its own versions of allauth's sign-up, reset request, and verify views, for both clients, ahead of allauth's. ADR 0020 adds OPEN's own signup age check under allauth's sign-up path, and OPEN's versions of allauth's OpenAPI JSON and YAML views, which add that path.
-- `ModelBackend` stays first in `AUTHENTICATION_BACKENDS` for the Django admin, and it also authenticates every successful headless login, through the manager. OPEN's allauth backend comes second and also looks up through the manager.
+- `ModelBackend` stays first in `AUTHENTICATION_BACKENDS`. It was there for the Django admin login (replaced by allauth's headless login in ADR 0045), and it also authenticates every successful headless login, through the manager. OPEN's allauth backend comes second and also looks up through the manager.
 - First-party API operations use `config.auth.account_auth`, which accepts either client. A failed check returns a 401 `ErrorResponse` with code `unauthorized`. The first such operation is `GET /api/v1/accounts/me`. ADR 0015 adds that a request with no signed-in user gets the 401 before any CSRF check, and that `request.auth` is the Account itself on both clients.
 - allauth's user payload carries no row id. Its verification key (a signed `EmailAddress` id) and reset key (the Account id in base36) do encode one. They are accepted as an exception to the row-id rule, because only the mailbox owner sees them.
 - The browser client works same-origin only: the web app is served from, or proxied through, the API host. `CORS_ALLOW_CREDENTIALS` stays False; ADR 0040 (#102) keeps it so while the browser client is same-origin. The app client works cross-origin: CORS allows the three headers allauth reads.
@@ -35,7 +36,7 @@ allauth keeps its own `EmailAddress` table next to `accounts.User.email`, and it
 - Email links open web pages. Opening them in the mobile apps needs Universal Links and App Links on the `FRONTEND_URL` domain, which is the apps' work.
 - Until #35, a deployment with DEBUG off discarded mail, so nobody could verify an address or log in through allauth there. ADR 0016 adds a real provider (Resend) and sends account email from the email queue.
 - An Account made with `createsuperuser` or the admin has no `EmailAddress` row. Its first headless login creates one, unverified, and asks for verification.
-- The Django admin login does not check email verification, so a staff Account's admin session also authenticates `account_auth`. Staff Accounts are made by operators. Since ADR 0043 that session is password-only, so the API answers it with 403 `mfa_required`.
+- The Django admin login did not check email verification, so a staff Account's admin session also authenticated `account_auth`; since ADR 0043 that session was password-only, so the API answered it with 403 `mfa_required`. Since ADR 0045 the admin signs in through allauth's headless login, which checks email verification and asks for MFA.
 - A login typed with the Kelvin sign (U+212A) for a `k` still logs in. allauth's email field lowercases it to ASCII before OPEN's check, so it reaches the same Account that ADR 0003's normalization maps it to. It needs the password, stores nothing, and a reset with it mails only the stored address. This is accepted.
 - allauth keys its per-address rate limits on the lowercased address as typed, so each refused variant has its own counter. Variants never log in, and the per-IP limits still apply. #100 sets the limits and the client IP behind the proxy.
 - allauth sends at most one verification mail per address every three minutes. If allauth just mailed an address (for example for another Account's change of address), a sign-up with it in that window is created and answered as usual, but no verification mail is sent; the next login after the cooldown sends it. #100 sets the limits.
