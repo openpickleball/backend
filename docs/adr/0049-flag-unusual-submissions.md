@@ -26,6 +26,7 @@ A match with an Event comes from a trusted submitter: a member of the Event's ve
 
 - A newly verified Organizer's first matches are flagged, so a moderator reviewing a report sees a count that is high for a new Organizer by design. The review's other counts (disputes) say more.
 - A large tournament that uploads more than 100 matches in one file, or records more than 200 in a day, gets flags on real results. The flags change nothing for players, so the cost is noise in the counts, which the settings can tune.
+- The first-N window compares a Match's `created_at` with the Organizer's `verified_at` (or the application's `approved_at`), times from different hosts. A verification that commits while a match is being recorded, or clock skew, can leave a match outside the window, which only errs toward a flag.
 - The review counts flag rows, so one match can add up to three.
 - Concurrent submissions of one submitter wait for each other only for the end of their transactions.
 - #213 will show the flags to Organizers; #207 will add its rule to `MatchFlag.rule`.
