@@ -673,8 +673,9 @@ def process_results_file(results_file_id: int) -> None:
     parser cannot read fails with the parser's code, and one with more
     than ``MAX_ROWS`` match rows fails with ``too_many_rows``, before any
     row is recorded. Then, before the first row, the batch's
-    ``expected_size`` is set to the number of match rows, once (#206). Each row runs in its own transaction (see the module
-    docstring): never call this inside an outer ``transaction.atomic()``,
+    ``expected_size`` is set to the number of match rows, once (#206).
+    Each row runs in its own transaction (see the module docstring):
+    never call this inside an outer ``transaction.atomic()``,
     since ``record_match()``'s advisory locks last until the outermost
     transaction ends. The run stops at the first row that finds the file
     no longer pending. Any other error propagates and leaves the file
