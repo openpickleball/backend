@@ -21,6 +21,7 @@ import django_stubs_ext
 import environ
 from celery.schedules import crontab
 from corsheaders.defaults import default_headers
+from csp.constants import NONE, SELF
 from django.core.exceptions import ImproperlyConfigured
 from kombu import Queue
 
@@ -248,11 +249,12 @@ def _is_origin(value: str) -> bool:
     return int(port) <= 65535 and int(port) != default_port
 
 
-def _cors_origins(name: str) -> list[str]:
+def _origins(name: str, *, require_https: bool = False) -> list[str]:
     """Read a list of exact origins, failing fast without echoing it.
 
-    django-cors-headers checks the entries only in a system check, and
-    gunicorn runs none, so a bad entry is refused here at startup.
+    django-cors-headers and Django check the entries only in system
+    checks, and gunicorn runs none, so a bad entry is refused here at
+    startup. With require_https, every entry must be https.
     """
     origins = _list(name)
     if not all(_is_origin(origin) for origin in origins):
@@ -261,6 +263,11 @@ def _cors_origins(name: str) -> list[str]:
             "comma-separated, each a scheme (http or https), a host, and an "
             "optional port that is not the scheme's default, with no path, "
             "trailing slash, or wildcard (see .env.example)."
+        )
+    if require_https and not all(o.startswith("https://") for o in origins):
+        raise ImproperlyConfigured(
+            f"{name} must list only https origins when DJANGO_DEBUG is off "
+            "(see .env.example)."
         )
     return origins
 
@@ -373,13 +380,17 @@ if not SECRET_KEY.strip():
 
 ALLOWED_HOSTS = _list("DJANGO_ALLOWED_HOSTS")
 
-CSRF_TRUSTED_ORIGINS = _list("CSRF_TRUSTED_ORIGINS")
+# Origins Django's CSRF check trusts for unsafe requests, beyond the
+# request's own host, for example https://app.example.org. Exact origins
+# like CORS_ALLOWED_ORIGINS entries, and https only when DEBUG is off.
+# Empty by default. Hosts come only from the environment.
+CSRF_TRUSTED_ORIGINS = _origins("CSRF_TRUSTED_ORIGINS", require_https=not DEBUG)
 
 # CORS (django-cors-headers). Browsers on these exact origins may call the
 # API, for example https://app.example.org. Unset or blank allows no
 # origin. Only /api/ and /_allauth/ (account sign-up and login) paths get
 # CORS headers.
-CORS_ALLOWED_ORIGINS = _cors_origins("CORS_ALLOWED_ORIGINS")
+CORS_ALLOWED_ORIGINS = _origins("CORS_ALLOWED_ORIGINS")
 CORS_URLS_REGEX = r"^/(api|_allauth)/"
 # Never a wildcard, and never read from the environment.
 CORS_ALLOW_ALL_ORIGINS = False
@@ -392,7 +403,8 @@ CORS_ALLOW_ALL_ORIGINS = False
 #   allowed below.
 # Partner clients will use bearer tokens in Authorization (issue #27). The
 # browser client (/_allauth/browser/) uses the session cookie, so it works
-# same-origin only until #102 allows credentials for first-party origins.
+# same-origin only: the web app is served from, or proxied through, the
+# API host (ADR 0040). Credentials stay off cross-origin.
 CORS_ALLOW_CREDENTIALS = False
 # corsheaders' default request headers, plus the three allauth reads.
 CORS_ALLOW_HEADERS = (
@@ -425,6 +437,10 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "corsheaders",
+    # The Content Security Policy header (csp.middleware.CSPMiddleware).
+    # Installed for its system checks, which refuse old-style CSP_*
+    # settings.
+    "csp",
     # Before ninja, so its export_openapi_schema command wins over
     # django-ninja's: Django uses the first app that defines a command.
     "apps.openapi",
@@ -491,6 +507,11 @@ OAUTH2_PROVIDER = {
 }
 
 MIDDLEWARE = [
+    # The Content Security Policy and Permissions-Policy headers (ADR 0040).
+    # First, so every response gets them: static files, redirects, and the
+    # 413s below included.
+    "csp.middleware.CSPMiddleware",
+    "config.security_headers.PermissionsPolicyMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Serves the collected static files. It must come right after
     # SecurityMiddleware and only answers STATIC_URL paths.
@@ -1034,3 +1055,68 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+
+# Cookies (ADR 0040). With DEBUG off, both cookies carry the __Host-
+# prefix, so a browser accepts them only over https, from this host
+# alone (no Domain attribute), with path /. Secure is set above. With
+# DEBUG on, the plain names stay, so local http works.
+SESSION_COOKIE_NAME = "sessionid" if DEBUG else "__Host-sessionid"
+CSRF_COOKIE_NAME = "csrftoken" if DEBUG else "__Host-csrftoken"
+SESSION_COOKIE_DOMAIN = None
+CSRF_COOKIE_DOMAIN = None
+SESSION_COOKIE_PATH = "/"
+CSRF_COOKIE_PATH = "/"
+SESSION_COOKIE_HTTPONLY = True
+# Readable by scripts on purpose: allauth's browser client reads the
+# token from this cookie and sends it in X-CSRFToken.
+CSRF_COOKIE_HTTPONLY = False
+# Lax works for allauth's browser client, which is same-origin.
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
+# Response headers (ADR 0040). SecurityMiddleware sends these three on
+# every response, and XFrameOptionsMiddleware the frame option. The values
+# equal Django's defaults or tighten them, set here so nobody loosens one
+# by accident. config.security_headers adds Permissions-Policy.
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
+# No page may be framed. The embed (#96) adds its own exception.
+X_FRAME_OPTIONS = "DENY"
+
+# Content Security Policy with django-csp 4 (ADR 0040). Same-origin
+# scripts, styles, fonts, and requests only; images may also be data:
+# URLs (the API docs use them). No inline script or style, no eval, no
+# other host, no plugins, and no framing.
+_CSP_POLICY = {
+    "DIRECTIVES": {
+        "default-src": [SELF],
+        "script-src": [SELF],
+        "style-src": [SELF],
+        "img-src": [SELF, "data:"],
+        "font-src": [SELF],
+        "connect-src": [SELF],
+        "object-src": [NONE],
+        "base-uri": [NONE],
+        "form-action": [SELF],
+        "frame-ancestors": [NONE],
+    },
+}
+# CSP_REPORT_ONLY sends the policy as Content-Security-Policy-Report-Only,
+# which browsers report on but do not enforce. Unset or empty: report-only
+# with DEBUG on (Django's debug pages use inline script and style),
+# enforced with DEBUG off. An explicit true or false wins. It is read into
+# a private name: django-csp refuses a CSP_REPORT_ONLY setting, its old
+# format.
+_csp_report_only_value = _raw("CSP_REPORT_ONLY").strip()
+_csp_report_only = (
+    environ.Env.parse_value(_csp_report_only_value, bool)
+    if _csp_report_only_value
+    else DEBUG
+)
+CONTENT_SECURITY_POLICY = None if _csp_report_only else _CSP_POLICY
+CONTENT_SECURITY_POLICY_REPORT_ONLY = _CSP_POLICY if _csp_report_only else None
+
+# No system check is silenced. An entry here needs a comment saying why.
+SILENCED_SYSTEM_CHECKS: list[str] = []
