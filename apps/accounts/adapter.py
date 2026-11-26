@@ -15,6 +15,7 @@ from apps.accounts.devices import note_sign_in
 from apps.accounts.sessions import start_lifetime
 from apps.accounts.validators import (
     is_canonical_email,
+    is_encodable_password,
     normalize_email_address,
     normalized_email_errors,
 )
@@ -25,6 +26,9 @@ from config.throttling import client_ip
 # The client IP allauth stores and counts when the request carries none:
 # every such request shares it, as the API throttles share one bucket.
 FALLBACK_CLIENT_IP = "0.0.0.0"
+# Hashed in place of a password that is not UTF-8 text, so the refusal
+# takes as long as a wrong password.
+_TIMING_PASSWORD = "not-a-password-timing-stand-in"
 
 if TYPE_CHECKING:
     from allauth.account.models import EmailAddress
@@ -103,10 +107,18 @@ class AccountAdapter(DefaultAccountAdapter):
         unverified address of that Account. A variant is no Account's login
         (ADR 0003), so it fails like a wrong password: the login rate limit
         is still consumed, the password is still hashed (the same time as a
-        miss), and no backend runs.
+        miss), and no backend runs. A password that is not UTF-8 text fails
+        the same way, with a fixed stand-in hashed instead (#100).
         """
         email = credentials.get("email")
-        if isinstance(email, str) and not is_canonical_email(email):
+        password = credentials.get("password")
+        if (isinstance(email, str) and not is_canonical_email(email)) or (
+            password is not None and not is_encodable_password(password)
+        ):
+            # A password that is not UTF-8 text cannot be hashed: it fails
+            # like a wrong one, timed with a fixed stand-in (#100).
+            if not is_encodable_password(password):
+                credentials = {**credentials, "password": _TIMING_PASSWORD}
             self.pre_authenticate(request, **credentials)
             get_user_model()().set_password(credentials.get("password"))
             self.authentication_failed(request, **credentials)

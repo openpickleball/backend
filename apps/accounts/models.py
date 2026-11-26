@@ -10,6 +10,7 @@ from django.db.models.functions import Lower
 from apps.accounts.validators import (
     ASCII_EMAIL_MESSAGE,
     EMAIL_MAX_LENGTH,
+    is_encodable_password,
     normalize_email_address,
     normalized_email_errors,
     validate_normalized_email,
@@ -86,6 +87,14 @@ class User(AbstractUser):
     matches, external IDs) does not live here; it lives on Player. Each
     Account creates at most one Player, its own (ADR 0002).
     """
+
+    def check_password(self, raw_password: str | None) -> bool:
+        """Django's check, False for a password that is not UTF-8 text
+        (a lone surrogate from JSON), which the hasher cannot encode (#100).
+        Such a password can never have been set."""
+        if raw_password is not None and not is_encodable_password(raw_password):
+            return False
+        return super().check_password(raw_password)
 
     # Removing the inherited fields: the stubs type them as str.
     username = None  # type: ignore[assignment]

@@ -17,7 +17,7 @@ from django.conf import settings
 django.setup()
 print(json.dumps({
     'PASSWORD_MIN_LENGTH': settings.PASSWORD_MIN_LENGTH,
-    'MIN_LENGTH_OPTION': settings.AUTH_PASSWORD_VALIDATORS[1]['OPTIONS']['min_length'],
+    'MIN_LENGTH_OPTION': settings.AUTH_PASSWORD_VALIDATORS[2]['OPTIONS']['min_length'],
     'PASSWORD_BREACH_API_URL': settings.PASSWORD_BREACH_API_URL,
     'PASSWORD_BREACH_TIMEOUT_SECONDS': settings.PASSWORD_BREACH_TIMEOUT_SECONDS,
     'SESSION_MAX_AGE_DAYS': settings.SESSION_MAX_AGE_DAYS,

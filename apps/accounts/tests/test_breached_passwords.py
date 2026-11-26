@@ -88,14 +88,16 @@ def test_the_validator_refuses_with_a_clear_message(
 def test_the_validators_are_djangos_four_then_the_breach_check() -> None:
     validators = get_default_password_validators()
 
+    # After the text check that keeps an unencodable password from the hasher.
     assert [type(v).__name__ for v in validators] == [
+        "EncodablePasswordValidator",
         "UserAttributeSimilarityValidator",
         "MinimumLengthValidator",
         "CommonPasswordValidator",
         "NumericPasswordValidator",
         "BreachedPasswordValidator",
     ]
-    minimum = validators[1]
+    minimum = validators[2]
     assert isinstance(minimum, MinimumLengthValidator)
     assert minimum.min_length == settings.PASSWORD_MIN_LENGTH >= 8
 

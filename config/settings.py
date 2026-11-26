@@ -1221,10 +1221,14 @@ MFA_ADAPTER = "apps.accounts.mfa_adapter.MFAAdapter"
 # Unset or empty gives 8.
 PASSWORD_MIN_LENGTH = _password_min_length("PASSWORD_MIN_LENGTH", 8)
 
-# Django's four standard rules, then the breached password check
+# A text check first (a password that is not valid UTF-8 text cannot be
+# hashed), Django's four standard rules, then the breached password check
 # (apps/accounts/breached.py, #100, ADR 0047). Every path that sets a
 # password runs them all.
 AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "apps.accounts.validators.EncodablePasswordValidator",
+    },
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
