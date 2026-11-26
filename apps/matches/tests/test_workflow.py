@@ -1,5 +1,9 @@
 """The match confirmation workflow: confirm, dispute, resolve, void, edit (#26).
 
+Resolving a dispute, voiding one match, and editing are the Event's
+verified Organizer's (or the submitting application's); a moderator does
+none of them (#273).
+
 Every transition writes exactly one Audit Event and sends its signal
 inside the transaction. A refused or failed action writes nothing and
 sends nothing. Made-up data only.
@@ -34,7 +38,7 @@ from apps.matches.models import (
     MatchStatus,
     Team,
 )
-from apps.matches.permissions import MatchActionDenied, is_moderator
+from apps.matches.permissions import MatchActionDenied
 from apps.matches.services import (
     DuplicateMatchError,
     MatchValidationError,
@@ -256,24 +260,44 @@ def test_only_a_participant_disputes(pending: Match, moderator: User) -> None:
         dispute_match(pending, actor=moderator)
 
 
-# Dispute outcomes (AC 8).
+# Dispute outcomes (AC 8). Only the Event's verified Organizer settles one
+# (ADR 0034).
 
 
 @pytest.fixture
-def disputed(confirmed: Match, players: list[Player]) -> Match:
-    return dispute_match(confirmed, actor=players[0].account)
+def member(event: Event) -> User:
+    return _member(event)
+
+
+@pytest.fixture
+def event_confirmed(event: Event, players: list[Player], member: User) -> Match:
+    """An Event match the Organizer's member recorded: confirmed at once."""
+    return record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=GAMES,
+        played_on=PLAYED_ON,
+        submitted_by_user=member,
+        event=event,
+    ).match
+
+
+@pytest.fixture
+def disputed(event_confirmed: Match, players: list[Player]) -> Match:
+    return dispute_match(event_confirmed, actor=players[0].account)
 
 
 def test_resolving_a_dispute_as_confirmed(
-    disputed: Match, moderator: User, signals: SignalLog
+    disputed: Match, member: User, signals: SignalLog
 ) -> None:
     resolve_dispute(
-        disputed, actor=moderator, outcome=MatchStatus.CONFIRMED, reason=REASON
+        disputed, actor=member, outcome=MatchStatus.CONFIRMED, reason=REASON
     )
 
     assert _status(disputed) == MatchStatus.CONFIRMED
     [audit] = _audits(disputed, AuditAction.DISPUTE_OUTCOME)
-    assert audit.actor_user == moderator
+    assert audit.actor_user == member
     assert audit.reason == REASON
     assert audit.before == {"status": MatchStatus.DISPUTED}
     assert audit.after == {"status": MatchStatus.CONFIRMED}
@@ -281,9 +305,9 @@ def test_resolving_a_dispute_as_confirmed(
 
 
 def test_resolving_a_dispute_as_voided(
-    disputed: Match, moderator: User, signals: SignalLog
+    disputed: Match, member: User, signals: SignalLog
 ) -> None:
-    resolve_dispute(disputed, actor=moderator, outcome="voided", reason=REASON)
+    resolve_dispute(disputed, actor=member, outcome="voided", reason=REASON)
 
     assert _status(disputed) == MatchStatus.VOIDED
     assert len(_audits(disputed, AuditAction.DISPUTE_OUTCOME)) == 1
@@ -293,11 +317,11 @@ def test_resolving_a_dispute_as_voided(
 
 @pytest.mark.parametrize("reason", ["", "   "])
 def test_a_resolution_needs_a_reason(
-    disputed: Match, moderator: User, reason: str
+    disputed: Match, member: User, reason: str
 ) -> None:
     with pytest.raises(ValueError, match="Give a reason"):
         resolve_dispute(
-            disputed, actor=moderator, outcome=MatchStatus.CONFIRMED, reason=reason
+            disputed, actor=member, outcome=MatchStatus.CONFIRMED, reason=reason
         )
 
     assert _status(disputed) == MatchStatus.DISPUTED
@@ -306,10 +330,10 @@ def test_a_resolution_needs_a_reason(
 
 @pytest.mark.parametrize("outcome", ["pending", "disputed", "deleted"])
 def test_a_resolution_is_confirmed_or_voided(
-    disputed: Match, moderator: User, outcome: str
+    disputed: Match, member: User, outcome: str
 ) -> None:
     with pytest.raises(ValueError, match="confirmed or voided"):
-        resolve_dispute(disputed, actor=moderator, outcome=outcome, reason=REASON)
+        resolve_dispute(disputed, actor=member, outcome=outcome, reason=REASON)
 
 
 def test_a_participant_cannot_resolve(disputed: Match, players: list[Player]) -> None:
@@ -322,36 +346,40 @@ def test_a_participant_cannot_resolve(disputed: Match, players: list[Player]) ->
         )
 
 
-def test_only_a_disputed_match_is_resolved(confirmed: Match, moderator: User) -> None:
+def test_only_a_disputed_match_is_resolved(
+    event_confirmed: Match, member: User
+) -> None:
     with pytest.raises(MatchStateError):
         resolve_dispute(
-            confirmed, actor=moderator, outcome=MatchStatus.VOIDED, reason=REASON
+            event_confirmed, actor=member, outcome=MatchStatus.VOIDED, reason=REASON
         )
 
 
-# Voiding (AC 7).
+# Voiding (AC 7). Only an actor ``can_change_match`` allows.
 
 
-def test_a_moderator_voids_a_confirmed_match(
-    confirmed: Match, moderator: User, signals: SignalLog
+def test_an_organizer_member_voids_a_confirmed_match(
+    event_confirmed: Match, member: User, signals: SignalLog
 ) -> None:
-    void_match(confirmed, actor=moderator, reason=REASON)
+    void_match(event_confirmed, actor=member)
 
-    assert _status(confirmed) == MatchStatus.VOIDED
-    [audit] = _audits(confirmed, AuditAction.MATCH_VOID)
-    assert audit.actor_user == moderator
-    assert audit.reason == REASON
+    assert _status(event_confirmed) == MatchStatus.VOIDED
+    [audit] = _audits(event_confirmed, AuditAction.MATCH_VOID)
+    assert audit.actor_user == member
+    assert audit.reason == ""
     assert audit.before == {"status": MatchStatus.CONFIRMED}
     assert audit.after == {"status": MatchStatus.VOIDED}
-    assert signals.changed == [(confirmed.pk, MatchChange.VOID, PLAYED_ON)]
+    assert signals.changed == [(event_confirmed.pk, MatchChange.VOID, PLAYED_ON)]
 
 
 def test_voiding_a_pending_match_sends_no_change(
-    pending: Match, moderator: User, signals: SignalLog
+    event: Event, member: User, signals: SignalLog
 ) -> None:
-    void_match(pending, actor=moderator)
+    match: Match = MatchFactory.create(event=event)
 
-    assert _status(pending) == MatchStatus.VOIDED
+    void_match(match, actor=member)
+
+    assert _status(match) == MatchStatus.VOIDED
     assert signals.changed == []
 
 
@@ -365,14 +393,6 @@ def test_the_submitting_application_voids_its_match(signals: SignalLog) -> None:
 
     [audit] = _audits(match, AuditAction.MATCH_VOID)
     assert audit.actor_application == application
-
-
-def test_an_event_member_voids_an_event_match(event: Event) -> None:
-    match: Match = MatchFactory.create(event=event)
-
-    void_match(match, actor=_member(event))
-
-    assert _status(match) == MatchStatus.VOIDED
 
 
 @pytest.mark.parametrize("with_event", [False, True])
@@ -391,26 +411,38 @@ def test_a_club_admin_cannot_void(event: Event, with_event: bool) -> None:
     assert _status(match) == MatchStatus.CONFIRMED
 
 
-def test_a_voided_match_cannot_be_voided_again(pending: Match, moderator: User) -> None:
-    void_match(pending, actor=moderator)
+def test_nobody_voids_a_self_reported_match_one_at_a_time(
+    confirmed: Match, players: list[Player], moderator: User
+) -> None:
+    for actor in (players[0].account, players[2].account, moderator):
+        with pytest.raises(MatchActionDenied):
+            void_match(confirmed, actor=actor)
+
+    assert _status(confirmed) == MatchStatus.CONFIRMED
+    assert _audits(confirmed, AuditAction.MATCH_VOID) == []
+
+
+def test_a_voided_match_cannot_be_voided_again(event: Event, member: User) -> None:
+    match: Match = MatchFactory.create(event=event)
+    void_match(match, actor=member)
 
     with pytest.raises(MatchStateError):
-        void_match(pending, actor=moderator)
+        void_match(match, actor=member)
 
-    assert len(_audits(pending, AuditAction.MATCH_VOID)) == 1
+    assert len(_audits(match, AuditAction.MATCH_VOID)) == 1
 
 
 def test_voiding_a_held_match_releases_the_other(
-    confirmed: Match, moderator: User, signals: SignalLog
+    event_confirmed: Match, member: User, signals: SignalLog
 ) -> None:
     other: Match = MatchFactory.create(played_on=date(2026, 5, 1))
     raw_update(other, status=MatchStatus.CONFIRMED)
     MatchFlag.objects.create(
-        match=other, reason=FlagReason.POSSIBLE_DUPLICATE, duplicate_of=confirmed
+        match=other, reason=FlagReason.POSSIBLE_DUPLICATE, duplicate_of=event_confirmed
     )
     assert not other.is_counted()
 
-    void_match(confirmed, actor=moderator)
+    void_match(event_confirmed, actor=member)
 
     assert other.is_counted()
     assert signals.changed == [
@@ -432,54 +464,56 @@ def _edit(match: Match, actor: Any, **overrides: Any) -> Match:
         "team_b": teams[Team.B],
         "games": OTHER_GAMES,
         "played_on": stored.played_on,
-        # Only a moderator may give a reason here (review finding L).
-        "reason": REASON if is_moderator(actor) else "",
     }
     values.update(overrides)
     return edit_match(match, actor=actor, **values)
 
 
 def test_an_edit_voids_the_old_match_and_creates_a_correction(
-    confirmed: Match, moderator: User, signals: SignalLog
+    event_confirmed: Match, member: User, signals: SignalLog
 ) -> None:
-    corrected = _edit(confirmed, moderator, played_on=date(2026, 5, 20))
+    corrected = _edit(event_confirmed, member, played_on=date(2026, 5, 20))
 
-    assert _status(confirmed) == MatchStatus.VOIDED
-    assert corrected.pk != confirmed.pk
-    assert corrected.public_code != confirmed.public_code
-    assert corrected.corrects_id == confirmed.pk
+    assert _status(event_confirmed) == MatchStatus.VOIDED
+    assert corrected.pk != event_confirmed.pk
+    assert corrected.public_code != event_confirmed.public_code
+    assert corrected.corrects_id == event_confirmed.pk
     assert corrected.status == MatchStatus.CONFIRMED
-    assert corrected.submitted_by_user_id == confirmed.submitted_by_user_id
+    assert corrected.submitted_by_user_id == event_confirmed.submitted_by_user_id
     assert corrected.played_on == date(2026, 5, 20)
     assert [(g.team_a_score, g.team_b_score) for g in corrected.games.all()] == list(
         OTHER_GAMES
     )
-    [audit] = _audits(confirmed, AuditAction.MATCH_EDIT)
-    assert audit.actor_user == moderator
-    assert audit.reason == REASON
+    [audit] = _audits(event_confirmed, AuditAction.MATCH_EDIT)
+    assert audit.actor_user == member
+    assert audit.reason == ""
     assert audit.before == {"status": MatchStatus.CONFIRMED}
     assert audit.after == {
         "status": MatchStatus.VOIDED,
         "corrected_by": corrected.public_code,
     }
-    assert _audits(confirmed, AuditAction.MATCH_VOID) == []
+    assert _audits(event_confirmed, AuditAction.MATCH_VOID) == []
     assert _audits(corrected) == []
-    assert signals.changed == [(confirmed.pk, MatchChange.EDIT, date(2026, 5, 20))]
+    assert signals.changed == [
+        (event_confirmed.pk, MatchChange.EDIT, date(2026, 5, 20))
+    ]
     assert signals.confirmed == []
 
 
 def test_the_change_date_is_the_earlier_one(
-    confirmed: Match, moderator: User, signals: SignalLog
+    event_confirmed: Match, member: User, signals: SignalLog
 ) -> None:
-    _edit(confirmed, moderator, played_on=date(2026, 6, 2))
+    _edit(event_confirmed, member, played_on=date(2026, 6, 2))
 
-    assert signals.changed == [(confirmed.pk, MatchChange.EDIT, PLAYED_ON)]
+    assert signals.changed == [(event_confirmed.pk, MatchChange.EDIT, PLAYED_ON)]
 
 
 def test_editing_a_pending_match_keeps_it_pending(
-    pending: Match, moderator: User, signals: SignalLog
+    event: Event, member: User, signals: SignalLog
 ) -> None:
-    corrected = _edit(pending, moderator)
+    match: Match = MatchFactory.create(event=event)
+
+    corrected = _edit(match, member)
 
     assert corrected.status == MatchStatus.PENDING
     assert signals.changed == []
@@ -487,21 +521,25 @@ def test_editing_a_pending_match_keeps_it_pending(
 
 
 def test_an_edit_with_invalid_scores_changes_nothing(
-    confirmed: Match, moderator: User, signals: SignalLog
+    event_confirmed: Match, member: User, signals: SignalLog
 ) -> None:
     count = Match.objects.count()
 
     with pytest.raises(MatchValidationError):
-        _edit(confirmed, moderator, games=((11, 10),))
+        _edit(event_confirmed, member, games=((11, 10),))
 
-    assert _status(confirmed) == MatchStatus.CONFIRMED
+    assert _status(event_confirmed) == MatchStatus.CONFIRMED
     assert Match.objects.count() == count
-    assert _audits(confirmed, AuditAction.MATCH_EDIT) == []
+    assert _audits(event_confirmed, AuditAction.MATCH_EDIT) == []
     assert signals.changed == []
 
 
 def test_an_edit_that_duplicates_another_match_rolls_back(
-    confirmed: Match, moderator: User, players: list[Player], signals: SignalLog
+    event_confirmed: Match,
+    event: Event,
+    member: User,
+    players: list[Player],
+    signals: SignalLog,
 ) -> None:
     other = record_match(
         format=MatchFormat.DOUBLES,
@@ -509,16 +547,18 @@ def test_an_edit_that_duplicates_another_match_rolls_back(
         team_b=players[2:],
         games=OTHER_GAMES,
         played_on=date(2026, 6, 3),
-        submitted_by_user=players[0].account,
+        submitted_by_user=member,
+        event=event,
     ).match
     count = Match.objects.count()
+    signals.changed.clear()
 
     with pytest.raises(DuplicateMatchError):
-        _edit(confirmed, moderator, played_on=other.played_on)
+        _edit(event_confirmed, member, played_on=other.played_on)
 
-    assert _status(confirmed) == MatchStatus.CONFIRMED
+    assert _status(event_confirmed) == MatchStatus.CONFIRMED
     assert Match.objects.count() == count
-    assert _audits(confirmed, AuditAction.MATCH_EDIT) == []
+    assert _audits(event_confirmed, AuditAction.MATCH_EDIT) == []
     assert signals.changed == []
 
 
@@ -542,16 +582,15 @@ def test_an_edit_keeps_the_application_and_external_id(
     assert audit.actor_application == application
 
 
-def test_a_voided_match_cannot_be_edited(pending: Match, moderator: User) -> None:
-    void_match(pending, actor=moderator)
+def test_a_voided_match_cannot_be_edited(event: Event, member: User) -> None:
+    match: Match = MatchFactory.create(event=event)
+    void_match(match, actor=member)
 
     with pytest.raises(MatchStateError):
-        _edit(pending, moderator)
+        _edit(match, member)
 
 
-def test_a_moderator_or_the_organizer_edits_a_disputed_match(
-    event: Event, moderator: User
-) -> None:
+def test_only_the_settling_organizer_edits_a_disputed_match(event: Event) -> None:
     match: Match = MatchFactory.create(event=event)
     raw_update(match, status=MatchStatus.DISPUTED)
     member = _member(event)
@@ -570,17 +609,7 @@ def test_a_moderator_or_the_organizer_edits_a_disputed_match(
             team_a=[Player.objects.get(account=playing)],
         )
 
-    corrected = _edit(match, moderator, games=((11, 3),))
-    assert corrected.status == MatchStatus.CONFIRMED
-
-
-def test_the_organizer_correction_of_a_disputed_match_is_confirmed(
-    event: Event,
-) -> None:
-    match: Match = MatchFactory.create(event=event)
-    raw_update(match, status=MatchStatus.DISPUTED)
-
-    corrected = _edit(match, _member(event), games=((11, 3),), reason=REASON)
+    corrected = _edit(match, member, games=((11, 3),), reason=REASON)
 
     assert corrected.status == MatchStatus.CONFIRMED
 
@@ -633,30 +662,32 @@ def test_an_unsaved_match_is_refused(players: list[Player]) -> None:
 # Holds and releases across an edit.
 
 
-def _held_pair(players: list[Player]) -> tuple[Match, Match]:
-    """Two confirmed near duplicates, each holding the other."""
+def _held_pair(players: list[Player]) -> tuple[Match, Match, User]:
+    """Two confirmed near duplicates, each holding the other, and the
+    Organizer member who recorded them."""
     event = EventFactory.create(organizer=verified_organizer())
+    member = _member(event)
     values: dict[str, Any] = {
         "format": MatchFormat.DOUBLES,
         "team_a": players[:2],
         "team_b": players[2:],
         "played_on": PLAYED_ON,
-        "submitted_by_user": _member(event),
+        "submitted_by_user": member,
         "event": event,
     }
     first = record_match(games=GAMES, **values).match
     second = record_match(games=OTHER_GAMES, **values).match
-    return first, second
+    return first, second, member
 
 
 def test_an_edit_that_still_holds_the_other_sends_it_nothing(
-    players: list[Player], moderator: User, signals: SignalLog
+    players: list[Player], signals: SignalLog
 ) -> None:
-    first, second = _held_pair(players)
+    first, second, member = _held_pair(players)
     signals.changed.clear()
     signals.confirmed.clear()
 
-    corrected = _edit(first, moderator, games=((11, 0), (11, 1)))
+    corrected = _edit(first, member, games=((11, 0), (11, 1)))
 
     assert not second.is_counted()
     assert not corrected.is_counted()
@@ -665,13 +696,13 @@ def test_an_edit_that_still_holds_the_other_sends_it_nothing(
 
 
 def test_an_edit_of_a_held_match_onto_another_day_releases_the_other(
-    players: list[Player], moderator: User, signals: SignalLog
+    players: list[Player], signals: SignalLog
 ) -> None:
-    first, second = _held_pair(players)
+    first, second, member = _held_pair(players)
     signals.changed.clear()
     signals.confirmed.clear()
 
-    corrected = _edit(first, moderator, played_on=date(2026, 6, 4))
+    corrected = _edit(first, member, played_on=date(2026, 6, 4))
 
     assert second.is_counted()
     assert corrected.is_counted()

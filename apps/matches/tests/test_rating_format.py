@@ -9,11 +9,9 @@ it to the format. Made-up data only.
 from datetime import date
 
 import pytest
-from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
-from apps.accounts.tests.factories import UserFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus, RatingFormat
 from apps.matches.services import derive_rating_format, record_match
 from apps.matches.tests.factories import DoublesMatchFactory, MatchFactory
@@ -146,23 +144,18 @@ def test_a_later_division_removal_keeps_the_stored_value() -> None:
 def test_a_correction_gets_its_own_rating_format() -> None:
     players = _players(MENS, MENS, MENS, MENS)
     old = _record(players)
-    moderator = UserFactory.create()
-    moderator.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
     Player.objects.filter(pk=players[0].pk).update(gender_division="")
 
+    # A player's correction of the pending self-submission (#267).
     corrected = edit_match(
         old,
-        actor=moderator,
-        reason="Fixed the score.",
+        actor=players[1].account,
         format=MatchFormat.DOUBLES,
         team_a=players[:2],
         team_b=players[2:],
         games=[(11, 6)],
         played_on=PLAYED_ON,
+        as_player=True,
     )
 
     old.refresh_from_db()

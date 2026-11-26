@@ -46,8 +46,8 @@ each with a required reason (``workflow.resolve_dispute`` and
 ``workflow.edit_match``). Both refuse anyone ``permissions.settles_dispute``
 refuses, a member whose Player plays in the match included, with the
 unknown-code 404, before any team code is read. A moderator who is not a
-member is refused the same way: moderators review matches in the admin
-(ADR 0029). The disputed matches of the signed-in Account's verified
+member is refused the same way: moderators do not review matches (#273,
+ADR 0034). The disputed matches of the signed-in Account's verified
 Organizers' Events are at /api/v1/me/matches/organizer-disputes, and the
 disputed matches the signed-in Account's Player played in are at
 /api/v1/me/matches/disputes (#272).
@@ -456,7 +456,6 @@ def correct_match(
                 event_label=match.event_label,
                 bracket_label=match.bracket_label,
                 sequence=match.sequence,
-                as_moderator=False,
                 as_player=True,
             )
     except MatchActionDenied:
@@ -472,7 +471,7 @@ def _settled_match(request: HttpRequest, code: str) -> tuple["_User", Match]:
     Anyone who may not settle a dispute on the match as its Event's
     verified Organizer (``settles_dispute``) gets the unknown-code 404,
     before anything else is read. A moderator who is not a member gets it
-    too: moderators review matches in the admin (ADR 0029).
+    too: moderators do not review matches (#273, ADR 0034).
     """
     account = request_account(request)
     match = get_by_public_code(Match.objects.all(), code)
@@ -506,7 +505,6 @@ def resolve_match_dispute(
                 actor=account,
                 outcome=payload.outcome,
                 reason=payload.reason,
-                as_moderator=False,
             )
     except MatchActionDenied:
         raise Http404 from None
@@ -574,7 +572,6 @@ def correct_disputed_match(
                 event_label=match.event_label,
                 bracket_label=match.bracket_label,
                 sequence=match.sequence,
-                as_moderator=False,
             )
     except MatchActionDenied:
         raise Http404 from None

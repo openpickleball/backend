@@ -3,11 +3,8 @@
 A match with an Event is its kind; with a Club and no Event it is
 ``rec_verified`` (ADR 0024: such a match can no longer be recorded since
 ADR 0021, so these tests write one as a raw ledger row); with neither it
-is self-reported. A self-reported match
-a moderator confirmed (a dispute ruled confirmed, or a moderator's
-correction created confirmed) sends every participant as
-``confirmed_by``, read from the audit log. Every other match sends only
-the players who confirmed it. Each case is recorded through
+is self-reported. Every match sends only the players who confirmed it as
+``confirmed_by`` (#273). Each case is recorded through
 ``RatingEngine(load_config())``. Made-up data only.
 """
 
@@ -15,11 +12,9 @@ from datetime import date
 
 import open_engine
 import pytest
-from django.contrib.auth.models import Permission
 from pytest_django import DjangoAssertNumQueries
 
 from apps.accounts.models import User
-from apps.accounts.tests.factories import UserFactory
 from apps.clubs.models import Club
 from apps.clubs.tests.factories import (
     ClubFactory,
@@ -35,7 +30,6 @@ from apps.matches.workflow import (
     confirm_match,
     dispute_match,
     edit_match,
-    resolve_dispute,
 )
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
@@ -56,17 +50,6 @@ OTHER_GAMES = [(11, 7)]
 def players() -> list[Player]:
     """Team A is players 0 and 1, team B players 2 and 3."""
     return [PlayerFactory.create() for _ in range(4)]
-
-
-@pytest.fixture
-def moderator() -> User:
-    account: User = UserFactory.create()
-    account.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
-    return account
 
 
 @pytest.fixture
@@ -118,16 +101,17 @@ def _submit(
     ).match
 
 
-def _edit(match: Match, players: list[Player], moderator: User) -> Match:
+def _correct(match: Match, players: list[Player], corrector: Player) -> Match:
+    """A player's correction (#267): pending, with the corrector's confirm."""
     return edit_match(
         match,
-        actor=moderator,
-        reason="Corrected the score.",
+        actor=corrector.account,
         format=MatchFormat.DOUBLES,
         team_a=players[:2],
         team_b=players[2:],
         games=OTHER_GAMES,
         played_on=PLAYED_ON,
+        as_player=True,
     )
 
 
@@ -202,60 +186,12 @@ def test_one_team_confirming_never_passes(players: list[Player]) -> None:
     assert result.reason is open_engine.RejectionReason.SELF_REPORTED_UNCONFIRMED
 
 
-def test_a_dispute_ruled_confirmed_sends_every_participant(
-    players: list[Player], moderator: User
-) -> None:
-    match = _submit(players)
-    confirm_match(match, actor=players[0].account)
-    dispute_match(match, actor=players[2].account)
-    resolve_dispute(
-        match, actor=moderator, outcome=MatchStatus.CONFIRMED, reason="Checked it."
-    )
-
-    converted = to_engine_match(_fresh(match))
-
-    assert converted.match_type is open_engine.MatchType.SELF_REPORTED
-    assert converted.confirmed_by == _codes(players)
-    assert _record(match).counted
-    assert _listed(match) == converted
-
-
-def test_a_moderator_correction_of_a_confirmed_match_sends_every_participant(
-    players: list[Player], moderator: User
-) -> None:
-    old = _submit(players)
-    confirm_match(old, actor=players[0].account)
-    confirm_match(old, actor=players[3].account)
-
-    corrected = _edit(_fresh(old), players, moderator)
-
-    assert corrected.status == MatchStatus.CONFIRMED
-    converted = to_engine_match(_fresh(corrected))
-    assert converted.confirmed_by == _codes(players)
-    assert _record(corrected).counted
-    assert _listed(corrected) == converted
-
-
-def test_a_moderator_correction_of_a_disputed_match_sends_every_participant(
-    players: list[Player], moderator: User
-) -> None:
-    old = _submit(players)
-    dispute_match(old, actor=players[1].account)
-
-    corrected = _edit(_fresh(old), players, moderator)
-
-    assert corrected.status == MatchStatus.CONFIRMED
-    assert to_engine_match(_fresh(corrected)).confirmed_by == _codes(players)
-    assert _record(corrected).counted
-
-
 def test_a_pending_correction_confirmed_by_both_teams_sends_the_confirmers(
-    players: list[Player], moderator: User
+    players: list[Player],
 ) -> None:
     old = _submit(players)
-    corrected = _edit(old, players, moderator)
+    corrected = _correct(old, players, players[0])
     assert corrected.status == MatchStatus.PENDING
-    confirm_match(corrected, actor=players[0].account)
     confirm_match(corrected, actor=players[3].account)
 
     converted = to_engine_match(_fresh(corrected))
@@ -298,14 +234,14 @@ def test_an_event_duplicate_of_a_pending_self_submission_keeps_its_confirmers(
     assert _listed(match) == converted
 
 
-def test_a_club_dispute_ruled_confirmed_sends_only_the_confirmers(
-    players: list[Player], club: Club, moderator: User
+def test_a_club_dispute_settled_as_confirmed_sends_only_the_confirmers(
+    players: list[Player], club: Club
 ) -> None:
     match = _club_ledger_match(players, club)
     dispute_match(match, actor=players[2].account)
-    resolve_dispute(
-        match, actor=moderator, outcome=MatchStatus.CONFIRMED, reason="Checked it."
-    )
+    # No actor settles a club-only match's dispute any more, so the
+    # settled row is written as one already in the Ledger would be.
+    raw_update(match, status=MatchStatus.CONFIRMED)
 
     converted = to_engine_match(_fresh(match))
 
@@ -314,46 +250,22 @@ def test_a_club_dispute_ruled_confirmed_sends_only_the_confirmers(
     assert _record(match).counted
 
 
-def test_another_match_s_ruling_does_not_count_for_this_one(
-    players: list[Player], moderator: User
-) -> None:
-    ruled = _submit(players)
-    dispute_match(ruled, actor=players[2].account)
-    resolve_dispute(
-        ruled, actor=moderator, outcome=MatchStatus.CONFIRMED, reason="Checked it."
-    )
-    other = _submit(players, games=OTHER_GAMES)
-    confirm_match(other, actor=players[0].account)
-    raw_update(other, status=MatchStatus.CONFIRMED)
-
-    assert to_engine_match(_fresh(other)).confirmed_by == _codes([players[0]])
-
-
-def test_counted_engine_matches_reads_moderator_actions_in_fixed_queries(
+def test_counted_engine_matches_reads_in_fixed_queries(
     players: list[Player],
-    moderator: User,
     django_assert_num_queries: DjangoAssertNumQueries,
 ) -> None:
-    ruled = _submit(players)
-    dispute_match(ruled, actor=players[2].account)
-    resolve_dispute(
-        ruled, actor=moderator, outcome=MatchStatus.CONFIRMED, reason="Checked it."
-    )
     others = [PlayerFactory.create() for _ in range(4)]
-    old = _submit(others)
-    confirm_match(old, actor=others[0].account)
-    confirm_match(old, actor=others[2].account)
-    corrected = _edit(_fresh(old), others, moderator)
-    third = [PlayerFactory.create() for _ in range(4)]
-    plain = _submit(third)
-    confirm_match(plain, actor=third[1].account)
-    confirm_match(plain, actor=third[3].account)
+    first = _submit(players)
+    confirm_match(first, actor=players[0].account)
+    confirm_match(first, actor=players[2].account)
+    second = _submit(others)
+    confirm_match(second, actor=others[1].account)
+    confirm_match(second, actor=others[3].account)
 
     with django_assert_num_queries(4):
         listed = {m.match_id: m for m in counted_engine_matches()}
 
-    assert listed[ruled.public_code].confirmed_by == _codes(players)
-    assert listed[corrected.public_code].confirmed_by == _codes(others)
-    assert listed[plain.public_code].confirmed_by == _codes([third[1], third[3]])
-    for match in (ruled, corrected, plain):
+    assert listed[first.public_code].confirmed_by == _codes([players[0], players[2]])
+    assert listed[second.public_code].confirmed_by == _codes([others[1], others[3]])
+    for match in (first, second):
         assert listed[match.public_code] == to_engine_match(_fresh(match))

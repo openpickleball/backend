@@ -1,4 +1,7 @@
-"""Who may confirm, dispute, and moderate a Match (#26). Made-up data only."""
+"""Who may confirm and dispute a Match, and who is a moderator (#26).
+
+A moderator only voids matches in bulk (#273). Made-up data only.
+"""
 
 import pytest
 from django.contrib.auth.models import AnonymousUser, Permission
@@ -177,7 +180,7 @@ def test_no_one_confirms_as_organizer_without_an_event(match: Match) -> None:
     assert not can_confirm_as_organizer(match.submitted_by_user, match)  # type: ignore[arg-type]
 
 
-# is_moderator
+# is_moderator (the bulk void's rule)
 
 
 def test_an_account_with_the_permission_is_a_moderator() -> None:

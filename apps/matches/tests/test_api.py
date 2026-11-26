@@ -23,7 +23,7 @@ from apps.accounts.tests.headless import (
     verify_from_last_mail,
 )
 from apps.matches.models import Game, Match, MatchParticipant, MatchStatus, Team
-from apps.matches.workflow import void_match
+from apps.matches.tests.factories import raw_update
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 from apps.public_ids.codes import CodeType, generate
@@ -502,9 +502,9 @@ def test_confirming_a_disputed_match_gets_409(
 
 @pytest.mark.parametrize("action", ["confirm", "dispute"])
 def test_voided_match_gets_409(
-    pending: Match, players: list[Player], moderator: Any, action: str
+    pending: Match, players: list[Player], action: str
 ) -> None:
-    void_match(pending, actor=moderator, reason="Entered by mistake.")
+    raw_update(pending, status=MatchStatus.VOIDED)
 
     response = act(signed_in(players[0].account), pending.public_code, action)
 

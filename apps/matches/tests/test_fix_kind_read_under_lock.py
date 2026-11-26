@@ -109,7 +109,6 @@ def test_edit_match_keeps_the_old_match_type_over_a_kind_change(
         team_b=players[1:],
         games=((11, 3),),
         played_on=PLAYED_ON,
-        as_moderator=False,
     )
 
     assert _stored_type(original) == MatchType.LEAGUE

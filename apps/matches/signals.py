@@ -4,9 +4,9 @@
 that became confirmed: a pending match confirmed by both teams or by an
 organizer, a match created confirmed by ``record_match()``, an existing
 pending match confirmed by a permitted duplicate submission, a disputed
-match a moderator or the Event's verified Organizer resolved as confirmed,
-and a confirmed correction of a match that was not counting (such as a
-disputed match corrected by a moderator or the Organizer), and a disputed
+match the Event's verified Organizer resolved as confirmed, and a
+confirmed correction of a match that was not counting (such as a
+disputed match corrected by the Organizer), and a disputed
 match that is confirmed again because its last open dispute was withdrawn
 (``withdraw_dispute``). It is sent once per confirmation, never for a
 repeated confirm.
@@ -21,9 +21,8 @@ affect), and ``change``, a ``MatchChange``:
 - ``hold``: a match that was counting is now held by a new possible
   duplicate flag;
 - ``release``: a match held by a possible duplicate flag counts again,
-  because the match that held it was voided, because a moderator
-  resolved the flag (``resolve_flags``, also through ``approve_match``),
-  or because both its matches were vouched for (``vouch_for_match``).
+  because the match that held it was voided, or because both its
+  matches were vouched for (``vouch_for_match``).
 
 The workflow sends at most one ``match_changed`` per match per call.
 

@@ -63,42 +63,43 @@ def _participant(match: Match) -> User:
     return account
 
 
+def _member(event: Event) -> User:
+    member: User = OrganizerMemberFactory.create(organizer=event.organizer).account
+    return member
+
+
 ACTIONS: dict[str, tuple[MatchStatus, Callable[[Match, User], object]]] = {
     "confirm": (
         MatchStatus.PENDING,
-        lambda match, moderator: confirm_match(match, actor=_participant(match)),
+        lambda match, member: confirm_match(match, actor=_participant(match)),
     ),
     "dispute": (
         MatchStatus.CONFIRMED,
-        lambda match, moderator: dispute_match(match, actor=_participant(match)),
+        lambda match, member: dispute_match(match, actor=_participant(match)),
     ),
     "resolve": (
         MatchStatus.DISPUTED,
-        lambda match, moderator: resolve_dispute(
-            match, actor=moderator, outcome=MatchStatus.CONFIRMED, reason="checked"
+        lambda match, member: resolve_dispute(
+            match, actor=member, outcome=MatchStatus.CONFIRMED, reason="checked"
         ),
     ),
     "void": (
         MatchStatus.CONFIRMED,
-        lambda match, moderator: void_match(match, actor=moderator),
+        lambda match, member: void_match(match, actor=member),
     ),
 }
 
 
 @pytest.mark.parametrize("action", sorted(ACTIONS))
-def test_each_service_takes_the_lineup_lock(action: str, moderator: User) -> None:
+def test_each_service_takes_the_lineup_lock(action: str, event: Event) -> None:
     status, call = ACTIONS[action]
-    match = _match(status)
+    match = _match(status, event=event)
+    member = _member(event)
     assert held_advisory_keys() == set()
 
-    call(match, moderator)
+    call(match, member)
 
     assert _key(match) in held_advisory_keys()
-
-
-def _member(event: Event) -> User:
-    member: User = OrganizerMemberFactory.create(organizer=event.organizer).account
-    return member
 
 
 def test_an_organizer_confirmation_takes_the_lineup_lock(event: Event) -> None:

@@ -187,12 +187,12 @@ def test_a_run_in_flight_stops_once_the_batch_is_voided(
 
 
 def test_a_row_whose_match_was_voided_is_reported_voided(
-    event: Event, member: User, moderator: User, players: list[Player]
+    event: Event, member: User, players: list[Player]
 ) -> None:
     results_file = _file(member, event, players)
     _stopped_run(results_file)
     first, second = results_file.submission_batch.matches.order_by("sequence")
-    void_match(first, actor=moderator, reason=REASON)
+    void_match(first, actor=member)
     count = Match.objects.count()
 
     process_results_file(results_file.pk)

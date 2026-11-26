@@ -11,7 +11,6 @@ import pytest
 from django.core.cache import cache
 from django.test import Client
 
-from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.matches.models import Match, MatchParticipant, MatchStatus, Team
 from apps.matches.tests.factories import MatchFactory, raw_update
@@ -19,7 +18,6 @@ from apps.matches.workflow import (
     awaiting_confirmation,
     confirm_match,
     dispute_match,
-    void_match,
 )
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
@@ -83,10 +81,8 @@ def test_disputed_match_is_not_listed(pending: Match, players: list[Player]) -> 
         assert _codes(player) == set()
 
 
-def test_voided_match_is_not_listed(
-    pending: Match, players: list[Player], moderator: User
-) -> None:
-    void_match(pending, actor=moderator)
+def test_voided_match_is_not_listed(pending: Match, players: list[Player]) -> None:
+    raw_update(pending, status=MatchStatus.VOIDED)
     for player in players:
         assert _codes(player) == set()
 

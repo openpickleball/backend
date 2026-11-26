@@ -82,9 +82,12 @@ def test_a_duplicate_voided_before_its_lock_is_not_cited(
     assert recorded.match.status == MatchStatus.CONFIRMED
 
 
-def test_an_edit_holds_the_old_and_the_new_lineup_locks(moderator: User) -> None:
+def test_an_edit_holds_the_old_and_the_new_lineup_locks() -> None:
+    event = EventFactory.create(organizer=verified_organizer())
+    member: User = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=member)
     # Built by the factory, so no earlier call in this test took its locks.
-    old: Match = DoublesMatchFactory.create(played_on=PLAYED_ON)
+    old: Match = DoublesMatchFactory.create(played_on=PLAYED_ON, event=event)
     raw_update(old, status=MatchStatus.CONFIRMED)
     teams = {
         team: [p.player for p in old.participants.filter(team=team)] for team in Team
@@ -95,7 +98,7 @@ def test_an_edit_holds_the_old_and_the_new_lineup_locks(moderator: User) -> None
 
     edit_match(
         old,
-        actor=moderator,
+        actor=member,
         format=MatchFormat.DOUBLES,
         team_a=teams[Team.A],
         team_b=teams[Team.B],

@@ -1,21 +1,21 @@
 """A dispute resolved as confirmed after a replay rates the Match again (#47).
 
 A Match rated live is disputed, so the replay removes it from the
-ratings and the snapshot. A moderator then resolves the dispute as
-confirmed. Its old live update history row must not make the live
-update return ``unchanged``: the snapshot no longer holds the Match, so
-it goes to a replay, and the ratings end equal to a full replay of the
-counted ledger. Made-up data only.
+ratings and the snapshot. The Event's verified Organizer then resolves
+the dispute as confirmed (ADR 0034). Its old live update history row
+must not make the live update return ``unchanged``: the snapshot no
+longer holds the Match, so it goes to a replay, and the ratings end
+equal to a full replay of the counted ledger. Made-up data only.
 """
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 
 import pytest
-from django.contrib.auth.models import Permission
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
 from apps.events.models import EventKind
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus, Team
@@ -36,25 +36,20 @@ Capture = Callable[..., AbstractContextManager[list[Callable[[], None]]]]
 MENS_SINGLES = {Team.A: (GenderDivision.MENS,), Team.B: (GenderDivision.MENS,)}
 
 
-def _moderator() -> User:
-    account: User = UserFactory.create()
-    account.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
-    return account
-
-
 def test_a_dispute_resolved_as_confirmed_after_a_replay_is_rated(
     django_capture_on_commit_callbacks: Capture,
 ) -> None:
     match, players = saved_match(
         match_format=MatchFormat.SINGLES,
         divisions=MENS_SINGLES,
-        event=EventFactory.create(kind=EventKind.TOURNAMENT),
+        event=EventFactory.create(
+            kind=EventKind.TOURNAMENT, organizer=verified_organizer()
+        ),
     )
     a = players[Team.A][0]
+    assert match.event is not None
+    member: User = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=match.event.organizer, account=member)
     assert update_ratings_for_match(match.pk) == LiveUpdateOutcome.UPDATED
 
     with django_capture_on_commit_callbacks(execute=True):
@@ -65,7 +60,7 @@ def test_a_dispute_resolved_as_confirmed_after_a_replay_is_rated(
     with django_capture_on_commit_callbacks(execute=True):
         resolve_dispute(
             Match.objects.get(pk=match.pk),
-            actor=_moderator(),
+            actor=member,
             outcome=MatchStatus.CONFIRMED,
             reason="Made-up reason for a test.",
         )

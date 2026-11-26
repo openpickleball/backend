@@ -2,7 +2,7 @@
 editor may know it (review finding C, #26).
 
 The rule is ``record_match``'s, applied to the editing actor, not to the
-old match's submitter. A moderator may know it. Made-up data only.
+old match's submitter. Made-up data only.
 """
 
 from typing import Any
@@ -53,16 +53,6 @@ def test_an_editor_who_may_not_know_the_code_does_not_learn_it(event: Event) -> 
 
     assert error.value.existing_code is None
     assert other.public_code not in str(error.value)
-
-
-def test_a_moderator_learns_the_code(moderator: User) -> None:
-    old: Match = MatchFactory.create()
-    other: Match = MatchFactory.create()
-
-    with pytest.raises(DuplicateMatchError) as error:
-        _edit_into(old, other, moderator)
-
-    assert error.value.existing_code == other.public_code
 
 
 def test_an_editor_who_submitted_the_earlier_match_learns_the_code(

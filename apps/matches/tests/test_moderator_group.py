@@ -1,9 +1,10 @@
-"""The Moderator group and the permission split in the admin (#40).
+"""The Moderator group and the permission split in the admin (#40, #273).
 
 A data migration creates the group with exactly the permissions a
-moderator needs. Staff in the group can run every moderator action; staff
-without it see none, a forged action changes nothing, and the edit page
-is refused. Made-up data only.
+moderator needs. Staff in the group can run the two bulk void actions
+(a moderator's only match actions) and verify an Organizer; staff
+without it see no actions, and a forged action changes nothing. Made-up
+data only.
 """
 
 from datetime import date
@@ -16,21 +17,20 @@ from django.urls import reverse
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditAction, AuditEvent
-from apps.clubs.tests.factories import OrganizerFactory
-from apps.matches.models import (
-    FlagResolution,
-    Match,
-    MatchFlag,
-    MatchFormat,
-    MatchStatus,
+from apps.clubs.tests.factories import (
+    OrganizerFactory,
+    OrganizerMemberFactory,
+    verified_organizer,
 )
+from apps.events.models import Event
+from apps.events.tests.factories import EventFactory
+from apps.matches.models import Match, MatchFormat, MatchStatus, SubmissionBatch
 from apps.matches.permissions import (
     MODERATOR_GROUP,
     MODERATOR_PERMISSIONS,
     is_moderator,
 )
 from apps.matches.services import record_match
-from apps.matches.workflow import confirm_match, dispute_match
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
@@ -38,7 +38,7 @@ pytestmark = pytest.mark.django_db
 
 REASON = "Made-up moderator reason."
 PLAYED_ON = date(2026, 4, 11)
-MATCH_ACTIONS = ("approve_selected", "void_selected", "dismiss_flags_selected")
+MATCH_ACTIONS = ("void_batch_selected", "void_submitter_selected")
 EXPECTED = {
     "matches.moderate_match",
     "matches.view_match",
@@ -58,17 +58,37 @@ def players() -> list[Player]:
     return [PlayerFactory.create() for _ in range(4)]
 
 
-def _confirmed(players: list[Player], games: tuple[tuple[int, int], ...]) -> Match:
-    match = record_match(
+@pytest.fixture
+def event() -> Event:
+    made: Event = EventFactory.create(organizer=verified_organizer())
+    return made
+
+
+@pytest.fixture
+def member(event: Event) -> User:
+    account: User = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=account)
+    return account
+
+
+def _confirmed(
+    players: list[Player],
+    games: tuple[tuple[int, int], ...],
+    event: Event,
+    member: User,
+    batch: SubmissionBatch | None = None,
+) -> Match:
+    """A match of ``event``, confirmed as its verified Organizer's."""
+    return record_match(
         format=MatchFormat.DOUBLES,
         team_a=players[:2],
         team_b=players[2:],
         games=games,
         played_on=PLAYED_ON,
-        submitted_by_user=players[0].account,
+        event=event,
+        submitted_by_user=member,
+        submission_batch=batch,
     ).match
-    confirm_match(match, actor=players[0].account)
-    return confirm_match(match, actor=players[2].account)
 
 
 def _in_group() -> User:
@@ -89,15 +109,17 @@ def _staff_without_group() -> User:
     return account
 
 
-def _post_action(client: Client, url: str, action: str, pks: list[int]) -> None:
-    client.post(
-        url,
-        {
-            "action": action,
-            "_selected_action": [str(pk) for pk in pks],
-            "reason": REASON,
-        },
-    )
+def _post_action(
+    client: Client, url: str, action: str, pks: list[int], *, confirm: bool = False
+) -> None:
+    data: dict[str, object] = {
+        "action": action,
+        "_selected_action": [str(pk) for pk in pks],
+        "reason": REASON,
+    }
+    if confirm:
+        data["post"] = "yes"
+    client.post(url, data)
 
 
 def test_the_group_has_exactly_the_moderator_permissions() -> None:
@@ -114,42 +136,29 @@ def test_a_group_member_is_a_moderator() -> None:
 
 
 def test_group_member_runs_every_moderator_action(
-    client: Client, players: list[Player]
+    client: Client, players: list[Player], event: Event, member: User
 ) -> None:
     moderator = _in_group()
     client.force_login(moderator)
-    url = reverse("admin:matches_match_changelist") + "?review=all"
-    first = _confirmed(players, ((11, 7), (11, 9)))
-    second = _confirmed(players, ((11, 3), (11, 2)))
-    third = _confirmed(players, ((11, 1), (11, 0)))
-    dispute_match(first, actor=players[1].account)
+    url = reverse("admin:matches_match_changelist")
+    batch = SubmissionBatch.objects.create(submitted_by_user=member, event=event)
+    first = _confirmed(players, ((11, 7), (11, 9)), event, member, batch)
+    second = _confirmed(players, ((11, 3), (11, 2)), event, member)
 
-    page = client.get(url).content.decode()
-    for action in (*MATCH_ACTIONS, "edit_selected"):
-        assert action in page
+    page = client.get(url)
+    assert page.status_code == 200
+    for action in MATCH_ACTIONS:
+        assert action in page.content.decode()
+    detail = client.get(reverse("admin:matches_match_change", args=[first.pk]))
+    assert detail.status_code == 200
 
-    _post_action(client, url, "approve_selected", [first.pk])
-    assert Match.objects.get(pk=first.pk).status == MatchStatus.CONFIRMED
+    _post_action(client, url, "void_batch_selected", [first.pk], confirm=True)
+    assert Match.objects.get(pk=first.pk).status == MatchStatus.VOIDED
+    assert Match.objects.get(pk=second.pk).status == MatchStatus.CONFIRMED
 
-    _post_action(client, url, "dismiss_flags_selected", [second.pk])
-    assert MatchFlag.objects.filter(resolution=FlagResolution.DISMISSED).exists()
-
-    _post_action(client, url, "void_selected", [third.pk])
-    assert Match.objects.get(pk=third.pk).status == MatchStatus.VOIDED
-
-    edit = reverse("admin:matches_match_edit", args=[second.pk])
-    assert client.get(edit).status_code == 200
-    client.post(
-        edit,
-        {
-            "reason": REASON,
-            "played_on": PLAYED_ON.isoformat(),
-            "team_a": " ".join(p.public_code for p in players[:2]),
-            "team_b": " ".join(p.public_code for p in players[2:]),
-            "games": "11-4\n11-5",
-        },
-    )
-    assert Match.objects.filter(corrects=second).exists()
+    _post_action(client, url, "void_submitter_selected", [second.pk], confirm=True)
+    assert Match.objects.get(pk=second.pk).status == MatchStatus.VOIDED
+    assert AuditEvent.objects.filter(action=AuditAction.MATCH_BULK_VOID).count() == 2
 
     organizer = OrganizerFactory.create()
     _post_action(
@@ -160,39 +169,44 @@ def test_group_member_runs_every_moderator_action(
     )
     organizer.refresh_from_db()
     assert organizer.verified_by_id == moderator.pk
-    assert AuditEvent.objects.get(action=AuditAction.ORGANIZER_VERIFY).reason == REASON
+    verify = AuditEvent.objects.get(
+        action=AuditAction.ORGANIZER_VERIFY, actor_user=moderator
+    )
+    assert verify.reason == REASON
 
 
 def test_staff_without_the_group_sees_no_actions(
-    client: Client, players: list[Player]
+    client: Client, players: list[Player], event: Event, member: User
 ) -> None:
     client.force_login(_staff_without_group())
-    _confirmed(players, ((11, 7), (11, 9)))
+    _confirmed(players, ((11, 7), (11, 9)), event, member)
     OrganizerFactory.create()
 
-    matches_page = client.get(reverse("admin:matches_match_changelist") + "?review=all")
+    matches_page = client.get(reverse("admin:matches_match_changelist"))
     organizers_page = client.get(reverse("admin:clubs_organizer_changelist"))
 
     assert matches_page.status_code == 200
-    for action in (*MATCH_ACTIONS, "edit_selected"):
+    for action in MATCH_ACTIONS:
         assert action not in matches_page.content.decode()
     assert organizers_page.status_code == 200
     assert "verify_selected" not in organizers_page.content.decode()
 
 
 def test_staff_without_the_group_forged_posts_change_nothing(
-    client: Client, players: list[Player]
+    client: Client, players: list[Player], event: Event, member: User
 ) -> None:
     client.force_login(_staff_without_group())
-    url = reverse("admin:matches_match_changelist") + "?review=all"
-    first = _confirmed(players, ((11, 7), (11, 9)))
-    second = _confirmed(players, ((11, 3), (11, 2)))
-    dispute_match(first, actor=players[1].account)
+    url = reverse("admin:matches_match_changelist")
+    batch = SubmissionBatch.objects.create(submitted_by_user=member, event=event)
+    first = _confirmed(players, ((11, 7), (11, 9)), event, member, batch)
+    second = _confirmed(players, ((11, 3), (11, 2)), event, member)
     organizer = OrganizerFactory.create()
     before = AuditEvent.objects.count()
 
-    for action in (*MATCH_ACTIONS, "edit_selected"):
-        _post_action(client, url, action, [first.pk, second.pk])
+    for action in MATCH_ACTIONS:
+        for confirm in (False, True):
+            _post_action(client, url, action, [first.pk], confirm=confirm)
+            _post_action(client, url, action, [second.pk], confirm=confirm)
     _post_action(
         client,
         reverse("admin:clubs_organizer_changelist"),
@@ -200,35 +214,11 @@ def test_staff_without_the_group_forged_posts_change_nothing(
         [organizer.pk],
     )
 
-    assert Match.objects.get(pk=first.pk).status == MatchStatus.DISPUTED
+    assert Match.objects.get(pk=first.pk).status == MatchStatus.CONFIRMED
     assert Match.objects.get(pk=second.pk).status == MatchStatus.CONFIRMED
-    assert MatchFlag.objects.filter(resolved_at__isnull=False).count() == 0
     organizer.refresh_from_db()
     assert organizer.is_verified is False
     assert AuditEvent.objects.count() == before
-
-
-def test_staff_without_the_group_gets_403_on_the_edit_page(
-    client: Client, players: list[Player]
-) -> None:
-    client.force_login(_staff_without_group())
-    match = _confirmed(players, ((11, 7), (11, 9)))
-    edit = reverse("admin:matches_match_edit", args=[match.pk])
-
-    assert client.get(edit).status_code == 403
-    response = client.post(
-        edit,
-        {
-            "reason": REASON,
-            "played_on": PLAYED_ON.isoformat(),
-            "team_a": " ".join(p.public_code for p in players[:2]),
-            "team_b": " ".join(p.public_code for p in players[2:]),
-            "games": "11-4\n11-5",
-        },
-    )
-    assert response.status_code == 403
-    assert Match.objects.get(pk=match.pk).status == MatchStatus.CONFIRMED
-    assert not Match.objects.filter(corrects=match).exists()
 
 
 def test_superuser_who_is_not_active_is_not_a_moderator() -> None:

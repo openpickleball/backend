@@ -3,8 +3,8 @@ finding E).
 
 When a run finishes, every recorded row whose match is confirmed but held
 from counting gets the warning, so both rows of a held pair get it, and
-a row whose hold was lifted (the other match voided) does not. Made-up
-data only.
+a row whose hold was lifted (the other match voided by the Organizer's
+member) does not. Made-up data only.
 """
 
 import csv
@@ -13,7 +13,6 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from django.contrib.auth.models import Permission
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
@@ -41,8 +40,11 @@ def _warnings(row: dict[str, Any]) -> list[str]:
     return [warning["code"] for warning in row["warnings"]]
 
 
-def _pair_file() -> ResultsFile:
-    """Two rows, same players and date, other scores: a held pair."""
+def _pair_file() -> tuple[ResultsFile, User]:
+    """Two rows, same players and date, other scores: a held pair.
+
+    Returns the file and the member of the Event's Organizer who uploaded it.
+    """
     event: Event = EventFactory.create(organizer=verified_organizer())
     member: User = UserFactory.create()
     OrganizerMemberFactory.create(organizer=event.organizer, account=member)
@@ -59,7 +61,7 @@ def _pair_file() -> ResultsFile:
             + ["11", loser]
             + [""] * 8
         )
-    return create_results_file(
+    results_file = create_results_file(
         account=member,
         event=event,
         content=out.getvalue().encode(),
@@ -67,10 +69,11 @@ def _pair_file() -> ResultsFile:
         location="",
         players_13_or_older=True,
     )
+    return results_file, member
 
 
 def test_both_rows_of_a_held_pair_get_the_warning() -> None:
-    results_file = _pair_file()
+    results_file, _member = _pair_file()
 
     process_results_file(results_file.pk)
 
@@ -81,13 +84,7 @@ def test_both_rows_of_a_held_pair_get_the_warning() -> None:
 
 
 def test_a_row_whose_hold_was_lifted_gets_no_warning() -> None:
-    results_file = _pair_file()
-    moderator: User = UserFactory.create()
-    moderator.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
+    results_file, member = _pair_file()
     real_record_match = results_files.record_match
     recorded: list[Match] = []
 
@@ -95,7 +92,7 @@ def test_a_row_whose_hold_was_lifted_gets_no_warning() -> None:
         result = real_record_match(**values)
         recorded.append(result.match)
         if len(recorded) == 2:
-            void_match(recorded[0], actor=moderator, reason="Made-up reason.")
+            void_match(recorded[0], actor=member)
         return result
 
     with mock.patch.object(results_files, "record_match", record_then_void_first):
