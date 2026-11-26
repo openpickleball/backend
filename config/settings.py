@@ -489,10 +489,12 @@ ALLOWED_HOSTS = _list("DJANGO_ALLOWED_HOSTS")
 # ADMIN_SESSION_SECONDS after its latest MFA step, and a write needs an
 # MFA step within ADMIN_REAUTHENTICATION_SECONDS (config/admin.py).
 ADMIN_URL = _admin_url("ADMIN_URL", debug=DEBUG)
-ADMIN_SESSION_SECONDS = _seconds("ADMIN_SESSION_SECONDS", 3600)
-# At least 30: less would send nearly every write back for a code.
+# Both at least 30: less would send nearly every write back for a code.
+# Unset or empty, reauthentication is min(300, the session), so a short
+# session needs no second variable.
+ADMIN_SESSION_SECONDS = _seconds("ADMIN_SESSION_SECONDS", 3600, minimum=30)
 ADMIN_REAUTHENTICATION_SECONDS = _seconds(
-    "ADMIN_REAUTHENTICATION_SECONDS", 300, minimum=30
+    "ADMIN_REAUTHENTICATION_SECONDS", min(300, ADMIN_SESSION_SECONDS), minimum=30
 )
 if ADMIN_REAUTHENTICATION_SECONDS > ADMIN_SESSION_SECONDS:
     raise ImproperlyConfigured(

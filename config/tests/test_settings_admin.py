@@ -10,7 +10,8 @@ refused, whatever its case.
 ``ADMIN_SESSION_SECONDS`` (default 3600) is how long an MFA step opens
 the admin, and ``ADMIN_REAUTHENTICATION_SECONDS`` (default 300) how
 recent one must be before a write. Each is a whole number of seconds from
-1 to 86400, reauthentication at least 30 and at most the session limit.
+30 to 86400, reauthentication at most the session limit. Unset or empty,
+reauthentication is min(300, the session).
 
 A bad value stops startup, naming the variable, never echoing the value.
 Settings are read once at import, so each case starts a fresh process.
