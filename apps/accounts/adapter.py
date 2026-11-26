@@ -11,6 +11,7 @@ from django.contrib.sites.shortcuts import get_current_site
 from django.db import transaction
 from django.http import HttpRequest
 
+from apps.accounts.sessions import start_lifetime
 from apps.accounts.validators import (
     is_canonical_email,
     normalize_email_address,
@@ -42,6 +43,12 @@ class AccountAdapter(DefaultAccountAdapter):
         super().logout(request)
         if refused:
             refuse_signup(request.session)
+
+    def login(self, request: HttpRequest, user: AbstractBaseUser) -> None:
+        """allauth's login, which runs once every login stage passed, then
+        the session's lifetime clocks (#100, ADR 0047)."""
+        super().login(request, user)
+        start_lifetime(request.session)
 
     def get_client_ip(self, request: HttpRequest) -> str:
         """OPEN's client IP, for allauth's rate limits and user sessions.

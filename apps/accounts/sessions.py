@@ -1,4 +1,21 @@
-"""A player's sessions: listing, ending, and the sweep (#100, ADR 0047).
+"""A player's sessions: lifetimes, listing, ending, and the sweep (#100,
+ADR 0047).
+
+Lifetimes. A signed-in session, a browser's cookie session or an app's
+session token (the token is the session's key), ends
+``SESSION_MAX_AGE_DAYS`` after login or ``SESSION_IDLE_DAYS`` after it
+was last seen, whichever comes first. Both times live in the session
+itself (``SESSION_STARTED_KEY``, ``SESSION_SEEN_KEY``, whole seconds
+since the epoch), so there is no table. Last seen is written at most once
+per ``SESSION_SEEN_REFRESH_SECONDS``, so a request rarely writes. Each
+write also sets the session's own expiry (``set_expiry``) to the earlier
+of the two ends, so Django's store refuses the session at that time
+whatever the path, and the sweep deletes it. ``check_lifetime`` runs on
+every path that reads a signed-in session: the browser middleware
+(``SessionLifetimeMiddleware``), and the app token lookup
+(``apps.accounts.token_strategy``), which both allauth's endpoints and
+the OPEN API use. A signed-in session that has no times yet (made before
+#100) gets them, as if it had just signed in.
 
 allauth's user sessions app (``allauth.usersessions``) keeps one
 ``UserSession`` row per signed-in session, created at login, with OPEN's
@@ -14,11 +31,16 @@ Public identifiers) and the session key, which is the app client's
 token, cannot be recovered from it.
 """
 
+import time
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from allauth.usersessions.internal.flows import sessions as allauth_sessions
 from allauth.usersessions.models import UserSession
+from django.conf import settings
+from django.contrib.auth import SESSION_KEY
+from django.contrib.sessions.backends.base import SessionBase
 from django.contrib.sessions.models import Session
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
@@ -30,9 +52,65 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import _User
     from django.http import HttpRequest
 
+# When the session signed in and when it was last seen, in whole seconds
+# since the epoch.
+SESSION_STARTED_KEY = "open_session_started"
+SESSION_SEEN_KEY = "open_session_seen"
+_DAY = 86400
+
 _ID_SALT = "apps.accounts.sessions.public_session_id"
 # Hex characters of the keyed hash: 128 bits.
 _ID_LENGTH = 32
+
+
+def _ends(started: int, seen: int) -> int:
+    """When a session with these times ends, in seconds since the epoch."""
+    return min(
+        started + settings.SESSION_MAX_AGE_DAYS * _DAY,
+        seen + settings.SESSION_IDLE_DAYS * _DAY,
+    )
+
+
+def _set_times(session: SessionBase, started: int, seen: int) -> None:
+    session[SESSION_STARTED_KEY] = started
+    session[SESSION_SEEN_KEY] = seen
+    session.set_expiry(datetime.fromtimestamp(_ends(started, seen), tz=UTC))
+
+
+def start_lifetime(session: SessionBase) -> None:
+    """Start a signed-in session's clocks: at login."""
+    now = int(time.time())
+    _set_times(session, now, now)
+
+
+def check_lifetime(session: SessionBase) -> bool:
+    """Whether ``session`` may still be used: False once it has ended.
+
+    A session that is not signed in is not checked. One with no times, or
+    times that are not whole numbers, gets fresh ones. Last seen moves
+    when it is ``SESSION_SEEN_REFRESH_SECONDS`` old or more, which marks
+    the session modified: the caller saves it.
+    """
+    if SESSION_KEY not in session:
+        return True
+    started = session.get(SESSION_STARTED_KEY)
+    seen = session.get(SESSION_SEEN_KEY)
+    if not isinstance(started, int) or not isinstance(seen, int):
+        start_lifetime(session)
+        return True
+    now = int(time.time())
+    if now >= _ends(started, seen):
+        return False
+    if now - seen >= settings.SESSION_SEEN_REFRESH_SECONDS:
+        _set_times(session, started, now)
+    return True
+
+
+def end_session(session: SessionBase) -> None:
+    """Delete an ended session and its ``UserSession`` row."""
+    key = session.session_key
+    session.flush()
+    forget_session(key)
 
 
 def public_session_id(user_session: UserSession) -> str:

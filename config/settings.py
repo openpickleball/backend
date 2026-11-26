@@ -734,6 +734,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # allauth's per-request state. It must come after AuthenticationMiddleware.
     "allauth.account.middleware.AccountMiddleware",
+    # Ends a signed-in browser session past its lifetime (#100). After
+    # AuthenticationMiddleware.
+    "apps.accounts.middleware.SessionLifetimeMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
 ]
 
@@ -1113,6 +1116,24 @@ ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = False
 # while the session lasts. No activity tracking, so no row is written per
 # request.
 USERSESSIONS_TRACK_ACTIVITY = False
+
+# Session lifetimes (#100, ADR 0047), for browser sessions and app session
+# tokens alike: a signed-in session ends SESSION_MAX_AGE_DAYS after login
+# or SESSION_IDLE_DAYS after it was last seen, whichever comes first
+# (apps/accounts/sessions.py). Unset or empty gives 30 and 7.
+SESSION_MAX_AGE_DAYS = _days("SESSION_MAX_AGE_DAYS", 30)
+SESSION_IDLE_DAYS = _days("SESSION_IDLE_DAYS", 7)
+if SESSION_IDLE_DAYS > SESSION_MAX_AGE_DAYS:
+    raise ImproperlyConfigured(
+        "Set SESSION_IDLE_DAYS to at most SESSION_MAX_AGE_DAYS (see .env.example)."
+    )
+# Every session, signed in or not, expires in the store after the lifetime.
+SESSION_COOKIE_AGE = SESSION_MAX_AGE_DAYS * 86400
+# How often a session's last seen time is written: at most hourly, so a
+# request rarely writes.
+SESSION_SEEN_REFRESH_SECONDS = 3600
+# allauth's session token strategy, with the lifetimes above.
+HEADLESS_TOKEN_STRATEGY = "apps.accounts.token_strategy.SessionTokenStrategy"
 
 # JSON only, at /_allauth/browser/v1/ (session cookie and CSRF) and
 # /_allauth/app/v1/ (X-Session-Token header). No server-rendered allauth
