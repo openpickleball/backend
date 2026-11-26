@@ -20,8 +20,12 @@ today.
 ``SafeAutocompleteAdminMixin`` to every registered admin, right after
 ``AdminAuditMixin``, and the mixin adds itself to every inline that admin
 shows. So every autocomplete field uses a safe widget, with no opt-in.
-Many-to-many autocomplete fields also get fixed error text, since
-Django's own messages for them name the submitted value.
+
+The mixin also gives every choice field and every many-to-many field of
+those admins fixed error text (issue #162), since Django's own form
+messages for them name the submitted value, and a model field's
+``error_messages`` do not reach the form field. A caller's own
+``error_messages`` (a ModelForm's ``Meta.error_messages``, say) still win.
 """
 
 from collections.abc import Sequence
@@ -33,8 +37,8 @@ from django.contrib.admin.widgets import (
     AutocompleteSelectMultiple,
 )
 from django.core.exceptions import ValidationError
-from django.db.models import ForeignKey, ManyToManyField
-from django.forms import ModelChoiceField, ModelMultipleChoiceField
+from django.db.models import Field, ForeignKey, ManyToManyField
+from django.forms import ModelChoiceField, ModelMultipleChoiceField, TypedChoiceField
 from django.http import HttpRequest
 
 # Fixed text: Django's many-to-many messages repeat the submitted value.
@@ -44,6 +48,8 @@ MULTIPLE_CHOICE_ERRORS = {
     ),
     "invalid_pk_value": "Select a valid choice.",
 }
+# Fixed text: Django's choice field message repeats the submitted value.
+CHOICE_ERRORS = {"invalid_choice": "Choose one of the listed options."}
 
 
 class _SafeOptgroupsMixin:
@@ -87,7 +93,17 @@ class SafeAutocompleteSelectMultiple(_SafeOptgroupsMixin, AutocompleteSelectMult
 
 class SafeAutocompleteAdminMixin(BaseModelAdmin[Any]):
     """Give every autocomplete field of an admin, and of its inlines, a
-    safe widget."""
+    safe widget, and every choice and many-to-many field fixed error
+    text."""
+
+    def formfield_for_choice_field(
+        self, db_field: Field[Any, Any], request: HttpRequest, **kwargs: Any
+    ) -> TypedChoiceField:
+        kwargs["error_messages"] = {
+            **CHOICE_ERRORS,
+            **(kwargs.get("error_messages") or {}),
+        }
+        return super().formfield_for_choice_field(db_field, request, **kwargs)
 
     def formfield_for_foreignkey(
         self, db_field: ForeignKey[Any, Any], request: HttpRequest, **kwargs: Any
@@ -109,10 +125,10 @@ class SafeAutocompleteAdminMixin(BaseModelAdmin[Any]):
             kwargs["widget"] = SafeAutocompleteSelectMultiple(
                 db_field, self.admin_site, using=kwargs.get("using")
             )
-            kwargs["error_messages"] = {
-                **MULTIPLE_CHOICE_ERRORS,
-                **kwargs.get("error_messages", {}),
-            }
+        kwargs["error_messages"] = {
+            **MULTIPLE_CHOICE_ERRORS,
+            **(kwargs.get("error_messages") or {}),
+        }
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 
     def get_inlines(

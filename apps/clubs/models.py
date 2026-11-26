@@ -25,6 +25,10 @@ from apps.public_ids.models import PublicCodeModel
 _CHOICE_MESSAGES = {"invalid_choice": "Choose one of the listed options."}
 _CONTROL_CHARACTER = "Remove control or invalid characters."
 _NOT_TEXT = "Enter text."
+# An unknown id, or an id of the wrong type, on a link (_LinkMessagesModel).
+_ORGANIZER_MESSAGES = {"invalid": "Choose an existing organizer."}
+_ACCOUNT_MESSAGES = {"invalid": "Choose an existing account."}
+_CLUB_MESSAGES = {"invalid": "Choose an existing club."}
 # Written only by apps.clubs.services.
 VERIFICATION_FIELDS = ("verified_at", "verified_by")
 # The permission to verify and unverify an Organizer, which also lets a
@@ -165,7 +169,7 @@ class Club(_CleanedTextModel):
         return self.public_code
 
 
-class Organizer(_CleanedTextModel):
+class Organizer(_LinkMessagesModel, _CleanedTextModel):
     """A person or a body that runs events (CONTEXT.md, Organizer).
 
     A person who organizes alone is an Organizer with one OrganizerMember.
@@ -193,6 +197,7 @@ class Organizer(_CleanedTextModel):
         on_delete=models.PROTECT,
         related_name="+",
         editable=False,
+        error_messages=_ACCOUNT_MESSAGES,
     )
 
     class Meta:
@@ -212,10 +217,6 @@ class Organizer(_CleanedTextModel):
     def __str__(self) -> str:
         # The OPEN Code, never the name: it may be a person's (ADR 0009).
         return self.public_code
-
-    @property
-    def is_verified(self) -> bool:
-        return self.verified_at is not None
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Save, without writing verification on a full save.
@@ -273,8 +274,12 @@ class Organizer(_CleanedTextModel):
                 raise VerifiedOrganizerDelete([self.public_code])
             return super().delete(*args, **kwargs)
 
+    @property
+    def is_verified(self) -> bool:
+        return self.verified_at is not None
 
-class OrganizerMember(AuditedAccessModel):
+
+class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
     """An Account that acts for an Organizer, with its role.
 
     Change it only through ``apps.audit.access`` (the admin does), which
@@ -286,7 +291,10 @@ class OrganizerMember(AuditedAccessModel):
     """
 
     organizer = models.ForeignKey(
-        Organizer, on_delete=models.CASCADE, related_name="members"
+        Organizer,
+        on_delete=models.CASCADE,
+        related_name="members",
+        error_messages=_ORGANIZER_MESSAGES,
     )
     # PROTECT: the membership may be the only link from an Organizer that
     # is a person to that person, so an Account is not hard-deleted out
@@ -295,6 +303,7 @@ class OrganizerMember(AuditedAccessModel):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="organizer_memberships",
+        error_messages=_ACCOUNT_MESSAGES,
     )
     role = models.CharField(
         max_length=16, choices=MemberRole, error_messages=_CHOICE_MESSAGES
@@ -323,15 +332,6 @@ class OrganizerMember(AuditedAccessModel):
         # Never the Account's email (CLAUDE.md, Personal data).
         return f"{self.organizer.public_code} {self.role}"
 
-    def audit_values(self) -> dict[str, Any]:
-        # The Account's row id, never its email; the Organizer's OPEN Code,
-        # never its name (ADR 0009).
-        return {
-            "organizer": self.organizer.public_code,
-            "account": self.account_id,
-            "role": self.role,
-        }
-
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Save, refusing the Organizer's verifier as a member.
 
@@ -347,19 +347,36 @@ class OrganizerMember(AuditedAccessModel):
         if self._account_verified_organizer(lock=False):
             raise ValidationError({"account": _VERIFIER_MEMBER})
 
+    def audit_values(self) -> dict[str, Any]:
+        # The Account's row id, never its email; the Organizer's OPEN Code,
+        # never its name (ADR 0009).
+        return {
+            "organizer": self.organizer.public_code,
+            "account": self.account_id,
+            "role": self.role,
+        }
+
     def _account_verified_organizer(self, *, lock: bool) -> bool:
         """True when ``account`` is the Organizer's ``verified_by``."""
         if self.organizer_id is None or self.account_id is None:
             # Field validation reports a missing link.
             return False
-        organizers = Organizer.objects.filter(pk=self.organizer_id)
+        try:
+            organizer_id = self._meta.get_field("organizer").to_python(
+                self.organizer_id
+            )
+            account_id = self._meta.get_field("account").to_python(self.account_id)
+        except ValidationError:
+            # An id of the wrong type: field validation reports it.
+            return False
+        organizers = Organizer.objects.filter(pk=organizer_id)
         if lock:
             organizers = organizers.select_for_update()
         verified_by = organizers.values_list("verified_by_id", flat=True).first()
-        return verified_by is not None and verified_by == self.account_id
+        return verified_by is not None and verified_by == account_id
 
 
-class ClubRole(AuditedAccessModel):
+class ClubRole(_LinkMessagesModel, AuditedAccessModel):
     """An Account's role at a Club.
 
     A Club admin manages the Club's profile and its Club Organizer Grants.
@@ -368,11 +385,17 @@ class ClubRole(AuditedAccessModel):
     records each add, change, and removal.
     """
 
-    club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="roles")
+    club = models.ForeignKey(
+        Club,
+        on_delete=models.CASCADE,
+        related_name="roles",
+        error_messages=_CLUB_MESSAGES,
+    )
     account = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="club_roles",
+        error_messages=_ACCOUNT_MESSAGES,
     )
     role = models.CharField(
         max_length=16, choices=ClubRoleKind, error_messages=_CHOICE_MESSAGES
@@ -408,7 +431,7 @@ class ClubRole(AuditedAccessModel):
         }
 
 
-class ClubOrganizerGrant(AuditedAccessModel):
+class ClubOrganizerGrant(_LinkMessagesModel, AuditedAccessModel):
     """A Club's consent for one Organizer to name it (ADR 0021).
 
     ``apps.matches.permissions`` and ``Event.clean()`` use it: a match or
@@ -419,10 +442,16 @@ class ClubOrganizerGrant(AuditedAccessModel):
     """
 
     club = models.ForeignKey(
-        Club, on_delete=models.CASCADE, related_name="organizer_grants"
+        Club,
+        on_delete=models.CASCADE,
+        related_name="organizer_grants",
+        error_messages=_CLUB_MESSAGES,
     )
     organizer = models.ForeignKey(
-        Organizer, on_delete=models.CASCADE, related_name="club_grants"
+        Organizer,
+        on_delete=models.CASCADE,
+        related_name="club_grants",
+        error_messages=_ORGANIZER_MESSAGES,
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -465,10 +494,6 @@ class OrganizerReportReason(models.TextChoices):
     OTHER = "other", "Other"
 
 
-_REPORT_ORGANIZER_MESSAGES = {"invalid": "Choose an existing organizer."}
-_REPORT_ACCOUNT_MESSAGES = {"invalid": "Choose an existing account."}
-
-
 class OrganizerReport(_LinkMessagesModel):
     """An Account's report of a verified Organizer to OPEN Moderators (#271).
 
@@ -487,7 +512,7 @@ class OrganizerReport(_LinkMessagesModel):
         Organizer,
         on_delete=models.PROTECT,
         related_name="reports",
-        error_messages=_REPORT_ORGANIZER_MESSAGES,
+        error_messages=_ORGANIZER_MESSAGES,
     )
     # CASCADE: the row follows the Account's retention (ADR 0009). The
     # Audit Event's actor (PROTECT) keeps the Account row while it exists.
@@ -495,7 +520,7 @@ class OrganizerReport(_LinkMessagesModel):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="+",
-        error_messages=_REPORT_ACCOUNT_MESSAGES,
+        error_messages=_ACCOUNT_MESSAGES,
     )
     reason = models.CharField(
         max_length=32,

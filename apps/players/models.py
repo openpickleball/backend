@@ -19,6 +19,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.clubs.models import _LinkMessagesModel
 from apps.encryption.fields import (
     EncryptedCharField,
     EncryptedPositiveSmallIntegerField,
@@ -120,7 +121,7 @@ class GenderDivision(models.TextChoices):
 _STORED_DIVISIONS = frozenset({"", *GenderDivision.values})
 
 
-class Player(PublicCodeModel):
+class Player(_LinkMessagesModel, PublicCodeModel):
     """A person who plays matches and has ratings (CONTEXT.md, Player).
 
     Every Player belongs to one Account, and an Account has at most one
@@ -133,7 +134,10 @@ class Player(PublicCodeModel):
     # PROTECT: deleting an Account keeps its Player (ADR 0002). #116
     # decides how.
     account = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="player"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="player",
+        error_messages={"invalid": "Choose an existing account."},
     )
     display_name = models.CharField(max_length=64)
     # Legal name, birth year and month, and gender division are stored
@@ -390,7 +394,7 @@ def has_visible_character(value: object) -> bool:
     )
 
 
-class PlayerPrivacy(models.Model):
+class PlayerPrivacy(_LinkMessagesModel, models.Model):
     """Who may see each of a Player's other profile details.
 
     There is no setting for the display name: once Ratings are published,
@@ -406,7 +410,11 @@ class PlayerPrivacy(models.Model):
     SETTINGS: ClassVar[tuple[str, ...]] = PRIVACY_SETTINGS
 
     player = models.OneToOneField(
-        Player, on_delete=models.CASCADE, primary_key=True, related_name="privacy"
+        Player,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name="privacy",
+        error_messages={"invalid": "Choose an existing player."},
     )
     city_region_visibility = models.CharField(
         max_length=16,
