@@ -1,4 +1,5 @@
 from allauth.account.models import EmailAddress
+from allauth.mfa.models import Authenticator
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
@@ -11,6 +12,10 @@ from apps.audit.admin_access import AccessAuditAdminMixin
 # (ADR 0009). allauth.account comes before apps.accounts in INSTALLED_APPS,
 # so its admin module has run by now. The address shows on the Account.
 admin.site.unregister(EmailAddress)
+# allauth.mfa registers an admin for Authenticator, which would show TOTP
+# secrets and recovery code seeds to staff (ADR 0009: never shown, ADR
+# 0043). allauth.mfa also comes before apps.accounts.
+admin.site.unregister(Authenticator)
 
 
 @admin.register(User)

@@ -465,7 +465,9 @@ REDIS_URL = _redis_url(_required("REDIS_URL"))
 # partners.PartnerApplication (decision Q3). partners' first migration runs
 # before django-oauth-toolkit's, whose tables point at it.
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # django.contrib.admin, with OPEN's admin site, which needs MFA for
+    # every staff Account (config/admin.py, ADR 0043).
+    "config.apps.OpenAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
