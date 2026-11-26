@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Amended by: [ADR 0034](0034-lowest-level-resolution.md) (#269: a member of the Event's verified Organizer reads the disputed matches of its Events, and settles one through its own operations, which return the match or its correction and answer 409 for a match that is not disputed); [ADR 0048](0048-account-deletion.md) (no new match names a Player whose Account is inactive)
+- Amended by: [ADR 0053](0053-match-shows-event-organizer-and-club.md) (#302: every match response shows the match's Event, its Organizer's OPEN Code but never its name, and its Club)
 - Date: 2026-11-17
 
 ## Context
