@@ -19,10 +19,13 @@ The maintainer decided five questions on #116:
 
 ## Decision
 
+This amends [ADR 0002](0002-player-identity.md) (how a deleted Account's Player is shown, and its open question on naming one), [ADR 0009](0009-personal-data.md) (the mechanics its Retention section left to #116), [ADR 0015](0015-first-party-match-endpoints.md) (an inactive Account's Player can no longer be named), [ADR 0024](0024-engine-match-type-confirmers-and-rating-format.md) (Account deletion keeps stored rating formats), [ADR 0026](0026-legal-agreements-at-signup.md) (acceptance rows are deleted).
+
 ### The operation
 
 - `DELETE /api/v1/accounts/me` (`delete_current_account`) deletes the signed-in Account's personal data and answers 204. It needs a reauthentication within allauth's `ACCOUNT_REAUTHENTICATION_TIMEOUT` (`auth/reauthenticate` with the password, or `auth/2fa/reauthenticate` with a code), read from the session behind the request's authentication, so it works for both headless clients. A login alone does not count. Without one it answers 403 `reauthentication_required`. A staff or superuser Account gets 409.
-- The work is `apps.accounts.deletion.delete_account()`, in one transaction.
+- The work is `apps.accounts.deletion.delete_account()`, in one transaction. It refuses only an Account already deleted (gone, or carrying the placeholder email), so a later staff path can also erase an Account staff had deactivated.
+- An Account that must have two-factor authentication (an Organizer member, ADR 0043) and has no method gets 403 `mfa_required` here as on every operation, and sets one up first. The MFA rule is not relaxed for deletion.
 
 ### What goes
 
@@ -45,11 +48,15 @@ The maintainer decided five questions on #116:
 ### How the Player is shown, and naming it later
 
 - A kept Player's Account is inactive, so the existing rules already hide it: its profile, ratings, and search answer as for an unknown player, and a match lists it as a private player with no code (ADR 0015, ADR 0031).
-- No new Match names it. The first-party create, the CSV upload, and `record_match()` itself treat a Player whose Account is inactive as unknown (`unknown_player`). A correction may keep the players of the Match it corrects, so a match with a deleted player can still be corrected, but cannot add another inactive player. This settles ADR 0002's open question for OPEN Codes; #82's mappings are deleted at Account deletion when they land (ADR 0009).
+- No new Match names it. The first-party create, the CSV upload, `record_match()`, and `edit_match()` treat a Player whose Account is inactive as unknown (`unknown_player`); `record_match()` and `edit_match()` check again under the Players' `FOR KEY SHARE` locks, so a submission that waited on a deletion sees it. A correction may keep the players of the Match it corrects, so a match with a deleted player can still be corrected, but cannot add another inactive player. This settles ADR 0002's open question for OPEN Codes; #82's mappings are deleted at Account deletion when they land (ADR 0009).
 
 ### Signing up again
 
 The placeholder frees the address, so the same email can sign up again and create a new Player, also when the old Player stays in the Ledger. This is how a player fixes a birth year and month or a gender division entered wrong (ADR 0023): delete the Account, then sign up again with the right values. The old matches and ratings stay with the old, deleted Player; the new Player starts fresh.
+
+### Locks
+
+`delete_account` takes the Account row (`FOR UPDATE`), then the Player row (`FOR UPDATE`, so a participant insert waits and then sees the Account inactive), then every Organizer of its memberships and its reports by id (`FOR UPDATE`, the order `unverify_organizer` and `apps.audit.access` use: Organizer before report or membership rows), then those rows. `report_organizer` takes the reporter's Account `FOR KEY SHARE` and checks it is still active before it takes the Organizer, and `create_player` checks `is_active` under its Account lock, so neither leaves a report or a Player on a deleted Account.
 
 ### Retention task
 
@@ -64,9 +71,10 @@ The scheduled retention task is the session sweep from ADR 0047 (`sweep_sessions
 ## Consequences
 
 - Most players who used OPEN have acted (a password change, an ended session, MFA, a report, a confirmation that kept their Player), so most deletions keep a cleared Account row. That is expected.
-- A correction made after a deletion derives its rating format from the players' current divisions, and the deleted player's is empty, so such a correction counts in overall doubles rather than a gendered format. The deletion itself changes no stored Match.
+- A correction made after a deletion derives its rating format again (ADR 0024: a correction gets its own format), with the deleted player's empty division, so a gendered or mixed doubles match corrected later counts in overall doubles. The deletion itself changes no stored Match. Whether a correction that keeps its teams should keep its match's format is left open.
+- A self-reported match still waiting for a deleted opponent's team can never be confirmed by them. It waits until `MATCH_CONFIRMATION_EXPIRY_DAYS` voids it, when set, or until another player of that team confirms it.
 - Deleting an Organizer's only member leaves the Organizer with no member and the placeholder name. A verified Organizer stays verified until a moderator unverifies it.
-- A match recorded in the moment between a deletion's start and its commit could still name the Player. This is accepted.
+- Accepted limits. A signup hold (ADR 0017) in an anonymous session that never logged in, such as a sign-up on one device and the login on another, has no user session row and is not found: it stays until that session expires. A login that passed its password check just before the deletion commits can still write `last_login` and a session on the kept row; the inactive Account and unusable password make that session useless, and the sweep deletes it when it expires. An Organizer member added in the admin at the same moment as the deletion can deadlock with it, and Postgres aborts one of them.
 - Deleting an Account through the Django admin is not covered by this record: the admin's delete cascades without these steps, and staff should not use it for a player. A later issue can route it through `delete_account()`.
 
 ## Alternatives considered

@@ -110,6 +110,7 @@ from apps.matches.models import (
     MATCH_LOCATION_MAX,
     GameTarget,
     Match,
+    MatchParticipant,
     MatchStatus,
     ResultsFile,
 )
@@ -241,7 +242,11 @@ def _nameable(corrected: Match | None) -> Q:
     a correction also the corrected Match's own players."""
     allowed = Q(account__is_active=True)
     if corrected is not None:
-        allowed |= Q(match_participations__match_id=corrected.pk)
+        allowed |= Q(
+            pk__in=MatchParticipant.objects.filter(match_id=corrected.pk).values(
+                "player_id"
+            )
+        )
     return allowed
 
 

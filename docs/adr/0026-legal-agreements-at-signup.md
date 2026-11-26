@@ -1,6 +1,7 @@
 # 0026. Accepting the legal agreements at signup
 
 - Status: Proposed
+- Amended by: [ADR 0048](0048-account-deletion.md) (Account deletion deletes the acceptance rows)
 - Date: 2026-11-24
 
 ## Context
@@ -18,7 +19,7 @@ This amends ADR 0017 and ADR 0022 (signup checks and holds more), and ADR 0009 (
 - A signup that passes holds the accepted versions in `open_signup_details` with the other details, as `agreements` (`{"terms_of_service": 1, "privacy_policy": 2}`), bound to the new Account or to none for a taken address. The Player create endpoint does not read them.
 - A new Account gets one `accounts.AgreementAcceptance` row per agreement: the Account, the agreement (`terms_of_service` or `privacy_policy`), the version, and the time accepted. The rows are written in the same transaction that creates the Account (`SignupInput.try_save`), so an Account never exists without them. A taken address creates no Account and no row. An under-13 signup is refused before any of this.
 - The database refuses a version below 1, an agreement outside the two, and a second row for the same Account, agreement, and version. A later version gets its own row (#237), so the history of what an Account accepted is kept.
-- The rows go with the Account (`CASCADE`). Account deletion (#116) decides whether any of them must be kept as proof, under ADR 0009's Retention section.
+- The rows go with the Account (`CASCADE`). Account deletion deletes them, also on a kept Account row (ADR 0048).
 
 ## Consequences
 

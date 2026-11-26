@@ -15,9 +15,11 @@ Organizer member can reach.
 Lock order: ``report_organizer`` and ``unverify_organizer`` lock the
 Organizer row first, so a report never lands open after an unverify
 closed the others. ``close_report`` locks only the report row, never the
-Organizer, so it cannot form a cycle with them, and so does
-``delete_reporter_reports`` (Account deletion, #116) for the reporter's
-rows.
+Organizer, so it cannot form a cycle with them. ``report_organizer``
+takes the reporter's Account row (FOR KEY SHARE) before the Organizer,
+and Account deletion takes the Account, then every Organizer it needs,
+then the report rows (``delete_reporter_reports``), so the orders agree
+(ADR 0048).
 """
 
 from dataclasses import dataclass
@@ -25,8 +27,9 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import CharField, Count, Q
 from django.db.models.functions import Cast
 from django.utils import timezone
@@ -105,6 +108,11 @@ def report_organizer(
         raise ReportRefused
     try:
         with transaction.atomic():
+            # The reporter's Account first, FOR KEY SHARE, and checked
+            # again: an Account deletion (FOR UPDATE, before any Organizer)
+            # that this call waited on leaves no report behind (ADR 0048).
+            if not _hold_active_reporter(actor.pk):
+                raise ReportRefused
             # FOR NO KEY UPDATE: waits for an unverify (FOR UPDATE) to
             # commit, and is waited on by one, without blocking inserts
             # that point at the Organizer.
@@ -133,6 +141,23 @@ def report_organizer(
             raise ReportExists from None
         raise
     return report
+
+
+def _hold_active_reporter(account_id: int) -> bool:
+    """Lock the reporter's Account row FOR KEY SHARE; True when active.
+
+    Django has no share modes, so this is raw SQL. KEY SHARE conflicts
+    only with FOR UPDATE (Account deletion, ``create_player``).
+    """
+    table = get_user_model()._meta.db_table
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT is_active FROM {connection.ops.quote_name(table)} "
+            "WHERE id = %s FOR KEY SHARE",
+            [account_id],
+        )
+        row = cursor.fetchone()
+    return bool(row and row[0])
 
 
 def _constraint_name(error: IntegrityError) -> str | None:
@@ -201,13 +226,13 @@ def delete_reporter_reports(
 ) -> int:
     """Delete every report ``reporter`` filed, for Account deletion (#116).
 
-    Call inside the deletion's transaction. Each open report is closed
+    Call inside the deletion's transaction, after it has locked the
+    Organizers of the reporter's reports. Each open report is closed
     first, with one ``organizer_report.close`` Audit Event naming rule
     ``reporter_deleted``, so a moderator's queue never loses a report
     without a trace. Then every report row of the reporter goes; the
     ``organizer_report.create`` events stay (append-only, ADR 0037).
-    Locks only the report rows, as ``close_report`` does. Returns how
-    many rows it deleted.
+    Returns how many rows it deleted.
     """
     reports = list(
         OrganizerReport.objects.select_for_update()

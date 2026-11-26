@@ -10,9 +10,18 @@ from typing import Any
 import pytest
 from django.test import Client
 
-from apps.matches.models import Match, MatchFormat, MatchStatus
-from apps.matches.services import MatchValidationError, record_match
+from apps.accounts.tests.factories import UserFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory
+from apps.events.models import Event
+from apps.matches.models import Match, MatchFormat, MatchStatus, Team
+from apps.matches.services import (
+    MatchValidationError,
+    record_match,
+    refuse_inactive_players,
+)
 from apps.matches.tests.conftest import WORKFLOW_GAMES, WORKFLOW_PLAYED_ON
+from apps.matches.tests.factories import DoublesMatchFactory
+from apps.matches.workflow import edit_match
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
@@ -111,3 +120,52 @@ def test_a_correction_cannot_add_another_inactive_player(
     assert response.status_code == 422
     assert response.json()["errors"][0]["field"] == "body.team_b.1"
     assert Match.objects.get(pk=pending.pk).status == MatchStatus.PENDING
+
+
+def _mixed_pending() -> tuple[Match, list[Player]]:
+    divisions = ["mens", "womens", "womens", "mens"]
+    players = [PlayerFactory.create(gender_division=d) for d in divisions]
+    match = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=WORKFLOW_GAMES,
+        played_on=WORKFLOW_PLAYED_ON,
+        submitted_by_user=players[0].account,
+    ).match
+    assert match.rating_format == "mixed_doubles"
+    return match, players
+
+
+def test_edit_match_refuses_a_new_inactive_player(event: Event) -> None:
+    match: Match = DoublesMatchFactory.create(event=event)
+    member = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=member)
+    teams = {
+        team: [p.player for p in match.participants.filter(team=team)] for team in Team
+    }
+    outsider = PlayerFactory.create()
+    _deactivate(outsider)
+
+    with pytest.raises(MatchValidationError) as raised:
+        edit_match(
+            match,
+            actor=member,
+            format=match.format,
+            team_a=teams[Team.A],
+            team_b=[teams[Team.B][0], outsider],
+            games=((11, 3),),
+            played_on=match.played_on,
+        )
+
+    assert [(i.field, i.code) for i in raised.value.issues] == [
+        ("team_b", "unknown_player")
+    ]
+    assert Match.objects.get(pk=match.pk).status == match.status
+
+
+def test_the_locked_check_counts_a_missing_player_as_unknown() -> None:
+    player = PlayerFactory.create()
+
+    with pytest.raises(MatchValidationError):
+        refuse_inactive_players([player.pk], [player.pk + 100000], lock=True)

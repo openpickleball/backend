@@ -140,6 +140,7 @@ from apps.matches.permissions import (
     vouch_level,
 )
 from apps.matches.services import (
+    MatchDraft,
     advisory_lock,
     audit_actor,
     check_external_id,
@@ -150,6 +151,7 @@ from apps.matches.services import (
     insert_draft,
     lock_draft,
     near_duplicates,
+    refuse_inactive_players,
     stored_lineup_lock_key,
     try_advisory_lock,
 )
@@ -661,6 +663,25 @@ def void_match(match: Match, *, actor: Actor) -> Match:
         return locked
 
 
+def _keep_deleted_players(draft: MatchDraft, locked: Match) -> None:
+    """Apply Account deletion's rule to a correction (ADR 0048).
+
+    The correction may keep the corrected Match's players when their
+    Account is inactive, but adds no other inactive Account's Player
+    (``MatchValidationError``, under the Players' share locks).
+    """
+    refuse_inactive_players(
+        draft.keys_a,
+        draft.keys_b,
+        lock=True,
+        allowed=set(
+            MatchParticipant.objects.filter(match=locked).values_list(
+                "player_id", flat=True
+            )
+        ),
+    )
+
+
 def edit_match(
     match: Match,
     *,
@@ -830,6 +851,7 @@ def edit_match(
         locked = _lock_row(match)
         if locked.status == MatchStatus.VOIDED:
             raise MatchStateError
+        _keep_deleted_players(draft, locked)
         if player_path:
             # A player corrects only a pending or disputed match: a
             # confirmed one is disputed first.

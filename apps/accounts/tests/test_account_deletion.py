@@ -20,6 +20,7 @@ from django.contrib.admin.models import ADDITION, LogEntry
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from oauth2_provider.models import get_access_token_model
 
@@ -323,10 +324,51 @@ def test_admin_log_entries_tied_to_the_account_are_deleted() -> None:
     assert LogEntry.objects.filter(pk=kept.pk).exists()
 
 
-def test_an_inactive_account_is_refused() -> None:
-    account = UserFactory.create(is_active=False)
+def test_an_already_deleted_account_is_refused() -> None:
+    account = UserFactory.create()
+    player = PlayerFactory.create(account=account)
+    _played(player)
+    delete_account(account, actor=account)
+    kept = get_user_model().objects.get(pk=account.pk)
 
     with pytest.raises(AccountAlreadyDeleted):
-        delete_account(account, actor=None)
+        delete_account(kept, actor=None)
 
-    assert get_user_model().objects.filter(pk=account.pk).exists()
+    assert AuditEvent.objects.filter(action=AuditAction.ACCOUNT_DELETE).count() == 1
+
+
+def test_a_deactivated_account_is_still_erased() -> None:
+    staff = UserFactory.create(is_staff=True)
+    account = _account_with_rows()
+    account.is_active = False
+    account.save(update_fields=["is_active"])
+
+    result = delete_account(account, actor=staff)
+
+    assert result.account_kept is False
+    assert not get_user_model().objects.filter(pk=account.pk).exists()
+
+
+def test_a_member_with_a_report_on_its_own_organizer_is_deleted() -> None:
+    reporter = PlayerFactory.create().account
+    organizer = verified_organizer()
+    OrganizerMemberFactory.create(organizer=organizer, account=reporter, mfa=False)
+    report = report_organizer(organizer.pk, actor=reporter, reason="other")
+
+    delete_account(reporter, actor=reporter)
+
+    assert not OrganizerReport.objects.filter(pk=report.pk).exists()
+    assert not OrganizerMember.objects.filter(account_id=reporter.pk).exists()
+
+
+def test_no_player_is_created_for_an_inactive_account() -> None:
+    # A Player create that waited on a deletion's Account lock reads the
+    # stored row after the deletion committed: an inactive Account.
+    account = UserFactory.create()
+    get_user_model().objects.filter(pk=account.pk).update(is_active=False)
+
+    with pytest.raises(ValidationError) as raised:
+        PlayerFactory.create(account=account)
+
+    assert "account" in raised.value.message_dict
+    assert not Player.objects.filter(account_id=account.pk).exists()

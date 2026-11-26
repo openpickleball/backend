@@ -46,7 +46,8 @@ def delete_current_account(request: HttpRequest) -> Status[None]:
     your player shown as a private player, so other players' ratings do
     not change. Every session of the Account ends, this one included.
     The same email address can sign up again afterwards. A staff or
-    superuser Account gets 409.
+    superuser Account gets 409. An Account that must use two-factor
+    authentication sets up a method first (403 `mfa_required`).
     """
     account = request.auth  # type: ignore[attr-defined]
     require_recent_reauthentication(request)

@@ -1828,7 +1828,7 @@
   "paths": {
     "/api/v1/accounts/me": {
       "delete": {
-        "description": "Delete your Account and your personal data.\n\nReauthenticate first, through allauth's `auth/reauthenticate` (your\npassword) or `auth/2fa/reauthenticate` (a two-factor code); without a\nrecent one you get 403 with code `reauthentication_required`. Your\nemail address, name, birth year and month, gender division, city and\nregion, privacy settings, sessions, two-factor methods, and\norganizer memberships go. Matches you played stay in the ledger, with\nyour player shown as a private player, so other players' ratings do\nnot change. Every session of the Account ends, this one included.\nThe same email address can sign up again afterwards. A staff or\nsuperuser Account gets 409.",
+        "description": "Delete your Account and your personal data.\n\nReauthenticate first, through allauth's `auth/reauthenticate` (your\npassword) or `auth/2fa/reauthenticate` (a two-factor code); without a\nrecent one you get 403 with code `reauthentication_required`. Your\nemail address, name, birth year and month, gender division, city and\nregion, privacy settings, sessions, two-factor methods, and\norganizer memberships go. Matches you played stay in the ledger, with\nyour player shown as a private player, so other players' ratings do\nnot change. Every session of the Account ends, this one included.\nThe same email address can sign up again afterwards. A staff or\nsuperuser Account gets 409. An Account that must use two-factor\nauthentication sets up a method first (403 `mfa_required`).",
         "operationId": "delete_current_account",
         "parameters": [],
         "responses": {

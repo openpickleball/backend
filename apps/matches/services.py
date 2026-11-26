@@ -68,7 +68,7 @@ no such input (CLAUDE.md, hard rule 7).
 
 import hashlib
 import json
-from collections.abc import Callable, Hashable, Sequence
+from collections.abc import Callable, Collection, Hashable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
@@ -793,24 +793,46 @@ def _near_matches(
 INACTIVE_PLAYER_MESSAGE = "No player has this OPEN Code."
 
 
-def _refuse_inactive_players(keys_a: Sequence[int], keys_b: Sequence[int]) -> None:
+def refuse_inactive_players(
+    keys_a: Sequence[int],
+    keys_b: Sequence[int],
+    *,
+    lock: bool = False,
+    allowed: Collection[int] = (),
+) -> None:
     """Refuse a new Match that names a Player whose Account is inactive.
 
     A deleted or deactivated Account's Player stays in the Ledger, but no
     new Match names it (ADR 0048). The submission paths already treat
     such a Player as unknown; this is the same rule for any other caller,
-    with the same code and fixed text. An edit's correction is not a new
-    submission: it goes through the creation core, not here.
+    with the same code and fixed text. With ``lock``, inside the write
+    transaction, the Players are first locked ``FOR KEY SHARE`` (the lock
+    the participant inserts take anyway), so a concurrent Account
+    deletion, which holds the Player ``FOR UPDATE``, commits first and is
+    seen. A Player whose row is gone counts as inactive. ``allowed`` are
+    Players a correction keeps from the Match it corrects (``edit_match``):
+    they may stay even when inactive.
     """
-    inactive = set(
-        Player.objects.filter(
-            pk__in=[*keys_a, *keys_b], account__is_active=False
-        ).values_list("pk", flat=True)
+    keys = [*keys_a, *keys_b]
+    if lock:
+        table = connection.ops.quote_name(Player._meta.db_table)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT id FROM {table} WHERE id = ANY(%s) ORDER BY id FOR KEY SHARE",
+                [sorted(set(keys))],
+            )
+            present = {row[0] for row in cursor.fetchall()}
+    else:
+        present = set(keys)
+    inactive = {key for key in keys if key not in present} | set(
+        Player.objects.filter(pk__in=keys, account__is_active=False).values_list(
+            "pk", flat=True
+        )
     )
     issues = [
         MatchIssue(team, "unknown_player", INACTIVE_PLAYER_MESSAGE)
         for team, keys in (("team_a", keys_a), ("team_b", keys_b))
-        if any(key in inactive for key in keys)
+        if any(key in inactive and key not in allowed for key in keys)
     ]
     if issues:
         raise MatchValidationError(issues)
@@ -1420,7 +1442,7 @@ def record_match(
             event=event,
             club=club,
         )
-    _refuse_inactive_players(keys_a, keys_b)
+    refuse_inactive_players(keys_a, keys_b)
     draft = draft_match(
         format=format,
         team_a=team_a,
@@ -1453,6 +1475,9 @@ def record_match(
         # and takes the kind under that lock (ADR 0035).
         hold_event(draft, check_submitters)
         lock_draft(draft)
+        # Again under the Players' share locks: an Account deletion that
+        # holds a Player commits before this reads it (ADR 0048).
+        refuse_inactive_players(keys_a, keys_b, lock=True)
         check_external_id(draft)
         existing = exact_duplicate(draft)
         # A batch submission never confirms a pending match: it is reported

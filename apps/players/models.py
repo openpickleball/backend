@@ -225,7 +225,8 @@ class Player(_LinkMessagesModel, PublicCodeModel):
         A birth year or month must be an int in range, a legal name text
         within the field's ``max_length``, and a gender division text and
         one of the stored values (each within its ``max_length``). A None value is
-        left to the database's NOT NULL. Messages are the model's fixed
+        left alone: the columns allow NULL only for Account deletion, and
+        ``save()`` refuses a new Player without a birth year or month. Messages are the model's fixed
         ones, never the value.
         """
         errors: dict[str, list[ValidationError]] = {}

@@ -43,9 +43,12 @@ in ``after``, whether the Account and the Player were kept. It holds no
 identifying value.
 
 Lock order: the Account row (``FOR UPDATE``, as ``create_player`` takes
-it), then the Player row (``FOR UPDATE``), then the report rows, then
-each Organizer row by id before its membership row, as
-``apps.audit.access`` takes them.
+it, and before ``report_organizer`` can take it ``FOR KEY SHARE``), then
+the Player row (``FOR UPDATE``, so a participant insert waits and then
+sees the Account inactive), then every Organizer of its memberships and
+of its reports by id (``FOR UPDATE``, as ``unverify_organizer`` and
+``apps.audit.access`` take an Organizer before its report or membership
+rows), then the membership and report rows.
 """
 
 import secrets
@@ -144,23 +147,26 @@ def delete_account(
     """Delete ``account``'s personal data, as the module docstring says.
 
     ``actor`` is who asked: the Account itself for self-service deletion.
-    Raises ``AccountAlreadyDeleted`` when the stored Account is inactive,
-    and changes nothing then. Call it outside any other transaction: the
+    Raises ``AccountAlreadyDeleted`` when the stored Account is gone or
+    already carries a placeholder email, and changes nothing then. An
+    Account staff deactivated, with its data still on it, is deleted as
+    any other. Call it outside any other transaction: the
     session and access row writes rely on this one.
     """
     user_model = get_user_model()
     event_actor = None if actor is None or actor.pk == account.pk else actor
     with transaction.atomic():
         locked = user_model.objects.select_for_update().filter(pk=account.pk).first()
-        if locked is None or not locked.is_active:
+        if locked is None or is_deleted_email(locked.email):
             raise AccountAlreadyDeleted
         player = Player.objects.select_for_update().filter(account_id=locked.pk).first()
+        _lock_organizers(locked)
         log_targets = _log_targets(locked, player)
         addresses = _addresses(locked)
 
         _end_sessions(locked)
-        delete_reporter_reports(locked, actor=event_actor)
         _remove_memberships(locked, actor=event_actor)
+        delete_reporter_reports(locked, actor=event_actor)
         for role in ClubRole.objects.filter(account_id=locked.pk).order_by("pk"):
             delete_access_row(role, actor=event_actor)
         EmailAddress.objects.filter(user_id=locked.pk).delete()
@@ -196,6 +202,32 @@ def delete_account(
             record_cascaded_removals([locked], actor=event_actor)
             locked.delete()
     return AccountDeletion(account_kept=account_kept, player_kept=player_kept)
+
+
+def is_deleted_email(email: str) -> bool:
+    """Whether ``email`` is a placeholder a deletion left on a kept row."""
+    return email.startswith(DELETED_EMAIL_PREFIX) and email.endswith(
+        f"@{DELETED_EMAIL_DOMAIN}"
+    )
+
+
+def _lock_organizers(account: "_User") -> None:
+    """Lock every Organizer of the Account's memberships and reports, by id."""
+    ids = set(
+        OrganizerMember.objects.filter(account_id=account.pk).values_list(
+            "organizer_id", flat=True
+        )
+    ) | set(
+        OrganizerReport.objects.filter(reporter_id=account.pk).values_list(
+            "organizer_id", flat=True
+        )
+    )
+    list(
+        Organizer.objects.select_for_update()
+        .filter(pk__in=ids)
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
 
 
 def _deletable(obj: models.Model) -> bool:
