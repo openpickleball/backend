@@ -1,7 +1,7 @@
 {% extends "emails/base_message.html" %}
 {% block title %}{% if matches|length == 1 %}A match you played in was recorded on OPEN{% else %}Matches you played in were recorded on OPEN{% endif %}{% endblock title %}
 {% block content %}
-<p style="margin: 0 0 16px;">{% if matches|length == 1 %}An event organizer recorded a match you played in on OPEN. It counts toward ratings now, without your confirmation.{% else %}An event organizer recorded matches you played in on OPEN. They count toward ratings now, without your confirmation.{% endif %} Scores show your team first.</p>
+<p style="margin: 0 0 16px;">{% if matches|length == 1 %}An event organizer recorded a match you played in on OPEN.{% else %}An event organizer recorded matches you played in on OPEN.{% endif %} A match an organizer records counts toward ratings without your confirmation. Scores show your team first.</p>
 {% for match in matches %}
 <div style="margin: 0 0 16px; padding: 12px 16px; border: 1px solid #dddddd; border-radius: 4px;">
 <p style="margin: 0 0 4px; font-weight: bold;">Match {{ match.code }}</p>

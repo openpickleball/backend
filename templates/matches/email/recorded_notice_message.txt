@@ -1,5 +1,5 @@
 {% extends "emails/base_message.txt" %}
-{% block content %}{% if matches|length == 1 %}An event organizer recorded a match you played in on OPEN. It counts toward ratings now, without your confirmation.{% else %}An event organizer recorded matches you played in on OPEN. They count toward ratings now, without your confirmation.{% endif %} Scores show your team first.
+{% block content %}{% if matches|length == 1 %}An event organizer recorded a match you played in on OPEN.{% else %}An event organizer recorded matches you played in on OPEN.{% endif %} A match an organizer records counts toward ratings without your confirmation. Scores show your team first.
 {% for match in matches %}
 Match {{ match.code }}, played {{ match.played_on|date:"F j, Y" }}
 Scores: {{ match.scores }}

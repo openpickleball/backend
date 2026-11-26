@@ -1216,7 +1216,9 @@ def _confirm_pending_duplicate(existing: Match, actor: "Actor") -> Match | None:
 
     Returns the confirmed Match, or None when it is no longer pending. A
     confirmed Match that ``actor`` itself confirmed (a retry of the same
-    submission) is returned unchanged, with no new Audit Event or signal.
+    submission) is returned unchanged, with no new Audit Event, signal, or
+    notice. A Match it confirms schedules the recorded match notice for
+    its players (``schedule_recorded_notice``, #208).
     """
     locked = Match.objects.select_for_update().get(pk=existing.pk)
     if locked.status == MatchStatus.CONFIRMED and _confirmed_by(locked, actor):
@@ -1234,6 +1236,9 @@ def _confirm_pending_duplicate(existing: Match, actor: "Actor") -> Match | None:
         **audit_actor(actor),
     )
     match_confirmed.send(sender=Match, match=locked)
+    # The other team never confirmed it: its players are told, as for a
+    # match the Organizer recorded (#208, ADR 0041).
+    schedule_recorded_notice(locked)
     return locked
 
 

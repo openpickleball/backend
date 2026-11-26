@@ -37,11 +37,16 @@ they can dispute a wrong one:
   ``schedule_recorded_notice`` when it writes a confirmed match with an
   Event and no Submission Batch. The callback reads the match again and
   sends nothing once it is neither confirmed nor disputed.
+- ``record_match``'s duplicate path calls it too when the Organizer's
+  exact duplicate confirms a pending self-submission, since the other
+  team never confirmed it.
 - A batch path calls ``schedule_batch_notices`` once, when the batch is
-  done (for a CSV upload, when its Results File stops processing, unless
-  a bulk void stopped it), so a player gets one email for the whole
-  batch, listing each of their matches in it that is confirmed or
-  disputed when the callback runs.
+  done, so a player gets one email for the whole batch, listing each of
+  their matches in it that is confirmed or disputed when the task runs.
+  For a CSV upload that is when its Results File stops processing, or,
+  when a bulk void stopped it, after that bulk void, for the matches it
+  left counting. The ``send_batch_notices`` task in
+  ``apps.matches.tasks`` sends them.
 
 Recipients are the players ``permissions.participant_player`` allows to
 dispute the match: each participant whose Account is active.
@@ -58,10 +63,12 @@ from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
+from kombu.exceptions import OperationalError
 
 from apps.clubs.models import OrganizerMember
 from apps.emails.services import queue_email
@@ -113,9 +120,30 @@ def schedule_recorded_notice(match: Match) -> None:
 
 
 def schedule_batch_notices(batch_id: int) -> None:
-    """Queue one recorded match notice per player for the Submission Batch
-    ``batch_id`` once the transaction commits (#208)."""
-    transaction.on_commit(partial(send_batch_notices, batch_id))
+    """Queue the ``send_batch_notices`` task for the Submission Batch
+    ``batch_id`` once the transaction commits (#208).
+
+    The task sends one recorded match notice per player. It runs on its
+    own, with its own time limits, so a large batch never shares the time
+    of the task that finished it. Outside a transaction it is queued at
+    once.
+    """
+    transaction.on_commit(partial(_enqueue_batch_notices, batch_id))
+
+
+def _enqueue_batch_notices(batch_id: int) -> None:
+    """Queue the task. A broker error is logged by id and class only, and
+    the batch's notices are lost (ADR 0041)."""
+    from apps.matches.tasks import send_batch_notices as task
+
+    try:
+        task.delay(batch_id)
+    except (OperationalError, OSError) as exc:
+        logger.error(
+            "Could not queue notices for submission batch %s (%s).",
+            batch_id,
+            type(exc).__name__,
+        )
 
 
 def _failed(match_pk: int, exc: Exception, *, what: str = "match") -> int:
@@ -145,6 +173,10 @@ def _queue_one(
         if message is None:
             return False
         queue_email(message, template=template)
+    except SoftTimeLimitExceeded:
+        # The task's time is up: stop, rather than log every recipient
+        # left as a failure until the hard limit.
+        raise
     except Exception as exc:
         _failed(match_pk, exc, what=what)
         return False
@@ -402,6 +434,8 @@ def send_batch_notices(batch_id: int) -> int:
             ).order_by("sequence", "pk")
         )
         return _send_recorded(matches, batch_id, what="submission batch")
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:
         return _failed(batch_id, exc, what="submission batch")
 

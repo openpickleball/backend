@@ -15,6 +15,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from celery.exceptions import SoftTimeLimitExceeded
 from django.core import mail
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
@@ -44,14 +45,21 @@ from apps.matches.results_files import (
 from apps.matches.services import record_match
 from apps.matches.tests.conftest import WORKFLOW_GAMES, WORKFLOW_PLAYED_ON
 from apps.matches.tests.factories import MatchFactory, raw_update
+from apps.matches.tests.results_file_builders import moderator as results_file_moderator
 from apps.matches.tests.results_file_builders import row, upload
-from apps.matches.workflow import dispute_match, edit_match
+from apps.matches.workflow import (
+    dispute_match,
+    edit_match,
+    void_submission_batch,
+    void_submitter_matches,
+)
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
 pytestmark = pytest.mark.django_db
 
 Capture = Callable[..., Any]
+REASON = "Made-up reason for a test."
 ONE = "A match you played in was recorded on OPEN"
 SEVERAL = "Matches you played in were recorded on OPEN"
 
@@ -130,6 +138,7 @@ def test_an_event_match_emails_each_player_once(
         assert "11-7, 9-11, 11-4" in body
         assert "Scores show your team first." in body
         assert "dispute it from its page" in body
+        assert "counts toward ratings without your confirmation" in body
     assert "7-11, 11-9, 4-11" in team_b.body
     assert "June 1, 2026" in team_b.body
 
@@ -212,7 +221,7 @@ def test_a_self_submission_sends_no_recorded_notice(
     assert mail.outbox == []
 
 
-def test_an_organizer_confirming_a_pending_duplicate_sends_none(
+def test_an_organizer_confirming_a_pending_duplicate_emails_the_players(
     players: list[Player],
     pending: Match,
     event: Event,
@@ -220,7 +229,7 @@ def test_an_organizer_confirming_a_pending_duplicate_sends_none(
     django_capture_on_commit_callbacks: Capture,
 ) -> None:
     # A self-submission's exact duplicate from the Organizer confirms it
-    # (ADR 0013); the players submitted it themselves.
+    # (ADR 0013), so it counts although the other team never confirmed.
     with django_capture_on_commit_callbacks(execute=True):
         recorded = record_match(
             format=MatchFormat.DOUBLES,
@@ -233,7 +242,22 @@ def test_an_organizer_confirming_a_pending_duplicate_sends_none(
         )
 
     assert recorded.created is False
-    assert not [m for m in mail.outbox if m.subject in (ONE, SEVERAL)]
+    assert recorded.match.pk == pending.pk
+    assert _sent() == {player.account.email: [ONE] for player in players}
+
+    # A retry of the same submission confirms nothing and sends nothing.
+    mail.outbox.clear()
+    with django_capture_on_commit_callbacks(execute=True):
+        record_match(
+            format=MatchFormat.DOUBLES,
+            team_a=players[:2],
+            team_b=players[2:],
+            games=WORKFLOW_GAMES,
+            played_on=WORKFLOW_PLAYED_ON,
+            submitted_by_user=member,
+            event=event,
+        )
+    assert mail.outbox == []
 
 
 def test_an_organizer_correction_emails_the_players(
@@ -343,7 +367,7 @@ def test_an_upload_sends_nothing_per_row(
 
     # One callback for the whole file, not one per row.
     names = [getattr(c, "func", c).__name__ for c in callbacks]
-    assert names.count("send_batch_notices") == 1
+    assert names.count("_enqueue_batch_notices") == 1
     assert "send_recorded_notice" not in names
 
 
@@ -407,6 +431,145 @@ def test_an_upload_skips_voided_matches_and_inactive_accounts(
     [message] = mail.outbox
     assert str(second.public_code) in message.body
     assert str(first.public_code) not in message.body
+
+
+def test_a_bulk_void_tells_the_players_of_the_matches_it_left_counting(
+    event: Event, member: User, django_capture_on_commit_callbacks: Capture
+) -> None:
+    moderator = results_file_moderator()
+    own = PlayerFactory.create(account=moderator)
+    a, b = PlayerFactory.create(), PlayerFactory.create()
+    results_file = upload(member, event, [row(a, b, 5), row(own, b, 5)])
+    with (
+        mock.patch.object(
+            results_files, "_finish", side_effect=RuntimeError("stopped")
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        process_results_file(results_file.pk)
+    first, second = Match.objects.order_by("sequence")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        result = void_submission_batch(
+            results_file.submission_batch, actor=moderator, reason=REASON
+        )
+
+    # The moderator's own match is refused and keeps counting.
+    assert (result.voided, result.refused) == (1, 1)
+    assert _sent() == {own.account.email: [ONE], b.account.email: [ONE]}
+    for message in mail.outbox:
+        assert str(second.public_code) in message.body
+        assert str(first.public_code) not in message.body
+
+
+def test_a_submitter_void_tells_the_players_of_rows_before_its_date(
+    event: Event, member: User, django_capture_on_commit_callbacks: Capture
+) -> None:
+    a, b = PlayerFactory.create(), PlayerFactory.create()
+    results_file = upload(member, event, [row(a, b, 5), row(a, b, 7)])
+    with (
+        mock.patch.object(
+            results_files, "_finish", side_effect=RuntimeError("stopped")
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        process_results_file(results_file.pk)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        result = void_submitter_matches(
+            member,
+            recorded_since=timezone.now().date() + timedelta(days=1),
+            actor=results_file_moderator(),
+            reason=REASON,
+        )
+
+    results_file.refresh_from_db()
+    assert results_file.error_code == "voided"
+    assert result.voided == 0
+    assert _sent() == {a.account.email: [SEVERAL], b.account.email: [SEVERAL]}
+
+
+def test_a_bulk_void_of_every_match_sends_nothing(
+    event: Event, member: User, django_capture_on_commit_callbacks: Capture
+) -> None:
+    a, b = PlayerFactory.create(), PlayerFactory.create()
+    results_file = upload(member, event, [row(a, b, 5)])
+    with (
+        mock.patch.object(
+            results_files, "_finish", side_effect=RuntimeError("stopped")
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        process_results_file(results_file.pk)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        void_submission_batch(
+            results_file.submission_batch,
+            actor=results_file_moderator(),
+            reason=REASON,
+        )
+
+    assert mail.outbox == []
+
+
+def test_the_batch_notices_run_in_their_own_task(
+    event: Event, member: User, django_capture_on_commit_callbacks: Capture
+) -> None:
+    a, b = PlayerFactory.create(), PlayerFactory.create()
+    results_file = upload(member, event, [row(a, b, 5)])
+
+    with (
+        mock.patch.object(tasks.send_batch_notices, "delay") as delay,
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        process_results_file(results_file.pk)
+
+    delay.assert_called_once_with(results_file.submission_batch_id)
+    assert mail.outbox == []
+    assert (
+        tasks.send_batch_notices.apply(args=(results_file.submission_batch_id,)).get()
+        == 2
+    )
+
+
+def test_a_broker_error_is_logged_by_id_only(
+    event: Event,
+    member: User,
+    django_capture_on_commit_callbacks: Capture,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    a, b = PlayerFactory.create(), PlayerFactory.create()
+    results_file = upload(member, event, [row(a, b, 5)])
+
+    with (
+        mock.patch.object(
+            tasks.send_batch_notices, "delay", side_effect=OSError("refused")
+        ),
+        caplog.at_level(logging.ERROR, logger=notices.__name__),
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        process_results_file(results_file.pk)
+
+    assert [r.getMessage() for r in caplog.records if r.name == notices.__name__] == [
+        f"Could not queue notices for submission batch "
+        f"{results_file.submission_batch_id} (OSError)."
+    ]
+
+
+def test_the_soft_time_limit_stops_the_batch_notices(
+    event: Event, member: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a, b = PlayerFactory.create(), PlayerFactory.create()
+    results_file = upload(member, event, [row(a, b, 5)])
+    process_results_file(results_file.pk)
+
+    def out_of_time(player: Player, matches: list[Match]) -> None:
+        raise SoftTimeLimitExceeded
+
+    monkeypatch.setattr(notices, "render_recorded_notice", out_of_time)
+
+    with pytest.raises(SoftTimeLimitExceeded):
+        notices.send_batch_notices(results_file.submission_batch_id)
 
 
 # Failures and the email itself
