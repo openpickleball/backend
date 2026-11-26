@@ -2,9 +2,13 @@
 
 import json
 from datetime import timedelta
+from io import StringIO
 
 import pytest
+from cryptography.fernet import Fernet
+from django.core.management import call_command
 from django.db import IntegrityError, connection, transaction
+from django.test import override_settings
 from django.utils import timezone
 
 from apps.accounts.tests.factories import UserFactory
@@ -99,3 +103,18 @@ def test_str_never_names_the_account() -> None:
 
     assert account.email not in str(export)
     assert str(export) == f"DataExport {export.pk}"
+
+
+def test_reencrypt_fields_moves_the_content_to_the_newest_key() -> None:
+    old, new = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+    with override_settings(FIELD_ENCRYPTION_KEYS=[old]):
+        export = DataExport.objects.create(
+            account=UserFactory.create(), content=CONTENT
+        )
+
+    with override_settings(FIELD_ENCRYPTION_KEYS=[new, old]):
+        call_command("reencrypt_fields", stdout=StringIO())
+
+    raw = _raw_content(export)
+    assert raw is not None
+    assert Fernet(new.encode()).decrypt(raw.encode()).decode() == CONTENT

@@ -1,0 +1,8 @@
+{% extends "emails/base_message.txt" %}
+{% block content %}Your OPEN data export is ready. It is a copy of the data OPEN holds about your account.
+
+Sign in, then open this link to download it. The link works once and expires on {{ expires_at }}, 24 hours after it was made:
+{{ export_url }}
+
+If you did not ask for your data, change your password and review your sessions.{% endblock content %}
+{% block reason %}You received this email because someone signed in to the OPEN account that uses this email address and asked for a copy of its data.{% endblock reason %}

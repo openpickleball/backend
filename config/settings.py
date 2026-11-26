@@ -951,6 +951,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
         "options": {"expire_seconds": 900},
     },
+    # Deletes player data exports past their 24-hour link and pending ones
+    # never built, and queues lost builds again (#39, ADR 0051). A run
+    # missed for 15 minutes is dropped.
+    "sweep-data-exports": {
+        "task": "apps.exports.tasks.sweep_data_exports",
+        "schedule": crontab(minute="*/15"),
+        "options": {"expire_seconds": 900},
+    },
     # Runs pending rating replay requests whose queued task was lost (#47).
     # Does nothing when no request is pending. A run missed for 15 minutes
     # is dropped.
