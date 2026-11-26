@@ -123,7 +123,8 @@ _CLEARED_ACCOUNT_FIELDS = (
 
 
 class AccountAlreadyDeleted(ValueError):
-    """The stored Account is already inactive: nothing to delete."""
+    """The stored Account is gone, or inactive with a placeholder email:
+    a deletion already ran, so there is nothing to delete."""
 
     def __init__(self) -> None:
         super().__init__("The account is already deleted.")
