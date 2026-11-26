@@ -9,12 +9,14 @@ import sys
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.management import CommandError, call_command
+from django.db import connection
 from pytest_django.fixtures import Settings
 
 from apps.clubs.models import Club, ClubOrganizerGrant, Organizer
+from apps.encryption.keys import is_token
 from apps.events.models import Event
 from apps.matches.models import Match, MatchFlag, MatchStatus
-from apps.players.models import Player
+from apps.players.models import GenderDivision, Player
 
 SEED_MODULE = "apps.devdata.seed"
 EXAMPLE_DOMAINS = ("example.com", "example.net", "example.org")
@@ -166,3 +168,27 @@ def test_missing_dev_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
         call_command("seed_dev_data", "--players", "8")
 
     assert set(_counts().values()) == {0}
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("debug_on")
+def test_players_get_made_up_personal_data_stored_encrypted() -> None:
+    # The factories set these (issue #115): no legal name, and a made-up
+    # adult birth year and month and division. The columns hold tokens.
+    call_command("seed_dev_data", "--players", "8")
+
+    players = list(
+        Player.objects.values_list(
+            "legal_name", "birth_year", "birth_month", "gender_division"
+        )
+    )
+    assert len(players) == 8
+    for legal_name, birth_year, birth_month, division in players:
+        assert legal_name == ""
+        assert isinstance(birth_year, int)
+        assert 1 <= birth_month <= 12
+        assert division in GenderDivision.values
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT birth_year, gender_division FROM players_player")
+        for row in cursor.fetchall():
+            assert all(is_token(value) for value in row)
