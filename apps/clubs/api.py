@@ -1,4 +1,6 @@
-"""Reporting an Organizer to OPEN Moderators, at /api/v1/organizers/ (#271).
+"""Reporting an Organizer to OPEN Moderators, at /api/v1/organizers/ (#271),
+and the signed-in Account's own Organizer memberships, at
+/api/v1/organizer/organizers (#301, ADR 0050).
 
 A signed-in Account with a Player reports a verified Organizer with one
 of the fixed reasons, through ``apps.clubs.reports.report_organizer``.
@@ -10,6 +12,12 @@ verified. A second open report by the same Account gets 409.
 The operation has its own throttle, ``OrganizerReportThrottle``, which
 replaces the router's Account throttle (ADR 0030): a report never counts
 against the Account's budget for other operations.
+
+``organizer_router`` (mounted at /api/v1/organizer/, beside the Event and
+results file operations) lists the Organizers the signed-in Account is a
+member of, verified or not, each with its OPEN Code, name, verified
+state, and the Account's own role. It reads only the Account's own
+membership rows, so it never names another member.
 """
 
 from typing import Annotated
@@ -19,9 +27,18 @@ from django.http import Http404, HttpRequest
 from ninja import Router, Status
 from ninja.errors import HttpError
 
-from apps.clubs.models import Organizer, OrganizerReportReason
+from apps.clubs.models import (
+    MemberRole,
+    Organizer,
+    OrganizerMember,
+    OrganizerReportReason,
+)
 from apps.clubs.reports import ReportExists, ReportRefused, report_organizer
-from apps.clubs.schemas import OrganizerReportIn, OrganizerReportOut
+from apps.clubs.schemas import (
+    OrganizerMembershipOut,
+    OrganizerReportIn,
+    OrganizerReportOut,
+)
 from apps.matches.api import request_account
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
@@ -36,6 +53,9 @@ from config.throttling import (
 )
 
 router = Router(tags=["organizers"], auth=account_auth, throttle=account_throttle)
+organizer_router = Router(
+    tags=["organizers"], auth=account_auth, throttle=account_throttle
+)
 
 OrganizerCode = Annotated[str, PublicCodePath(CodeType.ORGANIZER)]
 
@@ -92,3 +112,41 @@ def report_organizer_operation(
             created_at=report.created_at,
         ),
     )
+
+
+@organizer_router.get(
+    "/organizers",
+    response={200: list[OrganizerMembershipOut]},
+    operation_id="list_my_organizers",
+)
+def list_my_organizers(request: HttpRequest) -> list[OrganizerMembershipOut]:
+    """The Organizers the signed-in Account is a member of.
+
+    Verified or not, each with its OPEN Code (the value an Event create
+    takes as ``organizer``), its name, whether it is verified, and the
+    Account's own role there. Ordered by OPEN Code. Empty for an Account
+    with no memberships. No other member is listed. ``verified`` is the
+    Organizer's state: acting for a verified Organizer also needs MFA on
+    the Account (ADR 0043).
+    """
+    account = request_account(request)
+    memberships = (
+        OrganizerMember.objects.filter(account=account)
+        .select_related("organizer")
+        .only(
+            "role",
+            "organizer__public_code",
+            "organizer__name",
+            "organizer__verified_at",
+        )
+        .order_by("organizer__public_code")
+    )
+    return [
+        OrganizerMembershipOut(
+            organizer=membership.organizer.public_code,
+            name=membership.organizer.name,
+            verified=membership.organizer.is_verified,
+            role=MemberRole(membership.role),
+        )
+        for membership in memberships
+    ]

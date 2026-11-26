@@ -711,6 +711,15 @@
         "title": "MatchStatus",
         "type": "string"
       },
+      "MemberRole": {
+        "description": "A role an Account holds at an Organizer.",
+        "enum": [
+          "admin",
+          "match_manager"
+        ],
+        "title": "MemberRole",
+        "type": "string"
+      },
       "MyDecision": {
         "description": "The viewer's own latest decision on a match.",
         "enum": [
@@ -773,6 +782,34 @@
           "privacy"
         ],
         "title": "MyPlayerOut",
+        "type": "object"
+      },
+      "OrganizerMembershipOut": {
+        "description": "One of the signed-in Account's own Organizer memberships.\n\n``organizer`` is the Organizer's OPEN Code, the value\n``EventCreateIn.organizer`` takes. ``name`` is the Organizer's name,\nshown only to its own members. ``verified`` says whether the Organizer\nis verified; it does not say whether the Account may act for it now\n(Organizer authority also needs MFA, ADR 0043). ``role`` is the\nAccount's own role there. It names no other member.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organizer": {
+            "title": "Organizer",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MemberRole"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "organizer",
+          "name",
+          "verified",
+          "role"
+        ],
+        "title": "OrganizerMembershipOut",
         "type": "object"
       },
       "OrganizerReportIn": {
@@ -4297,6 +4334,80 @@
         "summary": "Create Results File",
         "tags": [
           "matches"
+        ]
+      }
+    },
+    "/api/v1/organizer/organizers": {
+      "get": {
+        "description": "The Organizers the signed-in Account is a member of.\n\nVerified or not, each with its OPEN Code (the value an Event create\ntakes as ``organizer``), its name, whether it is verified, and the\nAccount's own role there. Ordered by OPEN Code. Empty for an Account\nwith no memberships. No other member is listed. ``verified`` is the\nOrganizer's state: acting for a verified Organizer also needs MFA on\nthe Account (ADR 0043).",
+        "operationId": "list_my_organizers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrganizerMembershipOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List My Organizers",
+        "tags": [
+          "organizers"
         ]
       }
     },
