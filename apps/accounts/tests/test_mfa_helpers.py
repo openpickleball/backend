@@ -15,10 +15,12 @@ from django.core.cache import cache
 from django.test import Client
 
 from apps.accounts.mfa import (
+    MFAStatus,
     accounts_with_mfa,
     has_mfa,
     lacks_required_mfa,
     mfa_required,
+    mfa_status,
     session_passed_mfa,
 )
 from apps.accounts.tests.factories import UserFactory, enroll_totp, totp_code
@@ -229,3 +231,16 @@ def test_lacks_required_mfa_is_one_query(
 
     with django_assert_num_queries(1):  # type: ignore[operator]
         assert lacks_required_mfa(staff)
+
+
+def test_mfa_status_answers_both_questions_in_one_query(
+    django_assert_num_queries: pytest.FixtureRequest,
+) -> None:
+    staff = UserFactory.create(is_staff=True, mfa=False)
+    enrolled = UserFactory.create(mfa=True)
+
+    with django_assert_num_queries(1):  # type: ignore[operator]
+        assert mfa_status(staff) == MFAStatus(required=True, enrolled=False)
+    assert mfa_status(enrolled) == MFAStatus(required=False, enrolled=True)
+    assert mfa_status(UserFactory.create()) == MFAStatus(False, False)
+    assert mfa_status(AnonymousUser()) == MFAStatus(False, False)

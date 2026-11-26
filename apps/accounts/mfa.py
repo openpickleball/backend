@@ -14,13 +14,19 @@ Account's id, never from an instance cache:
   a production (non-sandbox) Partner Application. The admin needs a
   method for every staff Account (``config/admin.py``), and Organizer
   authority needs one for every member (``apps.matches.permissions``).
-  ``lacks_required_mfa`` asks both questions in one query.
-- ``session_passed_mfa``: the session's login passed the second factor.
-  No rule uses it yet; it is the check for #101, #117, and #232.
+  ``lacks_required_mfa`` asks both questions in one query, and
+  ``mfa_status`` returns both answers in one query.
+- ``session_passed_mfa``: the session passed the second factor (an MFA
+  login, an MFA reauthentication, or enrolling in it). The API
+  (``config/auth.py``) and the MFA management views
+  (``apps/accounts/mfa_views.py``) need it for an Account with MFA, so a
+  password-only session (the admin login's, or one made before the
+  Account enrolled) gets no MFA-protected access.
 - ``record_mfa_change``: the one Audit Event per MFA change, written in
   the change's transaction (``apps/accounts/mfa_views.py``).
 """
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -29,7 +35,14 @@ from allauth.mfa.models import Authenticator
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.contrib.sessions.backends.base import SessionBase
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import (
+    BooleanField,
+    Exists,
+    ExpressionWrapper,
+    OuterRef,
+    Q,
+    QuerySet,
+)
 from oauth2_provider.models import get_application_model
 
 from apps.audit.models import AuditAction
@@ -139,6 +152,41 @@ def lacks_required_mfa(actor: object) -> bool:
         .exists()
     )
     return lacks
+
+
+@dataclass(frozen=True)
+class MFAStatus:
+    """Whether an Account must have a method, and whether it has one."""
+
+    required: bool
+    enrolled: bool
+
+
+def mfa_status(actor: object) -> MFAStatus:
+    """``mfa_required`` and ``has_mfa`` for ``actor``, in one query.
+
+    Both False for an unsaved or anonymous actor.
+    """
+    pk = _saved_account_pk(actor)
+    if pk is None:
+        return MFAStatus(required=False, enrolled=False)
+    row = (
+        get_user_model()
+        .objects.filter(pk=pk)
+        .annotate(
+            required=ExpressionWrapper(_requires_mfa(), output_field=BooleanField()),
+            enrolled=Exists(
+                Authenticator.objects.filter(
+                    user_id=OuterRef("pk"), type__in=MFA_METHOD_TYPES
+                )
+            ),
+        )
+        .values_list("required", "enrolled")
+        .first()
+    )
+    if row is None:
+        return MFAStatus(required=False, enrolled=False)
+    return MFAStatus(required=bool(row[0]), enrolled=bool(row[1]))
 
 
 def session_passed_mfa(session: SessionBase, account: "_User") -> bool:

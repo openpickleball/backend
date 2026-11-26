@@ -895,6 +895,10 @@ ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 # Verification and password reset use emailed links, not codes.
 ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED = False
 ACCOUNT_PASSWORD_RESET_BY_CODE_ENABLED = False
+# Reauthentication (before an MFA change) is by password or by an MFA
+# code only. allauth's default also allows an emailed code, which would
+# mail allauth's own login_code template.
+ACCOUNT_REAUTHENTICATION_METHODS = ("password", "mfa")
 # Sign-up and password reset answer the same way whether or not an Account
 # has the address (allauth's default, set explicitly), and nothing is
 # mailed to an address that has no Account.

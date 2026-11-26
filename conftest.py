@@ -4,19 +4,24 @@ The plain `client` fixture (Django's test client, not logged in) comes from
 pytest-django. `api_client` is django-ninja's test client for the real API in
 `config/api.py`: it calls operations directly, so paths are relative to
 /api/v1/ (`api_client.get("/openapi.json")`) and no middleware runs.
+`Client.force_login` stands in for a whole login: for an Account with MFA
+it also records that the session passed the second factor, as the real
+MFA login does (ADR 0043), so tests of signed-in members and staff keep
+testing what they did. Tests of the MFA rules use real logins.
 `commit_after_each_request` sends queued email when each test client
 request returns, as a commit would; tests that read allauth's emails use
 it (the accounts tests always do).
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from django.test import Client
 from ninja.testing import TestClient
 
+from apps.accounts.mfa import has_mfa
 from apps.accounts.tests.factories import UserFactory
-from apps.accounts.tests.headless import run_on_commit_after_each_request
+from apps.accounts.tests.headless import pass_mfa, run_on_commit_after_each_request
 from config.api import api
 
 if TYPE_CHECKING:
@@ -52,3 +57,16 @@ def commit_after_each_request(monkeypatch: pytest.MonkeyPatch) -> None:
     ``mail.outbox`` by the time the response comes back.
     """
     run_on_commit_after_each_request(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
+def _force_login_passes_mfa(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``Client.force_login`` for an Account with MFA, as an MFA login."""
+    original = Client.force_login
+
+    def force_login(self: Client, user: Any, backend: str | None = None) -> None:
+        original(self, user, backend)
+        if has_mfa(user):
+            pass_mfa(self.session, user)
+
+    monkeypatch.setattr(Client, "force_login", force_login)

@@ -18,10 +18,13 @@ unsafe request without a valid CSRF token gets 403.
 An Account that must have two-factor authentication
 (``apps.accounts.mfa.mfa_required``: staff, superusers, moderators, and
 owners of a production Partner Application) and has no method
-(``has_mfa``), both read in one query (``lacks_required_mfa``), is refused with ``MFARequired``, a 403 with code
+(``has_mfa``), both read in one query (``mfa_status``), is refused with ``MFARequired``, a 403 with code
 ``mfa_required`` (issue #99, ADR 0043), on every operation either class
 protects. It can still sign in and use allauth's endpoints, where it sets
-up a method. The check runs after authentication, so a request with no
+up a method. An Account with a method counts only with a session that
+passed the second factor (``session_passed_mfa``): a password-only
+session, such as the admin login's or one made before the Account
+enrolled, gets the same 403. The check runs after authentication, so a request with no
 Account still gets 401, and for a browser session after ninja's CSRF
 check, so an unsafe request without its token still gets the CSRF 403.
 
@@ -43,13 +46,15 @@ from django.http import HttpRequest
 from ninja.errors import HttpError
 from ninja.security import SessionAuth as NinjaSessionAuth
 
-from apps.accounts.mfa import lacks_required_mfa
+from apps.accounts.mfa import mfa_status, session_passed_mfa
 
 # Where SessionTokenAuth keeps the token's session on the request.
 _TOKEN_SESSION_ATTRIBUTE = "open_token_session"
 
 MFA_REQUIRED_STATUS = 403
-MFA_REQUIRED_MESSAGE = "Set up two-factor authentication to continue."
+MFA_REQUIRED_MESSAGE = (
+    "Two-factor authentication is required: set it up, or sign in with it, to continue."
+)
 
 
 class MFARequired(HttpError):
@@ -62,9 +67,18 @@ class MFARequired(HttpError):
         super().__init__(MFA_REQUIRED_STATUS, MFA_REQUIRED_MESSAGE)
 
 
-def require_mfa(account: Any) -> Any:
-    """``account``, or ``MFARequired`` when it needs a method and has none."""
-    if lacks_required_mfa(account):
+def require_mfa(account: Any, session: SessionBase | None) -> Any:
+    """``account``, or ``MFARequired`` (ADR 0043).
+
+    An Account with a method counts only with a ``session`` that passed
+    the second factor (``session_passed_mfa``). One without a method is
+    refused when it needs one (``mfa_required``). One query.
+    """
+    status = mfa_status(account)
+    if status.enrolled:
+        if session is None or not session_passed_mfa(session, account):
+            raise MFARequired
+    elif status.required:
         raise MFARequired
     return account
 
@@ -92,7 +106,7 @@ class SessionTokenAuth(XSessionTokenAuth):
         result = authenticate_by_x_session_token(token)
         if result is None or result.user is None:
             return None
-        require_mfa(result.user)
+        require_mfa(result.user, result.session)
         usersessionkit.track_activity(request, user=result.user, session=result.session)
         request.user = result.user
         setattr(request, _TOKEN_SESSION_ATTRIBUTE, result.session)
@@ -123,7 +137,10 @@ class SessionAuth(NinjaSessionAuth):
         Account behind the proxy, so unwrapping it needs no query. It runs
         only for a signed-in user, after ninja's CSRF check.
         """
-        return require_mfa(getattr(request.user, "_wrapped", request.user))
+        return require_mfa(
+            getattr(request.user, "_wrapped", request.user),
+            getattr(request, "session", None),
+        )
 
 
 account_auth = [SessionTokenAuth(), SessionAuth()]

@@ -6,10 +6,12 @@ test client and the whole middleware stack.
 
 import re
 from importlib import import_module
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import unquote
 
 import pytest
+from allauth.account.internal.flows.login import record_authentication
 from django.conf import settings
 from django.contrib.sessions.backends.base import SessionBase
 from django.core import mail
@@ -113,6 +115,13 @@ def browser_client() -> Client:
 
 def csrf_header(client: Client) -> dict[str, str]:
     return {"X-CSRFToken": client.cookies[settings.CSRF_COOKIE_NAME].value}
+
+
+def pass_mfa(session: SessionBase, account: Any) -> None:
+    """Record in ``session`` that ``account`` passed the second factor, as
+    an MFA login does (allauth's own record, with no row id)."""
+    record_authentication(SimpleNamespace(session=session), account, "mfa", type="totp")
+    session.save()
 
 
 def run_on_commit_after_each_request(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -126,6 +126,12 @@ module = [
 disallow_subclassing_any = false
 
 [[tool.mypy.overrides]]
+# A frozen regression test whose helper returns a comparison built from
+# the test client's untyped JSON body.
+module = ["apps.accounts.tests.test_fix_password_session_mfa"]
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
 # celery-types declares conf.timezone as a tzinfo, but the app's conf holds
 # the TIME_ZONE string the test compares it with.
 module = ["config.tests.test_celery"]
