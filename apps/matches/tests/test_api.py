@@ -119,6 +119,8 @@ def test_participant_submits_a_pending_match_with_defaults(
         # The submission is the submitter's confirmation (#197).
         "my_decision": "confirm",
         "confirmed_by_team": {"a": True, "b": False},
+        "event": None,
+        "club": None,
     }
     assert match.status == MatchStatus.PENDING
     assert match.submitted_by_user_id == players[0].account_id

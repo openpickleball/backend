@@ -39,6 +39,8 @@ MATCH_KEYS = {
     "team_a",
     "team_b",
     "games",
+    "event",
+    "club",
 } | VIEWER_KEYS
 
 

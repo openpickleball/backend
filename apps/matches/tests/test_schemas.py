@@ -14,6 +14,8 @@ from apps.accounts.tests.factories import UserFactory
 from apps.matches.models import Match
 from apps.matches.schemas import (
     PRIVATE_PLAYER_NAME,
+    MatchClubOut,
+    MatchEventOut,
     MatchOut,
     TeamConfirmationsOut,
     match_out,
@@ -57,6 +59,8 @@ def test_match_out_lists_teams_games_and_settings(
         "my_team": "A",
         "my_decision": "none",
         "confirmed_by_team": {"a": False, "b": False},
+        "event": None,
+        "club": None,
         "created_at": pending.created_at,
     }
 
@@ -230,6 +234,10 @@ def test_match_out_has_only_the_documented_fields() -> None:
         "my_team",
         "my_decision",
         "confirmed_by_team",
+        "event",
+        "club",
         "created_at",
     }
     assert set(TeamConfirmationsOut.model_fields) == {"a", "b"}
+    assert set(MatchEventOut.model_fields) == {"code", "name", "organizer"}
+    assert set(MatchClubOut.model_fields) == {"code", "name"}
