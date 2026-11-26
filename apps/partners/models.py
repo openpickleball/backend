@@ -107,7 +107,7 @@ class PartnerApplication(AbstractApplication):
 
         DOT's version reverses its application detail view, which OPEN
         does not mount. Raising AttributeError makes ``hasattr`` false, so
-        the admin's ``/admin/r/`` shortcut answers 404, not a 500.
+        the admin's ``r/`` shortcut answers 404, not a 500.
         """
         raise AttributeError("A partner application has no page.")
 

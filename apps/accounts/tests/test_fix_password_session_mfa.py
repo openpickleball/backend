@@ -2,8 +2,9 @@
 
 An enrolled Account's session counts for the API only when it passed the
 second factor (a TOTP or recovery code login, an MFA reauthentication,
-or the enrollment itself). A password-only session, such as the admin
-login's or one made before the Account enrolled, gets 403
+or the enrollment itself). A password-only session, such as one made
+before the Account enrolled (Django's own password login makes one in
+these tests), gets 403
 ``mfa_required``, and cannot change or view the Account's methods after
 a password reauthentication: only an MFA reauthentication lets it.
 Made-up data only.
