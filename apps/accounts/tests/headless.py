@@ -112,7 +112,7 @@ def browser_client() -> Client:
 
 
 def csrf_header(client: Client) -> dict[str, str]:
-    return {"X-CSRFToken": client.cookies["csrftoken"].value}
+    return {"X-CSRFToken": client.cookies[settings.CSRF_COOKIE_NAME].value}
 
 
 def run_on_commit_after_each_request(monkeypatch: pytest.MonkeyPatch) -> None:
