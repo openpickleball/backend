@@ -7,7 +7,9 @@ while their Account is active, so they show as ``PRIVATE_PLAYER_NAME``
 with no code, unless the viewer is that participant's own Account.
 
 No schema here carries a row id, the submitter, a flag, or any personal
-field other than a display name. Confirmation state shows only as values
+field other than a display name. A match names its Event (OPEN Code and
+name), the Event's Organizer by OPEN Code only, never its name, and its
+Club (OPEN Code and name), for any viewer who gets the match (#302). Confirmation state shows only as values
 derived for the viewer (issue #193): their own team, their own latest
 decision, and, for a participant, whether each team has a confirmation.
 No confirmation row is shown, and nothing names who confirmed or
@@ -227,6 +229,26 @@ class TeamConfirmationsOut(Schema):
     b: bool
 
 
+class MatchEventOut(Schema):
+    """The Event a match was recorded under.
+
+    ``organizer`` is the OPEN Code of the Event's Organizer, the code
+    ``POST /api/v1/organizers/{code}/reports`` takes. The Organizer's name
+    is never shown, since it may be a person's name.
+    """
+
+    code: str
+    name: str
+    organizer: str
+
+
+class MatchClubOut(Schema):
+    """The Club a match names: its OPEN Code and name."""
+
+    code: str
+    name: str
+
+
 class MatchOut(Schema):
     """A match, its teams, and its games, as the signed-in Account sees it.
 
@@ -247,6 +269,9 @@ class MatchOut(Schema):
     It counts player confirmations only: a match confirmed by an organizer,
     or a correction, can be confirmed with both false, so
     read ``status`` for whether the match is confirmed. ``created_at`` is when the match was submitted.
+    ``event`` is the Event the match was recorded under, null for a match
+    with none, and ``club`` the match's own Club, null for a match with
+    none.
     """
 
     code: str
@@ -262,6 +287,8 @@ class MatchOut(Schema):
     my_team: Team | None
     my_decision: MyDecision
     confirmed_by_team: TeamConfirmationsOut | None
+    event: MatchEventOut | None
+    club: MatchClubOut | None
     created_at: datetime
 
 
@@ -270,7 +297,8 @@ def with_match_details(queryset: QuerySet[Match]) -> QuerySet[Match]:
     participants = MatchParticipant.objects.select_related("player__account")
     confirmations = MatchConfirmation.objects.order_by("pk")
     return (
-        queryset.prefetch_related(
+        queryset.select_related("event__organizer", "club")
+        .prefetch_related(
             Prefetch("participants", queryset=participants.order_by("pk"))
         )
         .prefetch_related(
@@ -328,11 +356,27 @@ def _viewer_fields(
     )
 
 
+def _event_out(match: Match) -> MatchEventOut | None:
+    event = match.event
+    if event is None:
+        return None
+    return MatchEventOut(
+        code=event.public_code, name=event.name, organizer=event.organizer.public_code
+    )
+
+
+def _club_out(match: Match) -> MatchClubOut | None:
+    club = match.club
+    if club is None:
+        return None
+    return MatchClubOut(code=club.public_code, name=club.name)
+
+
 def match_out(match: Match, viewer: "_User | None") -> MatchOut:
     """The response for ``match`` as ``viewer`` sees it.
 
-    Reads the participants, their players and Accounts, the games, and the
-    confirmations, so load the match through ``with_match_details`` first.
+    Reads the participants, their players and Accounts, the games, the
+    confirmations, and the Event, its Organizer, and the Club, so load the match through ``with_match_details`` first.
     """
     participants = list(match.participants.all())
     my_team, my_decision, confirmed_by_team = _viewer_fields(
@@ -355,6 +399,8 @@ def match_out(match: Match, viewer: "_User | None") -> MatchOut:
         my_team=my_team,
         my_decision=my_decision,
         confirmed_by_team=confirmed_by_team,
+        event=_event_out(match),
+        club=_club_out(match),
         created_at=match.created_at,
     )
 
