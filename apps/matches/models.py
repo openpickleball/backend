@@ -1004,10 +1004,17 @@ class FlagResolution(models.TextChoices):
 
     ``approved``: the flagged result stands, and the flag stops holding its
     matches. Moderators resolve no flag (#273), so vouching, which always
-    approves, is the only way a flag is closed.
+    approves, is the only way a flag is closed now.
+
+    ``dismissed`` is a legacy stored value: a moderator's flag resolution
+    wrote it before #273, and nothing writes it any more. It is kept so
+    those rows stay valid under the field's choices and its check
+    constraint, as the club-only ``rec_verified`` match type is kept for
+    legacy matches. A dismissed flag holds nothing, like an approved one.
     """
 
     APPROVED = "approved", "Approved"
+    DISMISSED = "dismissed", "Dismissed"
 
 
 class MatchFlag(_LinkMessagesModel):

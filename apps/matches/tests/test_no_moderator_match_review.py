@@ -8,12 +8,14 @@ lists every match by default.
 
 import inspect
 from datetime import date
+from pathlib import Path
 
 import pytest
 from django.contrib.auth.models import Group
 from django.test import Client, RequestFactory
 from django.urls import NoReverseMatch, reverse
 
+import apps.matches
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditEvent
@@ -25,6 +27,7 @@ from apps.matches.admin import MatchAdmin
 from apps.matches.models import (
     FlagResolution,
     Match,
+    MatchFlag,
     MatchFormat,
     MatchStatus,
 )
@@ -36,6 +39,7 @@ from apps.matches.workflow import (
     edit_match,
     resolve_dispute,
     void_match,
+    vouch_for_match,
 )
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
@@ -182,5 +186,25 @@ def test_admin_lists_every_match_by_default(
     assert {m.pk for m in narrowed.context["cl"].result_list} == {disputed.pk}
 
 
-def test_flag_resolution_is_approved_only() -> None:
-    assert FlagResolution.values == ["approved"]
+def test_vouching_resolves_a_flag_as_approved(players: list[Player]) -> None:
+    first = _self_reported(players, GAMES)
+    second = _self_reported(players, ((11, 2), (11, 3)))
+    flag = MatchFlag.objects.get(match=second, duplicate_of=first)
+    for match in (first, second):
+        vouch_for_match(match, actor=players[0].account)
+        vouch_for_match(match, actor=players[2].account)
+
+    flag.refresh_from_db()
+    assert flag.resolution == FlagResolution.APPROVED
+
+
+def test_dismissed_is_kept_for_legacy_rows_and_written_by_no_code() -> None:
+    # Kept so flags a moderator dismissed before #273 stay valid.
+    assert FlagResolution.DISMISSED in FlagResolution.values
+    root = Path(apps.matches.__file__).parent
+    for path in root.rglob("*.py"):
+        if "tests" in path.parts or "migrations" in path.parts:
+            continue
+        if path.name == "models.py":
+            continue
+        assert "DISMISSED" not in path.read_text(), path

@@ -869,9 +869,8 @@ def edit_match(
             "corrected_by": corrected.public_code,
         }
         if player_path:
-            # A player's correction of a disputed match is created pending,
-            # so the rating adapter must not read ``before`` alone as a
-            # correction created confirmed (ADR 0024).
+            # Records that a player's correction is created pending, even
+            # of a disputed match (#267).
             after["correction_status"] = corrected.status
         record_event(
             action=AuditAction.MATCH_EDIT,

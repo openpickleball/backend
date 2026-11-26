@@ -26,10 +26,9 @@ Converting a Match (``to_engine_match``):
   (``validate_match``'s rules). Games are ordered by game number.
 - ``played_at`` keeps its instant, in a ``datetime.timezone`` of the stored
   UTC offset.
-- ``confirmed_by`` holds the Players with a ``confirm`` decision on the
-  Match, and nobody else. Moderators do not settle single matches (#273),
-  so no Audit Event stands in for the teams: a self-reported Match counts
-  only once players of both teams confirmed it.
+- ``confirmed_by`` is exactly the Players with a ``confirm`` decision on
+  the Match. No Audit Event adds confirmers (#273): the audit log is not
+  read.
 - The status is always completed: the backend stores only completed
   matches. The backend's own status is confirmation state, and which
   matches count is ``Match.objects.counted()``, not this conversion.
