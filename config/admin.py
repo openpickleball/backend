@@ -20,6 +20,7 @@ void matches, so the admin asks more than Django's (issue #99, #101, ADR
 - Every add, change, delete, and custom action made through it records
   an Audit Event (``register`` adds ``apps.audit.admin_audit``'s mixin
   to every admin).
+- A staff Account's own password change records ``password.change``.
 - The login page takes no password. Its script
   (``apps/accounts/static/accounts/admin_login.js``) signs in through
   allauth's headless browser client (``auth/login``, then
@@ -42,6 +43,7 @@ from django.contrib import admin
 from django.contrib.auth import REDIRECT_FIELD_NAME
 from django.contrib.auth.decorators import login_not_required
 from django.contrib.auth.views import redirect_to_login
+from django.db import transaction
 from django.http import (
     Http404,
     HttpRequest,
@@ -59,6 +61,8 @@ from django.views.decorators.csrf import csrf_exempt
 
 from apps.accounts.mfa import has_mfa, last_mfa_at
 from apps.audit.admin_audit import audited_admin_class
+from apps.audit.models import AuditAction
+from apps.audit.services import record_event
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -140,6 +144,25 @@ class OpenAdminSite(admin.AdminSite):
             return inner(request, *args, **kwargs)
 
         return cast(_View, update_wrapper(never_cache(guarded), inner))
+
+    def password_change(
+        self, request: HttpRequest, extra_context: dict[str, Any] | None = None
+    ) -> TemplateResponse:
+        """Django's own password change, recording ``password.change`` in
+        the change's transaction when it succeeds (a redirect), and nothing
+        when the form is refused."""
+        with transaction.atomic():
+            response = super().password_change(request, extra_context)
+            account = _account(request)
+            if (
+                request.method == "POST"
+                and response.status_code == 302
+                and account is not None
+            ):
+                record_event(
+                    action=AuditAction.PASSWORD_CHANGE, actor=account, target=account
+                )
+            return response
 
     @staticmethod
     def _refuse_non_staff(request: HttpRequest) -> None:
