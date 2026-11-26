@@ -519,6 +519,10 @@ MIDDLEWARE = [
     # Adds CORS headers to /api/ responses. It must come before
     # CommonMiddleware, which can return a response early.
     "corsheaders.middleware.CorsMiddleware",
+    # Refuses a declared body over DATA_UPLOAD_MAX_MEMORY_SIZE on every
+    # route before anything reads it (ADR 0040). After CorsMiddleware, so
+    # the 413 carries CORS headers, and before CsrfViewMiddleware.
+    "config.body_limits.RequestBodyLimitMiddleware",
     # Refuses an oversized body on the CSV results upload route before
     # anything reads it (#71). It must come before CsrfViewMiddleware.
     "apps.matches.upload_limits.ResultsFileBodyLimitMiddleware",
