@@ -19,6 +19,7 @@ from django.contrib import admin
 from django.contrib.admin.utils import unquote
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import QuerySet
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseNotAllowed
 from django.template.response import TemplateResponse
 from django.urls import URLPattern, path
@@ -52,6 +53,12 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
         "hidden_gender_division",
     )
     readonly_fields = fields
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Player]:
+        # Never load the encrypted fields for the list or the detail page,
+        # which show none of them: a row no configured key decrypts must
+        # not break the page. The reveal reads them on access.
+        return super().get_queryset(request).defer(*REVEALED_FIELDS)
 
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
