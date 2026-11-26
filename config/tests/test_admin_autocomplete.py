@@ -158,3 +158,77 @@ def test_many_to_many_autocomplete_refuses_without_echo() -> None:
 
     html = widget.render("groups", [MARKER, "zqxj\x00marker"])
     assert MARKER not in html
+
+
+# Issue #162: every admin choice and many-to-many field names no value.
+
+CHOICE_KEYS = ("invalid_choice",)
+MULTIPLE_KEYS = ("invalid_choice", "invalid_pk_value")
+
+
+def test_every_admin_choice_and_many_to_many_field_has_fixed_messages() -> None:
+    request = RequestFactory().get("/")
+    request.user = _superuser()
+    seen: set[str] = set()
+
+    def check(model_admin: Any) -> None:
+        for db_field in model_admin.model._meta.get_fields():
+            is_m2m = getattr(db_field, "many_to_many", False) and not getattr(
+                db_field, "auto_created", False
+            )
+            has_choices = bool(getattr(db_field, "choices", None))
+            if not (is_m2m or has_choices) or not getattr(db_field, "concrete", True):
+                continue
+            field = model_admin.formfield_for_dbfield(db_field, request)
+            if field is None:
+                continue
+            keys = MULTIPLE_KEYS if is_m2m else CHOICE_KEYS
+            for key in keys:
+                message = str(field.error_messages[key])
+                assert "%(" not in message, (model_admin, db_field.name, key)
+            seen.add(f"{model_admin.model._meta.label_lower}.{db_field.name}")
+
+    for model_admin in admin.site._registry.values():
+        check(model_admin)
+        for inline in model_admin.get_inline_instances(request):
+            check(inline)
+
+    assert {
+        "clubs.organizermember.role",
+        "clubs.clubrole.role",
+        "accounts.user.groups",
+        "accounts.user.user_permissions",
+        "auth.group.permissions",
+    } <= seen
+
+
+def test_caller_choice_messages_win() -> None:
+    request = RequestFactory().get("/")
+    model_admin = safe_autocomplete_class(admin.ModelAdmin)(Event, admin.site)
+    db_field = Event._meta.get_field("kind")
+
+    field = model_admin.formfield_for_choice_field(
+        db_field, request, error_messages={"invalid_choice": "Made-up text."}
+    )
+
+    assert field is not None
+    assert field.error_messages["invalid_choice"] == "Made-up text."
+
+
+def test_caller_many_to_many_messages_win() -> None:
+    request = RequestFactory().get("/")
+    model_admin = safe_autocomplete_class(admin.ModelAdmin)(
+        get_user_model(), admin.site
+    )
+    db_field = get_user_model()._meta.get_field("groups")
+
+    field = model_admin.formfield_for_manytomany(
+        db_field, request, error_messages={"invalid_pk_value": "Made-up text."}
+    )
+
+    assert field is not None
+    assert field.error_messages["invalid_pk_value"] == "Made-up text."
+    assert (
+        field.error_messages["invalid_choice"]
+        == MULTIPLE_CHOICE_ERRORS["invalid_choice"]
+    )
