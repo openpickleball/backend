@@ -15,9 +15,12 @@ entries have a count of 0 and never refuse. It carries a generic
 User-Agent and no other data, and waits at most
 ``PASSWORD_BREACH_TIMEOUT_SECONDS``.
 
-The check fails open (the maintainer's decision on #100): on a timeout,
-a connection error, an answer other than 200, or a body that is not a
-list of ``SUFFIX:COUNT`` lines, the password is accepted and one warning
+The check fails open (the maintainer's decision on #100): on a timeout
+(the whole request must end within the timeout), a connection or
+protocol error, a redirect (never followed, so the prefix goes to the
+configured host only), an answer other than 200, a body over
+``MAX_BODY_BYTES``, or a body that is not a non-empty list of
+``SUFFIX:COUNT`` lines, the password is accepted and one warning
 is logged with a fixed message and the error class only. The other
 password rules and the login limits still apply.
 
@@ -28,9 +31,11 @@ Tests never reach the service: the root ``conftest.py`` replaces
 import hashlib
 import logging
 import re
+import time
+from http.client import HTTPException, HTTPResponse
 from typing import Any
 from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -42,6 +47,10 @@ USER_AGENT = "OPEN-password-check"
 PREFIX_LENGTH = 5
 _LINE = re.compile(r"[0-9A-F]{35}:[0-9]+")
 _HTTP_OK = 200
+# The most of an answer read. A padded answer is about 30 to 40 KB; a
+# larger one is not the range API's and fails open.
+MAX_BODY_BYTES = 1024 * 1024
+_CHUNK_BYTES = 16 * 1024
 
 BREACHED_MESSAGE = (
     "This password has appeared in a data breach, so it is not safe to use. "
@@ -54,38 +63,79 @@ class BreachServiceError(Exception):
     """The range API answered with something other than a list of hashes."""
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    """Never follow a redirect: the prefix goes to the configured host only.
+
+    urllib then raises ``HTTPError`` for the 3xx answer, a service error.
+    """
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+_OPENER = build_opener(_NoRedirect)
+
+
+def urlopen(request: Request, timeout: float) -> HTTPResponse:
+    """Open ``request`` without following redirects."""
+    response: HTTPResponse = _OPENER.open(request, timeout=timeout)
+    return response
+
+
 def fetch_range(prefix: str) -> str:
     """The range API's answer for a five character hash prefix.
 
-    Raises on a timeout, a connection or HTTP error, an answer other than
-    200, or a body that is not ASCII.
+    The whole request, the body read in chunks included, must end within
+    ``PASSWORD_BREACH_TIMEOUT_SECONDS`` (each socket wait is bounded by
+    it too, so the worst case is about twice that). Raises on a timeout,
+    a connection, HTTP, or protocol error, a redirect, an answer other
+    than 200, a body over ``MAX_BODY_BYTES``, or a body that is not ASCII.
     """
+    timeout = settings.PASSWORD_BREACH_TIMEOUT_SECONDS
+    deadline = time.monotonic() + timeout
     request = Request(
         f"{settings.PASSWORD_BREACH_API_URL}{prefix}",
         headers={"Add-Padding": "true", "User-Agent": USER_AGENT},
     )
-    with urlopen(request, timeout=settings.PASSWORD_BREACH_TIMEOUT_SECONDS) as response:
+    chunks: list[bytes] = []
+    size = 0
+    with urlopen(request, timeout=timeout) as response:
         if response.status != _HTTP_OK:
             raise BreachServiceError
-        body: bytes = response.read()
-    return body.decode("ascii")
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError
+            chunk = response.read1(_CHUNK_BYTES)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_BODY_BYTES:
+                raise BreachServiceError
+            chunks.append(chunk)
+    return b"".join(chunks).decode("ascii")
 
 
 def _breach_count(body: str, suffix: str) -> int:
     """The count the answer lists for ``suffix``, 0 when it is not listed.
 
-    Raises ``BreachServiceError`` when any line is not ``SUFFIX:COUNT``.
+    A suffix listed more than once counts with its highest count. Raises
+    ``BreachServiceError`` when any line is not ``SUFFIX:COUNT``, or when
+    there is no line at all (the real answer always lists some).
     """
     count = 0
+    lines = 0
     for line in body.splitlines():
         line = line.strip()
         if not line:
             continue
         if not _LINE.fullmatch(line):
             raise BreachServiceError
+        lines += 1
         listed, _, times = line.partition(":")
         if listed == suffix:
-            count = int(times)
+            count = max(count, int(times))
+    if not lines:
+        raise BreachServiceError
     return count
 
 
@@ -94,15 +144,18 @@ def is_breached(password: str) -> bool:
 
     False, with one warning, when the service cannot answer (fail open).
     """
-    digest = hashlib.sha1(password.encode(), usedforsecurity=False).hexdigest()
-    digest = digest.upper()
+    # surrogatepass: a lone surrogate (valid JSON) still hashes, so the
+    # other password rules decide instead of a 500.
+    encoded = password.encode("utf-8", "surrogatepass")
+    digest = hashlib.sha1(encoded, usedforsecurity=False).hexdigest().upper()
     prefix, suffix = digest[:PREFIX_LENGTH], digest[PREFIX_LENGTH:]
     try:
         count = _breach_count(fetch_range(prefix), suffix)
-    except (BreachServiceError, URLError, OSError, ValueError) as error:
-        # OSError covers timeouts and refused connections; ValueError a
-        # body that is not ASCII. Never the error's text: it can quote
-        # the URL, and so the prefix.
+    except (BreachServiceError, URLError, HTTPException, OSError, ValueError) as error:
+        # OSError covers timeouts and refused connections, HTTPException a
+        # body cut mid-read or a broken status line, and ValueError a body
+        # that is not ASCII. URLError includes a refused redirect. Never
+        # the error's text: it can quote the URL, and so the prefix.
         logger.warning(
             "The breached password check is unavailable (%s); the password "
             "was accepted.",
