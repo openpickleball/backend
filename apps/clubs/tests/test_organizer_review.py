@@ -147,7 +147,10 @@ def test_counts_each_dispute_outcome(players: list[Player]) -> None:
     assert review.disputes_confirmed == 1
     assert review.disputes_voided == 1
     assert review.disputes_expired == 1
-    assert review.signal_flags == 0
+    # Its four matches are its first matches since verification, each with
+    # one signal-only first_matches flag (#206); the other Organizer's
+    # flagged match is not counted.
+    assert review.signal_flags == 4
 
 
 def test_counts_equal_the_audit_events_on_its_events_matches(
@@ -227,7 +230,10 @@ def test_signal_flags_count_reasons_in_the_signal_set(
     # Same teams and date, other scores: a possible duplicate flag.
     _record(players, event, date(2026, 5, 1), (11, 4))
 
-    assert organizer_review(organizer).signal_flags == 0
+    # Both are the Organizer's first matches since verification, each with
+    # one unusual_submission flag (#206); the possible duplicate flag is
+    # not a signal.
+    assert organizer_review(organizer).signal_flags == 2
     monkeypatch.setattr(
         reports, "SIGNAL_FLAG_REASONS", frozenset({FlagReason.POSSIBLE_DUPLICATE})
     )

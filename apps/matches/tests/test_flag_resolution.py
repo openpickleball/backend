@@ -8,6 +8,7 @@ The flow of vouching itself is tested in ``test_vouch.py``.
 
 import pytest
 from django.db import IntegrityError, transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -31,6 +32,12 @@ from apps.matches.workflow import _linked, confirm_match, void_match, vouch_for_
 from apps.players.models import Player
 
 pytestmark = pytest.mark.django_db
+
+
+def _duplicate_flags() -> "QuerySet[MatchFlag]":
+    """Possible duplicate flags only. Event matches also carry signal-only
+    unusual submission flags (#206), which hold nothing."""
+    return MatchFlag.objects.filter(reason=FlagReason.POSSIBLE_DUPLICATE)
 
 
 def _near_duplicate(players: list[Player]) -> Match:
@@ -142,10 +149,10 @@ def test_voiding_after_resolution_sends_no_signal_for_the_other(
 
     earlier = record(((11, 7), (11, 9)))
     later = record(((11, 5), (11, 6)))
-    assert MatchFlag.objects.filter(match=later, duplicate_of=earlier).exists()
+    assert _duplicate_flags().filter(match=later, duplicate_of=earlier).exists()
     vouch_for_match(earlier, actor=member)
     vouch_for_match(later, actor=member)
-    assert MatchFlag.objects.get().resolution == FlagResolution.APPROVED
+    assert _duplicate_flags().get().resolution == FlagResolution.APPROVED
     signals.changed.clear()
 
     void_match(later, actor=member)

@@ -9,19 +9,26 @@ hold against a pending match never ends by this rule. Made-up data only.
 from datetime import timedelta
 
 import pytest
+from django.db.models import QuerySet
 from django.utils import timezone
 from pytest_django.fixtures import Settings
 
 from apps.accounts.models import User
 from apps.clubs.tests.factories import OrganizerMemberFactory
 from apps.events.models import Event
-from apps.matches.models import Match, MatchFlag, MatchFormat, MatchStatus
+from apps.matches.models import FlagReason, Match, MatchFlag, MatchFormat, MatchStatus
 from apps.matches.services import record_match
 from apps.matches.tests.conftest import WORKFLOW_PLAYED_ON
 from apps.matches.workflow import confirm_match, expire_disputes_and_holds
 from apps.players.models import Player
 
 pytestmark = pytest.mark.django_db
+
+
+def _duplicate_flags() -> "QuerySet[MatchFlag]":
+    """Possible duplicate flags only. Event matches also carry signal-only
+    unusual submission flags (#206), which hold nothing."""
+    return MatchFlag.objects.filter(reason=FlagReason.POSSIBLE_DUPLICATE)
 
 
 @pytest.fixture(autouse=True)
@@ -58,9 +65,9 @@ def test_a_confirmed_match_held_by_a_pending_one_stays_held_after_a_newer_hold_e
         submitted_by_user=member,
     ).match
     links = set(
-        MatchFlag.objects.filter(resolved_at__isnull=True).values_list(
-            "match_id", "duplicate_of_id"
-        )
+        _duplicate_flags()
+        .filter(resolved_at__isnull=True)
+        .values_list("match_id", "duplicate_of_id")
     )
     assert links == {
         (confirmed_dup.pk, pending.pk),

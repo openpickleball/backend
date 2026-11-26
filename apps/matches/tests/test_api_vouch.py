@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.db.models import QuerySet
 from django.test import Client
 
 from apps.accounts.models import User
@@ -26,6 +27,7 @@ from apps.clubs.tests.factories import (
 from apps.events.models import Event
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import (
+    FlagReason,
     FlagResolution,
     Match,
     MatchFlag,
@@ -41,6 +43,13 @@ from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
 pytestmark = pytest.mark.django_db
+
+
+def _duplicate_flags() -> "QuerySet[MatchFlag]":
+    """Possible duplicate flags only. Event matches also carry signal-only
+    unusual submission flags (#206), which hold nothing."""
+    return MatchFlag.objects.filter(reason=FlagReason.POSSIBLE_DUPLICATE)
+
 
 HOLDS = "/api/v1/me/matches/holds"
 UNKNOWN_MATCH = "M-0000-0000-0000"
@@ -136,7 +145,7 @@ def test_an_organizer_vouch_and_one_team_keep_the_hold(
     assert _vouch(_member(event), earlier.public_code).status_code == 200
     assert _vouch(players[0].account, later.public_code).status_code == 200
 
-    assert MatchFlag.objects.get().resolved_at is None
+    assert _duplicate_flags().get().resolved_at is None
     assert not Match.objects.counted().exists()
 
 

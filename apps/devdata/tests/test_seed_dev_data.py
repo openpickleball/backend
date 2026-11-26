@@ -15,7 +15,7 @@ from pytest_django.fixtures import Settings
 from apps.clubs.models import Club, ClubOrganizerGrant, Organizer
 from apps.encryption.keys import is_token
 from apps.events.models import Event
-from apps.matches.models import Match, MatchFlag, MatchStatus
+from apps.matches.models import FlagReason, FlagRule, Match, MatchFlag, MatchStatus
 from apps.players.models import GenderDivision, Player
 
 SEED_MODULE = "apps.devdata.seed"
@@ -51,7 +51,20 @@ def test_seeds_empty_database() -> None:
     assert Match.objects.count() == 16
     assert Match.objects.exclude(status=MatchStatus.CONFIRMED).count() == 0
     assert Match.objects.counted().count() == 16
-    assert MatchFlag.objects.count() == 0
+    assert not MatchFlag.objects.filter(reason=FlagReason.POSSIBLE_DUPLICATE).exists()
+    # Each seeded Organizer is newly verified, so every match is among its
+    # first and carries one signal-only first_matches flag (#206), and
+    # still counts.
+    assert MatchFlag.objects.count() == 16
+    assert (
+        MatchFlag.objects.filter(
+            reason=FlagReason.UNUSUAL_SUBMISSION, rule=FlagRule.FIRST_MATCHES
+        )
+        .values("match")
+        .distinct()
+        .count()
+        == 16
+    )
     for match in Match.objects.all():
         assert match.participants.count() in (2, 4)
         assert match.games.exists()
@@ -147,7 +160,15 @@ def test_runs_twice() -> None:
 
     assert Player.objects.count() == 16
     assert Match.objects.counted().count() == 32
-    assert MatchFlag.objects.count() == 0
+    assert not MatchFlag.objects.filter(reason=FlagReason.POSSIBLE_DUPLICATE).exists()
+    # Every match is among its new Organizer's first (#206).
+    assert (
+        MatchFlag.objects.filter(rule=FlagRule.FIRST_MATCHES)
+        .values("match")
+        .distinct()
+        .count()
+        == 32
+    )
 
 
 @pytest.mark.django_db

@@ -39,6 +39,14 @@ concurrent insert that trips either still raises ``DuplicateMatchError``.
 The same teams playing the same scores twice on one day count as one
 match: ``sequence`` is not part of the fingerprint.
 
+Last, for a new match with an Event (a trusted submitter's, which counts
+at once), it takes the submitter's advisory lock and writes one
+signal-only ``unusual_submission`` flag per unusual submission rule that
+fires (``apps.matches.unusual``, #206, ADR 0049). Such a flag holds
+nothing, changes no rating, and sends no signal or notice. A
+self-submission, an edit's correction, and a submission that confirms a
+pending exact duplicate are never flagged this way.
+
 The rest of this docstring describes ``validate_match``.
 
 Players are any hashable reference, since each path resolves players its
@@ -111,6 +119,9 @@ from apps.matches.permissions import (
     check_can_create_match,
 )
 from apps.matches.signals import MatchChange, match_changed, match_confirmed
+from apps.matches.unusual import (
+    flag_unusual_submission as flag_unusual_submission,  # Patched by tests.
+)
 from apps.players.models import GenderDivision, Player
 
 if TYPE_CHECKING:
@@ -638,6 +649,17 @@ def _external_id_lock_key(application_id: int, external_id: str) -> int:
     return _lock_key(
         {"lock": "external_id", "application": application_id, "id": external_id}
     )
+
+
+def submitter_lock_key(submitter: "Actor") -> int:
+    """One lock for a submitter's unusual submission counts (#206).
+
+    ``record_match()`` takes it last in its write transaction, so the
+    counts of one Account's or application's concurrent submissions see
+    each other. Nothing waits on another lock while holding it.
+    """
+    kind = "application" if isinstance(submitter, get_application_model()) else "user"
+    return _lock_key({"lock": "unusual_submission", kind: submitter.pk})
 
 
 _FINGERPRINT_CONSTRAINT = "matches_match_fingerprint_unique_unless_voided"
@@ -1421,6 +1443,13 @@ def record_match(
     ``match_changed`` with ``change=hold``. Signals are sent inside the
     transaction (``apps.matches.signals``).
 
+    A new match with an Event then gets one signal-only
+    ``unusual_submission`` flag per unusual submission rule that fires
+    (``apps.matches.unusual.flag_unusual_submission``, #206, ADR 0049):
+    the last step of the write transaction, after every signal, under the
+    submitter's advisory lock (``submitter_lock_key``), the last lock the
+    call takes. It reads only stored values by id, and holds nothing.
+
     A team that names a Player whose Account is inactive raises
     ``MatchValidationError`` (code ``unknown_player``) right after the
     batch check (ADR 0048).
@@ -1434,7 +1463,11 @@ def record_match(
     ``transaction.atomic()``. Its advisory locks (an external id lock, then
     a lineup lock) last until the outermost transaction ends, so two
     callers that each record several matches in one outer transaction can
-    deadlock, whatever order they sort them in. A batch path (#71, #72) must
+    deadlock, whatever order they sort them in. The submitter lock is
+    taken last and nothing in the call waits on a lock after it, so it
+    adds no deadlock; a caller must not take another lock after
+    ``record_match()`` returns in the same transaction, except a row it
+    already holds. A batch path (#71, #72) must
     record each match in its own transaction and report a result per
     match; an all-or-nothing mode (deferred, ADR 0036) must get its
     all-or-nothing result another way.
@@ -1538,4 +1571,9 @@ def record_match(
             )
             match_confirmed.send(sender=Match, match=match)
         send_holds(held)
+        if confirms and submitter is not None:
+            # Last: the submitter's lock, then the signal-only flags
+            # (#206). Nothing after this waits on a lock.
+            _advisory_lock(submitter_lock_key(submitter))
+            flag_unusual_submission(match)
     return RecordedMatch(match=match, created=True)
