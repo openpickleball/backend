@@ -12,6 +12,7 @@ void matches, so the admin asks more than Django's (issue #99, #101, ADR
   (``apps.accounts.mfa.last_mfa_at``).
 - A signed-in Account that is not active staff gets 404 on every admin
   URL, the login page included, the same answer as an unknown path.
+- Logout works for any signed-in staff Account, whatever the limits.
 - Every unsafe request (anything but GET, HEAD, OPTIONS), logout aside,
   needs an MFA step within ``ADMIN_REAUTHENTICATION_SECONDS``. Otherwise
   nothing runs and it is redirected to the login page, which then asks
@@ -57,7 +58,7 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 
 from apps.accounts.mfa import has_mfa, last_mfa_at
 from apps.audit.admin_audit import audited_admin_class
@@ -127,14 +128,21 @@ class OpenAdminSite(admin.AdminSite):
     def admin_view(self, view: _View, cacheable: bool = False) -> _View:
         """Django's wrapper, behind the 404 rule and the write rule."""
         inner = super().admin_view(view, cacheable)
+        # Logout without the permission check, CSRF still checked: a staff
+        # session the admin no longer opens (past its limit, password only,
+        # or without MFA) must still be able to end itself.
+        logout = csrf_protect(never_cache(view))
 
         def guarded(
             request: HttpRequest, *args: Any, **kwargs: Any
         ) -> HttpResponseBase:
             self._refuse_non_staff(request)
+            is_logout = request.path == reverse("admin:logout", current_app=self.name)
+            if is_logout and _account(request) is not None:
+                return logout(request, *args, **kwargs)
             if (
                 request.method not in SAFE_METHODS
-                and request.path != reverse("admin:logout", current_app=self.name)
+                and not is_logout
                 and self.has_permission(request)
                 and not self._recent_code(request)
             ):
