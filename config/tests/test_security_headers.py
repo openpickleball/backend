@@ -15,6 +15,7 @@ from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.test import RequestFactory
 
+from apps.players.age import age_limit_date
 from config.security_headers import DISABLED_FEATURES, PermissionsPolicyMiddleware
 from config.tests.test_settings import LOCAL_DEBUG, PRODUCTION_LIKE, _run
 
@@ -81,7 +82,7 @@ override_settings(
 
 from django.test import Client
 
-host, secure, age_check, *pages = sys.argv[1:]
+host, secure, age_check, young_year, *pages = sys.argv[1:]
 secure = secure == "1"
 
 
@@ -107,7 +108,7 @@ result = {page: describe(client.get(page, secure=secure)) for page in pages}
 result[age_check] = describe(
     client.post(
         age_check,
-        {"birth_year": 2025, "birth_month": 1},
+        {"birth_year": int(young_year), "birth_month": 6},
         content_type="application/json",
         secure=secure,
     )
@@ -118,7 +119,17 @@ print(json.dumps(result))
 
 def _drive(values: dict[str, str], *, host: str, secure: bool) -> dict[str, Any]:
     result = _run(
-        ["-c", DRIVE, host, "1" if secure else "0", AGE_CHECK, *PAGES], values
+        [
+            "-c",
+            DRIVE,
+            host,
+            "1" if secure else "0",
+            AGE_CHECK,
+            # Five years old, so always under 13.
+            str(age_limit_date().year - 5),
+            *PAGES,
+        ],
+        values,
     )
     assert result.returncode == 0, result.stderr
     loaded: dict[str, Any] = json.loads(result.stdout)
