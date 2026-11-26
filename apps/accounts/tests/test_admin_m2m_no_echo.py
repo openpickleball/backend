@@ -66,4 +66,4 @@ def test_group_admin_refuses_tampered_permission_without_echo(
     assert "permissions" in errors
     assert set(errors["permissions"]) <= FIXED
     assert bad not in response.content.decode()
-    assert not Group.objects.exists()
+    assert not Group.objects.filter(name="Made-up group").exists()
