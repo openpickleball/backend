@@ -485,10 +485,12 @@ INSTALLED_APPS = [
     # Sends email through a provider's API (Resend), chosen by EMAIL_BACKEND.
     "anymail",
     # Account sign-up, login, email verification, and password reset,
-    # served only as JSON at /_allauth/ (allauth.headless). No social login,
-    # MFA, or user sessions app: see the Accounts section below.
+    # served only as JSON at /_allauth/ (allauth.headless), and two-factor
+    # authentication with TOTP and recovery codes (allauth.mfa, ADR 0043).
+    # No social login or user sessions app: see the Accounts section below.
     "allauth",
     "allauth.account",
+    "allauth.mfa",
     "allauth.headless",
     "apps.accounts",
     "apps.audit",
@@ -940,6 +942,28 @@ HEADLESS_FRONTEND_URLS = {
     ),
     "account_signup": f"{FRONTEND_URL}/account/signup",
 }
+
+
+# Two-factor authentication (allauth.mfa, issue #99, ADR 0043)
+# https://docs.allauth.org/en/latest/mfa/configuration.html
+
+# TOTP, with recovery codes made alongside the first method. WebAuthn and
+# passkeys stay off until #117.
+MFA_SUPPORTED_TYPES = ["totp", "recovery_codes"]
+MFA_PASSKEY_LOGIN_ENABLED = False
+MFA_PASSKEY_SIGNUP_ENABLED = False
+# No "trust this browser": every login with a method asks for a code.
+MFA_TRUST_ENABLED = False
+# Recovery codes are shown once, right after they are made, and can be
+# made again.
+MFA_RECOVERY_CODES_SHOW_ONCE = True
+# Adding or removing TOTP and making new recovery codes need a recent
+# reauthentication (ACCOUNT_REAUTHENTICATION_TIMEOUT, allauth's default).
+MFA_REAUTHENTICATION_REQUIRED = True
+# The issuer an authenticator app shows, so the request's host never is.
+MFA_TOTP_ISSUER = "OPEN"
+# No method before the login address is verified (allauth's default).
+MFA_ALLOW_UNVERIFIED_EMAIL = False
 
 
 # Password validation
