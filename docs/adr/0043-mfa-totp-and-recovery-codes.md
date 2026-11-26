@@ -30,7 +30,7 @@ This amends ADR 0012 and ADR 0021 (a member's event authority also needs MFA), A
 - A recovery code's use is locked by allauth (`FOR UPDATE` on the codes row) inside the view's transaction, so two logins with one code cannot both pass.
 - A lost authenticator with no recovery codes locks the Account's authority until support recovers it, which is out of scope here.
 - Turning on TOTP sends the Account's other password-only sessions to 403 `mfa_required` until each reauthenticates with a code or signs in again. The web app must handle that code.
-- Removing a method does not end the Account's other sessions, and a session that passed MFA with a removed method still counts, which matters once the Account enrolls again. Ending them is #232 and #100.
+- Removing TOTP ends the Account's other sessions (ADR 0047), except sessions with no user session row (made before ADR 0047). A session that passed MFA with a removed method still counts, which matters once the Account enrolls again; #232 keeps the rest of its scope.
 - Until ADR 0045 (#101), the admin login asked for the password only, and such a session reached the admin of an enrolled staff Account, but not the API or the Account's MFA settings.
 - Every Account that changed or used its MFA is the actor of `mfa.change` events, so it cannot be hard-deleted (ADR 0007). #116 plans for it.
 - A superuser made with `createsuperuser` sets up TOTP through allauth's endpoints before the admin lets it in.
