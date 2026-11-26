@@ -1,8 +1,7 @@
 """The hold notice does not overstate how a hold ends (#272, F4).
 
-A hold ends when each match is vouched for, and also on its own or by a
-moderator, and the earlier match does not always count afterward. Made-up
-data only.
+A hold ends when each match is vouched for, and also on its own, and the
+earlier match does not always count afterward. Made-up data only.
 """
 
 from datetime import date

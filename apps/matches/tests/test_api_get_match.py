@@ -15,10 +15,14 @@ from django.test.utils import CaptureQueriesContext
 from apps.accounts.models import User
 from apps.clubs.tests.factories import OrganizerMemberFactory
 from apps.events.models import Event
-from apps.matches.models import Match
+from apps.matches.models import Match, MatchStatus
 from apps.matches.schemas import match_out, with_match_details
-from apps.matches.tests.factories import DoublesMatchFactory, MatchFactory
-from apps.matches.workflow import confirm_match, dispute_match, void_match
+from apps.matches.tests.factories import (
+    DoublesMatchFactory,
+    MatchFactory,
+    raw_update,
+)
+from apps.matches.workflow import confirm_match, dispute_match
 from apps.players.models import Player
 
 pytestmark = pytest.mark.django_db
@@ -67,7 +71,6 @@ def test_each_participant_gets_the_match(
 def test_participant_gets_the_match_in_every_status(
     request: pytest.FixtureRequest,
     players: list[Player],
-    moderator: User,
     status: str,
 ) -> None:
     fixture = "confirmed" if status == "confirmed" else "pending"
@@ -75,7 +78,7 @@ def test_participant_gets_the_match_in_every_status(
     if status == "disputed":
         dispute_match(match, actor=players[2].account)
     elif status == "voided":
-        void_match(match, actor=moderator, reason="Made-up test reason.")
+        raw_update(match, status=MatchStatus.VOIDED)
 
     response = signed_in(players[3].account).get(f"{MATCHES}{match.public_code}")
 

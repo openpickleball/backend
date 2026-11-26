@@ -1,8 +1,8 @@
 """A row whose batch match was voided says so in neutral words (#71).
 
-The match may have been voided by a moderator or by an Organizer's
-correction, so the issue never says who voided it, and the row keeps the
-voided match's OPEN Code. Made-up data only.
+The match may have been voided outright, by an Organizer's correction,
+or by a moderator's bulk void, so the issue never says who voided it,
+and the row keeps the voided match's OPEN Code. Made-up data only.
 """
 
 from datetime import date
@@ -15,7 +15,6 @@ from apps.matches import results_files, tasks
 from apps.matches.models import MatchFormat, ResultsFile
 from apps.matches.results_files import process_results_file
 from apps.matches.tests.results_file_builders import (
-    moderator,
     organizer_member,
     row,
     upload,
@@ -34,7 +33,7 @@ def no_queue() -> Any:
         yield patched
 
 
-@pytest.mark.parametrize("by", ["moderator", "correction"])
+@pytest.mark.parametrize("by", ["void", "correction"])
 def test_a_voided_rows_issue_is_neutral_and_keeps_the_code(by: str) -> None:
     event, member = organizer_member()
     a, b = PlayerFactory.create(), PlayerFactory.create()
@@ -42,8 +41,8 @@ def test_a_voided_rows_issue_is_neutral_and_keeps_the_code(by: str) -> None:
     with mock.patch.object(results_files, "_finish"):
         process_results_file(results_file.pk)
     (match,) = results_file.submission_batch.matches.all()
-    if by == "moderator":
-        void_match(match, actor=moderator(), reason="Made-up reason.")
+    if by == "void":
+        void_match(match, actor=member)
     else:
         edit_match(
             match,

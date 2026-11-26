@@ -112,7 +112,6 @@ def test_edit_match_refuses_when_the_organizer_changed_after_the_check(
             team_b=players[1:],
             games=((11, 3),),
             played_on=PLAYED_ON,
-            as_moderator=False,
         )
 
     assert list(Match.objects.values_list("pk", "status")) == [

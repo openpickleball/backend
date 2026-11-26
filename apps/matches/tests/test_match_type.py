@@ -147,32 +147,12 @@ def test_a_correction_keeps_the_type_of_the_match_it_corrects(
         team_b=players[1:],
         games=((11, 2),),
         played_on=PLAYED_ON,
-        as_moderator=False,
     )
 
     assert _stored_type(original) == MatchType.TOURNAMENT
     assert _stored_type(correction) == MatchType.TOURNAMENT
     engine_match = to_engine_match(Match.objects.get(pk=correction.pk))
     assert engine_match.match_type is open_engine.MatchType.TOURNAMENT
-
-
-def test_a_correction_of_a_club_match_is_rec_verified(
-    players: list[Player], moderator: User
-) -> None:
-    original: Match = MatchFactory.create(club=ClubFactory.create())
-
-    correction = edit_match(
-        original,
-        actor=moderator,
-        reason="Made-up correction",
-        format=MatchFormat.SINGLES,
-        team_a=players[:1],
-        team_b=players[1:],
-        games=((11, 2),),
-        played_on=PLAYED_ON,
-    )
-
-    assert _stored_type(correction) == MatchType.REC_VERIFIED
 
 
 @pytest.mark.parametrize(

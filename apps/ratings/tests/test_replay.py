@@ -13,12 +13,12 @@ from datetime import date, timedelta
 from typing import Any
 
 import pytest
-from django.contrib.auth.models import Permission
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditAction, AuditEvent
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
 from apps.events.models import EventKind
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus, Team
@@ -57,18 +57,19 @@ AS_OF = date(2026, 3, 31)
 MENS_SINGLES = {Team.A: (GenderDivision.MENS,), Team.B: (GenderDivision.MENS,)}
 
 
-def _moderator() -> User:
+def _member(match: Match) -> User:
+    """A member of the verified Organizer of ``match``'s Event."""
+    assert match.event is not None
     account: User = UserFactory.create()
-    account.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
+    OrganizerMemberFactory.create(organizer=match.event.organizer, account=account)
     return account
 
 
 def _tournament_match(**kwargs: Any) -> tuple[Match, dict[Team, list[Player]]]:
-    kwargs.setdefault("event", EventFactory.create(kind=EventKind.TOURNAMENT))
+    if "event" not in kwargs:
+        kwargs["event"] = EventFactory.create(
+            kind=EventKind.TOURNAMENT, organizer=verified_organizer()
+        )
     return saved_match(**kwargs)
 
 
@@ -259,7 +260,7 @@ def test_a_replay_logs_dates_and_counts_only(caplog: pytest.LogCaptureFixture) -
 
 def test_a_void_equals_a_full_replay_without_the_match() -> None:
     (_, second, _), a, b, _ = _three_live_singles()
-    void_match(second, actor=_moderator(), reason="Made-up reason for a test.")
+    void_match(second, actor=_member(second))
     _request()
 
     assert replay_ratings(as_of=AS_OF) == ReplayOutcome.REPLAYED
@@ -273,7 +274,7 @@ def test_a_void_removes_a_rating_with_no_counted_match_left() -> None:
     (_, second, _), _, _, c = _three_live_singles()
     removed = RatingState.objects.get(player=c)
     before = {name: getattr(removed, name) for name in services.VALUE_FIELDS}
-    void_match(second, actor=_moderator(), reason="Made-up reason for a test.")
+    void_match(second, actor=_member(second))
     _request()
 
     replay_ratings(as_of=AS_OF)
@@ -302,8 +303,7 @@ def test_an_edit_equals_a_full_replay_of_the_current_ledger() -> None:
     (first, _, _), a, b, _ = _three_live_singles()
     correction = edit_match(
         first,
-        actor=_moderator(),
-        reason="Made-up reason for a test.",
+        actor=_member(first),
         format=MatchFormat.SINGLES,
         team_a=[b],
         team_b=[a],
@@ -365,7 +365,7 @@ def test_a_failure_rolls_everything_back_and_keeps_the_requests(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     (_, second, _), _, _, _ = _three_live_singles()
-    void_match(second, actor=_moderator(), reason="Made-up reason for a test.")
+    void_match(second, actor=_member(second))
     _request()
     requests = list(RatingReplayRequest.objects.order_by("pk"))
     states = {

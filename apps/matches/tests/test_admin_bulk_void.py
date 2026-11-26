@@ -130,7 +130,7 @@ def _post(
         data["reason"] = reason
     if confirm:
         data["post"] = "yes"
-    response = client.post(reverse(CHANGELIST) + "?review=all", data)
+    response = client.post(reverse(CHANGELIST), data)
     return response, list(get_messages(response.wsgi_request))
 
 
@@ -155,7 +155,7 @@ def test_a_moderator_sees_both_actions(
     # Django shows the action bar only on a list with matches.
     _batch(players, event, member, count=1)
 
-    page = moderator_client.get(reverse(CHANGELIST) + "?review=all").content.decode()
+    page = moderator_client.get(reverse(CHANGELIST)).content.decode()
 
     assert BATCH_ACTION in page
     assert SUBMITTER_ACTION in page
@@ -168,7 +168,7 @@ def test_staff_without_the_group_sees_neither_and_cannot_post(
     client.force_login(UserFactory.create(is_staff=True))
     before = AuditEvent.objects.count()
 
-    page = client.get(reverse(CHANGELIST) + "?review=all").content.decode()
+    page = client.get(reverse(CHANGELIST)).content.decode()
     for action in (BATCH_ACTION, SUBMITTER_ACTION):
         for confirm in (False, True):
             _post(client, action, matches[:1], confirm=confirm)
@@ -255,10 +255,9 @@ def test_the_batch_confirmation_page_shows_counts_and_changes_nothing(
     players: list[Player],
     event: Event,
     member: User,
-    moderator: User,
 ) -> None:
     matches = _batch(players, event, member, count=4)
-    void_match(matches[3], actor=moderator, reason=REASON)
+    void_match(matches[3], actor=member)
     outside = _record(players, 10, event, user=member)
     before = AuditEvent.objects.count()
 

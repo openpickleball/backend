@@ -1,6 +1,7 @@
 """More hold notice cases (#272): corrections, several earlier matches,
 flags resolved before the callback, members who play, and rollbacks.
-Made-up data only.
+A flag is resolved by vouches from both teams on both matches. Made-up
+data only.
 """
 
 from collections import Counter
@@ -18,15 +19,14 @@ from apps.clubs.models import MemberRole
 from apps.clubs.tests.factories import OrganizerMemberFactory
 from apps.events.models import Event
 from apps.matches import notices
-from apps.matches.models import FlagResolution, Match, MatchFormat, MatchStatus
+from apps.matches.models import Match, MatchFormat, MatchStatus
 from apps.matches.services import record_match
 from apps.matches.tests.conftest import WORKFLOW_PLAYED_ON
-from apps.matches.workflow import edit_match, resolve_flags
+from apps.matches.workflow import edit_match, vouch_for_match
 from apps.players.models import Player
 
 pytestmark = pytest.mark.django_db
 
-REASON = "Made-up reason for a test."
 Capture = Callable[..., Any]
 
 
@@ -45,6 +45,12 @@ def _submit(
         submitted_by_user=links.pop("submitter", players[0].account),
         **links,
     ).match
+
+
+def _vouch_both_teams(matches: list[Match], players: list[Player]) -> None:
+    for match in matches:
+        vouch_for_match(match, actor=players[0].account)
+        vouch_for_match(match, actor=players[2].account)
 
 
 def _per_account_and_code(matches: list[Match]) -> Counter[tuple[str, str]]:
@@ -69,21 +75,21 @@ def _every(players: list[Player], matches: list[Match]) -> Counter[tuple[str, st
 def test_a_correction_that_lands_on_another_match_notifies_both(
     players: list[Player],
     confirmed: Match,
-    moderator: User,
     django_capture_on_commit_callbacks: Capture,
 ) -> None:
     elsewhere = _submit(players, ((11, 5), (11, 6)), played_on=date(2026, 5, 1))
 
     with django_capture_on_commit_callbacks(execute=True):
+        # A player's correction of the pending match moves its date (#267).
         correction = edit_match(
             elsewhere,
-            actor=moderator,
-            reason=REASON,
+            actor=players[0].account,
             format=MatchFormat.DOUBLES,
             team_a=players[:2],
             team_b=players[2:],
             games=((11, 2), (11, 3)),
             played_on=WORKFLOW_PLAYED_ON,
+            as_player=True,
         )
 
     assert correction.played_on == WORKFLOW_PLAYED_ON
@@ -95,13 +101,10 @@ def test_a_correction_that_lands_on_another_match_notifies_both(
 def test_a_near_duplicate_of_two_unheld_matches_notifies_all_three(
     players: list[Player],
     confirmed: Match,
-    moderator: User,
     django_capture_on_commit_callbacks: Capture,
 ) -> None:
     second = _submit(players, ((11, 5), (11, 6)))
-    resolve_flags(
-        second, actor=moderator, outcome=FlagResolution.APPROVED, reason=REASON
-    )
+    _vouch_both_teams([confirmed, second], players)
 
     with django_capture_on_commit_callbacks(execute=True):
         third = _submit(players, ((11, 2), (11, 3)))
@@ -115,14 +118,11 @@ def test_a_near_duplicate_of_two_unheld_matches_notifies_all_three(
 def test_a_flag_resolved_before_the_callback_sends_nothing(
     players: list[Player],
     confirmed: Match,
-    moderator: User,
     django_capture_on_commit_callbacks: Capture,
 ) -> None:
     with django_capture_on_commit_callbacks(execute=False) as callbacks:
         newer = _submit(players, ((11, 2), (11, 3)))
-    resolve_flags(
-        newer, actor=moderator, outcome=FlagResolution.APPROVED, reason=REASON
-    )
+    _vouch_both_teams([confirmed, newer], players)
 
     assert any(
         getattr(callback, "func", None) is notices.send_hold_notices

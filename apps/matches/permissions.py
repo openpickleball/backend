@@ -38,13 +38,12 @@ Organizer's Events through the API (#125): an Account that is a member
 (either role) of that Organizer while it is verified, the same Account
 rule as event authority. An application may not.
 
-``can_change_match`` covers actors other than moderators. An application
-may change only a match it submitted, while it is approved. An Account
-may change a match whose Event's verified Organizer it is a member of. A
-Club admin, a self-submitter, and a participant may not. An edit also
-needs ``can_create_match`` for the corrected match (``edit_match``).
-Moderators act through the change services in ``apps.matches.workflow``
-(from #40's admin), not through this function.
+``can_change_match`` decides who may void or edit one match. An
+application may change only a match it submitted, while it is approved.
+An Account may change a match whose Event's verified Organizer it is a
+member of. A Club admin, a self-submitter, a participant, and a
+moderator (as such) may not. An edit also needs ``can_create_match`` for
+the corrected match (``edit_match``).
 
 The confirmation workflow (#26, ``apps.matches.workflow``) adds:
 
@@ -63,8 +62,7 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
 - ``settles_dispute``: the Event's verified Organizer settling a dispute
   (ADR 0034): an actor ``can_change_match`` allows that also passes
   ``can_confirm_as_organizer``, and, for an Account, has no Player in the
-  match's correction chain or, for a correction, in the new teams (the
-  rule ``moderates`` applies to moderators). Such an actor resolves a
+  match's correction chain or, for a correction, in the new teams. Such an actor resolves a
   dispute or corrects a disputed match, with a required reason. A match
   with no Event has no Organizer level.
 - ``can_correct_as_player`` and ``corrects_as_player``: a participant
@@ -82,16 +80,16 @@ The confirmation workflow (#26, ``apps.matches.workflow``) adds:
   match, and an Event match whose Organizer is not verified, have no
   level: nobody vouches for them.
 - ``is_moderator``: an active Account with the ``matches.moderate_match``
-  permission. A moderator may void and edit any match, resolve disputes,
-  resolve flags, and approve matches, except a match they played in.
-- ``moderates``: the check every moderator path in
-  ``apps.matches.workflow`` uses. A moderator whose Account has a Player
-  in any match of the match's correction chain (the match, the matches it
-  corrects, and the matches that correct it) does not moderate it, so no
-  one changes their own result as moderator (hard rule 8). The bulk void
-  services (``void_submission_batch``, ``void_submitter_matches``) check
-  ``is_moderator`` first, then send each match through ``void_match``,
-  which applies ``moderates`` to it.
+  permission. A moderator's only match action is the bulk void
+  (``void_submission_batch``, ``void_submitter_matches``): moderators do
+  not confirm, resolve, edit, or void a single match, and resolve no
+  flag (#273, ADR 0034).
+- ``moderates``: the bulk void's rule for each match. A moderator whose
+  Account has a Player in any match of the match's correction chain (the
+  match, the matches it corrects, and the matches that correct it) does
+  not moderate it, so no one voids their own result as moderator (hard
+  rule 8). The bulk void services check ``is_moderator`` first, then
+  apply ``moderates`` to each match.
 
 A refused workflow action raises ``MatchActionDenied``, with fixed text
 that never says which rule failed or what state the match is in.
@@ -306,7 +304,7 @@ def check_can_create_match(actor: Actor, submission: MatchSubmission) -> None:
 
 
 def can_change_match(actor: Actor, match: Match) -> bool:
-    """True when ``actor``, not a moderator, may change ``match``.
+    """True when ``actor`` may void or edit ``match``.
 
     See the module docstring for the rules.
     """
@@ -444,14 +442,11 @@ def _correction_chain(match_pk: int) -> set[int]:
     return chain
 
 
-def moderates(
-    actor: Actor, match: Match, *, new_player_ids: Collection[int] = ()
-) -> bool:
-    """True when ``actor`` may act as moderator on the saved ``match``.
+def moderates(actor: Actor, match: Match) -> bool:
+    """True when ``actor`` may void the saved ``match`` in a bulk void.
 
     That is a moderator (``is_moderator``) whose Account has no Player in
-    any match of ``match``'s correction chain and, for an edit, none among
-    ``new_player_ids`` (the corrected teams). Participation is read from
+    any match of ``match``'s correction chain. Participation is read from
     the database by ids, never from cached relations. An unsaved actor or
     match is refused.
     """
@@ -460,7 +455,7 @@ def moderates(
     account = _account(actor)
     if account is None:
         return False
-    return not _plays_in(account.pk, match.pk, new_player_ids)
+    return not _plays_in(account.pk, match.pk, ())
 
 
 def _plays_in(account_pk: int, match_pk: int, new_player_ids: Collection[int]) -> bool:
@@ -487,8 +482,8 @@ def settles_dispute(
     (``can_confirm_as_organizer``), so an application whose Organizer is no
     longer verified, or whose grant was removed, is refused. A member whose
     Account has a Player in any match of the match's correction chain or,
-    for a correction, among ``new_player_ids`` is refused, the rule
-    ``moderates`` applies to moderators; another member is not. A match
+    for a correction, among ``new_player_ids`` is refused; another member
+    is not. A match
     with no Event has no Organizer level. The match's status is not
     checked here. Everything is read from the database by ids.
     """

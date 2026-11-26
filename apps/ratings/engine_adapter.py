@@ -26,19 +26,10 @@ Converting a Match (``to_engine_match``):
   (``validate_match``'s rules). Games are ordered by game number.
 - ``played_at`` keeps its instant, in a ``datetime.timezone`` of the stored
   UTC offset.
-- ``confirmed_by`` holds the Players who confirmed the Match. For a
-  self-reported Match a moderator confirmed, it holds every participant,
-  since the moderator's decision stands in for the teams (ADR 0024). That
-  is read from the audit log, never guessed: a ``dispute.outcome`` Audit
-  Event on the Match whose ``after`` status is confirmed, or, for a
-  correction, the ``match.edit`` Audit Event on the Match it corrects
-  that names it in ``after.corrected_by`` with a ``before`` status of
-  confirmed or disputed (the correction was created confirmed) and no
-  ``after.correction_status`` other than confirmed. A player's correction
-  of a disputed self-reported Match (#267) is created pending and names
-  ``correction_status`` pending, so it keeps only its confirmers. A
-  self-reported Match an Event submitter's duplicate confirmed is not a
-  moderator's: it keeps only its confirmers.
+- ``confirmed_by`` holds the Players with a ``confirm`` decision on the
+  Match, and nobody else. Moderators do not settle single matches (#273),
+  so no Audit Event stands in for the teams: a self-reported Match counts
+  only once players of both teams confirmed it.
 - The status is always completed: the backend stores only completed
   matches. The backend's own status is confirmation state, and which
   matches count is ``Match.objects.counted()``, not this conversion.
@@ -57,11 +48,8 @@ from datetime import date, datetime, timedelta, timezone
 
 import open_engine
 from django.conf import settings
-from django.db.models import CharField, Exists, OuterRef, Prefetch, Q, QuerySet
-from django.db.models.fields.json import KT
-from django.db.models.functions import Cast
+from django.db.models import Prefetch
 
-from apps.audit.models import AuditAction, AuditEvent
 from apps.matches.models import (
     RATING_FORMATS_BY_FORMAT,
     BestOf,
@@ -70,7 +58,6 @@ from apps.matches.models import (
     Match,
     MatchFormat,
     MatchParticipant,
-    MatchStatus,
     MatchType,
     RatingFormat,
     ScoringType,
@@ -172,72 +159,6 @@ def _rating_format(match: Match, code: str) -> open_engine.RatingFormat:
     return rating_format
 
 
-_MODERATOR_RULED = "_engine_moderator_ruled"
-_MODERATOR_CORRECTION = "_engine_moderator_correction"
-
-
-def _with_moderator_actions(matches: QuerySet[Match]) -> QuerySet[Match]:
-    """``matches`` annotated with whether a moderator confirmed each one.
-
-    Two subqueries on the audit log, so a list of matches still takes one
-    query. ``_engine_moderator_ruled``: a ``dispute.outcome`` Audit Event
-    on the match whose ``after`` status is confirmed.
-    ``_engine_moderator_correction``: the ``match.edit`` Audit Event on the
-    match this one corrects, naming this one in ``after.corrected_by``,
-    whose ``before`` status was confirmed or disputed, so this correction
-    was created confirmed. A player's correction (#267) of a disputed
-    match is created pending, and its ``after.correction_status`` says
-    so: only an event with no ``correction_status``, or one that is
-    confirmed, counts.
-    """
-    on_matches = AuditEvent.objects.filter(
-        target_content_type__app_label=Match._meta.app_label,
-        target_content_type__model=Match._meta.model_name,
-    )
-    ruled = on_matches.annotate(outcome=KT("after__status")).filter(
-        action=AuditAction.DISPUTE_OUTCOME,
-        target_object_id=Cast(OuterRef("pk"), output_field=CharField()),
-        outcome=MatchStatus.CONFIRMED,
-    )
-    corrected = (
-        on_matches.annotate(
-            old_status=KT("before__status"),
-            corrected_by=KT("after__corrected_by"),
-            correction_status=KT("after__correction_status"),
-        )
-        .filter(
-            action=AuditAction.MATCH_EDIT,
-            target_object_id=Cast(OuterRef("corrects_id"), output_field=CharField()),
-            corrected_by=OuterRef("public_code"),
-            old_status__in=[MatchStatus.CONFIRMED, MatchStatus.DISPUTED],
-        )
-        # NULL-safe: an event without the key keeps its meaning.
-        .filter(
-            Q(correction_status__isnull=True)
-            | Q(correction_status=MatchStatus.CONFIRMED)
-        )
-    )
-    return matches.annotate(
-        **{_MODERATOR_RULED: Exists(ruled), _MODERATOR_CORRECTION: Exists(corrected)}
-    )
-
-
-def _moderator_confirmed(match: Match) -> bool:
-    """True when a moderator's action confirmed ``match`` (see the module docstring)."""
-    if hasattr(match, _MODERATOR_RULED) and hasattr(match, _MODERATOR_CORRECTION):
-        flags = (
-            getattr(match, _MODERATOR_RULED),
-            getattr(match, _MODERATOR_CORRECTION),
-        )
-    else:
-        flags = (
-            _with_moderator_actions(Match.objects.filter(pk=match.pk))
-            .values_list(_MODERATOR_RULED, _MODERATOR_CORRECTION)
-            .get()
-        )
-    return any(flag is True for flag in flags)
-
-
 def _played_at(match: Match, code: str) -> datetime | None:
     played_at, offset = match.played_at, match.played_at_utc_offset
     if played_at is None and offset is None:
@@ -308,11 +229,6 @@ def to_engine_match(match: Match) -> open_engine.Match:
     )
 
     confirmed_by: set[str] = set()
-    if match_type is open_engine.MatchType.SELF_REPORTED and _moderator_confirmed(
-        match
-    ):
-        # The moderator's decision stands in for both teams (ADR 0024).
-        confirmed_by.update(codes_by_player.values())
     for confirmation in match.confirmations.all():
         if confirmation.decision != _CONFIRM:
             continue
@@ -344,13 +260,13 @@ def to_engine_match(match: Match) -> open_engine.Match:
 def counted_engine_matches() -> list[open_engine.Match]:
     """Every match that counts (``Match.objects.counted()``), converted.
 
-    Four queries whatever the number of matches: the matches with the
-    audit log checks for moderator actions, the
-    participants with their Players, the games, and the confirmations. Ordered by date played, then by row, for a stable list;
-    the engine orders its ledger itself.
+    Four queries whatever the number of matches: the matches, the
+    participants with their Players, the games, and the confirmations.
+    Ordered by date played, then by row, for a stable list; the engine
+    orders its ledger itself.
     """
     matches = (
-        _with_moderator_actions(Match.objects.counted())
+        Match.objects.counted()
         .prefetch_related(
             Prefetch(
                 "participants",

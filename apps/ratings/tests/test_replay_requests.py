@@ -16,11 +16,11 @@ from typing import Any
 
 import pytest
 from django.conf import settings
-from django.contrib.auth.models import Permission
 from django.db import transaction
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
 from apps.events.models import EventKind
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, Team
@@ -43,16 +43,13 @@ pytestmark = pytest.mark.django_db
 
 Capture = Callable[..., AbstractContextManager[list[Callable[[], None]]]]
 MENS_SINGLES = {Team.A: (GenderDivision.MENS,), Team.B: (GenderDivision.MENS,)}
-REASON = "Made-up reason for a test."
 
 
-def _moderator() -> User:
+def _member(match: Match) -> User:
+    """A member of the verified Organizer of ``match``'s Event."""
+    assert match.event is not None
     account: User = UserFactory.create()
-    account.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
+    OrganizerMemberFactory.create(organizer=match.event.organizer, account=account)
     return account
 
 
@@ -61,7 +58,9 @@ def _singles(**kwargs: Any) -> tuple[Match, Player, Player]:
         kwargs["divisions"] = MENS_SINGLES
     match, players = saved_match(
         match_format=MatchFormat.SINGLES,
-        event=EventFactory.create(kind=EventKind.TOURNAMENT),
+        event=EventFactory.create(
+            kind=EventKind.TOURNAMENT, organizer=verified_organizer()
+        ),
         **kwargs,
     )
     return match, players[Team.A][0], players[Team.B][0]
@@ -111,7 +110,7 @@ def test_a_void_stores_a_request_and_queues_after_commit(
     match, _, _ = _singles(played_on=date(2026, 3, 1))
 
     with django_capture_on_commit_callbacks(execute=False) as callbacks:
-        void_match(match, actor=_moderator(), reason=REASON)
+        void_match(match, actor=_member(match))
         assert queued == []
 
     [request] = RatingReplayRequest.objects.all()
@@ -146,7 +145,7 @@ def test_a_rolled_back_change_stores_and_queues_nothing(
 
     def void_then_abort() -> None:
         with transaction.atomic():
-            void_match(match, actor=_moderator(), reason=REASON)
+            void_match(match, actor=_member(match))
             raise Abort
 
     with (
@@ -170,14 +169,12 @@ def test_two_quick_edits_cause_one_replay(
     second, _, _ = _singles(
         players={Team.A: [a], Team.B: [b]}, played_on=date(2026, 3, 8)
     )
-    moderator = _moderator()
 
     with django_capture_on_commit_callbacks(execute=False) as callbacks:
         for match, day in ((first, date(2026, 3, 2)), (second, date(2026, 3, 9))):
             edit_match(
                 match,
-                actor=moderator,
-                reason=REASON,
+                actor=_member(match),
                 format=MatchFormat.SINGLES,
                 team_a=[a],
                 team_b=[b],
@@ -278,7 +275,7 @@ def test_a_broker_error_is_logged_by_class_and_does_not_fail_the_change(
     monkeypatch.setattr(tasks.replay_ratings, "apply_async", broker_down)
 
     with django_capture_on_commit_callbacks(execute=True):
-        void_match(match, actor=_moderator(), reason=REASON)
+        void_match(match, actor=_member(match))
 
     assert RatingReplayRequest.objects.count() == 1
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]

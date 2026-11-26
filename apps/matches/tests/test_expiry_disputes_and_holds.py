@@ -1,6 +1,6 @@
 """Expiring unsettled disputes and possible duplicate holds (#268, ADR 0034).
 
-A dispute no moderator resolves within ``MATCH_DISPUTE_EXPIRY_DAYS`` of
+A dispute nobody settles within ``MATCH_DISPUTE_EXPIRY_DAYS`` of
 its first open dispute voids the match. A possible duplicate flag open
 for ``MATCH_DUPLICATE_HOLD_DAYS`` voids the flag's ``match`` (the newer
 one), so the earlier match counts again. Made-up data only.
@@ -18,11 +18,12 @@ from pytest_django.fixtures import Settings
 from apps.accounts.models import User
 from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event
+from apps.clubs.tests.factories import OrganizerMemberFactory
+from apps.events.models import Event
 from apps.matches import workflow
 from apps.matches.models import (
     ConfirmationDecision,
     FlagReason,
-    FlagResolution,
     Match,
     MatchConfirmation,
     MatchFlag,
@@ -49,8 +50,7 @@ from apps.matches.workflow import (
     dispute_started_at,
     expire_disputes_and_holds,
     resolve_dispute,
-    resolve_flags,
-    void_match,
+    vouch_for_match,
 )
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
@@ -127,6 +127,35 @@ def disputed(confirmed: Match, players: list[Player]) -> Match:
 
 
 @pytest.fixture
+def member(event: Event) -> User:
+    """A member of ``event``'s verified Organizer, with no Player."""
+    account: User = OrganizerMemberFactory.create(organizer=event.organizer).account
+    return account
+
+
+@pytest.fixture
+def event_disputed(event: Event, member: User, players: list[Player]) -> Match:
+    """An Event match a participant disputed, for the Organizer to settle."""
+    match = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=((11, 7), (11, 9)),
+        played_on=WORKFLOW_PLAYED_ON,
+        event=event,
+        submitted_by_user=member,
+    ).match
+    return dispute_match(match, actor=players[0].account)
+
+
+def _vouch_both_sides(pair: tuple[Match, Match], players: list[Player]) -> None:
+    """One player of each team vouches for both self-reported matches."""
+    for match in pair:
+        vouch_for_match(match, actor=players[0].account)
+        vouch_for_match(match, actor=players[2].account)
+
+
+@pytest.fixture
 def pair(confirmed: Match, players: list[Player]) -> tuple[Match, Match]:
     """The earlier match and the newer one its possible duplicate flag holds."""
     later = _confirm(_near_duplicate(players), players)
@@ -170,26 +199,35 @@ def test_the_period_follows_the_setting(disputed: Match, settings: Settings) -> 
 
 
 def test_a_dispute_resolved_as_confirmed_is_not_expired(
-    disputed: Match, moderator: User
+    event_disputed: Match, member: User
 ) -> None:
     resolve_dispute(
-        disputed, actor=moderator, outcome=MatchStatus.CONFIRMED, reason=REASON
+        event_disputed, actor=member, outcome=MatchStatus.CONFIRMED, reason=REASON
     )
 
     assert expire_disputes_and_holds(now=_days_from_now(31)) == 0
-    assert _status(disputed) == MatchStatus.CONFIRMED
+    assert _status(event_disputed) == MatchStatus.CONFIRMED
 
 
 def test_a_new_dispute_after_a_resolution_starts_a_new_period(
-    confirmed: Match, players: list[Player], moderator: User
+    event: Event, member: User, players: list[Player]
 ) -> None:
+    match = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=((11, 7), (11, 9)),
+        played_on=WORKFLOW_PLAYED_ON,
+        event=event,
+        submitted_by_user=member,
+    ).match
     long_ago = timezone.now() - timedelta(days=40)
     with audit_events_at(long_ago):
-        disputed = dispute_match(confirmed, actor=players[0].account)
+        disputed = dispute_match(match, actor=players[0].account)
     _backdate_dispute(disputed, players[0], long_ago)
     assert dispute_started_at(disputed) == long_ago
     resolve_dispute(
-        disputed, actor=moderator, outcome=MatchStatus.CONFIRMED, reason=REASON
+        disputed, actor=member, outcome=MatchStatus.CONFIRMED, reason=REASON
     )
     dispute_match(disputed, actor=players[2].account)
     started = dispute_started_at(disputed)
@@ -222,11 +260,10 @@ def test_no_dispute_has_no_start(confirmed: Match) -> None:
     assert dispute_started_at(confirmed) is None
 
 
-def test_other_statuses_are_left_alone(
-    pending: Match, players: list[Player], moderator: User
-) -> None:
-    dispute_match(pending, actor=players[0].account)
-    resolve_dispute(pending, actor=moderator, outcome=MatchStatus.VOIDED, reason=REASON)
+def test_other_statuses_are_left_alone(event_disputed: Match, member: User) -> None:
+    resolve_dispute(
+        event_disputed, actor=member, outcome=MatchStatus.VOIDED, reason=REASON
+    )
     events = len(_expire_events())
 
     assert expire_disputes_and_holds(now=_days_from_now(31)) == 0
@@ -311,22 +348,19 @@ def test_the_hold_period_runs_from_the_flag(pair: tuple[Match, Match]) -> None:
 
 
 def test_a_resolved_flag_voids_nothing(
-    pair: tuple[Match, Match], moderator: User
+    pair: tuple[Match, Match], players: list[Player]
 ) -> None:
     _, later = pair
-    resolve_flags(
-        later, actor=moderator, outcome=FlagResolution.APPROVED, reason=REASON
-    )
+    _vouch_both_sides(pair, players)
+    assert MatchFlag.objects.get(match=later).resolved_at is not None
 
     assert expire_disputes_and_holds(now=_days_from_now(15)) == 0
     assert _status(later) == MatchStatus.CONFIRMED
 
 
-def test_a_flag_on_a_voided_match_voids_nothing(
-    pair: tuple[Match, Match], moderator: User
-) -> None:
+def test_a_flag_on_a_voided_match_voids_nothing(pair: tuple[Match, Match]) -> None:
     earlier, later = pair
-    void_match(later, actor=moderator, reason=REASON)
+    raw_update(later, status=MatchStatus.VOIDED)
     events = len(_expire_events())
 
     assert expire_disputes_and_holds(now=_days_from_now(15)) == 0
@@ -335,10 +369,10 @@ def test_a_flag_on_a_voided_match_voids_nothing(
 
 
 def test_a_flag_whose_earlier_match_is_voided_voids_nothing(
-    pair: tuple[Match, Match], moderator: User
+    pair: tuple[Match, Match],
 ) -> None:
     earlier, later = pair
-    void_match(earlier, actor=moderator, reason=REASON)
+    raw_update(earlier, status=MatchStatus.VOIDED)
 
     assert expire_disputes_and_holds(now=_days_from_now(15)) == 0
     assert _status(later) == MatchStatus.CONFIRMED
@@ -353,12 +387,10 @@ def test_a_second_hold_run_voids_nothing_more(pair: tuple[Match, Match]) -> None
 
 
 def test_both_rules_in_one_run(
-    pair: tuple[Match, Match], players: list[Player], moderator: User
+    pair: tuple[Match, Match], players: list[Player]
 ) -> None:
     earlier, later = pair
-    resolve_flags(
-        later, actor=moderator, outcome=FlagResolution.DISMISSED, reason=REASON
-    )
+    _vouch_both_sides(pair, players)
     # A new near duplicate holds both again; a dispute on the earlier one.
     newest = _near_duplicate(players, games=((11, 2), (11, 3)))
     dispute_match(earlier, actor=players[0].account)

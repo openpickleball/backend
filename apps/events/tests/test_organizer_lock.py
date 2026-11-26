@@ -8,7 +8,6 @@ name, and dates stay changeable. Made-up data only.
 from datetime import timedelta
 
 import pytest
-from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.db import connection
 from django.test import Client
@@ -16,7 +15,11 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.tests.factories import OrganizerFactory
+from apps.clubs.tests.factories import (
+    OrganizerFactory,
+    OrganizerMemberFactory,
+    verified_organizer,
+)
 from apps.events.models import Event, EventKind
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchStatus
@@ -105,15 +108,11 @@ def test_a_save_with_the_same_organizer_still_locks_the_row() -> None:
 
 
 def test_an_event_whose_only_match_was_voided_still_refuses() -> None:
-    event: Event = EventFactory.create()
+    event: Event = EventFactory.create(organizer=verified_organizer())
     match = MatchFactory.create(event=event)
-    moderator = UserFactory.create()
-    moderator.user_permissions.add(
-        Permission.objects.get(
-            content_type__app_label="matches", codename="moderate_match"
-        )
-    )
-    void_match(match, actor=moderator, reason="Made-up void")
+    member = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=member)
+    void_match(match, actor=member)
     assert Match.objects.get(pk=match.pk).status == MatchStatus.VOIDED
     old = event.organizer_id
     event.organizer = OrganizerFactory.create()

@@ -14,6 +14,7 @@ from django.core.cache import cache
 from django.test import Client
 
 from apps.accounts.models import User
+from apps.accounts.tests.factories import UserFactory
 from apps.clubs.tests.factories import OrganizerMemberFactory
 from apps.events.models import Event
 from apps.matches.models import Match, MatchStatus
@@ -207,20 +208,22 @@ def test_history_read_by_the_player_shows_their_fields(
 
 
 def test_repeat_confirm_after_a_resolved_dispute_still_shows_dispute(
-    pending: Match, players: list[Player], moderator: User
+    event: Event,
 ) -> None:
-    confirm_match(pending, actor=players[0].account)
-    dispute_match(pending, actor=players[0].account)
+    member: User = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=member)
+    match: Match = MatchFactory.create(event=event)
+    account = match.participants.get(team="A").player.account
+    confirm_match(match, actor=account)
+    dispute_match(match, actor=account)
     resolve_dispute(
-        pending,
-        actor=moderator,
+        match,
+        actor=member,
         outcome=MatchStatus.CONFIRMED,
         reason="Scores checked with both teams.",
     )
 
-    response = signed_in(players[0].account).post(
-        f"{MATCHES}{pending.public_code}/confirm"
-    )
+    response = signed_in(account).post(f"{MATCHES}{match.public_code}/confirm")
 
     # The confirmation was recorded already, so no new row is added, and
     # the latest recorded decision is still the dispute.

@@ -1,6 +1,6 @@
 """An over-long action reason gets a clear warning and changes nothing (#40).
 
-Both the match and the organizer admin. The warning names the limit and
+Both the match admin's bulk voids and the organizer admin. The warning names the limit and
 never repeats the reason. Made-up data only.
 """
 
@@ -36,12 +36,17 @@ def moderator_client(client: Client) -> Client:
     return client
 
 
-def _post(client: Client, url: str, action: str, pk: int) -> list[Message]:
-    response = client.post(
-        url,
-        {"action": action, "_selected_action": [str(pk)], "reason": LONG_REASON},
-        follow=True,
-    )
+def _post(
+    client: Client, url: str, action: str, pk: int, *, confirm: bool = False
+) -> list[Message]:
+    data: dict[str, object] = {
+        "action": action,
+        "_selected_action": [str(pk)],
+        "reason": LONG_REASON,
+    }
+    if confirm:
+        data["post"] = "yes"
+    response = client.post(url, data, follow=True)
     assert response.status_code == 200
     return list(get_messages(response.wsgi_request))
 
@@ -50,11 +55,10 @@ def test_the_reason_is_over_the_limit() -> None:
     assert len(LONG_REASON) == 1001
 
 
-@pytest.mark.parametrize(
-    "action", ["approve_selected", "void_selected", "dismiss_flags_selected"]
-)
+@pytest.mark.parametrize("action", ["void_batch_selected", "void_submitter_selected"])
+@pytest.mark.parametrize("confirm", [False, True])
 def test_match_action_with_a_long_reason_warns_and_changes_nothing(
-    moderator_client: Client, action: str
+    moderator_client: Client, action: str, confirm: bool
 ) -> None:
     players = [PlayerFactory.create() for _ in range(4)]
     match = record_match(
@@ -71,9 +75,10 @@ def test_match_action_with_a_long_reason_warns_and_changes_nothing(
 
     messages = _post(
         moderator_client,
-        reverse("admin:matches_match_changelist") + "?review=all",
+        reverse("admin:matches_match_changelist"),
         action,
         match.pk,
+        confirm=confirm,
     )
 
     assert [str(m) for m in messages] == [TOO_LONG]

@@ -1111,21 +1111,16 @@ def near_duplicates(draft: MatchDraft) -> list[Match]:
     return _near_matches(draft.keys_a, draft.keys_b, draft.match.played_on)
 
 
-def duplicate_error(
-    existing: Match, viewer: "Actor | None", *, reveal: bool = False
-) -> DuplicateMatchError:
+def duplicate_error(existing: Match, viewer: "Actor | None") -> DuplicateMatchError:
     """The error for an exact duplicate of ``existing``.
 
     It names the code when ``viewer`` (the Account or application that
     acted: the submitter, or an edit's editor) may know it, by
-    ``_visible_code``'s rules, or when ``reveal`` is set (a moderator).
+    ``_visible_code``'s rules.
     """
-    if reveal:
-        code: str | None = existing.public_code
-    else:
-        user = viewer if isinstance(viewer, get_user_model()) else None
-        application = viewer if isinstance(viewer, get_application_model()) else None
-        code = _visible_code(existing, user, application)
+    user = viewer if isinstance(viewer, get_user_model()) else None
+    application = viewer if isinstance(viewer, get_application_model()) else None
+    code = _visible_code(existing, user, application)
     return DuplicateMatchError(DuplicateKind.DUPLICATE_MATCH, code)
 
 

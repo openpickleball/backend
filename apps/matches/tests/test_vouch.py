@@ -33,11 +33,10 @@ from apps.matches.permissions import MatchActionDenied
 from apps.matches.services import record_match
 from apps.matches.signals import MatchChange
 from apps.matches.tests.conftest import WORKFLOW_PLAYED_ON, SignalLog
-from apps.matches.tests.factories import MatchFactory
+from apps.matches.tests.factories import MatchFactory, raw_update
 from apps.matches.workflow import (
     MatchStateError,
     confirm_match,
-    void_match,
     vouch_for_match,
     vouchable_holds,
     vouched_at_own_level,
@@ -338,10 +337,10 @@ def test_a_flag_opened_after_a_vouch_needs_its_own_vouch(
 
 
 def test_a_voided_match_is_refused(
-    pair: tuple[Match, Match], players: list[Player], moderator: User
+    pair: tuple[Match, Match], players: list[Player]
 ) -> None:
     earlier, _later = pair
-    void_match(earlier, actor=moderator, reason="Made-up reason.")
+    raw_update(earlier, status=MatchStatus.VOIDED)
 
     with pytest.raises(MatchStateError):
         vouch_for_match(earlier, actor=players[0].account)
@@ -360,10 +359,10 @@ def test_a_match_with_no_hold_is_refused(
 
 
 def test_voiding_the_other_match_still_ends_the_hold(
-    pair: tuple[Match, Match], players: list[Player], moderator: User
+    pair: tuple[Match, Match], players: list[Player]
 ) -> None:
     earlier, later = pair
-    void_match(later, actor=moderator, reason="Made-up reason.")
+    raw_update(later, status=MatchStatus.VOIDED)
 
     assert _counted() == {earlier.pk}
     with pytest.raises(MatchStateError):
@@ -396,10 +395,10 @@ def test_a_non_participant_is_refused_before_anything_is_read(
 
 
 def test_a_refused_actor_on_a_voided_match_gets_denied_not_state(
-    pair: tuple[Match, Match], moderator: User
+    pair: tuple[Match, Match],
 ) -> None:
     earlier, _later = pair
-    void_match(earlier, actor=moderator, reason="Made-up reason.")
+    raw_update(earlier, status=MatchStatus.VOIDED)
 
     with pytest.raises(MatchActionDenied):
         vouch_for_match(earlier, actor=PlayerFactory.create().account)
@@ -456,13 +455,13 @@ def test_vouchable_holds_lists_what_the_account_may_vouch_on(
 
 
 def test_vouchable_holds_skips_voided_and_released_matches(
-    pair: tuple[Match, Match], players: list[Player], moderator: User
+    pair: tuple[Match, Match], players: list[Player]
 ) -> None:
     earlier, later = pair
     account = players[0].account
     assert set(vouchable_holds(account)) == {earlier, later}
 
-    void_match(later, actor=moderator, reason="Made-up reason.")
+    raw_update(later, status=MatchStatus.VOIDED)
 
     assert list(vouchable_holds(account)) == []
 
