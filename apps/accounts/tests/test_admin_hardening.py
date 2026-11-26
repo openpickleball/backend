@@ -117,7 +117,7 @@ def test_the_login_page_loads_its_script_and_no_inline_script(
     assert re.search(
         r'<script type="module" src="[^"]*accounts/admin_login\.js"', content
     )
-    assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", content)
+    assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", content, re.IGNORECASE)
     assert "style=" not in content
     assert 'data-base="/_allauth/browser/v1"' in content
     assert 'name="csrfmiddlewaretoken"' in content
