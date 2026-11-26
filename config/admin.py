@@ -167,6 +167,10 @@ class OpenAdminSite(admin.AdminSite):
         """Django's own password change, recording ``password.change`` in
         the change's transaction when it succeeds (a redirect), and nothing
         when the form is refused."""
+        # Imported here: it loads allauth's user session model.
+        from apps.accounts.sessions import end_sessions_after_password_change
+
+        old_key = request.session.session_key
         with transaction.atomic():
             response = super().password_change(request, extra_context)
             account = _account(request)
@@ -178,6 +182,8 @@ class OpenAdminSite(admin.AdminSite):
                 record_event(
                     action=AuditAction.PASSWORD_CHANGE, actor=account, target=account
                 )
+                # The other sessions end; this one keeps its row (#100).
+                end_sessions_after_password_change(request, account, old_key)
             return response
 
     @staticmethod

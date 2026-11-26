@@ -122,10 +122,14 @@ def public_session_id(user_session: UserSession) -> str:
 
 
 def sessions_by_public_id(account: "_User") -> dict[str, UserSession]:
-    """The Account's user sessions, keyed by their public ids."""
+    """The Account's live user sessions, keyed by their public ids.
+
+    Rows of sessions that are gone are purged first, so only a live
+    session can be ended and audited.
+    """
     return {
         public_session_id(row): row
-        for row in UserSession.objects.filter(user_id=account.pk)
+        for row in UserSession.objects.purge_and_list(account)
     }
 
 
@@ -165,6 +169,26 @@ def end_all_sessions(request: "HttpRequest", account: "_User") -> None:
     allauth_sessions.end_sessions(
         request, list(UserSession.objects.filter(user_id=account.pk))
     )
+
+
+def end_sessions_after_password_change(
+    request: "HttpRequest", account: "_User", old_key: str | None
+) -> None:
+    """End sessions after a password change outside allauth (the admin).
+
+    For the Account's own change, Django cycled the session key: the
+    current row follows the new key, and the other sessions end. For staff
+    setting another Account's password, every session of that Account
+    ends. Call it inside the change's ``transaction.atomic()``.
+    """
+    session = getattr(request, "session", None)
+    key = getattr(session, "session_key", None)
+    if getattr(request.user, "pk", None) == account.pk:
+        if old_key and key and old_key != key:
+            UserSession.objects.filter(session_key=old_key).update(session_key=key)
+        end_other_sessions(request, account)
+    else:
+        end_all_sessions(request, account)
 
 
 def forget_session(session_key: str | None) -> None:

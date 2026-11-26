@@ -8,13 +8,16 @@ clients, ahead of allauth's URLconf.
   an opaque id (``public_session_id``), never the row id, and ends the
   sessions the player names by those ids, recording one ``session.end``
   Audit Event per session in the transaction that ends them.
-- ``ChangePasswordView`` (``account/password/change``): allauth's change,
-  then one ``password.change`` Audit Event and the end of the Account's
+- ``ChangePasswordView`` (``account/password/change``): allauth's change
+  or first set, then one ``password.change`` Audit Event (``method``
+  ``change`` or ``set``) and the end of the Account's
   other sessions and app tokens, all in one transaction. The session
   that made the change stays signed in.
 - ``ResetPasswordView`` (``auth/password/reset``): allauth's reset from a
   key, then one ``password.change`` Audit Event and the end of every
-  session of the Account, in one transaction.
+  session of the Account, in one transaction. It answers after the
+  sessions ended, so a session signed in to the Account is told it is
+  signed out.
 
 A refused input changes nothing and records nothing: allauth answers it
 before ``post`` runs.
@@ -22,6 +25,7 @@ before ``post`` runs.
 
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
+from allauth.account.internal.flows.logout import logout
 from allauth.headless.account.views import (
     ChangePasswordView as BaseChangePasswordView,
 )
@@ -135,12 +139,16 @@ class ChangePasswordView(BaseChangePasswordView):
     def post(self, request: "HttpRequest", *args: Any, **kwargs: Any) -> "HttpResponse":
         account = _account(request.user)
         with transaction.atomic():
+            # No current password is allauth's set path (a first password).
+            method = (
+                "change" if self.input.cleaned_data.get("current_password") else "set"
+            )
             response: HttpResponse = super().post(request, *args, **kwargs)
             record_event(
                 action=AuditAction.PASSWORD_CHANGE,
                 actor=account,
                 target=account,
-                after={"method": "change"},
+                after={"method": method},
             )
             end_other_sessions(request, account)
         return response
@@ -152,7 +160,7 @@ class ResetPasswordView(BaseResetPasswordView):
     def post(self, request: "HttpRequest", *args: Any, **kwargs: Any) -> "HttpResponse":
         account = cast("_User", self.input.user)
         with transaction.atomic():
-            response: HttpResponse = super().post(request, *args, **kwargs)
+            super().post(request, *args, **kwargs)
             record_event(
                 action=AuditAction.PASSWORD_CHANGE,
                 actor=account,
@@ -160,4 +168,11 @@ class ResetPasswordView(BaseResetPasswordView):
                 after={"method": "reset"},
             )
             end_all_sessions(request, account)
-        return response
+            if getattr(request.user, "pk", None) == account.pk:
+                # Signed in to this Account without a user session row:
+                # that session ends too.
+                logout(request)
+        # Built after the sessions ended, so a reset from a session signed
+        # in to this Account answers signed out.
+        answer: HttpResponse = AuthenticationResponse(request)
+        return answer

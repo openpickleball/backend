@@ -11,9 +11,9 @@ looks unknown: allauth answers 410, the OPEN API 401.
 from allauth.headless.tokens.strategies.sessions import (
     SessionTokenStrategy as BaseSessionTokenStrategy,
 )
-from django.contrib.sessions.backends.base import SessionBase
+from django.contrib.sessions.backends.base import SessionBase, UpdateError
 
-from apps.accounts.sessions import check_lifetime, end_session
+from apps.accounts.sessions import check_lifetime, end_session, forget_session
 
 
 class SessionTokenStrategy(BaseSessionTokenStrategy):
@@ -26,5 +26,10 @@ class SessionTokenStrategy(BaseSessionTokenStrategy):
             return None
         if session.modified:
             # Last seen moved, or clocks were added: save it under its key.
-            session.save()
+            try:
+                session.save()
+            except UpdateError:
+                # A logout deleted the session meanwhile: no session.
+                forget_session(session_token)
+                return None
         return session
