@@ -79,6 +79,20 @@ class AccountAdapter(DefaultAccountAdapter):
         user: AbstractBaseUser | None = super().authenticate(request, **credentials)
         return user
 
+    def _get_login_attempts_cache_key(
+        self, request: HttpRequest, **credentials: Any
+    ) -> str:
+        """The failed login counter's key: the submitted address alone.
+
+        allauth prefixes the current site's domain, which, with no sites
+        app, is the Host header as sent. An allowed host with another
+        port or letter case passes Django's host check, so each spelling
+        would start a fresh counter (#100). allauth's password reset
+        clears the counter through this same key.
+        """
+        login = credentials.get("email", credentials.get("username", ""))
+        return f"login:{str(login).lower()}"
+
     def send_mail(
         self, template_prefix: str, email: str, context: dict[str, Any]
     ) -> None:
