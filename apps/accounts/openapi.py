@@ -57,8 +57,9 @@ account has it.
 A password that passes gets a success answer. One that fails gets a 400
 with one error per failed rule, each with `param` `password` and Django's
 message and code (`password_too_short`, `password_too_common`,
-`password_entirely_numeric`, `password_too_similar`, and
-`password_breached` for a password found in a data breach), the same errors
+`password_entirely_numeric`, `password_too_similar`,
+`password_breached` for a password found in a data breach, and
+`password_invalid_characters` for one that is not UTF-8 text), the same errors
 signup gives for that password and address. A missing, empty, or
 non-string password gets a field error on `password`.
 

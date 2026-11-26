@@ -12,11 +12,11 @@ SHA-1. Only those five characters leave OPEN: never the password, its
 full hash, or its suffix. The request asks for padding (``Add-Padding:
 true``), so the answer's size does not hint at the prefix; padding
 entries have a count of 0 and never refuse. It carries a generic
-User-Agent and no other data, and waits at most
-``PASSWORD_BREACH_TIMEOUT_SECONDS``.
+User-Agent and no other data. ``PASSWORD_BREACH_TIMEOUT_SECONDS`` bounds
+each socket wait and the body read as a whole (see ``fetch_range``).
 
-The check fails open (the maintainer's decision on #100): on a timeout
-(the whole request must end within the timeout), a connection or
+The check fails open (the maintainer's decision on #100): on a timeout,
+a connection or
 protocol error, a redirect (never followed, so the prefix goes to the
 configured host only), an answer other than 200, a body over
 ``MAX_BODY_BYTES``, or a body that is not a non-empty list of
@@ -85,9 +85,15 @@ def urlopen(request: Request, timeout: float) -> HTTPResponse:
 def fetch_range(prefix: str) -> str:
     """The range API's answer for a five character hash prefix.
 
-    The whole request, the body read in chunks included, must end within
-    ``PASSWORD_BREACH_TIMEOUT_SECONDS`` (each socket wait is bounded by
-    it too, so the worst case is about twice that). Raises on a timeout,
+    What ``PASSWORD_BREACH_TIMEOUT_SECONDS`` bounds: each socket wait
+    (connecting, the TLS handshake, sending, reading the status line and
+    headers, each read of the body), and the body read as a whole, which
+    is read in chunks and stops at the deadline. It does not bound the
+    whole request: name resolution (``getaddrinfo``) has no timeout of
+    its own, and the steps before the body can each take up to the
+    timeout, so a slow but live server can hold a request for a few
+    times the timeout. A hard overall bound would need a thread per
+    check. Raises on a timeout,
     a connection, HTTP, or protocol error, a redirect, an answer other
     than 200, a body shorter than its Content-Length, a body over
     ``MAX_BODY_BYTES``, or a body that is not ASCII.
