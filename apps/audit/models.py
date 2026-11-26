@@ -47,6 +47,8 @@ class AuditAction(models.TextChoices):
     PASSWORD_CHANGE = "password.change", "Password change"
     SESSION_END = "session.end", "Session ended by the player"
     ACCOUNT_DELETE = "account.delete", "Account deleted"
+    DATA_EXPORT_REQUEST = "data_export.request", "Data export requested"
+    DATA_EXPORT_DOWNLOAD = "data_export.download", "Data export downloaded"
     OAUTH_APP_REQUEST = "oauth_app.request", "OAuth application request"
     OAUTH_APP_APPROVE = "oauth_app.approve", "OAuth application approval"
     OAUTH_APP_REJECT = "oauth_app.reject", "OAuth application rejection"

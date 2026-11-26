@@ -10,6 +10,7 @@ from django.db import connection
 from apps.encryption.fields import (
     EncryptedCharField,
     EncryptedPositiveSmallIntegerField,
+    EncryptedTextField,
 )
 from apps.encryption.keys import decrypt_text, is_token
 
@@ -100,3 +101,36 @@ def test_own_range_validators_replace_the_default_ones() -> None:
         if isinstance(v, MinValueValidator | MaxValueValidator)
     )
     assert limits == [("MaxValueValidator", 12), ("MinValueValidator", 1)]
+
+
+def _text() -> EncryptedTextField[Any, Any]:
+    field = EncryptedTextField(null=True)
+    field.set_attributes_from_name("content")
+    return field
+
+
+def test_the_text_field_saves_a_token_and_reads_back_the_text() -> None:
+    field = _text()
+    text = '{"made_up": "Vexmoor export"}'
+
+    token = field.get_db_prep_save(text, connection)
+
+    assert is_token(token)
+    assert "Vexmoor" not in token
+    assert field.from_db_value(token, None, connection) == text
+    assert field.get_db_prep_save(None, connection) is None
+    assert field.from_db_value(None, None, connection) is None
+
+
+def test_the_text_field_is_a_text_column_with_only_isnull() -> None:
+    field = _text()
+
+    assert field.db_type(connection) == "text"
+    assert field.get_internal_type() == "TextField"
+    assert field.get_lookup("exact") is None
+    assert field.get_lookup("contains") is None
+    assert field.get_lookup("isnull") is not None
+    assert field.get_transform("lower") is None
+    _, path, _, kwargs = field.deconstruct()
+    assert path == "apps.encryption.fields.EncryptedTextField"
+    assert kwargs == {"null": True}
