@@ -46,5 +46,9 @@
 # Ratings and the engine adapter: rating changes (hard rule 8).
 /apps/ratings/ @openpickleball/maintainers
 
+# The player data export: every personal data field of an Account, and
+# its single-use download key (ADR 0051).
+/apps/exports/ @openpickleball/maintainers
+
 # CI, the DCO check, and this file.
 /.github/ @openpickleball/maintainers

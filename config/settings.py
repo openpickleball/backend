@@ -670,6 +670,9 @@ INSTALLED_APPS = [
     "apps.ratings",
     # The email outbox: messages wait here for the email queue (ADR 0016).
     "apps.emails",
+    # The player data export (#39, ADR 0051): one encrypted JSON file per
+    # Account, downloaded once with an emailed key.
+    "apps.exports",
     # Development only: the seed_dev_data command. No models.
     "apps.devdata",
     # Its migrate command runs on the direct connection when DATABASE_URL
