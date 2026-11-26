@@ -6,13 +6,17 @@ from django.apps.registry import Apps
 from django.db import migrations
 from django.db.backends.base.schema import BaseDatabaseSchemaEditor
 
-from apps.encryption.keys import decrypt_text, encrypt_text, is_token
+from apps.encryption.keys import DecryptionError, decrypt_text, encrypt_text, is_token
 
 # Player personal data fields stored encrypted (ADR 0046). The previous
 # migration made their columns text; this one encrypts the values already
 # stored, and its reverse decrypts them, so the previous migration's
-# reverse can cast them back. No key is read while no row needs a change;
-# with rows and no key, fernet() raises ImproperlyConfigured (fixed text).
+# reverse can cast them back. The forward encrypts any value the keys do
+# not decrypt (a player may type a token-shaped legal name). The reverse
+# decrypts every value and stops, naming the row id and never the value,
+# when one does not decrypt; the migration's transaction then rolls back.
+# No key is read while no row needs a change; with rows and no key,
+# fernet() raises ImproperlyConfigured (fixed text).
 COLUMNS = ("legal_name", "birth_year", "birth_month", "gender_division")
 
 
@@ -28,7 +32,14 @@ def _rewrite(
         cursor.execute(f"SELECT id, {selected} FROM players_player ORDER BY id")
         rows = cursor.fetchall()
         for pk, *values in rows:
-            changed = [None if value is None else change(value) for value in values]
+            try:
+                changed = [None if value is None else change(value) for value in values]
+            except DecryptionError:
+                raise RuntimeError(
+                    f"A value in players.Player row {pk} could not be decrypted "
+                    "with any key in FIELD_ENCRYPTION_KEYS. Add the key it was "
+                    "encrypted with, then migrate again."
+                ) from None
             if changed != values:
                 cursor.execute(
                     f"UPDATE players_player SET {assignments} WHERE id = %s",
@@ -41,7 +52,7 @@ def _encrypt(value: str) -> str:
 
 
 def _decrypt(value: str) -> str:
-    return decrypt_text(value) if is_token(value) else value
+    return decrypt_text(value)
 
 
 def encrypt_values(apps: Apps, schema_editor: BaseDatabaseSchemaEditor) -> None:
