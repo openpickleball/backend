@@ -87,6 +87,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils.decorators import method_decorator
 
+from apps.accounts.lockout import LockoutAnswers429
 from apps.accounts.mfa import has_mfa, record_mfa_change, session_passed_mfa
 from apps.accounts.sessions import end_other_sessions
 
@@ -189,8 +190,9 @@ class _GuardsMFAChanges(_LocksSignedInAccount):
 
 
 @method_decorator(transaction.atomic, name="dispatch")
-class AuthenticateView(BaseAuthenticateView):
-    """allauth's MFA login stage, recording a recovery code's use."""
+class AuthenticateView(LockoutAnswers429, BaseAuthenticateView):
+    """allauth's MFA login stage, recording a recovery code's use. Its
+    failed code lockout answers 429 (#100)."""
 
     def dispatch(
         self, request: "HttpRequest", *args: Any, **kwargs: Any
@@ -210,8 +212,11 @@ class AuthenticateView(BaseAuthenticateView):
 
 
 @method_decorator(transaction.atomic, name="dispatch")
-class ReauthenticateView(_LocksSignedInAccount, BaseReauthenticateView):
-    """allauth's MFA reauthentication, recording a recovery code's use."""
+class ReauthenticateView(
+    LockoutAnswers429, _LocksSignedInAccount, BaseReauthenticateView
+):
+    """allauth's MFA reauthentication, recording a recovery code's use.
+    Its failed code lockout answers 429 (#100)."""
 
     def post(self, request: "HttpRequest", *args: Any, **kwargs: Any) -> "HttpResponse":
         # allauth's own steps, with the row id removed before the answer.

@@ -3,8 +3,8 @@
 allauth answers the code step (``auth/2fa/authenticate`` and
 ``auth/2fa/reauthenticate``) with 400 and ``too_many_login_attempts``
 once a user has failed it too often, the same status as a wrong code.
-The page's script must show its fixed too-many-attempts message there
-too. The script has no test runner here, so its code step's source is
+OPEN's views turn that into allauth's 429 (#100). The page's script must
+show its fixed too-many-attempts message there too. The script has no test runner here, so its code step's source is
 checked for the code and the branch that maps it. Made-up data only.
 """
 
@@ -29,19 +29,17 @@ def _one_step_of_clock_drift(settings: Any) -> None:
     settings.MFA_TOTP_TOLERANCE = 1
 
 
-def test_allauth_answers_a_code_step_lockout_with_its_code() -> None:
+def test_a_code_step_lockout_gets_429() -> None:
     staff, secret = staff_with_totp()
     session = sign_in_to_admin(staff, secret)
 
-    codes: list[str] = []
+    status = 400
     for _ in range(20):
-        response = session.post("auth/2fa/reauthenticate", {"code": WRONG})
-        assert response.status_code == 400
-        codes = [error.get("code") for error in response.json()["errors"]]
-        if "too_many_login_attempts" in codes:
+        status = session.post("auth/2fa/reauthenticate", {"code": WRONG}).status_code
+        if status != 400:
             break
 
-    assert "too_many_login_attempts" in codes
+    assert status == 429
 
 
 def _confirm_code_body(source: str) -> str:

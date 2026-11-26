@@ -256,8 +256,17 @@ def _add_account_security(spec: dict[str, Any], root: str, pinned: bool) -> None
             }
         }
         operation["responses"]["200"] = ok
-    login = spec["paths"][f"{root}/{client}/v1/auth/login"]["post"]
-    login["responses"]["429"] = {"$ref": "#/components/responses/TooManyRequests"}
+    # The failed login lockout answers 429 on each (apps/accounts/lockout.py).
+    for endpoint in (
+        "auth/login",
+        "auth/2fa/authenticate",
+        "auth/reauthenticate",
+        "auth/2fa/reauthenticate",
+    ):
+        operation = spec["paths"][f"{root}/{client}/v1/{endpoint}"]["post"]
+        operation["responses"]["429"] = {
+            "$ref": "#/components/responses/TooManyRequests"
+        }
 
 
 def open_schema() -> dict[str, Any]:

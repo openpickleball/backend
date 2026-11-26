@@ -39,8 +39,17 @@ def test_the_device_token_is_documented(spec: dict[str, Any], path: str) -> None
     assert "X-Device-Token" in operation["responses"]["200"]["headers"]
 
 
-def test_login_documents_its_429(spec: dict[str, Any]) -> None:
-    responses = spec["paths"][LOGIN]["post"]["responses"]
+@pytest.mark.parametrize(
+    "path",
+    [
+        LOGIN,
+        MFA_LOGIN,
+        "/_allauth/{client}/v1/auth/reauthenticate",
+        "/_allauth/{client}/v1/auth/2fa/reauthenticate",
+    ],
+)
+def test_the_lockout_429_is_documented(spec: dict[str, Any], path: str) -> None:
+    responses = spec["paths"][path]["post"]["responses"]
 
     assert responses["429"] == {"$ref": "#/components/responses/TooManyRequests"}
 
