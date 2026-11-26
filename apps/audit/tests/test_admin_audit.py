@@ -21,7 +21,7 @@ from django.test import Client
 from django.urls import reverse
 from django_celery_beat.models import IntervalSchedule, PeriodicTask
 
-from apps.accounts.tests.factories import UserFactory
+from apps.accounts.tests.factories import UserFactory, enroll_totp
 from apps.audit.models import AuditAction, AuditEvent
 from apps.clubs.models import Club, ClubOrganizerGrant
 from apps.clubs.tests.factories import ClubFactory, OrganizerFactory
@@ -226,6 +226,8 @@ def test_an_email_change_records_the_field_name_only(admin_client: Client) -> No
 
 def test_granting_staff_records_the_values(admin_client: Client) -> None:
     account = _account()
+    # Staff status goes only to an Account with MFA.
+    enroll_totp(account)
 
     admin_client.post(
         reverse("admin:accounts_user_change", args=[account.pk]),

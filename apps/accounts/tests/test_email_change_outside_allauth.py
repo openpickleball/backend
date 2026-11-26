@@ -18,7 +18,7 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
-from apps.accounts.tests.factories import UserFactory
+from apps.accounts.tests.factories import UserFactory, enroll_totp
 from apps.accounts.tests.headless import (
     APP,
     VERIFY_PREFIX,
@@ -113,6 +113,8 @@ def test_an_admin_save_that_keeps_the_email_keeps_the_rows(
     account: Any, staff_client: Client
 ) -> None:
     before = _rows(account)
+    # Staff status goes only to an Account with MFA.
+    enroll_totp(account)
 
     response = _admin_save(staff_client, account, OLD, is_staff="on")
 

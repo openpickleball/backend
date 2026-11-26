@@ -12,6 +12,7 @@ from django.db.models import Q, QuerySet
 from django.http import HttpRequest, HttpResponse
 
 from apps.accounts.forms import UserChangeForm, UserCreationForm
+from apps.accounts.mfa import has_mfa
 from apps.accounts.models import User
 from apps.audit.admin_access import AccessAuditAdminMixin
 
@@ -32,6 +33,11 @@ admin.site.unregister(Group)
 # changes them; anyone else sees them read-only.
 GRANT_FIELDS = ("is_staff", "is_superuser", "groups", "user_permissions")
 
+GRANT_NEEDS_MFA_MESSAGE = (
+    "Staff and superuser status need two-factor authentication: the Account "
+    "must set it up in the OPEN app first."
+)
+
 
 def _is_superuser(request: HttpRequest) -> bool:
     return bool(request.user.is_active and request.user.is_superuser)
@@ -51,9 +57,24 @@ def _holds_power(account: Any) -> bool:
     )
 
 
+class AccountChangeForm(UserChangeForm):
+    """The Account change form, refusing a new grant of staff or superuser
+    status to an Account without MFA (#101), with fixed text that names no
+    Account. A grant the Account already holds is not checked again."""
+
+    def clean(self) -> dict[str, Any]:
+        cleaned: dict[str, Any] = super().clean() or {}
+        for name in ("is_staff", "is_superuser"):
+            # Before _post_clean, the instance still holds the stored values.
+            newly_granted = cleaned.get(name) and not getattr(self.instance, name)
+            if newly_granted and not has_mfa(self.instance):
+                self.add_error(name, GRANT_NEEDS_MFA_MESSAGE)
+        return cleaned
+
+
 @admin.register(User)
 class UserAdmin(AccessAuditAdminMixin, BaseUserAdmin[User]):
-    form = UserChangeForm
+    form = AccountChangeForm
     add_form = UserCreationForm
     fieldsets = (
         (None, {"fields": ("email", "password")}),

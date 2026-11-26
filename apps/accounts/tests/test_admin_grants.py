@@ -16,7 +16,7 @@ from django.contrib.auth.models import Group, Permission
 from django.test import Client
 from django.urls import reverse
 
-from apps.accounts.tests.factories import DEFAULT_PASSWORD, UserFactory
+from apps.accounts.tests.factories import DEFAULT_PASSWORD, UserFactory, enroll_totp
 from apps.audit.models import AuditAction, AuditEvent
 
 if TYPE_CHECKING:
@@ -238,6 +238,8 @@ def test_a_superusers_grant_is_audited_with_its_values(
     superuser_client: Client,
 ) -> None:
     account = _plain_account()
+    # Staff status goes only to an Account with MFA.
+    enroll_totp(account)
     group = Group.objects.create(name="Made-up moderators")
 
     _change(superuser_client, account, is_staff="on", groups=[group.pk])
