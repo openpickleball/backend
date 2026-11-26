@@ -49,6 +49,13 @@ stopped. A bulk void fails the file and then voids the rows' matches, so
 those rows still read ``recorded``: the file's ``voided`` error is what
 tells the uploader.
 
+Before the first row, under the file lock, processing sets the batch's
+``expected_size`` to the file's number of match rows (#206), once: a
+rerun keeps the size an earlier run stored. So when the upload is larger
+than ``UNUSUAL_SUBMISSION_BATCH_SIZE``, every recorded match gets a
+signal-only ``large_batch`` flag from the first row; the matches still
+count (ADR 0049). The lock order is the file row, then the batch row.
+
 Processing is safe to run twice, even at once: runs take the file lock
 row by row, and the final report is stored only while the file is still
 pending.
@@ -632,13 +639,41 @@ def _process_row(
     return result
 
 
+def _expect(results_file_id: int, batch: SubmissionBatch, size: int) -> bool:
+    """Store the file's number of match rows as the batch's expected size.
+
+    Runs before any row, under the file's lock and then the batch's row
+    lock (inside ``set_expected_size``), so the large batch rule flags
+    every match from the first row (#206). A size an earlier run stored
+    stays: a rerun never changes it. Returns False, writing nothing, when
+    the file is no longer pending: the run stops.
+    """
+    with transaction.atomic():
+        pending = (
+            ResultsFile.objects.select_for_update()
+            .filter(pk=results_file_id, status=ResultsFileStatus.PENDING)
+            .values_list("pk", flat=True)
+        )
+        if not pending:
+            return False
+        stored = (
+            SubmissionBatch.objects.filter(pk=batch.pk)
+            .values_list("expected_size", flat=True)
+            .first()
+        )
+        if stored is None:
+            batch.set_expected_size(size)
+    return True
+
+
 def process_results_file(results_file_id: int) -> None:
     """Read a pending Results File, record its good rows, store the report.
 
     Does nothing for a missing file or one no longer pending. A file the
     parser cannot read fails with the parser's code, and one with more
     than ``MAX_ROWS`` match rows fails with ``too_many_rows``, before any
-    row is recorded. Each row runs in its own transaction (see the module
+    row is recorded. Then, before the first row, the batch's
+    ``expected_size`` is set to the number of match rows, once (#206). Each row runs in its own transaction (see the module
     docstring): never call this inside an outer ``transaction.atomic()``,
     since ``record_match()``'s advisory locks last until the outermost
     transaction ends. The run stops at the first row that finds the file
@@ -666,6 +701,8 @@ def process_results_file(results_file_id: int) -> None:
         return
     if len(parsed.rows) > MAX_ROWS:
         _finish(results_file_id, report=[], error_code=TOO_MANY_ROWS)
+        return
+    if parsed.rows and not _expect(results_file_id, batch, len(parsed.rows)):
         return
     players = _players(parsed.rows)
     report: list[RowResult] = []
