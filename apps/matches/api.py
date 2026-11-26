@@ -80,7 +80,8 @@ match of a flag: an Account may not know it (ADR 0011).
 
 An Organizer's CSV results upload (#71) is on ``organizer_router``,
 mounted at /api/v1/organizer/. A member of the Event's verified Organizer
-(``permissions.can_manage_events``) uploads a file
+whose Account has MFA (``permissions.can_manage_events``, ADR 0043)
+uploads a file
 (``create_results_file``), which ``apps.matches.results_files`` stores and
 a worker processes, and reads its report (``get_results_file``). Anyone
 else, and an unknown Event or file, gets the same 404. Only the uploader
@@ -492,7 +493,8 @@ def resolve_match_dispute(
     """Settle a dispute on your Event's match as confirmed or voided.
 
     For a member of the verified organizer that ran the match's Event,
-    who did not play in the match. The reason is required and is kept in
+    with two-factor authentication, who did not play in the match. The
+    reason is required and is kept in
     the match's audit log, which cannot be erased, so do not name a
     player in it. A confirmed match counts again. A match that is not
     disputed gets 409. Anyone else gets 404, as for an unknown code.
@@ -522,8 +524,9 @@ def correct_disputed_match(
 ) -> MatchOut:
     """Settle a dispute on your Event's match by correcting it.
 
-    For a member of the verified organizer that ran the match's Event, who
-    plays neither in the match nor in the correction. The correction also
+    For a member of the verified organizer that ran the match's Event, with
+    two-factor authentication, who plays neither in the match nor in the
+    correction. The correction also
     needs the consent of every Club the match names to your organizer;
     without it you get 404 as well. The disputed match is voided and the
     correction, given as for a new match, is created confirmed and returned.
@@ -596,8 +599,9 @@ def vouch_for_match(request: HttpRequest, code: MatchCode) -> MatchOut:
     A match recorded with the same teams and date as another, with other
     scores, is held from counting along with that match until each one is
     vouched for at its own level. A match with an Event is vouched for by
-    a member of the verified organizer that ran it whose player is in no
-    match of the match's correction chain. A match with no Event is
+    a member, with two-factor authentication, of the verified organizer
+    that ran it whose player is in no match of the match's correction
+    chain. A match with no Event is
     vouched for by one player of each team. A match with a club and no
     Event has no level: nobody vouches for it, and a hold against it ends
     only when a match is voided or the hold period ends. Once both
@@ -625,8 +629,9 @@ def list_my_holds(request: HttpRequest) -> QuerySet[Match]:
     Lists each match that is not voided and that a possible duplicate
     hold keeps from counting, when you may vouch for it: a match with no
     Event you played in, or a match of an Event run by a verified
-    organizer you are a member of, when your player is in no match of its
-    correction chain. A match with a club and no Event is never listed:
+    organizer you are a member of, when you have two-factor
+    authentication and your player is in no match of its correction
+    chain. A match with a club and no Event is never listed:
     nobody vouches for it. ``vouched`` says
     whether your side has vouched for it already. The other match of the
     hold is never named. A match leaves the list once the hold ends.
@@ -648,7 +653,8 @@ def list_organizer_disputes(request: HttpRequest) -> QuerySet[Match]:
     newest first.
 
     Lists every disputed match of an Event run by a verified organizer
-    you are a member of, except a match your player plays in, or plays in
+    you are a member of, when you have two-factor authentication, except
+    a match your player plays in, or plays in
     an earlier or later version of (a corrected match): you cannot settle
     those. Anyone else gets an empty page. A match leaves the list once
     its dispute is settled or ends.

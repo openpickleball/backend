@@ -12,7 +12,7 @@ A verified Organizer is the only trusted submitter (ADR 0021, amending
 ADR 0012). Event authority over an Event:
 
 - an Account that is a member (either role) of the Event's Organizer,
-  while that Organizer is verified;
+  while that Organizer is verified and the Account has MFA (below);
 - an application that the Event's Organizer owns, or that the Organizer
   granted an Organizer Application Grant, while that Organizer is
   verified.
@@ -346,8 +346,9 @@ def can_change_match(actor: Actor, match: Match) -> bool:
 def can_manage_events(actor: Actor, organizer_id: int) -> bool:
     """True when ``actor`` may create, change, and delete the Organizer's Events.
 
-    An active Account that is a member (either role) of ``organizer_id``
-    while that Organizer is verified (ADR 0021, #125). An application, a
+    An active Account with MFA that is a member (either role) of
+    ``organizer_id`` while that Organizer is verified (ADR 0021, #125,
+    ADR 0043). An application, a
     Club admin, and anyone else may not. Verification, membership, and
     ``is_active`` are read from the database by id.
     """

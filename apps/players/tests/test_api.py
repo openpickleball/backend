@@ -277,7 +277,7 @@ def test_history_is_documented() -> None:
     assert set(operation["responses"]) >= {"200", "401", "404", "422"}
     # The only 403 is two-factor setup (ADR 0043): a hidden history is 404.
     assert operation["responses"]["403"]["description"].startswith(
-        "An Account that must set up two-factor authentication"
+        "Code `mfa_required`"
     )
     params = {param["name"]: param["schema"] for param in operation["parameters"]}
     assert params["limit"]["default"] == 20

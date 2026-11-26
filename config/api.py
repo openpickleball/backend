@@ -57,11 +57,12 @@ Errors raised while an operation runs (input that fails validation, a body
 that does not parse, `Http404`, any `HttpError`, a failed `auth` check,
 which returns 401, a `DuplicateMatchError`, which returns 409, a
 `MatchValidationError`, which returns 422, a `MatchPermissionDenied` or
-`MatchActionDenied`, which return 403, and a `MatchStateError`, which
+`MatchActionDenied`, which return 403, a `config.auth.MFARequired`, which
+returns 403 `mfa_required` (ADR 0043), and a `MatchStateError`, which
 returns 409) come back as `ErrorResponse` (see `config/api_errors.py`). Every operation that
 takes input documents a 422 response with that schema, and may not declare
 a different 422 schema. Every operation with `auth` (such as
-`config.auth.account_auth`) documents a 401 response with it.
+`config.auth.account_auth`) documents a 401 and a 403 response with it.
 
 Throttles (ADR 0030): a router whose operations need sign-in passes
 `throttle=config.throttling.account_throttle` next to its `auth`, so they
@@ -204,9 +205,11 @@ def _document_throttled(
 
 
 _MFA_REQUIRED_DESCRIPTION = (
-    "An Account that must set up two-factor authentication (staff, "
-    "moderators, and owners of a production application) and has not gets "
-    "code `mfa_required`. It can still use allauth's endpoints to set one up."
+    "Code `mfa_required`: an Account that must have two-factor "
+    "authentication (staff, superusers, moderators, and owners of a "
+    "production application) and has none, or an Account with it whose "
+    "session did not pass it, such as a password-only session. It can "
+    "still use allauth's endpoints to set it up or sign in with it."
 )
 
 
