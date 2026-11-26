@@ -176,16 +176,18 @@ def end_sessions_after_password_change(
 ) -> None:
     """End sessions after a password change outside allauth (the admin).
 
-    For the Account's own change, Django cycled the session key: the
-    current row follows the new key, and the other sessions end. For staff
-    setting another Account's password, every session of that Account
-    ends. Call it inside the change's ``transaction.atomic()``.
+    Django cycles the acting session's key in both cases (its set-password
+    view does so even for another Account's password), so the acting
+    session's row first follows the new key. Then, for the Account's own
+    change, its other sessions end; for staff setting another Account's
+    password, every session of that Account ends. Call it inside the
+    change's ``transaction.atomic()``.
     """
     session = getattr(request, "session", None)
     key = getattr(session, "session_key", None)
+    if old_key and key and old_key != key:
+        UserSession.objects.filter(session_key=old_key).update(session_key=key)
     if getattr(request.user, "pk", None) == account.pk:
-        if old_key and key and old_key != key:
-            UserSession.objects.filter(session_key=old_key).update(session_key=key)
         end_other_sessions(request, account)
     else:
         end_all_sessions(request, account)
