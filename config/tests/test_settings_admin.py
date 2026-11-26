@@ -10,7 +10,7 @@ refused, whatever its case.
 ``ADMIN_SESSION_SECONDS`` (default 3600) is how long an MFA step opens
 the admin, and ``ADMIN_REAUTHENTICATION_SECONDS`` (default 300) how
 recent one must be before a write. Each is a whole number of seconds from
-1 to 86400, and reauthentication may not exceed the session limit.
+1 to 86400, reauthentication at least 30 and at most the session limit.
 
 A bad value stops startup, naming the variable, never echoing the value.
 Settings are read once at import, so each case starts a fresh process.
@@ -125,7 +125,7 @@ def test_a_reserved_first_segment_stops_startup(value: str) -> None:
     [
         ("7200", "600", (7200, 600)),
         (" 60 ", "60", (60, 60)),
-        ("86400", "1", (86400, 1)),
+        ("86400", "30", (86400, 30)),
         ("", "120", (3600, 120)),
     ],
 )

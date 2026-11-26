@@ -145,18 +145,22 @@ def _rate(name: str, default: int) -> int:
 _MAX_SECONDS = 86400
 
 
-def _seconds(name: str, default: int) -> int:
-    """A whole number of seconds from 1 to 86400, or ``default`` when unset
-    or empty. Only ASCII digits, at most 5, checked before the conversion.
-    The error names the variable and the range and never echoes the value.
+def _seconds(name: str, default: int, minimum: int = 1) -> int:
+    """A whole number of seconds from ``minimum`` to 86400, or ``default``
+    when unset or empty. Only ASCII digits, at most 5, checked before the
+    conversion. The error names the variable and the range and never
+    echoes the value.
     """
     value = _raw(name).strip()
     if not value:
         return default
-    if not re.fullmatch(r"[0-9]{1,5}", value) or not 1 <= int(value) <= _MAX_SECONDS:
+    if (
+        not re.fullmatch(r"[0-9]{1,5}", value)
+        or not minimum <= int(value) <= _MAX_SECONDS
+    ):
         raise ImproperlyConfigured(
-            f"Set {name} to a whole number of seconds from 1 to {_MAX_SECONDS}, "
-            "or leave it empty (see .env.example)."
+            f"Set {name} to a whole number of seconds from {minimum} to "
+            f"{_MAX_SECONDS}, or leave it empty (see .env.example)."
         )
     return int(value)
 
@@ -486,7 +490,10 @@ ALLOWED_HOSTS = _list("DJANGO_ALLOWED_HOSTS")
 # MFA step within ADMIN_REAUTHENTICATION_SECONDS (config/admin.py).
 ADMIN_URL = _admin_url("ADMIN_URL", debug=DEBUG)
 ADMIN_SESSION_SECONDS = _seconds("ADMIN_SESSION_SECONDS", 3600)
-ADMIN_REAUTHENTICATION_SECONDS = _seconds("ADMIN_REAUTHENTICATION_SECONDS", 300)
+# At least 30: less would send nearly every write back for a code.
+ADMIN_REAUTHENTICATION_SECONDS = _seconds(
+    "ADMIN_REAUTHENTICATION_SECONDS", 300, minimum=30
+)
 if ADMIN_REAUTHENTICATION_SECONDS > ADMIN_SESSION_SECONDS:
     raise ImproperlyConfigured(
         "Set ADMIN_REAUTHENTICATION_SECONDS to at most ADMIN_SESSION_SECONDS "
