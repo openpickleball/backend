@@ -146,7 +146,7 @@ def test_corrections_do_not_use_up_an_applications_first_matches(
 def test_a_correction_does_not_raise_the_original_submitters_daily_number(
     settings: Settings, organizer: Organizer, event: Event, pinned_now: list[datetime]
 ) -> None:
-    settings.UNUSUAL_SUBMISSION_DAILY_MATCHES = 2
+    settings.UNUSUAL_SUBMISSION_DAILY_MATCHES = 3
     submitter = _member(organizer)
     corrector = _member(organizer)
     first = _record(event, submitted_by_user=submitter)
