@@ -51,6 +51,9 @@ returns the records in every authenticated response. OPEN's login stage
 and reauthentication remove that id from the session's records before
 answering (nothing in allauth reads it for TOTP or recovery codes).
 
+A removal that succeeds ends the Account's other sessions (#100, ADR
+0047): those with a user session row, in the removal's transaction.
+
 A removal records its events first, in a savepoint, so a refusal raised
 inside it rolls the events back before allauth answers. A refused or
 wrong code writes nothing. Otherwise the responses, status codes, and
@@ -58,6 +61,7 @@ errors are allauth's own: each view calls allauth's flows and returns
 allauth's response classes.
 """
 
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from allauth.account.authentication import AUTHENTICATION_METHODS_SESSION_KEY
@@ -83,7 +87,9 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils.decorators import method_decorator
 
+from apps.accounts.lockout import LockoutAnswers429
 from apps.accounts.mfa import has_mfa, record_mfa_change, session_passed_mfa
+from apps.accounts.sessions import end_other_sessions
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -184,8 +190,9 @@ class _GuardsMFAChanges(_LocksSignedInAccount):
 
 
 @method_decorator(transaction.atomic, name="dispatch")
-class AuthenticateView(BaseAuthenticateView):
-    """allauth's MFA login stage, recording a recovery code's use."""
+class AuthenticateView(LockoutAnswers429, BaseAuthenticateView):
+    """allauth's MFA login stage, recording a recovery code's use. Its
+    failed code lockout answers 429 (#100)."""
 
     def dispatch(
         self, request: "HttpRequest", *args: Any, **kwargs: Any
@@ -205,8 +212,11 @@ class AuthenticateView(BaseAuthenticateView):
 
 
 @method_decorator(transaction.atomic, name="dispatch")
-class ReauthenticateView(_LocksSignedInAccount, BaseReauthenticateView):
-    """allauth's MFA reauthentication, recording a recovery code's use."""
+class ReauthenticateView(
+    LockoutAnswers429, _LocksSignedInAccount, BaseReauthenticateView
+):
+    """allauth's MFA reauthentication, recording a recovery code's use.
+    Its failed code lockout answers 429 (#100)."""
 
     def post(self, request: "HttpRequest", *args: Any, **kwargs: Any) -> "HttpResponse":
         # allauth's own steps, with the row id removed before the answer.
@@ -262,6 +272,10 @@ class ManageTOTPView(_GuardsMFAChanges, BaseManageTOTPView):
             if codes_go:
                 record_mfa_change(account, "removed", Authenticator.Type.RECOVERY_CODES)
             removed: HttpResponse = super().delete(request, *args, **kwargs)
+            if removed.status_code == HTTPStatus.OK:
+                # A removed method ends the Account's other sessions
+                # (#100), those with a user session row.
+                end_other_sessions(request, account)
             return removed
 
 

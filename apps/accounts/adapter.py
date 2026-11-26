@@ -1,6 +1,7 @@
 """OPEN's django-allauth account adapter (``ACCOUNT_ADAPTER``)."""
 
-from typing import TYPE_CHECKING, Any
+import ipaddress
+from typing import TYPE_CHECKING, Any, cast
 
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.core import context as allauth_context
@@ -10,16 +11,28 @@ from django.contrib.sites.shortcuts import get_current_site
 from django.db import transaction
 from django.http import HttpRequest
 
+from apps.accounts.devices import note_sign_in
+from apps.accounts.sessions import start_lifetime
 from apps.accounts.validators import (
     is_canonical_email,
+    is_encodable_password,
     normalize_email_address,
     normalized_email_errors,
 )
 from apps.emails.services import queue_email
 from apps.players.signup import is_signup_refused, refuse_signup
+from config.throttling import client_ip
+
+# The client IP allauth stores and counts when the request carries none:
+# every such request shares it, as the API throttles share one bucket.
+FALLBACK_CLIENT_IP = "0.0.0.0"
+# Hashed in place of a password that is not UTF-8 text, so the refusal
+# takes as long as a wrong password.
+_TIMING_PASSWORD = "not-a-password-timing-stand-in"
 
 if TYPE_CHECKING:
     from allauth.account.models import EmailAddress
+    from django.contrib.auth.models import _User
 
 
 class AccountAdapter(DefaultAccountAdapter):
@@ -36,6 +49,32 @@ class AccountAdapter(DefaultAccountAdapter):
         super().logout(request)
         if refused:
             refuse_signup(request.session)
+
+    def login(self, request: HttpRequest, user: AbstractBaseUser) -> None:
+        """allauth's login, which runs once every login stage passed, then
+        the session's lifetime clocks and the new device check (#100, ADR
+        0047). Django's login sets ``last_login``, so it is read first."""
+        signed_in_before = user.last_login is not None
+        super().login(request, user)
+        start_lifetime(request.session)
+        note_sign_in(request, cast("_User", user), signed_in_before)
+
+    def get_client_ip(self, request: HttpRequest) -> str:
+        """OPEN's client IP, for allauth's rate limits and user sessions.
+
+        Only the ``CLIENT_IP_HEADER`` value, parsed by the API throttles'
+        ``client_ip`` (ADR 0030): never ``X-Forwarded-For``,
+        ``Forwarded``, or ``REMOTE_ADDR``. An IPv6 address is its /64
+        network address, an IPv4-mapped one its IPv4 address. A missing
+        or invalid value is ``FALLBACK_CLIENT_IP``, so allauth never
+        refuses a request for want of an address (#100).
+        """
+        address = client_ip(request)
+        if address is None:
+            return FALLBACK_CLIENT_IP
+        if isinstance(address, ipaddress.IPv6Network):
+            return str(address.network_address)
+        return str(address)
 
     def clean_email(self, email: str) -> str:
         """Normalize an address, then apply the Account email rules to it.
@@ -68,16 +107,38 @@ class AccountAdapter(DefaultAccountAdapter):
         unverified address of that Account. A variant is no Account's login
         (ADR 0003), so it fails like a wrong password: the login rate limit
         is still consumed, the password is still hashed (the same time as a
-        miss), and no backend runs.
+        miss), and no backend runs. A password that is not UTF-8 text fails
+        the same way, with a fixed stand-in hashed instead (#100).
         """
         email = credentials.get("email")
-        if isinstance(email, str) and not is_canonical_email(email):
+        password = credentials.get("password")
+        if (isinstance(email, str) and not is_canonical_email(email)) or (
+            password is not None and not is_encodable_password(password)
+        ):
+            # A password that is not UTF-8 text cannot be hashed: it fails
+            # like a wrong one, timed with a fixed stand-in (#100).
+            if not is_encodable_password(password):
+                credentials = {**credentials, "password": _TIMING_PASSWORD}
             self.pre_authenticate(request, **credentials)
             get_user_model()().set_password(credentials.get("password"))
             self.authentication_failed(request, **credentials)
             return None
         user: AbstractBaseUser | None = super().authenticate(request, **credentials)
         return user
+
+    def _get_login_attempts_cache_key(
+        self, request: HttpRequest, **credentials: Any
+    ) -> str:
+        """The failed login counter's key: the submitted address alone.
+
+        allauth prefixes the current site's domain, which, with no sites
+        app, is the Host header as sent. An allowed host with another
+        port or letter case passes Django's host check, so each spelling
+        would start a fresh counter (#100). allauth's password reset
+        clears the counter through this same key.
+        """
+        login = credentials.get("email", credentials.get("username", ""))
+        return f"login:{str(login).lower()}"
 
     def send_mail(
         self, template_prefix: str, email: str, context: dict[str, Any]

@@ -106,7 +106,8 @@ async function logIn() {
     showError("verify");
   } else if (status === 400 && hasErrorCode(payload, "too_many_login_attempts")) {
     // allauth's lockout after failed attempts answers 400, like a wrong
-    // password, with its own code.
+    // password, with its own code. OPEN's login view turns it into a 429
+    // (#100); this branch stays in case it does not.
     showError("throttled");
   } else if (status === 400) {
     showError("credentials");
@@ -124,7 +125,8 @@ async function confirmCode(endpoint) {
     done();
   } else if (status === 400 && hasErrorCode(payload, "too_many_login_attempts")) {
     // allauth's lockout after failed codes answers 400, like a wrong
-    // code, with its own code.
+    // code, with its own code. OPEN's views turn it into a 429 (#100);
+    // this branch stays in case they do not.
     showError("throttled");
   } else if (status === 400) {
     codeInput.value = "";

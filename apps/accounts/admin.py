@@ -2,7 +2,9 @@ from typing import Any
 
 from allauth.account.models import EmailAddress
 from allauth.mfa.models import Authenticator
+from allauth.usersessions.models import UserSession
 from django.contrib import admin
+from django.contrib.admin.utils import unquote
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group
@@ -32,6 +34,7 @@ from django_celery_beat.models import (
 from apps.accounts.forms import UserChangeForm, UserCreationForm
 from apps.accounts.mfa import has_mfa
 from apps.accounts.models import User
+from apps.accounts.sessions import end_sessions_after_password_change
 from apps.audit.admin_access import AccessAuditAdminMixin
 
 # allauth registers an admin for EmailAddress, whose __str__ returns the
@@ -43,6 +46,11 @@ admin.site.unregister(EmailAddress)
 # secrets and recovery code seeds to staff (ADR 0009: never shown, ADR
 # 0043). allauth.mfa also comes before apps.accounts.
 admin.site.unregister(Authenticator)
+# allauth.usersessions registers an admin for UserSession, whose __str__
+# and list show a session's IP address and user agent (ADR 0047). The
+# player sees them in the session list; staff have no need to.
+# allauth.usersessions also comes before apps.accounts.
+admin.site.unregister(UserSession)
 # Django's Group admin, replaced below: only a superuser changes groups.
 # django.contrib.auth also comes before apps.accounts.
 admin.site.unregister(Group)
@@ -174,9 +182,22 @@ class UserAdmin(AccessAuditAdminMixin, BaseUserAdmin[User]):
         self, request: HttpRequest, id: str, form_url: str = ""
     ) -> HttpResponse:
         """Django's set-password view, in one transaction, so the new
-        password and its Audit Event commit together (#101)."""
+        password and its Audit Event commit together (#101). A new password
+        ends the Account's sessions and their user session rows, or, for
+        the staff member's own Account, the other sessions (#100). Only when
+        the stored password hash really changed: Django also answers 302
+        for conflicting form data, which saves nothing."""
+        old_key = request.session.session_key
+        # Django's own lookup: a malformed or unknown id is None here, and
+        # Django's view then answers 404.
+        stored = self.get_object(request, unquote(id))
+        before = None if stored is None else stored.password
         with transaction.atomic():
             response: HttpResponse = super().user_change_password(request, id, form_url)
+            if request.method == "POST" and response.status_code == 302:
+                account = self.get_object(request, unquote(id))
+                if account is not None and account.password != before:
+                    end_sessions_after_password_change(request, account, old_key)
             return response
 
 

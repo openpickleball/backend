@@ -99,3 +99,34 @@ def validate_normalized_email(value: str) -> None:
             errors.append(error)
     if errors:
         raise ValidationError(errors)
+
+
+# A password Python cannot encode as UTF-8 (JSON allows a lone surrogate)
+# cannot be hashed. Fixed text: never the submitted value.
+PASSWORD_NOT_TEXT_MESSAGE = "Use only letters, numbers, spaces, and symbols."
+PASSWORD_NOT_TEXT_CODE = "password_invalid_characters"
+
+
+def is_encodable_password(password: object) -> bool:
+    """Whether ``password`` is a string Python can encode as UTF-8."""
+    if not isinstance(password, str):
+        return False
+    try:
+        password.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+class EncodablePasswordValidator:
+    """Refuses a password that is not valid UTF-8 text (#100), so it never
+    reaches the hasher. First in ``AUTH_PASSWORD_VALIDATORS``."""
+
+    def validate(self, password: str, user: object = None) -> None:
+        if not is_encodable_password(password):
+            raise ValidationError(
+                PASSWORD_NOT_TEXT_MESSAGE, code=PASSWORD_NOT_TEXT_CODE
+            )
+
+    def get_help_text(self) -> str:
+        return "Your password must be text: letters, numbers, spaces, and symbols."

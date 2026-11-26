@@ -3,11 +3,14 @@
 allauth builds its document from a fixed file and offers no hook to add a
 path, so OPEN's views for ``/_allauth/openapi.json`` and ``.yaml``
 (``apps/accounts/headless_views.py``) serve allauth's document with the
-signup age check (ADR 0020) and password check (ADR 0039) added. This
-uses allauth's internal
+signup age check (ADR 0020) and password check (ADR 0039) added, and
+with OPEN's account security changes (#100, ADR 0047): sessions by
+opaque string ids, the app client's ``X-Device-Token`` on login and the
+MFA login stage, and login's 429. This uses allauth's internal
 ``get_schema``: check it when upgrading allauth (a test pins the result).
 """
 
+import copy
 from typing import Any
 
 from allauth.headless import app_settings
@@ -54,7 +57,9 @@ account has it.
 A password that passes gets a success answer. One that fails gets a 400
 with one error per failed rule, each with `param` `password` and Django's
 message and code (`password_too_short`, `password_too_common`,
-`password_entirely_numeric`, `password_too_similar`), the same errors
+`password_entirely_numeric`, `password_too_similar`,
+`password_breached` for a password found in a data breach, and
+`password_invalid_characters` for one that is not UTF-8 text), the same errors
 signup gives for that password and address. A missing, empty, or
 non-string password gets a field error on `password`.
 
@@ -203,9 +208,71 @@ def _age_check_operation(pinned: bool) -> dict[str, Any]:
     return operation
 
 
+_DEVICE_TOKEN = "X-Device-Token"
+_DEVICE_TOKEN_DESCRIPTION = """\
+App client only. The device token the last completed login on this
+install returned, if any. Send it on every request of a login (this one
+and the MFA step), so a sign-in from a known install sends no new
+sign-in email. The browser client uses a cookie instead.
+"""
+_DEVICE_TOKEN_RETURNED = """\
+App client only, on a completed login: the device token to keep and send
+with the next login. It replaces any earlier one.
+"""
+_SESSION_ID = {
+    "type": "string",
+    "description": (
+        "An opaque id for the session, from the session list. Never a row id."
+    ),
+    "example": "3f9a1c0e8b7d4a2f9c6e5d4b3a291807",
+}
+
+
+def _add_account_security(spec: dict[str, Any], root: str, pinned: bool) -> None:
+    """Sessions by string ids, the device token, and login's 429 (#100)."""
+    schemas = spec["components"]["schemas"]
+    schemas["Session"]["properties"]["id"] = dict(_SESSION_ID)
+    schemas["EndSessions"]["properties"]["sessions"]["items"] = dict(_SESSION_ID)
+    client = "{client}" if not pinned else next(iter(app_settings.CLIENTS))
+    for endpoint in ("auth/login", "auth/2fa/authenticate"):
+        operation = spec["paths"][f"{root}/{client}/v1/{endpoint}"]["post"]
+        operation.setdefault("parameters", []).append(
+            {
+                "name": _DEVICE_TOKEN,
+                "in": "header",
+                "required": False,
+                "description": _DEVICE_TOKEN_DESCRIPTION,
+                "schema": {"type": "string"},
+            }
+        )
+        ok = operation["responses"]["200"]
+        if "$ref" in ok:
+            # A $ref takes no sibling keys: copy the response it names.
+            name = ok["$ref"].rpartition("/")[2]
+            ok = copy.deepcopy(spec["components"]["responses"][name])
+        ok["headers"] = {
+            _DEVICE_TOKEN: {
+                "description": _DEVICE_TOKEN_RETURNED,
+                "schema": {"type": "string"},
+            }
+        }
+        operation["responses"]["200"] = ok
+    # The failed login lockout answers 429 on each (apps/accounts/lockout.py).
+    for endpoint in (
+        "auth/login",
+        "auth/2fa/authenticate",
+        "auth/reauthenticate",
+        "auth/2fa/reauthenticate",
+    ):
+        operation = spec["paths"][f"{root}/{client}/v1/{endpoint}"]["post"]
+        operation["responses"]["429"] = {
+            "$ref": "#/components/responses/TooManyRequests"
+        }
+
+
 def open_schema() -> dict[str, Any]:
     """allauth's document, with the signup age and password checks for
-    each client."""
+    each client and OPEN's account security changes."""
     spec: dict[str, Any] = get_schema()
     clients = list(app_settings.CLIENTS)
     # The headless root, as allauth's own paths use it.
@@ -218,4 +285,5 @@ def open_schema() -> dict[str, Any]:
     ):
         path = template.replace("{client}", clients[0]) if pinned else template
         spec["paths"][f"{root}/{path}"] = {"post": operation}
+    _add_account_security(spec, root, pinned)
     return spec

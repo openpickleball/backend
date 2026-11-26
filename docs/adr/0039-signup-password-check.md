@@ -1,6 +1,7 @@
 # 0039. A password check before the rest of signup
 
 - Status: Proposed
+- Amended by: [ADR 0047](0047-account-security-limits-and-sessions.md) (the password rules also refuse a password that is not UTF-8 text, `password_invalid_characters`, first, and a password found in a data breach, `password_breached`, last)
 - Date: 2026-11-25
 
 ## Context

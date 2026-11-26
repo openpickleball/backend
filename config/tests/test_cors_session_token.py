@@ -23,11 +23,13 @@ def allowed_client() -> Iterator[Client]:
 
 
 def test_allowed_headers_are_the_defaults_plus_allauths_headers() -> None:
+    # Plus the app client's device token, sent with a login (#100).
     assert tuple(settings.CORS_ALLOW_HEADERS) == (
         *default_headers,
         "x-session-token",
         "x-email-verification-key",
         "x-password-reset-key",
+        "x-device-token",
     )
     assert settings.CORS_ALLOW_CREDENTIALS is False
 

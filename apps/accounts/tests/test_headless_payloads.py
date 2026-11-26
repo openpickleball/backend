@@ -57,12 +57,14 @@ def test_spec_page_is_served() -> None:
     assert Client().get("/_allauth/openapi.html").status_code == 200
 
 
-def test_mfa_is_installed_and_social_login_and_user_sessions_are_not() -> None:
+def test_mfa_and_user_sessions_are_installed_and_social_login_is_not() -> None:
+    # User sessions list a player's sessions (#100, ADR 0047).
     assert "allauth.mfa" in settings.INSTALLED_APPS
+    assert "allauth.usersessions" in settings.INSTALLED_APPS
     assert not [
         app
         for app in settings.INSTALLED_APPS
-        if app.startswith(("allauth.socialaccount", "allauth.usersessions"))
+        if app.startswith("allauth.socialaccount")
     ]
 
 

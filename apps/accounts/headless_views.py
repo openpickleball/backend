@@ -37,6 +37,11 @@ allauth's URLconf (`config/urls.py`).
 - MFA (issue #99, ADR 0043): allauth's TOTP, recovery codes, MFA login,
   and MFA reauthentication views, recording an Audit Event for each
   change in the change's transaction (`apps/accounts/mfa_views.py`).
+- Login and password reauthentication (#100): allauth's failed login
+  limit answers 429 (``apps/accounts/lockout.py``).
+- Sessions, password change, and password reset from a key (#100, ADR
+  0047): the session list by opaque ids, and audited changes that end
+  other sessions (``apps/accounts/session_views.py``).
 - Email verification: an address that is another Account's login cannot
   be verified (allauth's `email_taken`, a 400). allauth checks only other
   verified EmailAddress rows, so verifying would set the address as this
@@ -56,6 +61,10 @@ from allauth.headless.account.inputs import (
 )
 from allauth.headless.account.inputs import SignupInput as BaseSignupInput
 from allauth.headless.account.inputs import VerifyEmailInput as BaseVerifyEmailInput
+from allauth.headless.account.views import LoginView as BaseLoginView
+from allauth.headless.account.views import (
+    ReauthenticateView as BaseReauthenticateView,
+)
 from allauth.headless.account.views import (
     RequestPasswordResetView as BaseRequestPasswordResetView,
 )
@@ -79,13 +88,19 @@ from django.utils.decorators import method_decorator
 
 from apps.accounts.agreements import current_versions, record_acceptance
 from apps.accounts.forms import SignupAgeForm, SignupBirthForm, signup_full_name
+from apps.accounts.lockout import LockoutAnswers429
 from apps.accounts.mfa_views import (
     AuthenticateView,
     ManageRecoveryCodesView,
     ManageTOTPView,
-    ReauthenticateView,
 )
+from apps.accounts.mfa_views import ReauthenticateView as MFAReauthenticateView
 from apps.accounts.openapi import open_schema
+from apps.accounts.session_views import (
+    ChangePasswordView,
+    ResetPasswordView,
+    SessionsView,
+)
 from apps.accounts.validators import is_canonical_email, normalize_email_address
 from apps.players.age import is_old_enough
 from apps.players.signup import (
@@ -117,6 +132,18 @@ def account_for_login(email: str) -> "AbstractBaseUser | None":
     except manager.model.DoesNotExist:
         return None
     return account if account.is_active else None
+
+
+class LoginView(LockoutAnswers429, BaseLoginView):
+    """allauth's login, answering its failed login limit with 429 (#100).
+
+    allauth's ``login`` limit still decorates ``handle``.
+    """
+
+
+class ReauthenticateView(LockoutAnswers429, BaseReauthenticateView):
+    """allauth's password reauthentication, answering its failed login
+    limit with 429 (#100)."""
 
 
 class RequestPasswordResetInput(BaseRequestPasswordResetInput):
@@ -532,6 +559,16 @@ def headless_urlpatterns() -> list[URLPattern]:
             continue
         prefix = f"{client.value}/v1/auth/"
         patterns += [
+            path(f"{prefix}login", LoginView.as_api_view(client=client)),
+            path(f"{prefix}sessions", SessionsView.as_api_view(client=client)),
+            path(
+                f"{prefix}password/reset",
+                ResetPasswordView.as_api_view(client=client),
+            ),
+            path(
+                f"{client.value}/v1/account/password/change",
+                ChangePasswordView.as_api_view(client=client),
+            ),
             path(f"{prefix}signup", SignupView.as_api_view(client=client)),
             path(
                 f"{prefix}signup/age-check",
@@ -555,6 +592,10 @@ def headless_urlpatterns() -> list[URLPattern]:
             ),
             path(
                 f"{prefix}2fa/reauthenticate",
+                MFAReauthenticateView.as_api_view(client=client),
+            ),
+            path(
+                f"{prefix}reauthenticate",
                 ReauthenticateView.as_api_view(client=client),
             ),
             path(

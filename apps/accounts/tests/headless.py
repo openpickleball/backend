@@ -4,6 +4,7 @@ Made-up data only, never real player data. Requests go through Django's
 test client and the whole middleware stack.
 """
 
+import json
 import re
 from importlib import import_module
 from types import SimpleNamespace
@@ -178,6 +179,16 @@ class HeadlessSession:
     def delete(self, endpoint: str) -> Any:
         response = self.client.delete(
             f"{self.base}/{endpoint}", headers=self._headers()
+        )
+        return self._keep_token(response)
+
+    def delete_json(self, endpoint: str, data: dict[str, Any]) -> Any:
+        """DELETE with a JSON body, as allauth's sessions endpoint takes."""
+        response = self.client.delete(
+            f"{self.base}/{endpoint}",
+            json.dumps(data),
+            content_type="application/json",
+            headers=self._headers(),
         )
         return self._keep_token(response)
 

@@ -166,6 +166,30 @@ def _seconds(name: str, default: int, minimum: int = 1) -> int:
     return int(value)
 
 
+_MIN_PASSWORD_LENGTH = 8
+_MAX_PASSWORD_LENGTH = 128
+# A slow breach check holds the request that sets a password.
+_MAX_BREACH_TIMEOUT_SECONDS = 10
+
+
+def _password_min_length(name: str, default: int) -> int:
+    """A minimum password length from 8 to 128, or ``default`` when unset
+    or empty. Never below Django's 8. Only ASCII digits, at most 3. The
+    error names the variable and the range and never echoes the value.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return default
+    if not re.fullmatch(r"[0-9]{1,3}", value) or not (
+        _MIN_PASSWORD_LENGTH <= int(value) <= _MAX_PASSWORD_LENGTH
+    ):
+        raise ImproperlyConfigured(
+            f"Set {name} to a whole number from {_MIN_PASSWORD_LENGTH} to "
+            f"{_MAX_PASSWORD_LENGTH}, or leave it empty (see .env.example)."
+        )
+    return int(value)
+
+
 # The local default admin path. Production must use another (#101).
 _LOCAL_ADMIN_URL = "admin/"
 # First path segments other routes own.
@@ -568,16 +592,19 @@ CORS_ALLOW_ALL_ORIGINS = False
 # same-origin only: the web app is served from, or proxied through, the
 # API host (ADR 0040). Credentials stay off cross-origin.
 CORS_ALLOW_CREDENTIALS = False
-# corsheaders' default request headers, plus the three allauth reads.
+# corsheaders' default request headers, plus the three allauth reads and
+# the app client's device token, sent with a login (#100).
 CORS_ALLOW_HEADERS = (
     *default_headers,
     "x-session-token",
     "x-email-verification-key",
     "x-password-reset-key",
+    "x-device-token",
 )
 # Response headers a script on an allowed origin may read beyond the
-# safelisted ones: Retry-After on a throttled 429 (ADR 0030).
-CORS_EXPOSE_HEADERS = ["Retry-After"]
+# safelisted ones: Retry-After on a throttled 429 (ADR 0030), and the
+# device token a login returns to the app client (#100).
+CORS_EXPOSE_HEADERS = ["Retry-After", "X-Device-Token"]
 
 # Valkey URL (redis:// or rediss://). The cache and Celery (issue #9)
 # read it from here.
@@ -614,13 +641,16 @@ INSTALLED_APPS = [
     # Sends email through a provider's API (Resend), chosen by EMAIL_BACKEND.
     "anymail",
     # Account sign-up, login, email verification, and password reset,
-    # served only as JSON at /_allauth/ (allauth.headless), and two-factor
-    # authentication with TOTP and recovery codes (allauth.mfa, ADR 0043).
-    # No social login or user sessions app: see the Accounts section below.
+    # served only as JSON at /_allauth/ (allauth.headless), two-factor
+    # authentication with TOTP and recovery codes (allauth.mfa, ADR 0043),
+    # and the list of a player's sessions (allauth.usersessions, #100,
+    # ADR 0047). No social login: see the Accounts section below.
     "allauth",
     "allauth.account",
     "allauth.mfa",
     "allauth.headless",
+    # Before apps.accounts, whose admin module unregisters its admin.
+    "allauth.usersessions",
     "apps.accounts",
     "apps.audit",
     "apps.public_ids",
@@ -707,6 +737,11 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # allauth's per-request state. It must come after AuthenticationMiddleware.
     "allauth.account.middleware.AccountMiddleware",
+    # Ends a signed-in browser session past its lifetime (#100). After
+    # AuthenticationMiddleware.
+    "apps.accounts.middleware.SessionLifetimeMiddleware",
+    # Writes the device marker a completed login leaves (#100).
+    "apps.accounts.middleware.DeviceMarkerMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
 ]
 
@@ -904,6 +939,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
         "options": {"expire_seconds": 900},
     },
+    # Deletes expired sessions and the user session rows (IP address and
+    # user agent) of sessions that ended or expired (#100). A run missed
+    # for 15 minutes is dropped.
+    "sweep-sessions": {
+        "task": "apps.accounts.tasks.sweep_sessions",
+        "schedule": crontab(minute="*/15"),
+        "options": {"expire_seconds": 900},
+    },
     # Runs pending rating replay requests whose queued task was lost (#47).
     # Does nothing when no request is pending. A run missed for 15 minutes
     # is dropped.
@@ -1043,8 +1086,75 @@ ACCOUNT_ADAPTER = "apps.accounts.adapter.AccountAdapter"
 # Subjects are exactly the text of OPEN's templates (templates/account/
 # email/). allauth would otherwise prefix the request's host, "[host] ".
 ACCOUNT_EMAIL_SUBJECT_PREFIX = ""
-# Rate limits stay at allauth's defaults (#100 tunes them). They live in
-# the cache.
+# allauth's rate limits (#100, ADR 0047), each "amount/period/per" with
+# per ip (OPEN's client IP from CLIENT_IP_HEADER, through the adapter's
+# get_client_ip), key (the address), or user (the signed-in Account).
+# They live in the default cache (Valkey), so they hold across web
+# instances. A failed login limit answers 429 (OPEN's login view). The
+# actions not named here keep allauth's defaults (codes and phones, which
+# OPEN does not use).
+ACCOUNT_RATE_LIMITS = {
+    # Every login request, per client IP.
+    "login": "30/m/ip",
+    # Failed logins: per client IP, and per address, so an Account is
+    # locked for a while after 5 failures, wherever they come from.
+    "login_failed": "10/m/ip,5/5m/key,20/h/key",
+    "signup": "20/m/ip",
+    # Reset requests, per client IP and per address, against email floods.
+    "reset_password": "20/m/ip,3/h/key",
+    # Setting a new password with a reset key.
+    "reset_password_from_key": "20/m/ip",
+    # Resending the verification email, once per 3 minutes per address.
+    "confirm_email": "1/3m/key",
+    "reauthenticate": "10/m/user",
+    "change_password": "5/m/user",
+    "manage_email": "10/m/user",
+}
+
+# A password change keeps the session that made it (allauth's default, set
+# explicitly) and ends the Account's other sessions (OPEN's change view,
+# #100). A reset from a key ends every session.
+ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = False
+
+# The player's session list (allauth.usersessions, #100, ADR 0047). A row
+# per signed-in session holds OPEN's client IP and the user agent, only
+# while the session lasts. No activity tracking, so no row is written per
+# request.
+USERSESSIONS_TRACK_ACTIVITY = False
+
+# Session lifetimes (#100, ADR 0047), for browser sessions and app session
+# tokens alike: a signed-in session ends SESSION_MAX_AGE_DAYS after login
+# or SESSION_IDLE_DAYS after it was last seen, whichever comes first
+# (apps/accounts/sessions.py). Unset or empty gives 30 and 7.
+SESSION_MAX_AGE_DAYS = _days("SESSION_MAX_AGE_DAYS", 30)
+SESSION_IDLE_DAYS = _days("SESSION_IDLE_DAYS", 7)
+if SESSION_IDLE_DAYS > SESSION_MAX_AGE_DAYS:
+    raise ImproperlyConfigured(
+        "Set SESSION_IDLE_DAYS to at most SESSION_MAX_AGE_DAYS (see .env.example)."
+    )
+# A signed-out session (a signup in progress holds the legal name and birth
+# year and month there, and TOTP setup a pending secret) expires after
+# Django's default two weeks. A signed-in session sets its own expiry
+# from the lifetimes above, so this never lengthens one.
+SESSION_COOKIE_AGE = 14 * 86400
+# How often a session's last seen time is written: at most hourly, so a
+# request rarely writes.
+SESSION_SEEN_REFRESH_SECONDS = 3600
+# New device detection (#100, ADR 0047): a completed login from a browser
+# or app whose signed marker does not show the Account sends one email.
+# The browser keeps the marker in this cookie, the app in its
+# X-Device-Token header, each refused after SIGN_IN_DEVICE_COOKIE_DAYS
+# (unset or empty gives 365). HttpOnly and SameSite Lax; with DEBUG off,
+# Secure and __Host- prefixed, like the session cookie (ADR 0040).
+SIGN_IN_DEVICE_COOKIE_DAYS = _days("SIGN_IN_DEVICE_COOKIE_DAYS", 365)
+SIGN_IN_DEVICE_COOKIE_NAME = "open_device" if DEBUG else "__Host-open_device"
+SIGN_IN_DEVICE_COOKIE_SECURE = not DEBUG
+# The most Accounts one marker remembers, newest first: a browser or app
+# shared by more Accounts forgets the oldest, whose next sign-in from it
+# sends an alert. It keeps the cookie small.
+SIGN_IN_DEVICE_MAX_TAGS = 10
+# allauth's session token strategy, with the lifetimes above.
+HEADLESS_TOKEN_STRATEGY = "apps.accounts.token_strategy.SessionTokenStrategy"
 
 # JSON only, at /_allauth/browser/v1/ (session cookie and CSRF) and
 # /_allauth/app/v1/ (X-Session-Token header). No server-rendered allauth
@@ -1107,12 +1217,24 @@ MFA_ADAPTER = "apps.accounts.mfa_adapter.MFAAdapter"
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
+# The shortest password allowed (#100): at least 8, Django's default.
+# Unset or empty gives 8.
+PASSWORD_MIN_LENGTH = _password_min_length("PASSWORD_MIN_LENGTH", 8)
+
+# A text check first (a password that is not valid UTF-8 text cannot be
+# hashed), Django's four standard rules, then the breached password check
+# (apps/accounts/breached.py, #100, ADR 0047). Every path that sets a
+# password runs them all.
 AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "apps.accounts.validators.EncodablePasswordValidator",
+    },
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": PASSWORD_MIN_LENGTH},
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
@@ -1120,7 +1242,25 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
+    {
+        "NAME": "apps.accounts.breached.BreachedPasswordValidator",
+    },
 ]
+
+# The k-anonymity range API the breached password check asks (#100): the
+# first five hex characters of a password's SHA-1 are appended. Fixed
+# here, never read from the environment, so no deployment setting can send
+# hash prefixes to another host; changing it is a reviewed code change.
+# The test settings point it at a local port nothing listens on.
+PASSWORD_BREACH_API_URL = "https://api.pwnedpasswords.com/range/"
+# Seconds the check waits for the range API before it accepts the
+# password (it fails open, ADR 0047). Unset or empty gives 3.
+PASSWORD_BREACH_TIMEOUT_SECONDS = _seconds("PASSWORD_BREACH_TIMEOUT_SECONDS", 3)
+if PASSWORD_BREACH_TIMEOUT_SECONDS > _MAX_BREACH_TIMEOUT_SECONDS:
+    raise ImproperlyConfigured(
+        "Set PASSWORD_BREACH_TIMEOUT_SECONDS to a whole number of seconds "
+        f"from 1 to {_MAX_BREACH_TIMEOUT_SECONDS} (see .env.example)."
+    )
 
 
 # Internationalization

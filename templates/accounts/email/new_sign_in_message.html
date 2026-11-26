@@ -1,0 +1,9 @@
+{% extends "emails/base_message.html" %}
+{% block title %}New sign-in to your OPEN account{% endblock title %}
+{% block content %}
+<p style="margin: 0 0 16px;">Your OPEN account was signed in to from {{ client }} that it had not used before, on {{ signed_in_at }}.</p>
+<p style="margin: 0 0 16px;">If this was you, there is nothing to do.</p>
+<p style="margin: 0;">If it was not you, review your sessions, end any you do not recognize, and change your password.</p>
+{% include "emails/action_link.html" with url=sessions_url label="Review your sessions" %}
+{% endblock content %}
+{% block reason %}You received this email because someone signed in to the OPEN account that uses this email address from a browser or app it had not used before.{% endblock reason %}
