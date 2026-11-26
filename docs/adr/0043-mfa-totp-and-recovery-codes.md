@@ -1,7 +1,7 @@
 # 0043. Two-factor authentication with TOTP and recovery codes
 
 - Status: Proposed
-- Amended by: [ADR 0045](0045-harden-the-admin.md) (the admin login asks for the code through allauth's headless login, admin sessions are short, and writes need a recent code)
+- Amended by: [ADR 0045](0045-harden-the-admin.md) (the admin login asks for the code through allauth's headless login, admin sessions are short, and writes need a recent code), [ADR 0046](0046-encrypt-personal-data-fields.md) (TOTP secrets and recovery code seeds are stored encrypted)
 - Date: 2026-11-25
 
 ## Context
@@ -19,7 +19,7 @@ This amends ADR 0012 and ADR 0021 (a member's event authority also needs MFA), A
 - **The admin.** Every staff Account needs MFA. OPEN's admin site (`config/admin.py`) checks it on every request. Its login form refused a staff Account without one until ADR 0045, which replaced the form with a page that tells such an Account to set one up. The admin login asked for the password only; ADR 0045 (#101) makes it ask for the code.
 - **The API.** An Account that must have MFA (staff, superusers, moderators, and owners of a non-sandbox Partner Application) and has none, and an Account with MFA whose session has not passed it, gets 403 with code `mfa_required` on every signed-in `/api/v1/` operation, from both clients. allauth's endpoints stay open, so it can sign in and enroll. The check runs after authentication and after the browser client's CSRF check. It costs one query per signed-in request.
 - **Audit.** Each change writes one `mfa.change` Audit Event in the change's transaction, actor and target the Account: `added` or `removed` (TOTP or recovery codes), `regenerated` (recovery codes), and `used` (a recovery code, at login or reauthentication). It never holds a secret, a code, or a seed. allauth's signals run after commit, so OPEN serves subclasses of allauth's four MFA views at allauth's paths, each in `transaction.atomic()`. Each locks the Account row `FOR UPDATE` before any authenticator row, the order allauth's recovery code regeneration uses, so two removals cannot both record and a recovery code login cannot deadlock with a regeneration. The views also strip the Authenticator row id from allauth's `mfa` login records, so allauth's `methods` payload carries no row id (ADR 0014). Responses otherwise stay allauth's own, except for the session rule's 401 above and the reauthentication-first order (a session that has not reauthenticated gets 401 before its input is read).
-- **Storage.** allauth stores TOTP secrets and the recovery code seed as it does, not encrypted. They are protected by access control: allauth's Authenticator admin is unregistered, and they are never logged or put in an Audit Event. #115 encrypts them.
+- **Storage.** allauth stores TOTP secrets and the recovery code seed as it does, not encrypted. They are protected by access control: allauth's Authenticator admin is unregistered, and they are never logged or put in an Audit Event. ADR 0046 (#115) now encrypts them through OPEN's MFA adapter.
 - **Email.** MFA sends no email: allauth's MFA notices go through its security notifications, which stay off (`ACCOUNT_EMAIL_NOTIFICATIONS`).
 
 ## Consequences
