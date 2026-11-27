@@ -1,0 +1,8 @@
+{% extends "emails/base_message.txt" %}
+{% block content %}You are invited to be an admin of a club on OPEN, the Open Pickleball Evaluation Network. The club's OPEN Code is {{ club_code }}.
+
+To accept, sign in to OPEN with this email address, then open this link. It works once and expires on {{ expires_at }}:
+{{ invite_url }}
+
+If you do not know this club, ignore this email. Nothing changes unless you accept.{% endblock content %}
+{% block reason %}You received this email because an admin of a club on OPEN invited this email address.{% endblock reason %}

@@ -1,0 +1,9 @@
+{% extends "emails/base_message.html" %}
+{% block title %}You are invited to be a club admin on OPEN{% endblock title %}
+{% block content %}
+<p style="margin: 0 0 16px;">You are invited to be an admin of a club on OPEN, the Open Pickleball Evaluation Network. The club's OPEN Code is {{ club_code }}.</p>
+<p style="margin: 0;">To accept, sign in to OPEN with this email address, then open the link below. It works once and expires on {{ expires_at }}.</p>
+{% include "emails/action_link.html" with url=invite_url label="Accept the invite" %}
+<p style="margin: 0;">If you do not know this club, ignore this email. Nothing changes unless you accept.</p>
+{% endblock content %}
+{% block reason %}You received this email because an admin of a club on OPEN invited this email address.{% endblock reason %}
