@@ -35,11 +35,14 @@ from allauth.mfa.adapter import get_adapter
 from allauth.mfa.models import Authenticator
 from allauth.mfa.webauthn.internal import auth as webauthn_auth
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db.models import QuerySet
 from django.utils.crypto import salted_hmac
 from fido2.utils import websafe_encode
 from fido2.webauthn import AuthenticationResponse, RegistrationResponse
+
+from apps.accounts.mfa import record_mfa_change
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -135,6 +138,45 @@ def check_origin(credential: object) -> None:
     allauth's own error for a bad credential (``incorrect_code``)."""
     if client_data_origin(credential) not in settings.WEBAUTHN_ALLOWED_ORIGINS:
         raise _incorrect()
+
+
+def remove_passkeys_after_reset(account: "_User") -> None:
+    """Remove every passkey of ``account`` after a password reset from a
+    key (ADR 0056), recording ``removed webauthn`` per passkey, and
+    ``removed recovery_codes`` when no other method keeps the codes, as
+    the passkey view does. Someone who knew the password could have added
+    a passkey, which signs in alone. Call inside the reset's transaction:
+    the Account row is locked first, before any authenticator row.
+    """
+    list(
+        get_user_model()
+        .objects.select_for_update()
+        .filter(pk=account.pk)
+        .values_list("pk", flat=True)
+    )
+    rows = list(
+        Authenticator.objects.select_for_update().filter(
+            user_id=account.pk, type=Authenticator.Type.WEBAUTHN
+        )
+    )
+    if not rows:
+        return
+    codes = Authenticator.objects.filter(
+        user_id=account.pk, type=Authenticator.Type.RECOVERY_CODES
+    )
+    codes_go = (
+        not Authenticator.objects.filter(user_id=account.pk)
+        .exclude(type__in=[Authenticator.Type.RECOVERY_CODES])
+        .exclude(pk__in=[row.pk for row in rows])
+        .exists()
+        and codes.exists()
+    )
+    for _ in rows:
+        record_mfa_change(account, "removed", Authenticator.Type.WEBAUTHN)
+    if codes_go:
+        record_mfa_change(account, "removed", Authenticator.Type.RECOVERY_CODES)
+        codes.delete()
+    Authenticator.objects.filter(pk__in=[row.pk for row in rows]).delete()
 
 
 # Fixed text: never the id that was sent.
