@@ -158,10 +158,11 @@ def check_lifetime(session: SessionBase) -> bool:
     if now - seen >= settings.SESSION_SEEN_REFRESH_SECONDS:
         if not noted:
             _note_short(session)
+            # A membership gained since may end the session already: check
+            # the short ends from the last seen time before this refresh.
+            if now >= _ends(started, seen, short=_is_short(session)):
+                return False
         _set_times(session, started, now)
-        if now >= _ends(started, now, short=_is_short(session)):
-            # A membership gained since makes the session already ended.
-            return False
     elif noted:
         _set_times(session, started, seen)
     return True
