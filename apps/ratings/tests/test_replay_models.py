@@ -101,11 +101,14 @@ def test_the_kind_message_does_not_repeat_a_value(player: Player) -> None:
 # Replay requests
 
 
-def test_the_reasons_are_every_match_change_and_the_live_update_cases() -> None:
+def test_the_reasons_are_every_match_change_the_live_update_cases_and_scheduled() -> (
+    None
+):
     assert set(ReplayReason.values) == {
         *(change.value for change in MatchChange),
         "late",
         "replay_needed",
+        "scheduled",
     }
 
 

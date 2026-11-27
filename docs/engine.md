@@ -49,6 +49,11 @@ plain data. It does no rating math.
   `OPEN_ENGINE_PARAMETER_SET` in `config/settings.py` names (`v1`). It is a
   fixed value in code, not an environment variable, because a new set needs a
   full replay.
+- `replay_interval_days()` reads the loaded config's `replay_interval_days`
+  (7 in `v1`), the engine's published replay schedule. The daily
+  `decay_reliability` task asks for a scheduled replay when the most recently
+  created replay is that old, so inactive players' reliability moves forward
+  (ADR 0060).
 - `rating_update()`, `replay_provenance()`, and `rating_summary()` turn an
   engine `MatchResult`, `ReplayInfo`, and `PlayerSummary` into plain
   dataclasses. `replay_provenance()` adds the installed engine version (hard
@@ -91,6 +96,8 @@ steps below.
    and the new one. Note each breaking change, each changed default, and each
    new or changed parameter set. If the release publishes a new set,
    decide whether `OPEN_ENGINE_PARAMETER_SET` moves to it (a full replay follows).
+   A new set can change `replay_interval_days`, and with it how often the
+   scheduled replay for reliability decay runs (ADR 0060).
 2. Bump the tag with uv. Never edit `pyproject.toml` or `uv.lock` by hand:
 
    ```bash

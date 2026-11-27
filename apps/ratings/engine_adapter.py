@@ -145,6 +145,17 @@ def load_config() -> open_engine.Config:
     return open_engine.Config.published(settings.OPEN_ENGINE_PARAMETER_SET)
 
 
+def replay_interval_days() -> int:
+    """The engine's published replay schedule, in days (#52, ADR 0060).
+
+    ``Config.replay_interval_days`` of the loaded config: how often the
+    engine expects a scheduled replay, which is when it measures an
+    inactive player's reliability again. The backend only decides when to
+    replay from it; it computes no rating value.
+    """
+    return load_config().replay_interval_days
+
+
 def _rating_format(match: Match, code: str) -> open_engine.RatingFormat:
     """The stored rating format, checked against the format."""
     _look_up(_MATCH_FORMATS, match.format, "format", code)

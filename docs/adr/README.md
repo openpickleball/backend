@@ -107,3 +107,4 @@ Add each record here when it merges.
 - [0057. Organizer and Club admin security](0057-organizer-and-club-admin-security.md) (issue #232)
 - [0058. The full recompute command](0058-full-recompute-command.md) (issue #48)
 - [0059. Moderator removal of an under-13 player's personal data](0059-moderator-removal-of-an-under-13-player.md) (issue #190)
+- [0060. Scheduled replays for reliability decay](0060-scheduled-replays-for-reliability-decay.md) (issue #52)

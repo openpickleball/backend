@@ -971,6 +971,16 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=3, minute=30),
         "options": {"expire_seconds": 3600},
     },
+    # Asks for the scheduled replay when the most recently created replay
+    # is at least the engine's replay_interval_days old, so inactive
+    # players' reliability moves forward (#52, ADR 0060). After the two
+    # expiry tasks, so a replay they ask for usually runs first. A run
+    # missed for an hour is dropped.
+    "decay-reliability": {
+        "task": "apps.ratings.tasks.decay_reliability",
+        "schedule": crontab(hour=3, minute=45),
+        "options": {"expire_seconds": 3600},
+    },
     # Deletes queued emails older than three days and queues stuck ones
     # again (ADR 0016). A run missed for 15 minutes is dropped.
     "sweep-queued-emails": {
@@ -1013,6 +1023,17 @@ CELERY_BEAT_SCHEDULE = {
     "sweep-club-invites": {
         "task": "apps.clubs.tasks.sweep_club_invites",
         "schedule": crontab(hour=4, minute=10),
+        "options": {"expire_seconds": 3600},
+    },
+    # Runs django-oauth-toolkit's clear_expired(), as cleartokens does
+    # (#52): deletes expired access tokens with no refresh token, expired
+    # ID tokens with no access token, expired grants, and orphaned refresh
+    # tokens. Revoked refresh tokens (for reuse detection), expired access
+    # tokens with a refresh token, and device grants (never touched) stay.
+    # A run missed for an hour is dropped.
+    "clear-expired-tokens": {
+        "task": "apps.partners.tasks.clear_expired_tokens",
+        "schedule": crontab(hour=4, minute=20),
         "options": {"expire_seconds": 3600},
     },
     # Runs pending rating replay requests whose queued task was lost (#47).

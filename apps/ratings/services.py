@@ -66,6 +66,7 @@ from apps.ratings.engine_adapter import (
     engine_version,
     live_config,
     record_live,
+    replay_interval_days,
     run_replay,
     snapshot_holds_match,
 )
@@ -973,6 +974,68 @@ def replay_ratings(*, as_of: date | None = None) -> ReplayOutcome:
             written.run.provenance.matches_counted,
         )
     return ReplayOutcome.REPLAYED
+
+
+# Scheduled reliability decay (#52, ADR 0060).
+
+
+class DecayOutcome(StrEnum):
+    """What ``decay_reliability()`` did."""
+
+    REQUESTED = "requested"
+    NOT_DUE = "not_due"
+    ALREADY_REQUESTED = "already_requested"
+    NO_RATINGS = "no_ratings"
+
+
+def decay_reliability() -> DecayOutcome:
+    """Ask for the scheduled replay when the engine's schedule says it is due.
+
+    The engine measures inactivity at a replay's date: a player who has
+    not played since the last replay gets a higher RD and a lower
+    reliability as replays move forward (hard rule 2: the backend
+    computes nothing). So this only stores a ``scheduled`` replay request
+    through ``request_replay()``, which queues the replay task after
+    commit. It is due when a rating is stored and either no replay has
+    run, or the ``as_of`` of the most recently created ``RatingReplay``
+    (by ``created_at``, then id: the stored ratings come from it) is at
+    least the engine config's ``replay_interval_days`` before
+    ``replay_as_of()``.
+
+    It writes nothing when no rating is stored (``no_ratings``), when the
+    replay is not due (``not_due``), or when a ``scheduled`` request is
+    already pending (``already_requested``), so a second run on the same
+    day and a redelivered task write nothing. It takes no lock. The log
+    holds the outcome and dates only, never a player.
+    """
+    if not RatingState.objects.exists():
+        logger.info("Reliability decay: no_ratings.")
+        return DecayOutcome.NO_RATINGS
+    replay_date = replay_as_of()
+    latest = (
+        RatingReplay.objects.order_by("-created_at", "-id")
+        .values_list("as_of", flat=True)
+        .first()
+    )
+    latest_text = "none" if latest is None else latest.isoformat()
+    interval = replay_interval_days()
+    if latest is not None and (replay_date - latest).days < interval:
+        outcome = DecayOutcome.NOT_DUE
+    elif RatingReplayRequest.objects.filter(reason=ReplayReason.SCHEDULED).exists():
+        outcome = DecayOutcome.ALREADY_REQUESTED
+    else:
+        with transaction.atomic():
+            request_replay(replay_date, ReplayReason.SCHEDULED)
+        outcome = DecayOutcome.REQUESTED
+    logger.info(
+        "Reliability decay: %s (replay date %s, latest replay as of %s, "
+        "interval %s days).",
+        outcome,
+        replay_date.isoformat(),
+        latest_text,
+        interval,
+    )
+    return outcome
 
 
 # The recompute (#48, ADR 0058).
