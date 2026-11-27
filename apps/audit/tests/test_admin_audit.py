@@ -358,7 +358,9 @@ def test_delete_selected_records_one_event_per_object(admin_client: Client) -> N
     assert all(e.before is None for e in events)
 
 
-def test_deleting_yourself_records_no_actor(client: Client) -> None:
+def test_deleting_yourself_is_refused_and_records_nothing(client: Client) -> None:
+    """The acting Account is staff, and no staff Account is deleted in the
+    admin (#317), so a delete never removes its own actor here."""
     account = UserFactory.create(is_staff=True, is_superuser=True)
     client.force_login(account)
     pk = account.pk
@@ -367,12 +369,9 @@ def test_deleting_yourself_records_no_actor(client: Client) -> None:
         reverse("admin:accounts_user_delete", args=[pk]), {"post": "yes"}
     )
 
-    assert response.status_code == 302
-    assert not get_user_model()._default_manager.filter(pk=pk).exists()
-    [event] = _admin_events()
-    assert event.action == AuditAction.ADMIN_DELETE
-    assert event.target_object_id == str(pk)
-    assert event.actor_user_id is None
+    assert response.status_code == 403
+    assert get_user_model()._default_manager.filter(pk=pk).exists()
+    assert _admin_events() == []
 
 
 # Actions

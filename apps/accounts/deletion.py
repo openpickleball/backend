@@ -155,8 +155,9 @@ def delete_account(
     Raises ``AccountAlreadyDeleted`` when the stored Account is gone, or
     inactive with a placeholder email, and changes nothing then. An
     Account staff deactivated, with its data still on it, is deleted as
-    any other. Call it outside any other transaction: the
-    session and access row writes rely on this one.
+    any other. Call it in a transaction of its own, one Account per
+    transaction (the admin's delete wraps it with its ``admin.delete``
+    event): its locks last until the outermost transaction ends.
     """
     user_model = get_user_model()
     event_actor = None if actor is None or actor.pk == account.pk else actor

@@ -40,6 +40,12 @@ An admin that already saves and deletes through an audited service sets
 admins): it records no ``admin.add``, ``admin.change``, or
 ``admin.delete``, but its custom actions are wrapped like any other's.
 
+An admin whose ``delete_queryset`` deletes each object through
+``delete_model`` sets ``deletes_each_through_delete_model = True`` (the
+Account admin, whose deletes run ``delete_account``, #317): its
+``delete_queryset`` is then not wrapped in one transaction, and each
+``delete_model`` records its ``admin.delete`` in that object's own.
+
 When a delete removes the acting Account itself, its events have no
 actor, as ``apps.audit.access`` does: an event naming a deleted Account
 fails the delete at commit.
@@ -236,7 +242,12 @@ class AdminAuditMixin(admin.ModelAdmin[Any]):
             super().delete_model(request, obj)
 
     def delete_queryset(self, request: HttpRequest, queryset: QuerySet[Any]) -> None:
-        if not self._model_events():
+        # An admin whose delete_queryset deletes each object through
+        # delete_model (the Account admin, #317) records each delete there,
+        # in that object's own transaction.
+        if not self._model_events() or getattr(
+            self, "deletes_each_through_delete_model", False
+        ):
             super().delete_queryset(request, queryset)
             return
         with transaction.atomic():

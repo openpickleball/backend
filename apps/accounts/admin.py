@@ -1,16 +1,18 @@
+from contextlib import suppress
 from typing import Any
 
 from allauth.account.models import EmailAddress
 from allauth.mfa.models import Authenticator
 from allauth.usersessions.models import UserSession
 from django.contrib import admin
+from django.contrib.admin.models import LogEntry
 from django.contrib.admin.utils import unquote
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Q, QuerySet
+from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django_celery_beat.admin import (
     ClockedScheduleAdmin as BaseClockedScheduleAdmin,
@@ -32,6 +34,11 @@ from django_celery_beat.models import (
     SolarSchedule,
 )
 
+from apps.accounts.deletion import (
+    AccountAlreadyDeleted,
+    delete_account,
+    is_deleted_email,
+)
 from apps.accounts.forms import (
     AdminPasswordChangeForm,
     UserChangeForm,
@@ -160,30 +167,99 @@ class UserAdmin(AccessAuditAdminMixin, BaseUserAdmin[User]):
             return False
         return super().has_change_permission(request, obj)
 
+    # Each Account is deleted through delete_model, in its own transaction
+    # (AdminAuditMixin records its admin.delete there), never all of a
+    # selection in one: delete_account locks the Account, its Player, and
+    # its Organizers until the transaction ends (#317).
+    deletes_each_through_delete_model = True
+
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
-        """Only a superuser deletes an Account that holds power (#101)."""
-        if obj is not None and _holds_power(obj) and not _is_superuser(request):
-            return False
+        """Nobody deletes a staff or superuser Account here, as the API
+        refuses them (#317, ADR 0048), or an Account a deletion already
+        cleared. Only a superuser deletes an Account that holds a group or
+        a permission (#101)."""
+        if obj is not None:
+            if obj.is_staff or obj.is_superuser:
+                return False
+            if not obj.is_active and is_deleted_email(obj.email):
+                return False
+            if _holds_power(obj) and not _is_superuser(request):
+                return False
         return super().has_delete_permission(request, obj)
 
-    def delete_queryset(self, request: HttpRequest, queryset: QuerySet[User]) -> None:
-        """Delete the selection, or nothing when it holds an Account with
-        power (``_holds_power``) and the actor is not a superuser.
+    def get_deleted_objects(
+        self, objs: Any, request: HttpRequest
+    ) -> tuple[list[Any], dict[Any, int], set[str], list[Any]]:
+        """What the confirmation pages list: the selected Accounts only.
 
-        ``delete_selected`` already refuses such a selection on its
-        confirmation page; this checks again at the delete itself.
+        A delete here runs ``delete_account``, not Django's cascade, so
+        Django's collector would list rows the service keeps and call a
+        protected Account undeletable. The service keeps such an Account,
+        cleared and deactivated (ADR 0048). An Account the actor may not
+        delete (``has_delete_permission``) blocks the whole selection.
         """
-        if (
-            not _is_superuser(request)
-            and queryset.filter(
-                Q(is_staff=True)
-                | Q(is_superuser=True)
-                | Q(groups__isnull=False)
-                | Q(user_permissions__isnull=False)
-            ).exists()
-        ):
+        accounts = list(objs)
+        refused = any(not self.has_delete_permission(request, a) for a in accounts)
+        perms_needed = {str(self.opts.verbose_name)} if refused else set()
+        model_count = {self.opts.verbose_name_plural: len(accounts)}
+        return [str(a) for a in accounts], model_count, perms_needed, []
+
+    def log_deletions(self, request: HttpRequest, queryset: Any) -> list[LogEntry]:
+        """Write no admin log entry: its ``object_repr`` is the Account's
+        email (ADR 0009), and ``delete_account`` deletes every entry tied
+        to the Account. The ``admin.delete`` and ``account.delete`` Audit
+        Events record the deletion."""
+        return []
+
+    def delete_model(self, request: HttpRequest, obj: User) -> None:
+        """Delete the Account's personal data through ``delete_account``,
+        with the staff member as actor, as ``DELETE /api/v1/accounts/me``
+        does (#317, ADR 0048).
+
+        The Account row is locked and checked again first, so one made
+        staff since the page loaded is refused; ``delete_account`` then
+        takes the same lock. An Account deleted meanwhile is the same as
+        success, as in the API, but then nothing was deleted here, so the
+        ``admin.delete`` event ``AdminAuditMixin`` recorded first, in the
+        transaction around this call, is rolled back.
+        """
+        deleted = False
+        with transaction.atomic():
+            locked = (
+                type(obj)._default_manager.select_for_update().filter(pk=obj.pk).first()
+            )
+            if locked is not None:
+                if not self.has_delete_permission(request, locked):
+                    raise PermissionDenied
+                with suppress(AccountAlreadyDeleted):
+                    delete_account(locked, actor=request.user)
+                    deleted = True
+        if not deleted and transaction.get_connection().in_atomic_block:
+            transaction.set_rollback(True)
+
+    def delete_queryset(self, request: HttpRequest, queryset: QuerySet[User]) -> None:
+        """Delete each selected Account through ``delete_model``, in its own
+        transaction.
+
+        ``delete_selected`` already refuses a selection with an Account the
+        actor may not delete on its confirmation page; this checks the
+        stored rows again before the first delete, and ``delete_model``
+        checks each under its lock, so an Account changed in between stops
+        the run there with the Accounts before it deleted.
+        """
+        accounts = list(queryset.order_by("pk"))
+        if any(not self.has_delete_permission(request, a) for a in accounts):
             raise PermissionDenied
-        super().delete_queryset(request, queryset)
+        for account in accounts:
+            self.delete_model(request, account)
+
+    def response_delete(
+        self, request: HttpRequest, obj_display: str, obj_id: Any
+    ) -> HttpResponse:
+        """Django's answer, with the row id in the success message instead
+        of the deleted Account's email (ADR 0009)."""
+        response: HttpResponse = super().response_delete(request, str(obj_id), obj_id)
+        return response
 
     def user_change_password(
         self, request: HttpRequest, id: str, form_url: str = ""
