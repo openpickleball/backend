@@ -24,6 +24,7 @@ from django.test import Client
 
 from apps.accounts.models import User
 from apps.accounts.tests.factories import UserFactory, enroll_totp
+from apps.clubs.club_self_service import grant_organizer, remove_grant
 from apps.clubs.models import Club, MemberRole, Organizer
 from apps.clubs.tests.factories import (
     ClubFactory,
@@ -158,7 +159,8 @@ def test_a_grant_lets_the_organizer_name_the_club_until_it_is_removed(
         uploaded = _upload(member, event_code, _csv(players[0], players[1], 7))
     assert uploaded.status_code == 202
     [recorded] = Match.objects.filter(event=event)
-    club_before = recorded.club_id
+    # A results upload names the Club through its Event only.
+    assert recorded.club_id is None
     assert recorded.status == MatchStatus.CONFIRMED
 
     removed = _json(
@@ -198,10 +200,37 @@ def test_a_grant_lets_the_organizer_name_the_club_until_it_is_removed(
     recorded.refresh_from_db()
     assert recorded.status == MatchStatus.CONFIRMED
     assert recorded.event_id == event.pk
-    assert recorded.club_id == club_before
+    assert recorded.club_id is None
     event.refresh_from_db()
     assert event.club_id == club.pk
     assert Match.objects.count() == 1
+
+
+def test_a_match_naming_the_club_keeps_it_after_the_grant_is_removed() -> None:
+    club, club_admin, organizer, member = _setup()
+    grant_organizer(club.pk, organizer.public_code, actor=club_admin)
+    event = EventFactory.create(organizer=organizer, club=club)
+    a, b = PlayerFactory.create(), PlayerFactory.create()
+
+    match = record_match(
+        format=MatchFormat.SINGLES,
+        team_a=[a],
+        team_b=[b],
+        games=((11, 3),),
+        played_on=date(2026, 11, 13),
+        event=event,
+        club=club,
+        submitted_by_user=member,
+    ).match
+    assert match.club_id == club.pk
+    status = match.status
+
+    remove_grant(club.pk, organizer.public_code, actor=club_admin)
+
+    match.refresh_from_db()
+    assert match.club_id == club.pk
+    assert match.event_id == event.pk
+    assert match.status == status
 
 
 def test_a_club_admin_who_is_no_organizer_member_cannot_submit_for_the_club(
