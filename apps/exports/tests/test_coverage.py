@@ -57,6 +57,10 @@ EXCLUDED: dict[tuple[str, str], str] = {
         "Short-lived and deleted once accepted or expired; the sender's own "
         "organizer_invite.create events are in audit_events."
     ),
+    ("clubs.ClubInvite", "invited_by"): (
+        "Short-lived and deleted once accepted or expired; the sender's own "
+        "club_invite.create events are in audit_events."
+    ),
 }
 
 

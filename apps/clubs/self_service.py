@@ -14,7 +14,8 @@ Organizer made here stays unverified until a moderator verifies it.
   the database. Anyone else gets ``NotFound``, the same as an unknown
   Organizer, so the answer never says who is a member.
 - ``rename_organizer``, ``invite_member``, ``list_members``,
-  ``change_member_role``, ``remove_member``, ``request_verification``.
+  ``change_member_role``, ``remove_member``, ``request_verification``,
+  and ``list_club_grants`` (the Clubs that granted it, #230).
 - ``accept_invite``: the invited Account, signed in with the invited
   login address, verified, and with a Player, joins with the invited
   role, while the invite's sender still has admin authority there
@@ -41,7 +42,7 @@ Organizer lock, so the last admin count cannot pass twice.
 """
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from django.conf import settings
@@ -66,6 +67,7 @@ from apps.clubs.invites import (
     normalized_invite_email,
 )
 from apps.clubs.models import (
+    ClubOrganizerGrant,
     MemberRole,
     Organizer,
     OrganizerInvite,
@@ -98,8 +100,10 @@ REQUEST_OPEN_MESSAGE: Final = "This organizer already has an open verification r
 
 
 class NotFound(LookupError):
-    """The Organizer, invite, or member is unknown, or the actor may not
-    act on it. One answer for every cause: the API's 404."""
+    """The Organizer, Club, invite, member, Club admin, or grant is unknown,
+    or the actor may not act on it. One answer for every cause: the API's
+    404. Club self-service (``apps.clubs.club_self_service``) raises it
+    too."""
 
 
 class Conflict(ValueError):
@@ -107,10 +111,13 @@ class Conflict(ValueError):
 
 
 class AddressNotVerified(PermissionError):
-    """The Account's login address is not verified (the API's 403)."""
+    """The Account's login address is not verified (the API's 403).
 
-    def __init__(self) -> None:
-        super().__init__(ADDRESS_NOT_VERIFIED_MESSAGE)
+    ``message`` is fixed text; the Club create passes its own (#230).
+    """
+
+    def __init__(self, message: str = ADDRESS_NOT_VERIFIED_MESSAGE) -> None:
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -121,6 +128,19 @@ class MemberView:
     display_name: str | None
     role: MemberRole
     you: bool
+
+
+@dataclass(frozen=True)
+class OrganizerClubGrantView:
+    """A Club that granted the Organizer a Club Organizer Grant (#230), as
+    the Organizer's admin members see it: the Club's public profile and
+    when it granted. Never a row id."""
+
+    club: str
+    name: str
+    city: str
+    region: str
+    created_at: datetime
 
 
 def create_organizer(*, actor: "_User", name: str) -> Organizer:
@@ -497,3 +517,28 @@ def request_verification(
             after={"organizer": organizer.public_code},
         )
     return request
+
+
+def list_club_grants(
+    organizer_id: int, *, actor: "_User"
+) -> list[OrganizerClubGrantView]:
+    """The Clubs that granted the Organizer a Club Organizer Grant (#230),
+    by Club OPEN Code. For an admin member (``_admin_organizer``)."""
+    with transaction.atomic():
+        organizer = _admin_organizer(organizer_id, actor)
+        grants = (
+            ClubOrganizerGrant.objects.filter(organizer_id=organizer.pk)
+            .select_related("club")
+            .order_by("club__public_code")
+        )
+        views = [
+            OrganizerClubGrantView(
+                club=grant.club.public_code,
+                name=grant.club.name,
+                city=grant.club.city,
+                region=grant.club.region,
+                created_at=grant.created_at,
+            )
+            for grant in grants
+        ]
+    return views

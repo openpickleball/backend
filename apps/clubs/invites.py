@@ -1,8 +1,9 @@
-"""Invites by email to act for an Organizer (#229), and later a Club (#230).
+"""Invites by email to act for an Organizer (#229) or a Club (#230).
 
 The rules here are shared by every invite model, each a subclass of
 ``InviteModel`` that adds what the invite is to (an Organizer, a Club)
-and the role it gives:
+and, for an Organizer Invite, the role it gives (a Club Invite always
+gives the admin role, the only Club Role):
 
 - An invite is to one normalized address (``normalized_invite_email``,
   the Account email rules), and lasts until ``expires_at``.
