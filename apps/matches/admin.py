@@ -21,7 +21,8 @@ Both first show a confirmation page with how many matches the run would
 void and how many are already voided, and change nothing until the
 moderator confirms. Each needs a typed reason (``ReasonActionForm``),
 which goes into its Audit Events. A match whose correction chain holds
-the moderator's own Player is counted as refused. Pages and messages show
+the moderator's own Player is counted as refused, and so is a match an
+open flag links to such a match (#326). Pages and messages show
 matches and players by OPEN Code only, never a name or an email.
 """
 

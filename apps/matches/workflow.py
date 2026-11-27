@@ -66,7 +66,9 @@ Moderators do not review single matches (#273, ADR 0034): they never
 confirm, resolve, edit, or void one match, and no flag is resolved by a
 moderator. Their only match action is the bulk void, which applies
 ``apps.matches.permissions.moderates`` to each match: a match whose
-correction chain holds the moderator's own Player is refused.
+correction chain holds the moderator's own Player is refused, and so is
+a match an open flag links to such a match, since voiding it would end
+that hold (#326).
 
 Each service checks permission first and raises ``MatchActionDenied``
 (fixed text) before it reveals anything about the match. It then locks
@@ -1639,9 +1641,10 @@ class BulkVoidResult:
     one voided by someone else while the run went on. ``refused``: the
     actor may not void it as moderator (``moderates`` is False), which
     happens when the moderator's own Player is in the match's correction
-    chain. It also counts every remaining match when the actor stops being
-    a moderator partway through a run (``_void_as_moderator`` checks again
-    for each match).
+    chain, or in that of a match an open flag links to it (#326). It also
+    counts every remaining match when the actor stops being a moderator
+    partway through a run (``_void_as_moderator`` checks again for each
+    match).
     """
 
     voided: int
@@ -1789,10 +1792,10 @@ def _notify_left_counting(batch_ids: list[int]) -> None:
 
     The file's own end sent none, since the void was about to void its
     matches. Some can stay: a match the moderator may not void (their own
-    Player plays in it), one recorded before a submitter void's date, or
-    every match left when the void stops partway. The notices list only
-    the matches still confirmed or disputed, so a batch the void emptied
-    sends nothing.
+    Player plays in it or in a match it holds), one recorded before a
+    submitter void's date, or every match left when the void stops
+    partway. The notices list only the matches still confirmed or
+    disputed, so a batch the void emptied sends nothing.
     """
     for batch_id in batch_ids:
         schedule_batch_notices(batch_id)
@@ -1805,9 +1808,13 @@ def _void_as_moderator(match: Match, *, actor: Actor, reason: str) -> None:
     who does not moderate ``match`` (``moderates``: their own Player is in
     its correction chain, or they are no longer a moderator) gets
     ``MatchActionDenied`` before anything is read. Under the match's
-    lineup and row locks a voided match raises ``MatchStateError``; any
-    other is voided with one ``match.void`` Audit Event that holds the
-    run's reason, and its signals.
+    lineup and row locks a voided match raises ``MatchStateError``. Then,
+    under the same locks, voiding would end the holds the match's open
+    flags place on the matches they link to it (``_linked``), so a
+    moderator who does not moderate one of those (#326) also gets
+    ``MatchActionDenied``, and nothing is written. Any other match is
+    voided with one ``match.void`` Audit Event that holds the run's
+    reason, and its signals.
     """
     if not moderates(actor, match):
         raise MatchActionDenied
@@ -1815,6 +1822,8 @@ def _void_as_moderator(match: Match, *, actor: Actor, reason: str) -> None:
         locked = _lock(match)
         if locked.status == MatchStatus.VOIDED:
             raise MatchStateError
+        if not all(moderates(actor, other) for other in _linked(locked)):
+            raise MatchActionDenied
         _void(locked, action=AuditAction.MATCH_VOID, actor=actor, reason=reason)
 
 
