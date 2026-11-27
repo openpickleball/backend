@@ -77,6 +77,8 @@ def test_a_moderator_ends_every_hold_in_force_with_one_event_each() -> None:
     for event in events:
         assert event.actor_user == moderator
         assert event.reason == REASON
+        assert event.before is not None
+        assert event.after is not None
         assert "hold_ends_at" in event.before
         assert "hold_ends_at" not in event.after
         assert event.after["role"] == MemberRole.MATCH_MANAGER

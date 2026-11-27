@@ -113,6 +113,7 @@ def test_joining_an_unverified_organizer_sets_no_hold() -> None:
     [event] = AuditEvent.objects.filter(
         action=AuditAction.ORGANIZER_MEMBER_ADD, actor_user=invitee
     )
+    assert event.after is not None
     assert "hold_ends_at" not in event.after
 
 

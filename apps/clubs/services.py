@@ -46,7 +46,7 @@ from apps.clubs.reports import (
 from apps.clubs.verification_requests import close_open_verification_requests
 
 if TYPE_CHECKING:
-    from django.contrib.auth.models import _User
+    from django.contrib.auth.models import AnonymousUser, _User
 
 _FIELDS = ["verified_at", "verified_by"]
 
@@ -59,7 +59,9 @@ class NotAllowedToEndHolds(PermissionError):
     """The actor may not end this Organizer's New Member Holds."""
 
 
-def end_member_holds(organizer: Organizer, *, actor: "_User", reason: str) -> int:
+def end_member_holds(
+    organizer: Organizer, *, actor: "_User | AnonymousUser", reason: str
+) -> int:
     """End every New Member Hold still in force on ``organizer`` (#232,
     ADR 0057) and return how many.
 

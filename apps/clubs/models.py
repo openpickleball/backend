@@ -81,7 +81,7 @@ def _clean_text_fields(
     return errors
 
 
-def admin_account_refused(account_id: object) -> bool:
+def admin_account_refused(account_id: int | str) -> bool:
     """Whether the Account ``account_id`` exists and may not hold an admin
     role: inactive, or without a verified login address
     (``has_verified_login_address``). Read from the database. False for

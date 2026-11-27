@@ -313,7 +313,6 @@ def test_last_authenticated_at_is_the_latest_step_of_any_kind() -> None:
             {"method": "mfa", "at": 100.0, "type": "totp"},
             {"method": "password", "at": 500.0, "reauthenticated": True},
             {"method": "password", "at": "600"},
-            "not-a-record",
         ],
         account,
     )

@@ -220,18 +220,21 @@ def send_notice(notice: SecurityNotice) -> int:
 
 def _recipients(notice: SecurityNotice) -> list[str]:
     """The login addresses of the active admins, by Account id."""
+    users = get_user_model().objects.filter(is_active=True)
     if notice.scope == ORGANIZER:
-        admins = OrganizerMember.objects.filter(
-            organizer_id=notice.scope_id, role=MemberRole.ADMIN
-        ).values("account_id")
+        users = users.filter(
+            pk__in=OrganizerMember.objects.filter(
+                organizer_id=notice.scope_id, role=MemberRole.ADMIN
+            ).values("account_id")
+        )
     else:
-        admins = ClubRole.objects.filter(
-            club_id=notice.scope_id, role=ClubRoleKind.ADMIN
-        ).values("account_id")
+        users = users.filter(
+            pk__in=ClubRole.objects.filter(
+                club_id=notice.scope_id, role=ClubRoleKind.ADMIN
+            ).values("account_id")
+        )
     emails: list[str] = list(
-        get_user_model()
-        .objects.filter(is_active=True, pk__in=admins)
-        .exclude(pk__in=notice.exclude)
+        users.exclude(pk__in=notice.exclude)
         .order_by("pk")
         .values_list("email", flat=True)
     )
