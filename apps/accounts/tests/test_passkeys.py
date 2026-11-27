@@ -800,6 +800,26 @@ def test_an_inactive_account_does_not_sign_in(
     assert session.get("auth/session").status_code == 401
 
 
+@pytest.mark.parametrize("change", ["mismatched", "padded"])
+def test_an_odd_registration_id_is_refused_not_a_server_error(
+    account: "_User", passkey: SoftwarePasskey, change: str
+) -> None:
+    session = _signed_in(BROWSER, account)
+    credential = passkey.register(_creation_options(session))
+    if change == "mismatched":
+        credential["id"] = websafe_encode(b"another-made-up-id")
+    else:
+        credential["id"] = credential["rawId"] = f"{credential['rawId']}="
+
+    response = session.post(
+        PASSKEY_PATH, {"name": "Phone", "credential": credential, "passwordless": True}
+    )
+
+    assert response.status_code == 400
+    assert _error_codes(response) == ["incorrect_code"]
+    assert _passkeys(account) == []
+
+
 def test_a_credential_id_another_account_holds_is_not_added(
     account: "_User", passkey: SoftwarePasskey
 ) -> None:
