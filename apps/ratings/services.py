@@ -338,9 +338,9 @@ def _remove_rating(
 ) -> RatingHistory:
     """Delete ``player``'s ``state``, which ``replay`` no longer produces.
 
-    Private to the replay (``replay_ratings()`` and ``recompute_ratings()``): the only path that
-    deletes a ``RatingState``. Within the caller's transaction it locks
-    the Player row (``FOR NO KEY UPDATE``) and then the state row, appends
+    Private to the replay (``replay_ratings()`` and ``recompute_ratings()``):
+    the only path that deletes a ``RatingState``. Within the caller's
+    transaction it locks the Player row (``FOR NO KEY UPDATE``) and then the state row, appends
     a ``removed`` history row naming ``replay`` with the values removed,
     records one ``rating.change`` Audit Event (``after`` is None) before
     the delete, and then deletes the row through ``Model.delete``, which
@@ -1037,8 +1037,8 @@ def recompute_ratings(
 
     ``dry_run`` replays and compares with the stored ratings, and writes
     nothing and takes no lock. It is a preview, not one consistent read: a
-    live update that commits while it runs can show up in part of it. Only a dry run takes ``rating_format``
-    (which narrows the result), an ``as_of`` before the latest counted
+    live update that commits while it runs can show up in part of it.
+    Only a dry run takes ``rating_format`` (which narrows the result), an ``as_of`` before the latest counted
     ``played_on`` (later matches would drop out of the stored ratings),
     an ``as_of`` after ``replay_as_of()`` (every rating, and every later
     live update, would be taken as of that future date),

@@ -108,9 +108,9 @@ class Command(BaseCommand):
         # format would reveal their gender division.
         formats = sorted({change.rating_format for change in result.changes})
         for rating_format in formats:
+            in_format = [c for c in result.changes if c.rating_format == rating_format]
             counts = ", ".join(
-                f"{kind.value} "
-                f"{sum(1 for c in result.changes if c.rating_format == rating_format and c.kind == kind)}"
+                f"{kind.value} {sum(1 for c in in_format if c.kind == kind)}"
                 for kind in RecomputeChangeKind
             )
             self.stdout.write(f"{rating_format}: {counts}")
