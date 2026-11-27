@@ -81,6 +81,21 @@ def _clean_text_fields(
     return errors
 
 
+def admin_rule_applies(row: models.Model, account_id: object, role: str) -> bool:
+    """Whether the admin role rule applies to ``row``: it is new, or its
+    stored account or role differs (#232). An untouched admin row whose
+    Account was deactivated later stays valid, so its parent can still be
+    saved in the admin."""
+    if row.pk is None:
+        return True
+    stored = (
+        type(row)._base_manager.filter(pk=row.pk).values("account_id", "role").first()
+    )
+    if stored is None:
+        return True
+    return bool(str(stored["account_id"]) != str(account_id) or stored["role"] != role)
+
+
 def admin_account_refused(account_id: int | str) -> bool:
     """Whether the Account ``account_id`` exists and may not hold an admin
     role: inactive, or without a verified login address
@@ -398,6 +413,7 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
         if (
             self.role == MemberRole.ADMIN
             and self.account_id is not None
+            and admin_rule_applies(self, self.account_id, self.role)
             and admin_account_refused(self.account_id)
         ):
             raise ValidationError({"account": ADMIN_ACCOUNT_MESSAGE})
@@ -537,6 +553,7 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
         if (
             self.role == ClubRoleKind.ADMIN
             and self.account_id is not None
+            and admin_rule_applies(self, self.account_id, self.role)
             and admin_account_refused(self.account_id)
         ):
             raise ValidationError({"account": ADMIN_ACCOUNT_MESSAGE})
