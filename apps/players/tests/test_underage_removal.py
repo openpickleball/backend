@@ -147,12 +147,25 @@ def _removal_events() -> list[AuditEvent]:
     return list(AuditEvent.objects.filter(action=AuditAction.PLAYER_UNDERAGE_REMOVE))
 
 
-def test_the_permission_exists_and_moderators_do_not_hold_it() -> None:
+def test_the_moderator_group_holds_the_permission() -> None:
     assert REMOVE_UNDERAGE_PERMISSION == "players.remove_underage_player"
-    assert _permission()
-    assert REMOVE_UNDERAGE_PERMISSION not in MODERATOR_PERMISSIONS
+    assert REMOVE_UNDERAGE_PERMISSION in MODERATOR_PERMISSIONS
     group = Group.objects.get(name=MODERATOR_GROUP)
-    assert not group.permissions.filter(codename="remove_underage_player").exists()
+    assert group.permissions.filter(pk=_permission().pk).exists()
+
+
+def test_a_staff_account_in_the_moderator_group_may_remove() -> None:
+    player = _player()
+    _played(player)
+    moderator = UserFactory.create(is_staff=True)
+    moderator.groups.add(Group.objects.get(name=MODERATOR_GROUP))
+
+    result = remove_underage_player(player, moderator=moderator)
+
+    assert (result.account_kept, result.player_kept) == (True, True)
+    assert Player.objects.get(pk=player.pk).display_name == DELETED_PLAYER_NAME
+    [event] = _removal_events()
+    assert event.actor_user_id == moderator.pk
 
 
 def test_a_player_in_the_ledger_is_kept_and_shown_as_after_account_deletion() -> None:
