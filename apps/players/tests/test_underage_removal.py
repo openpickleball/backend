@@ -8,13 +8,19 @@ refusal changes nothing. Made-up data only.
 """
 
 import json
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from allauth.account.models import EmailAddress
+from allauth.mfa.models import Authenticator
+from django.contrib.admin.models import ADDITION, LogEntry
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser, Group, Permission
+from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
+from django.utils import timezone
+from oauth2_provider.models import get_access_token_model
 
 from apps.accounts.deletion import (
     DELETED_EMAIL_DOMAIN,
@@ -23,12 +29,20 @@ from apps.accounts.deletion import (
     delete_account,
 )
 from apps.accounts.tests.admin import verified_account
-from apps.accounts.tests.factories import UserFactory
+from apps.accounts.tests.factories import UserFactory, enroll_totp
 from apps.accounts.tests.headless import APP, HeadlessSession
 from apps.audit.models import AuditAction, AuditEvent
-from apps.clubs.tests.factories import OrganizerMemberFactory
+from apps.clubs.models import ClubInvite, OrganizerInvite
+from apps.clubs.tests.factories import (
+    ClubInviteFactory,
+    OrganizerInviteFactory,
+    OrganizerMemberFactory,
+)
+from apps.emails.models import QueuedEmail
 from apps.events.models import EventKind
 from apps.events.tests.factories import EventFactory
+from apps.exports.models import DataExport
+from apps.exports.services import request_export
 from apps.matches.models import Match, MatchParticipant, Team
 from apps.matches.permissions import MODERATOR_GROUP, MODERATOR_PERMISSIONS
 from apps.players.models import Player, PlayerPrivacy, Visibility
@@ -410,3 +424,64 @@ def test_a_signed_out_moderator_is_refused() -> None:
         remove_underage_player(player, moderator=AnonymousUser())
 
     assert _state(player) == state
+
+
+def test_the_removal_deletes_what_account_deletion_deletes(
+    django_capture_on_commit_callbacks: Any,
+) -> None:
+    player = _player()
+    _played(player)
+    account = player.account
+    enroll_totp(account)
+    get_access_token_model().objects.create(
+        user=account,
+        token="made-up-token-for-tests",
+        expires=timezone.now() + timedelta(hours=1),
+        scope="read",
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        request_export(account)
+    assert DataExport.objects.filter(account_id=account.pk).exists()
+    OrganizerInviteFactory.create(email=account.email)
+    ClubInviteFactory.create(email=account.email)
+    QueuedEmail.objects.create(
+        template="made_up", from_email="open@example.org", to=account.email, body="x"
+    )
+    staff = UserFactory.create(is_staff=True)
+    entry = LogEntry.objects.create(
+        user=staff,
+        content_type=ContentType.objects.get_for_model(get_user_model()),
+        object_id=str(account.pk),
+        object_repr=str(account),
+        action_flag=ADDITION,
+    )
+    email = account.email
+
+    remove_underage_player(player, moderator=_moderator())
+
+    assert not DataExport.objects.filter(account_id=account.pk).exists()
+    assert not Authenticator.objects.filter(user_id=account.pk).exists()
+    assert not get_access_token_model().objects.filter(user_id=account.pk).exists()
+    assert not OrganizerInvite.objects.filter(email=email).exists()
+    assert not ClubInvite.objects.filter(email=email).exists()
+    assert not QueuedEmail.objects.filter(to=email).exists()
+    assert not LogEntry.objects.filter(pk=entry.pk).exists()
+
+
+def test_an_account_staff_deactivated_is_removed_as_any_other() -> None:
+    player = _player()
+    _played(player)
+    account = player.account
+    account.is_active = False
+    account.save(update_fields=["is_active"])
+
+    result = remove_underage_player(player, moderator=_moderator())
+
+    assert (result.account_kept, result.player_kept) == (True, True)
+    kept = Player.objects.get(pk=player.pk)
+    assert kept.display_name == DELETED_PLAYER_NAME
+    assert kept.legal_name == ""
+    stored = get_user_model().objects.get(pk=account.pk)
+    assert stored.email.endswith(f"@{DELETED_EMAIL_DOMAIN}")
+    assert not EmailAddress.objects.filter(user_id=account.pk).exists()
+    assert len(_removal_events()) == 1
