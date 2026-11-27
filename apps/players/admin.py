@@ -6,10 +6,12 @@ name, city and region, and Account. The legal name, birth year and
 month, and gender division show only as "Hidden": they are never listed,
 searched, filtered, or sorted on. An Account that also has
 ``players.view_personal_data`` (no role holds it by default; the
-Moderator group holds ``players.view_player`` but not this) sees a "Reveal personal data" button. Its POST
-records one ``player.personal_data_view`` Audit Event, naming the fields
-and never a value, and shows the values in that response only. A POST is
-an admin write, so it needs a recent MFA step (ADR 0045). Nobody adds
+Moderator group holds ``players.view_player`` but not this) sees a
+"Reveal personal data" button. Its POST records one
+``player.personal_data_view`` Audit Event, naming the fields and never a
+value, and shows the values in that response only. A POST is an admin
+write, so it needs a recent MFA step (ADR 0045). Every query-string
+lookup on the list is refused. Nobody adds
 or edits a Player here, and nobody deletes one except through the
 under-13 removal below: Players change only through
 ``apps.players.services`` and ``apps.players.underage``.
@@ -83,6 +85,15 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
         # which show none of them: a row no configured key decrypts must
         # not break the page. The reveal reads them on access.
         return super().get_queryset(request).defer(*REVEALED_FIELDS)
+
+    def lookup_allowed(self, lookup: str, value: str, request: HttpRequest) -> bool:
+        """Refuse every query-string lookup (Django answers 400).
+
+        The list has no filters and searches the OPEN Code only, so a
+        lookup on a name, a place, or an encrypted field (``isnull``) never
+        lists Players.
+        """
+        return False
 
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
