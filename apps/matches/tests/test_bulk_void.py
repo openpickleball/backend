@@ -34,13 +34,12 @@ from apps.matches.permissions import MatchActionDenied
 from apps.matches.services import record_match
 from apps.matches.signals import MatchChange
 from apps.matches.tests.conftest import SignalLog
-from apps.matches.tests.factories import raw_update
+from apps.matches.tests.factories import raw_update, void_for_test
 from apps.matches.workflow import (
     BulkVoidResult,
     dispute_match,
     submission_batch_matches,
     submitter_matches,
-    void_match,
     void_submission_batch,
     void_submitter_matches,
 )
@@ -192,7 +191,7 @@ def test_a_match_already_voided_is_skipped(
 ) -> None:
     batch, matches = _batch_of(3, players, event, member)
     # Voided first by the Organizer's member, outside the bulk void.
-    void_match(matches[1], actor=member)
+    void_for_test(matches[1], actor=member)
 
     result = void_submission_batch(batch, actor=moderator, reason=REASON)
 

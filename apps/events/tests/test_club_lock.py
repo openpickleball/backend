@@ -26,8 +26,7 @@ from apps.events.models import Event
 from apps.events.services import save_event
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchStatus
-from apps.matches.tests.factories import MatchFactory
-from apps.matches.workflow import void_match
+from apps.matches.tests.factories import MatchFactory, void_for_test
 
 pytestmark = pytest.mark.django_db
 
@@ -84,7 +83,7 @@ def test_an_event_whose_only_match_was_voided_still_refuses() -> None:
     match = MatchFactory.create(event=event)
     member = UserFactory.create()
     OrganizerMemberFactory.create(organizer=event.organizer, account=member)
-    void_match(match, actor=member)
+    void_for_test(match, actor=member)
     assert Match.objects.get(pk=match.pk).status == MatchStatus.VOIDED
     event.club = _granted_club(event)
 

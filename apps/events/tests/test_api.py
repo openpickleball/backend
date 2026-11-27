@@ -29,7 +29,7 @@ from apps.events.models import Event, EventKind
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus, SubmissionBatch
 from apps.matches.services import record_match
-from apps.matches.workflow import void_match
+from apps.matches.tests.factories import void_for_test
 from apps.players.tests.factories import PlayerFactory
 from apps.public_ids.codes import CodeType, generate
 
@@ -391,7 +391,7 @@ def test_patch_changes_only_the_fields_sent() -> None:
 def test_patch_kind_on_event_with_voided_match() -> None:
     event, account = _event_with_member()
     match = _match_on(event, account)
-    void_match(match, actor=account)
+    void_for_test(match, actor=account)
     response = _patch(_client(account), event.public_code, {"kind": "tournament"})
     assert response.status_code == 200
     assert Event.objects.get(pk=event.pk).kind == EventKind.TOURNAMENT
@@ -412,7 +412,7 @@ def test_patch_name_or_dates_on_event_with_match_is_409(
 ) -> None:
     event, account = _event_with_member()
     match = _match_on(event, account)
-    void_match(match, actor=account)
+    void_for_test(match, actor=account)
     assert Match.objects.get(pk=match.pk).status == MatchStatus.VOIDED
     before = Event.objects.filter(pk=event.pk).values().get()
 
@@ -575,7 +575,7 @@ def test_delete_event() -> None:
 def test_delete_event_with_match_is_409() -> None:
     event, account = _event_with_member()
     match = _match_on(event, account)
-    void_match(match, actor=account)
+    void_for_test(match, actor=account)
     response = _delete(_client(account), event.public_code)
     assert response.status_code == 409
     assert response.json() == {"code": "conflict", "message": DELETE_TEXT, "errors": []}

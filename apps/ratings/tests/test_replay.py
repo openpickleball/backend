@@ -22,7 +22,8 @@ from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organize
 from apps.events.models import EventKind
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus, Team
-from apps.matches.workflow import edit_match, void_match
+from apps.matches.tests.factories import void_for_test
+from apps.matches.workflow import edit_match
 from apps.players.models import GenderDivision, Player
 from apps.players.tests.factories import PlayerFactory
 from apps.ratings import services
@@ -260,7 +261,7 @@ def test_a_replay_logs_dates_and_counts_only(caplog: pytest.LogCaptureFixture) -
 
 def test_a_void_equals_a_full_replay_without_the_match() -> None:
     (_, second, _), a, b, _ = _three_live_singles()
-    void_match(second, actor=_member(second))
+    void_for_test(second, actor=_member(second))
     _request()
 
     assert replay_ratings(as_of=AS_OF) == ReplayOutcome.REPLAYED
@@ -274,7 +275,7 @@ def test_a_void_removes_a_rating_with_no_counted_match_left() -> None:
     (_, second, _), _, _, c = _three_live_singles()
     removed = RatingState.objects.get(player=c)
     before = {name: getattr(removed, name) for name in services.VALUE_FIELDS}
-    void_match(second, actor=_member(second))
+    void_for_test(second, actor=_member(second))
     _request()
 
     replay_ratings(as_of=AS_OF)
@@ -365,7 +366,7 @@ def test_a_failure_rolls_everything_back_and_keeps_the_requests(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     (_, second, _), _, _, _ = _three_live_singles()
-    void_match(second, actor=_member(second))
+    void_for_test(second, actor=_member(second))
     _request()
     requests = list(RatingReplayRequest.objects.order_by("pk"))
     states = {

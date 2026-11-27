@@ -31,8 +31,7 @@ from apps.matches.admin import (
 from apps.matches.models import Match, MatchFormat, MatchStatus, SubmissionBatch
 from apps.matches.permissions import MODERATOR_GROUP
 from apps.matches.services import record_match
-from apps.matches.tests.factories import raw_update
-from apps.matches.workflow import void_match
+from apps.matches.tests.factories import raw_update, void_for_test
 from apps.partners.models import PartnerApplication
 from apps.partners.tests.factories import approved_application
 from apps.players.models import Player
@@ -257,7 +256,7 @@ def test_the_batch_confirmation_page_shows_counts_and_changes_nothing(
     member: User,
 ) -> None:
     matches = _batch(players, event, member, count=4)
-    void_match(matches[3], actor=member)
+    void_for_test(matches[3], actor=member)
     outside = _record(players, 10, event, user=member)
     before = AuditEvent.objects.count()
 

@@ -25,12 +25,10 @@ States and transitions:
   correction chain, or the approved application that submitted the match
   and still acts for that Organizer, ADR 0034) resolves a disputed match
   as confirmed or voided, with a required reason.
-- ``void_match``: an actor ``can_change_match`` allows voids a match in
-  any other status.
-- ``edit_match``: the same actors void a match and create its correction
-  (``corrects`` links it to the old one) in one transaction, through the
-  creation core ``record_match`` uses: validation, model rules, locks,
-  duplicate checks, and flags. Only the Event's verified Organizer
+- ``edit_match``: an actor ``can_change_match`` allows voids a match and
+  creates its correction (``corrects`` links it to the old one) in one
+  transaction, through the creation core ``record_match`` uses:
+  validation, model rules, locks, duplicate checks, and flags. Only the Event's verified Organizer
   settling the dispute, with a required reason, edits a disputed match
   with an Event. On the player path (``as_player=True``,
   #267) a participant corrects a pending or disputed self-reported match
@@ -647,25 +645,6 @@ def _void(
             earliest_date=locked.played_on,
         )
     _send_count_changes(linked)
-
-
-def void_match(match: Match, *, actor: Actor) -> Match:
-    """Void ``match``. Only for an actor ``can_change_match`` allows.
-
-    Anyone else, a moderator included, gets ``MatchActionDenied``. Any
-    status but voided becomes voided, with one ``match.void`` Audit Event
-    and no reason. A match that was counting sends ``match_changed`` with
-    ``change=void``, and each match it no longer holds gets ``release``.
-    """
-    _saved(match)
-    if not can_change_match(actor, match):
-        raise MatchActionDenied
-    with transaction.atomic():
-        locked = _lock(match)
-        if locked.status == MatchStatus.VOIDED:
-            raise MatchStateError
-        _void(locked, action=AuditAction.MATCH_VOID, actor=actor, reason="")
-        return locked
 
 
 def _keep_deleted_players(draft: MatchDraft, locked: Match) -> None:

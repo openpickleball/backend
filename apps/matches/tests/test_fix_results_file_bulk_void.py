@@ -37,7 +37,8 @@ from apps.matches.models import (
 )
 from apps.matches.permissions import MatchActionDenied
 from apps.matches.results_files import create_results_file, process_results_file
-from apps.matches.workflow import void_match, void_submission_batch
+from apps.matches.tests.factories import void_for_test
+from apps.matches.workflow import void_submission_batch
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
@@ -192,7 +193,7 @@ def test_a_row_whose_match_was_voided_is_reported_voided(
     results_file = _file(member, event, players)
     _stopped_run(results_file)
     first, second = results_file.submission_batch.matches.order_by("sequence")
-    void_match(first, actor=member)
+    void_for_test(first, actor=member)
     count = Match.objects.count()
 
     process_results_file(results_file.pk)

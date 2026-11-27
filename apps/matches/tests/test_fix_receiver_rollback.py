@@ -40,7 +40,6 @@ from apps.matches.workflow import (
     edit_match,
     expire_unconfirmed_matches,
     resolve_dispute,
-    void_match,
 )
 from apps.players.models import Player
 
@@ -136,14 +135,6 @@ def test_resolve(event_confirmed: Match, players: list[Player], member: User) ->
             outcome=MatchStatus.CONFIRMED,
             reason="checked",
         ),
-    )
-
-
-def test_void(event_confirmed: Match, member: User) -> None:
-    _assert_rolled_back(
-        event_confirmed,
-        match_changed,
-        lambda: void_match(event_confirmed, actor=member),
     )
 
 

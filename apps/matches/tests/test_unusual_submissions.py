@@ -47,7 +47,8 @@ from apps.matches.models import (
 from apps.matches.permissions import MatchPermissionDenied
 from apps.matches.services import RecordedMatch, record_match
 from apps.matches.tests.conftest import SignalLog
-from apps.matches.workflow import edit_match, void_match
+from apps.matches.tests.factories import void_for_test
+from apps.matches.workflow import edit_match
 from apps.partners.models import PartnerApplication
 from apps.partners.tests.factories import approved_application
 from apps.players.models import Player
@@ -227,7 +228,7 @@ def test_voided_matches_count_toward_the_first_matches(
 ) -> None:
     settings.UNUSUAL_SUBMISSION_FIRST_MATCHES = 1
     first = _record(event, submitted_by_user=member).match
-    void_match(first, actor=member)
+    void_for_test(first, actor=member)
 
     assert _rules(_record(event, submitted_by_user=member).match) == []
 
@@ -288,7 +289,7 @@ def test_voided_matches_of_the_day_count(
 ) -> None:
     settings.UNUSUAL_SUBMISSION_DAILY_MATCHES = 1
     first = _record(event, submitted_by_user=member).match
-    void_match(first, actor=member)
+    void_for_test(first, actor=member)
 
     assert _other_rules(_record(event, submitted_by_user=member).match) == [
         FlagRule.DAILY_VOLUME
