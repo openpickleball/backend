@@ -187,7 +187,7 @@ def delete_account(
     ``action`` is the action of the one event that records the deletion:
     ``account.delete``, or ``player.underage_remove`` for a moderator's
     removal of a player under 13 (ADR 0059), whose ``after`` also names
-    the cleared Player fields. Any other value raises ``ValueError``
+    the cleared Player fields when the Account had a Player. Any other value raises ``ValueError``
     before anything is written.
     """
     if action not in _DELETION_ACTIONS:
@@ -237,8 +237,9 @@ def delete_account(
             "account_kept": account_kept,
             "player_kept": player_kept,
         }
-        if action == AuditAction.PLAYER_UNDERAGE_REMOVE:
-            # The field names only, never a value (ADR 0009).
+        if action == AuditAction.PLAYER_UNDERAGE_REMOVE and player is not None:
+            # The field names only, never a value (ADR 0009), and only
+            # when there was a Player to clear.
             after["fields"] = list(CLEARED_PLAYER_FIELD_NAMES)
         record_event(action=action, target=locked, actor=event_actor, after=after)
         if account_kept:
