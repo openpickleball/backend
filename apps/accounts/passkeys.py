@@ -98,6 +98,8 @@ def passkeys_by_public_id(account: "_User") -> dict[str, Authenticator]:
 # JSON decoder.
 _MAX_CLIENT_DATA_BYTES = 4096
 _MAX_CLIENT_DATA_TEXT = -(-_MAX_CLIENT_DATA_BYTES // 3) * 4
+# allauth's challenges are 32 random bytes, 43 base64url characters.
+_MAX_CHALLENGE_TEXT = 128
 
 
 def _websafe_decode(text: str) -> bytes:
@@ -106,7 +108,9 @@ def _websafe_decode(text: str) -> bytes:
 
 def client_data_origin(credential: object) -> str | None:
     """The origin in a WebAuthn credential's client data, or None when
-    the credential or its client data is malformed or too large, or the
+    the credential or its client data is malformed or too large (its
+    ``type`` and ``challenge`` must be text, the challenge at most 128
+    characters), or the
     credential was made in a cross-origin frame (``crossOrigin`` other
     than false, or any ``topOrigin``): OPEN is never framed
     (``frame-ancestors 'none'``)."""
@@ -126,6 +130,13 @@ def client_data_origin(credential: object) -> str | None:
     except (binascii.Error, ValueError, RecursionError):
         return None
     if not isinstance(client_data, dict):
+        return None
+    # fido2 compares ``type`` with its enum and decodes ``challenge`` with
+    # bytes() when it is not text: both must be text, the challenge short.
+    if not isinstance(client_data.get("type"), str):
+        return None
+    challenge = client_data.get("challenge")
+    if not isinstance(challenge, str) or len(challenge) > _MAX_CHALLENGE_TEXT:
         return None
     if client_data.get("crossOrigin", False) is not False:
         return None

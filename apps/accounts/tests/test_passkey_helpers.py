@@ -43,6 +43,10 @@ def _passkey(account: "_User", name: str = "Phone") -> Authenticator:
 
 
 def _client_data(value: object) -> str:
+    """Client data as base64url; an object gets a text ``type`` and
+    ``challenge`` unless it names its own."""
+    if isinstance(value, dict):
+        value = {"type": "webauthn.get", "challenge": "AAAA", **value}
     raw = value if isinstance(value, bytes) else json.dumps(value).encode()
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
@@ -141,6 +145,9 @@ def test_client_data_origin_reads_the_origin() -> None:
         _credential(_client_data(["origin", ORIGIN])),
         _credential(_client_data({"type": "webauthn.get"})),
         _credential(_client_data({"origin": 42})),
+        _credential(_client_data({"origin": ORIGIN, "challenge": 10**15})),
+        _credential(_client_data({"origin": ORIGIN, "challenge": "A" * 129})),
+        _credential(_client_data({"origin": ORIGIN, "type": 1})),
         # Over the 4 KiB cap, though otherwise well formed.
         _credential(_client_data({"origin": ORIGIN, "pad": "x" * 4100})),
     ],
