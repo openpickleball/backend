@@ -3,6 +3,8 @@
 - Status: Proposed
 - Date: 2026-11-25
 
+[ADR 0061](0061-pwa-and-subdomain-layout.md) settles where the PWA runs: on `app.openpb.org`, with the API routed to the same origin (#183). Where this record ties the same-origin browser client to #183, it stays same-origin after #183 too. This record's decisions stand.
+
 ## Context
 
 ADR 0004 turned on https, secure cookies, and HSTS when DEBUG is off, and `manage.py check --deploy` passed. That check does not cover everything a public API host needs (issue #102). Nothing stopped an injected script from running, a page from loading a script from a CDN, or another site from framing a page. The session and CSRF cookies could be overwritten by a sibling subdomain. allauth's OpenAPI page loaded Redoc from a CDN. Django spools the files of a multipart body to disk before any view runs, and does not count them against its body limit, so any route could be made to write large uploads to disk. CI ran the deploy check only in a test, and a new deploy warning would not have failed it.

@@ -6,6 +6,8 @@
 - Amended by: [ADR 0047](0047-account-security-limits-and-sessions.md) (rate limits from settings on OPEN's client IP, session and token lifetimes, a session list, and sessions ended on a password change)
 - Date: 2026-11-17
 
+[ADR 0061](0061-pwa-and-subdomain-layout.md) sets the client and domain choices this record left open: a PWA at `app.openpb.org` is the MVP's only first-party client, using the browser client same-origin, and native apps (Expo) come later on the app client. Where this record names an Expo app, read it as a later native app. This record's decisions stand.
+
 ## Context
 
 OPEN's web app and Expo app need sign-up, login, email verification, and password reset through an API, not server-rendered pages (issue #30). ADR 0001 picked django-allauth for accounts. An Account's email is its login, and ADR 0003 makes one normalized ASCII address mean one Account. Finding an Account by email is the base for identity linking, a security-sensitive area (hard rule 8).
