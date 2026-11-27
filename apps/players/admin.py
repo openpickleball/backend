@@ -14,9 +14,9 @@ or edits a Player here, and nobody deletes one except through the
 under-13 removal below: Players change only through
 ``apps.players.services`` and ``apps.players.underage``.
 
-An Account with ``players.remove_underage_player`` (no role holds it by
-default) sees a "Remove personal data (under 13)" button (#190, ADR
-0059). It leads to a confirmation page naming only the OPEN Code, whose
+An Account with ``players.remove_underage_player`` (the Moderator group
+holds it, but not ``players.view_player``) sees a "Remove personal data
+(under 13)" button (#190, ADR 0059). It leads to a confirmation page naming only the OPEN Code, whose
 POST runs ``apps.players.underage.remove_underage_player``. That service
 records the one Audit Event; this view records none.
 """
