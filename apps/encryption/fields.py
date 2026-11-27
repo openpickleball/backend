@@ -81,6 +81,10 @@ class EncryptedCharField(EncryptedFieldMixin, models.CharField[_ST, _GT]):
     """A ``CharField`` stored encrypted."""
 
 
+class EncryptedTextField(EncryptedFieldMixin, models.TextField[_ST, _GT]):
+    """A ``TextField`` stored encrypted (the player data export, ADR 0051)."""
+
+
 class EncryptedPositiveSmallIntegerField(
     EncryptedFieldMixin, models.PositiveSmallIntegerField[_ST, _GT]
 ):

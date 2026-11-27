@@ -311,6 +311,7 @@ def test_each_change_records_one_rating_change_event(
         "kind": "live_update",
         "match": match.public_code,
         "replay": None,
+        "player": player.public_code,
     }
     assert changed.before == first_values
     assert changed.after == {
@@ -318,6 +319,7 @@ def test_each_change_records_one_rating_change_event(
         "kind": "live_update",
         "match": second_match.public_code,
         "replay": None,
+        "player": player.public_code,
     }
 
 
@@ -335,6 +337,7 @@ def test_a_replay_change_event_names_the_replay(player: Player) -> None:
         "kind": "replay",
         "match": None,
         "replay": replay.pk,
+        "player": player.public_code,
     }
 
 

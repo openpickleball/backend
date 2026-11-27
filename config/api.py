@@ -92,6 +92,7 @@ from apps.accounts.api import router as accounts_router
 from apps.clubs.api import organizer_router as clubs_organizer_router
 from apps.clubs.api import router as organizers_router
 from apps.events.api import router as events_router
+from apps.exports.api import me_router as exports_me_router
 from apps.matches.api import me_router
 from apps.matches.api import organizer_router as matches_organizer_router
 from apps.matches.api import router as matches_router
@@ -344,6 +345,7 @@ api.add_router("players/", players_router)
 api.add_router("players/", ratings_router)
 api.add_router("me/", me_router)
 api.add_router("me/", players_me_router)
+api.add_router("me/", exports_me_router)
 api.add_router("organizer/", events_router)
 api.add_router("organizer/", matches_organizer_router)
 api.add_router("organizer/", clubs_organizer_router)

@@ -670,6 +670,9 @@ INSTALLED_APPS = [
     "apps.ratings",
     # The email outbox: messages wait here for the email queue (ADR 0016).
     "apps.emails",
+    # The player data export (#39, ADR 0051): one encrypted JSON file per
+    # Account, downloaded once with an emailed key.
+    "apps.exports",
     # Development only: the seed_dev_data command. No models.
     "apps.devdata",
     # Its migrate command runs on the direct connection when DATABASE_URL
@@ -948,6 +951,14 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
         "options": {"expire_seconds": 900},
     },
+    # Deletes player data exports past their 24-hour link and pending ones
+    # never built, and queues lost builds again (#39, ADR 0051). A run
+    # missed for 15 minutes is dropped.
+    "sweep-data-exports": {
+        "task": "apps.exports.tasks.sweep_data_exports",
+        "schedule": crontab(minute="*/15"),
+        "options": {"expire_seconds": 900},
+    },
     # Runs pending rating replay requests whose queued task was lost (#47).
     # Does nothing when no request is pending. A run missed for 15 minutes
     # is dropped.
@@ -1004,6 +1015,9 @@ API_CLIENT_IP_THROTTLE_PER_DAY = _rate("API_CLIENT_IP_THROTTLE_PER_DAY", 3_000)
 API_ORGANIZER_REPORT_THROTTLE_PER_DAY = _rate(
     "API_ORGANIZER_REPORT_THROTTLE_PER_DAY", 5
 )
+# Data export requests per Account per day (#39, ADR 0051), the request
+# operation's own throttle, apart from the Account throttle.
+API_DATA_EXPORT_THROTTLE_PER_DAY = _rate("API_DATA_EXPORT_THROTTLE_PER_DAY", 3)
 # The request header the proxy in front of the app sets to the client IP.
 # DigitalOcean App Platform sets do-connecting-ip. X-Forwarded-For is never
 # read: a client can forge it.

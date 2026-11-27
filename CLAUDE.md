@@ -25,6 +25,7 @@ The detailed rules for each area live in `.claude/rules/`, one file per section,
 - "Email": `.claude/rules/email.md`
 - "Players": `.claude/rules/players.md`
 - "Account deletion": `.claude/rules/account-deletion.md`
+- "Data export": `.claude/rules/data-export.md`
 - "Clubs and organizers": `.claude/rules/clubs-and-organizers.md`
 - "Events": `.claude/rules/events.md`
 - "Matches": `.claude/rules/matches.md`
@@ -76,7 +77,7 @@ Keep this file under 40,000 characters: put a new area's rules in its own rules 
 
 - ADR 0009 sets what OPEN collects. Every model field that holds personal data is listed in `docs/privacy/personal-data-inventory.md`. Add, change, or remove its entry in the same pull request as the field.
 - Never store a full birthdate (store birth year and month only), a raw gender, a street address, a phone number, or payment data.
-- A Player's legal name, birth year and month, and gender division, and allauth's TOTP secrets and recovery code seeds, are encrypted with the keys in `FIELD_ENCRYPTION_KEYS` (ADR 0046). The MFA secrets go through OPEN's MFA adapter (`MFA_ADAPTER`, `apps/accounts/mfa_adapter.py`), whose `decrypt()` never falls back to plain text. The pending TOTP secret and the signup hold in the session stay plain text. A new field that must be encrypted uses `EncryptedCharField` or `EncryptedPositiveSmallIntegerField` from `apps.encryption.fields` (no other encryption code), adds a data migration for its stored values, and is listed in the inventory as encrypted.
+- A Player's legal name, birth year and month, and gender division, the data export's JSON (`exports.DataExport.content`, ADR 0051), and allauth's TOTP secrets and recovery code seeds are encrypted with the keys in `FIELD_ENCRYPTION_KEYS` (ADR 0046). The MFA secrets go through OPEN's MFA adapter (`MFA_ADAPTER`, `apps/accounts/mfa_adapter.py`), whose `decrypt()` never falls back to plain text. The pending TOTP secret and the signup hold in the session stay plain text. A new field that must be encrypted uses `EncryptedCharField`, `EncryptedTextField`, or `EncryptedPositiveSmallIntegerField` from `apps.encryption.fields` (no other encryption code), adds a data migration for its stored values, and is listed in the inventory as encrypted.
 - `config/tests/test_personal_data_inventory.py` fails when an installed model is not named in the inventory by its label (`` `app_label.ModelName` ``), or a first-party model's field (other than `id`) is not named on a line that names its model or as `` `app_label.ModelName.field` ``. Name every new model and field there, personal data or not.
 - Only the player sets their own display name, legal name, birth year and month, gender division, and city and region. The birth year and month and the gender division are set once, at signup or when the Player is created, and the player cannot change them after that (ADR 0023). Others may only remove them (#190, #116).
 - Every path that creates a Player refuses anyone under 13, and a new Player always has a birth year and month and a gender division (`mens` or `womens`, ADR 0019). `Player.save()` still allows an empty gender division, for removal (#190, Account deletion); the database checks nothing about it (ADR 0046). The birth year and month columns allow NULL only for Account deletion: `Player.save()` refuses a new Player without them (ADR 0048). Players aged 13 to 17 are left out of all partner sharing. A Player whose birth year and month were removed (#190, #116) is excluded from all partner sharing, permanently.
@@ -128,6 +129,7 @@ uv run pre-commit run --all-files
 - `docs/privacy/personal-data-inventory.md`: every personal data field, with purpose, visibility, retention, and encryption (ADR 0009).
 - `docs/engine.md`: the engine pin, how to read the installed engine version, and the upgrade procedure.
 - `docs/email.md`: the sending domain `mail.openpb.org`, its Resend setup and DNS records (SPF, DKIM, DMARC), and the DMARC rollout.
+- `docs/data-export.md`: the player data export format (#39, ADR 0051), the file `download_data_export` returns.
 - `docs/csv-format.md`: the CSV results format organizers upload (#70, #71), with its column-to-field map and common errors. `docs/csv-results-template.csv` is its template, with made-up players.
 - GitHub issue #1: the backend plan's decisions (Q1 to Q16, F1 to F11) and checked package versions.
 - Organization-wide policy lives in the `openpickleball/.github` repository: charter, governance, roadmap, contributing guide, security policy, licensing. A local checkout may exist at `../OPEN-pickleball`.

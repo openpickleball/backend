@@ -1,0 +1,9 @@
+{% extends "emails/base_message.html" %}
+{% block title %}Your OPEN data export is ready{% endblock title %}
+{% block content %}
+<p style="margin: 0 0 16px;">Your OPEN data export is ready. It is a copy of the data OPEN holds about your account.</p>
+<p style="margin: 0;">Sign in, then open the link below to download it. The link works once and expires on {{ expires_at }}, 24 hours after it was made.</p>
+{% include "emails/action_link.html" with url=export_url label="Download your data" %}
+<p style="margin: 0;">If you did not ask for your data, change your password and review your sessions.</p>
+{% endblock content %}
+{% block reason %}You received this email because someone signed in to the OPEN account that uses this email address and asked for a copy of its data.{% endblock reason %}

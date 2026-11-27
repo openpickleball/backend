@@ -6,9 +6,10 @@
 - the Account's sessions (each ``UserSession`` row and the Django session
   it names, the app client's token session included), allauth's
   ``EmailAddress`` rows, MFA authenticators, accepted agreement rows,
-  OAuth tokens and grants issued to it, the Organizer Reports it filed
-  (an open one is closed first, with an Audit Event), queued emails to
-  its addresses, and the admin log entries tied to it;
+  OAuth tokens and grants issued to it, its data export (ADR 0051), the
+  Organizer Reports it filed (an open one is closed first, with an Audit
+  Event), queued emails to its addresses, and the admin log entries tied
+  to it;
 - its Organizer memberships and Club Roles, through ``apps.audit.access``
   so each removal records an Audit Event. An Organizer whose only member
   is this Account is treated as that person: its name becomes
@@ -71,6 +72,7 @@ from django.db.models.functions import Lower
 from oauth2_provider.models import (
     get_access_token_model,
     get_application_model,
+    get_device_grant_model,
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
@@ -86,6 +88,7 @@ from apps.audit.services import record_event
 from apps.clubs.models import ClubRole, Organizer, OrganizerMember, OrganizerReport
 from apps.clubs.reports import delete_reporter_reports
 from apps.emails.models import QueuedEmail
+from apps.exports.services import delete_exports_for
 from apps.players.models import Player, PlayerPrivacy, Visibility
 
 if TYPE_CHECKING:
@@ -175,6 +178,9 @@ def delete_account(
         Authenticator.objects.filter(user_id=locked.pk).delete()
         AgreementAcceptance.objects.filter(account_id=locked.pk).delete()
         _delete_oauth_rows(locked)
+        # A build holds the Account FOR KEY SHARE, so it committed before
+        # the Account lock above; its email is deleted with the rest.
+        delete_exports_for(locked.pk)
         _delete_queued_emails(addresses)
         _delete_log_entries(locked, log_targets)
 
@@ -304,12 +310,14 @@ def _remove_memberships(
 
 
 def _delete_oauth_rows(account: "_User") -> None:
-    """Delete the OAuth tokens and grants issued to the Account."""
+    """Delete the OAuth tokens and grants issued to the Account, device
+    grants included."""
     for model in (
         get_refresh_token_model(),
         get_access_token_model(),
         get_id_token_model(),
         get_grant_model(),
+        get_device_grant_model(),
     ):
         model.objects.filter(user_id=account.pk).delete()
 

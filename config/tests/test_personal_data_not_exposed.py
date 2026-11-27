@@ -3,7 +3,8 @@ data, except the Account's own Player operations (issue #115, ADR 0009,
 ADR 0046).
 
 The legal name, birth year and month, and gender division are returned
-only by ``create_my_player``, ``get_my_player``, and ``update_my_player``.
+only by ``create_my_player``, ``get_my_player``, and ``update_my_player``,
+and in the Account's own data export (``download_data_export``, #39).
 Every other operation's responses are walked in the committed OpenAPI
 document and in the live one, and two operations that show other
 players, and allauth's session payload, are called. Made-up data only.
@@ -27,7 +28,7 @@ from config.api import api
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 PERSONAL = frozenset({"legal_name", "birth_year", "birth_month", "gender_division"})
 OWN_PLAYER_OPERATIONS = frozenset(
-    {"create_my_player", "get_my_player", "update_my_player"}
+    {"create_my_player", "get_my_player", "update_my_player", "download_data_export"}
 )
 LEGAL_NAME = "Orvanthe Made-up Legal"
 
@@ -96,7 +97,7 @@ def test_the_own_player_operations_are_the_only_ones(index: int) -> None:
         for operation_id, operation in _operations(document)
         if PERSONAL & set(_keys(document, operation.get("responses", {}), set()))
     }
-    assert holders == {"get_my_player", "update_my_player", "create_my_player"}
+    assert holders == OWN_PLAYER_OPERATIONS
 
 
 @pytest.fixture

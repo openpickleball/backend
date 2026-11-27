@@ -1,13 +1,14 @@
 # 0048. Account deletion: what goes, what stays, and how a Player is shown
 
 - Status: Proposed
+- Amended by: [ADR 0051](0051-player-data-export.md) (deletion also deletes the data export and the device grants; requesting or downloading an export is acting)
 - Date: 2026-11-26
 
 ## Context
 
 ADR 0009's Retention section says deleting an Account removes all of its personal data at once, except the Player with its OPEN Code, Matches, and Ratings, the Audit Events, and a cleared Account row for an Account that has acted. It left the mechanics to #116, and so did ADR 0002 (how a deleted player's Player is shown, and whether new Matches can still name it), the personal data inventory (the Organizer that is one person, the agreement rows, the submitter and voucher links), and ADR 0023 (a player who entered their birth year and month or gender division wrong deletes the Account and signs up again).
 
-Many links to an Account use `PROTECT`: every Audit Event actor (ADR 0007, so an Account that changed a password, ended a session, used MFA, reported an Organizer, or acted in the admin), the Player (`Player.account`), Match and Submission Batch submitters, vouches, Organizer verification and application approval. A Player in the Ledger is protected by its Match Participants, confirmations, and ratings.
+Many links to an Account use `PROTECT`: every Audit Event actor (ADR 0007, so an Account that changed a password, ended a session, used MFA, reported an Organizer, acted in the admin, or requested or downloaded a data export), the Player (`Player.account`), Match and Submission Batch submitters, vouches, Organizer verification and application approval. A Player in the Ledger is protected by its Match Participants, confirmations, and ratings.
 
 The maintainer decided five questions on #116:
 
@@ -30,7 +31,7 @@ This amends [ADR 0002](0002-player-identity.md) (how a deleted Account's Player 
 ### What goes
 
 - Every session of the Account (each `UserSession` row and the Django session it names, the app token's session included), and the request's own session. A session made before user sessions were installed has no row and cannot be found without reading every session; the Account is inactive with an unusable password (or gone), so Django refuses it on its next use, and the session sweep (ADR 0047) deletes it when it expires.
-- allauth's `EmailAddress` rows, MFA authenticators, `AgreementAcceptance` rows, OAuth tokens and grants issued to the Account (Log in with OPEN grants), the Organizer Reports it filed (an open one is first closed with an `organizer_report.close` event, rule `reporter_deleted`), queued emails to any of its addresses, and Django admin log entries tied to it: its own, and every entry for its Account, Player, privacy row, address, authenticator, session, agreement, membership, role, or report row.
+- allauth's `EmailAddress` rows, MFA authenticators, `AgreementAcceptance` rows, OAuth tokens and grants issued to the Account (Log in with OPEN grants, device grants included), its data export (ADR 0051), the Organizer Reports it filed (an open one is first closed with an `organizer_report.close` event, rule `reporter_deleted`), queued emails to any of its addresses, and Django admin log entries tied to it: its own, and every entry for its Account, Player, privacy row, address, authenticator, session, agreement, membership, role, or report row.
 - Organizer memberships and Club Roles, through `apps.audit.access`, so each removal records an Audit Event. An Organizer whose only member is the Account gets the name "Removed organizer" first, with an `organizer.name_remove` event that names the field only. A shared Organizer keeps its name: it is not that person.
 - The Player's personal data. A Player nothing protects (no Match, confirmation, or rating) is deleted with its privacy row. Any other Player stays with its OPEN Code: its display name becomes "Deleted player", its legal name, gender division, and city and region are emptied, its birth year and month become NULL (the encrypted fields store NULL, ADR 0046), and every privacy setting is reset to private. The birth year and month columns allow NULL for this only; every new Player still needs them.
 - The Account row, when nothing protects it and it owns no Partner Application. Its cascades are recorded first (`record_cascaded_removals`).
@@ -70,7 +71,7 @@ The scheduled retention task is the session sweep from ADR 0047 (`sweep_sessions
 
 ## Consequences
 
-- Most players who used OPEN have acted (a password change, an ended session, MFA, a report, a confirmation that kept their Player), so most deletions keep a cleared Account row. That is expected.
+- Most players who used OPEN have acted (a password change, an ended session, MFA, a report, a data export request or download, a confirmation that kept their Player), so most deletions keep a cleared Account row. That is expected.
 - A correction made after a deletion derives its rating format again (ADR 0024: a correction gets its own format), with the deleted player's empty division, so a gendered or mixed doubles match corrected later counts in overall doubles. The deletion itself changes no stored Match. Whether a correction that keeps its teams should keep its match's format is left open.
 - A self-reported match still waiting for a deleted opponent's team can never be confirmed by them. It waits until `MATCH_CONFIRMATION_EXPIRY_DAYS` voids it, when set, or until another player of that team confirms it.
 - Deleting an Organizer's only member leaves the Organizer with no member and the placeholder name. A verified Organizer stays verified until a moderator unverifies it.

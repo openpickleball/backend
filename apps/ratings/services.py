@@ -319,6 +319,10 @@ def apply_rating(
                 "kind": str(kind),
                 "match": None if match is None else match.public_code,
                 "replay": None if replay is None else replay.pk,
+                # The player's OPEN Code: a state's events stay tied to its
+                # player after a replay removes the row (the data export,
+                # ADR 0051).
+                "player": player.public_code,
             },
         )
     return history

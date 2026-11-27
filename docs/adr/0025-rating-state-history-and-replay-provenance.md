@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Amended by: [ADR 0028](0028-rating-replays-after-match-changes.md) (a replay deletes a `RatingState` it no longer produces, with a `removed` history row naming the replay and an Audit Event with no `after`; the replay orders its changes against live updates through the snapshot row lock)
+- Amended by: [ADR 0051](0051-player-data-export.md) (each `rating.change` event's `after` also records the player's OPEN Code, `player`)
 - Date: 2026-11-24
 
 ## Context

@@ -1,6 +1,17 @@
 {
   "components": {
     "schemas": {
+      "AuditActor": {
+        "description": "Who acted, without naming another Account.",
+        "enum": [
+          "you",
+          "staff",
+          "other",
+          "system"
+        ],
+        "title": "AuditActor",
+        "type": "string"
+      },
       "BestOf": {
         "description": "How many games a Match is played to (decision F15 in #1).",
         "enum": [
@@ -10,6 +21,24 @@
         ],
         "title": "BestOf",
         "type": "integer"
+      },
+      "ClubRoleKind": {
+        "description": "A role an Account holds at a Club. A Club has only admins (ADR 0021).",
+        "enum": [
+          "admin"
+        ],
+        "title": "ClubRoleKind",
+        "type": "string"
+      },
+      "ConfirmationDecision": {
+        "description": "What a participant said about a Match.",
+        "enum": [
+          "confirm",
+          "dispute",
+          "withdraw"
+        ],
+        "title": "ConfirmationDecision",
+        "type": "string"
       },
       "CurrentAccount": {
         "description": "The signed-in Account.",
@@ -23,6 +52,212 @@
           "email"
         ],
         "title": "CurrentAccount",
+        "type": "object"
+      },
+      "DataExportDownloadIn": {
+        "description": "The download key from the data export email.",
+        "properties": {
+          "key": {
+            "description": "The key from the link in the data export email. A key longer than 128 characters gets the same 404 as an unknown one.",
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "DataExportDownloadIn",
+        "type": "object"
+      },
+      "DataExportOut": {
+        "description": "A copy of the data OPEN holds about the signed-in Account.\n\nPlayer sections are null or empty for an Account with no Player. Other\nplayers appear only as match responses show them. Every rating carries\nits reliability and ``demonstration: true``.",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/ExportAccountOut"
+          },
+          "agreements": {
+            "items": {
+              "$ref": "#/components/schemas/ExportAgreementOut"
+            },
+            "title": "Agreements",
+            "type": "array"
+          },
+          "audit_events": {
+            "items": {
+              "$ref": "#/components/schemas/ExportAuditEventOut"
+            },
+            "title": "Audit Events",
+            "type": "array"
+          },
+          "club_roles": {
+            "items": {
+              "$ref": "#/components/schemas/ExportClubRoleOut"
+            },
+            "title": "Club Roles",
+            "type": "array"
+          },
+          "confirmations": {
+            "items": {
+              "$ref": "#/components/schemas/ExportConfirmationOut"
+            },
+            "title": "Confirmations",
+            "type": "array"
+          },
+          "email_addresses": {
+            "items": {
+              "$ref": "#/components/schemas/ExportEmailAddressOut"
+            },
+            "title": "Email Addresses",
+            "type": "array"
+          },
+          "format_version": {
+            "const": "1",
+            "title": "Format Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/ExportMatchOut"
+            },
+            "title": "Matches",
+            "type": "array"
+          },
+          "mfa_methods": {
+            "items": {
+              "$ref": "#/components/schemas/ExportMFAMethodOut"
+            },
+            "title": "Mfa Methods",
+            "type": "array"
+          },
+          "oauth": {
+            "items": {
+              "$ref": "#/components/schemas/ExportOAuthRecordOut"
+            },
+            "title": "Oauth",
+            "type": "array"
+          },
+          "organizer_memberships": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizerMembershipOut"
+            },
+            "title": "Organizer Memberships",
+            "type": "array"
+          },
+          "organizer_reports": {
+            "items": {
+              "$ref": "#/components/schemas/ExportOrganizerReportOut"
+            },
+            "title": "Organizer Reports",
+            "type": "array"
+          },
+          "partner_applications": {
+            "items": {
+              "$ref": "#/components/schemas/ExportPartnerApplicationOut"
+            },
+            "title": "Partner Applications",
+            "type": "array"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MyPlayerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rating_history": {
+            "items": {
+              "$ref": "#/components/schemas/ExportRatingHistoryItemOut"
+            },
+            "title": "Rating History",
+            "type": "array"
+          },
+          "ratings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ExportRatingOut"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/RatingFormat"
+            },
+            "title": "Ratings",
+            "type": "object"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/ExportSessionOut"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "submission_batches": {
+            "items": {
+              "$ref": "#/components/schemas/ExportSubmissionBatchOut"
+            },
+            "title": "Submission Batches",
+            "type": "array"
+          },
+          "submitted_matches": {
+            "items": {
+              "$ref": "#/components/schemas/ExportSubmittedMatchOut"
+            },
+            "title": "Submitted Matches",
+            "type": "array"
+          },
+          "vouches": {
+            "items": {
+              "$ref": "#/components/schemas/ExportVouchOut"
+            },
+            "title": "Vouches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "format_version",
+          "generated_at",
+          "account",
+          "email_addresses",
+          "sessions",
+          "mfa_methods",
+          "agreements",
+          "profile",
+          "matches",
+          "confirmations",
+          "vouches",
+          "submitted_matches",
+          "submission_batches",
+          "ratings",
+          "rating_history",
+          "organizer_memberships",
+          "club_roles",
+          "organizer_reports",
+          "partner_applications",
+          "oauth",
+          "audit_events"
+        ],
+        "title": "DataExportOut",
+        "type": "object"
+      },
+      "DataExportRequestOut": {
+        "description": "A data export request was stored; the email follows.",
+        "properties": {
+          "requested_at": {
+            "description": "When the request was stored. An email with a single-use download link follows once the export is built; the link lasts 24 hours.",
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested_at"
+        ],
+        "title": "DataExportRequestOut",
         "type": "object"
       },
       "DisputeCorrectionIn": {
@@ -303,6 +538,1173 @@
         "title": "EventUpdateIn",
         "type": "object"
       },
+      "ExportAccountOut": {
+        "description": "The Account: its login email, dates, and access.",
+        "properties": {
+          "date_joined": {
+            "format": "date-time",
+            "title": "Date Joined",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "groups": {
+            "description": "The names of the Account's groups.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_staff": {
+            "title": "Is Staff",
+            "type": "boolean"
+          },
+          "is_superuser": {
+            "title": "Is Superuser",
+            "type": "boolean"
+          },
+          "last_login": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login"
+          },
+          "permissions": {
+            "description": "The Account's own permissions, as app_label.codename.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "email",
+          "date_joined",
+          "last_login",
+          "is_active",
+          "is_staff",
+          "is_superuser",
+          "groups",
+          "permissions"
+        ],
+        "title": "ExportAccountOut",
+        "type": "object"
+      },
+      "ExportAgreementOut": {
+        "description": "One version of a legal agreement the Account accepted.",
+        "properties": {
+          "accepted_at": {
+            "format": "date-time",
+            "title": "Accepted At",
+            "type": "string"
+          },
+          "agreement": {
+            "title": "Agreement",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agreement",
+          "version",
+          "accepted_at"
+        ],
+        "title": "ExportAgreementOut",
+        "type": "object"
+      },
+      "ExportAuditEventOut": {
+        "description": "One Audit Event about the Account's own records, or that it made.\n\n``before`` and ``after`` appear only when the target is one of the\nAccount's own records (the Account, its Player and privacy row, its\nratings, and its agreement rows), without row ids. The reason is\nnever included.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            ]
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            ]
+          },
+          "target_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The target's OPEN Code, or null when it has none.",
+            "title": "Target Code"
+          },
+          "target_type": {
+            "description": "The target's model, as app.model.",
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "at",
+          "target_type",
+          "target_code",
+          "actor"
+        ],
+        "title": "ExportAuditEventOut",
+        "type": "object"
+      },
+      "ExportClubRoleOut": {
+        "description": "One of the Account's Club Roles.",
+        "properties": {
+          "club": {
+            "description": "The Club's OPEN Code.",
+            "title": "Club",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ClubRoleKind"
+          }
+        },
+        "required": [
+          "club",
+          "name",
+          "role"
+        ],
+        "title": "ExportClubRoleOut",
+        "type": "object"
+      },
+      "ExportConfirmationOut": {
+        "description": "One confirm, dispute, or withdrawal the Player made on a match.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ConfirmationDecision"
+          },
+          "match": {
+            "description": "The match's OPEN Code.",
+            "title": "Match",
+            "type": "string"
+          }
+        },
+        "required": [
+          "match",
+          "decision",
+          "created_at"
+        ],
+        "title": "ExportConfirmationOut",
+        "type": "object"
+      },
+      "ExportEmailAddressOut": {
+        "description": "One email address on the Account.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "primary": {
+            "title": "Primary",
+            "type": "boolean"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "email",
+          "verified",
+          "primary"
+        ],
+        "title": "ExportEmailAddressOut",
+        "type": "object"
+      },
+      "ExportMFAMethodOut": {
+        "description": "One two-factor method: its type and dates, never its secret.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "ExportMFAMethodOut",
+        "type": "object"
+      },
+      "ExportMatchOut": {
+        "description": "A match the player played: ``MatchOut`` as match responses show it\nto the player, plus the match's own details. Never its rating format,\nwhich reveals the players' gender divisions.",
+        "properties": {
+          "best_of": {
+            "$ref": "#/components/schemas/BestOf"
+          },
+          "bracket_label": {
+            "title": "Bracket Label",
+            "type": "string"
+          },
+          "club": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MatchClubOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "confirmed_by_team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TeamConfirmationsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "corrects": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The OPEN Code of the match this one corrects, only when the player played in that match too; null otherwise.",
+            "title": "Corrects"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MatchEventOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_label": {
+            "title": "Event Label",
+            "type": "string"
+          },
+          "format": {
+            "$ref": "#/components/schemas/MatchFormat"
+          },
+          "game_target": {
+            "$ref": "#/components/schemas/GameTarget"
+          },
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/GameOut"
+            },
+            "title": "Games",
+            "type": "array"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "match_type": {
+            "$ref": "#/components/schemas/MatchType"
+          },
+          "my_decision": {
+            "$ref": "#/components/schemas/MyDecision"
+          },
+          "my_team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Team"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "played_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Played At"
+          },
+          "played_at_utc_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minutes east of UTC where the match was played.",
+            "title": "Played At Utc Offset"
+          },
+          "played_on": {
+            "format": "date",
+            "title": "Played On",
+            "type": "string"
+          },
+          "scoring_type": {
+            "$ref": "#/components/schemas/ScoringType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MatchStatus"
+          },
+          "team_a": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantOut"
+            },
+            "title": "Team A",
+            "type": "array"
+          },
+          "team_b": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantOut"
+            },
+            "title": "Team B",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "status",
+          "format",
+          "played_on",
+          "best_of",
+          "scoring_type",
+          "game_target",
+          "team_a",
+          "team_b",
+          "games",
+          "my_team",
+          "my_decision",
+          "confirmed_by_team",
+          "event",
+          "club",
+          "created_at",
+          "match_type",
+          "location",
+          "played_at",
+          "played_at_utc_offset",
+          "event_label",
+          "bracket_label",
+          "corrects"
+        ],
+        "title": "ExportMatchOut",
+        "type": "object"
+      },
+      "ExportOAuthRecordOut": {
+        "description": "An OAuth token or grant issued to the Account, never its value.",
+        "properties": {
+          "application": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The application's client_id, if the record names one.",
+            "title": "Application"
+          },
+          "created": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created"
+          },
+          "expires": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OAuthRecordKind"
+          },
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A grant's redirect URI.",
+            "title": "Redirect Uri"
+          },
+          "revoked": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When a refresh token was revoked.",
+            "title": "Revoked"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          }
+        },
+        "required": [
+          "kind",
+          "application",
+          "scope",
+          "redirect_uri",
+          "created",
+          "expires",
+          "revoked"
+        ],
+        "title": "ExportOAuthRecordOut",
+        "type": "object"
+      },
+      "ExportOrganizerReportOut": {
+        "description": "An Organizer Report the Account filed.",
+        "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "organizer": {
+            "description": "The Organizer's OPEN Code.",
+            "title": "Organizer",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/OrganizerReportReason"
+          }
+        },
+        "required": [
+          "organizer",
+          "reason",
+          "created_at",
+          "closed_at"
+        ],
+        "title": "ExportOrganizerReportOut",
+        "type": "object"
+      },
+      "ExportPartnerApplicationOut": {
+        "description": "A Partner Application the Account owns, never its secret or who\napproved it.",
+        "properties": {
+          "algorithm": {
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "allowed_origins": {
+            "title": "Allowed Origins",
+            "type": "string"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "authorization_grant_type": {
+            "title": "Authorization Grant Type",
+            "type": "string"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_type": {
+            "title": "Client Type",
+            "type": "string"
+          },
+          "created": {
+            "format": "date-time",
+            "title": "Created",
+            "type": "string"
+          },
+          "is_sandbox": {
+            "title": "Is Sandbox",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organizer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The owning Organizer's OPEN Code.",
+            "title": "Organizer"
+          },
+          "post_logout_redirect_uris": {
+            "title": "Post Logout Redirect Uris",
+            "type": "string"
+          },
+          "redirect_uris": {
+            "title": "Redirect Uris",
+            "type": "string"
+          },
+          "skip_authorization": {
+            "title": "Skip Authorization",
+            "type": "boolean"
+          },
+          "updated": {
+            "format": "date-time",
+            "title": "Updated",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "name",
+          "organizer",
+          "redirect_uris",
+          "post_logout_redirect_uris",
+          "allowed_origins",
+          "client_type",
+          "authorization_grant_type",
+          "skip_authorization",
+          "algorithm",
+          "is_sandbox",
+          "approved_at",
+          "created",
+          "updated"
+        ],
+        "title": "ExportPartnerApplicationOut",
+        "type": "object"
+      },
+      "ExportRatingHistoryItemOut": {
+        "description": "A rating change, with its reliability and ``demonstration: true``,\nplus the match that caused it, the change, and the stored detail.",
+        "properties": {
+          "calculated_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculated As Of"
+          },
+          "config_version": {
+            "title": "Config Version",
+            "type": "string"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The change a live update made.",
+            "title": "Delta"
+          },
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "established": {
+            "description": "True once the rating rests on enough matches to be established.",
+            "title": "Established",
+            "type": "boolean"
+          },
+          "imported_reliability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reliability carried from an external rating, 0 to 100, shown apart from the OPEN-earned reliability. Null when there is none.",
+            "title": "Imported Reliability"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RatingChangeKind"
+          },
+          "last_played": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Played"
+          },
+          "live_updates_since_recalculation": {
+            "title": "Live Updates Since Recalculation",
+            "type": "integer"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The causing match's OPEN Code.",
+            "title": "Match"
+          },
+          "matches_played": {
+            "title": "Matches Played",
+            "type": "integer"
+          },
+          "parameter_fingerprint": {
+            "title": "Parameter Fingerprint",
+            "type": "string"
+          },
+          "params_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published parameter set label; null when it is not one.",
+            "title": "Params Version"
+          },
+          "provisional": {
+            "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "rating": {
+            "description": "The rating after the change.",
+            "title": "Rating",
+            "type": "number"
+          },
+          "rating_format": {
+            "$ref": "#/components/schemas/RatingFormat"
+          },
+          "rd": {
+            "title": "Rd",
+            "type": "number"
+          },
+          "recorded_at": {
+            "description": "When the change was recorded.",
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "reliability": {
+            "description": "OPEN-earned reliability, 0 to 100. The OPEN standard requires any app that shows an OPEN rating to show its reliability next to it.",
+            "title": "Reliability",
+            "type": "number"
+          },
+          "spec_version": {
+            "description": "The OPEN rating spec version the rating follows.",
+            "title": "Spec Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rd",
+          "matches_played",
+          "last_played",
+          "calculated_as_of",
+          "live_updates_since_recalculation",
+          "config_version",
+          "params_version",
+          "parameter_fingerprint",
+          "engine_version",
+          "rating_format",
+          "kind",
+          "rating",
+          "reliability",
+          "imported_reliability",
+          "provisional",
+          "established",
+          "spec_version",
+          "demonstration",
+          "recorded_at",
+          "match",
+          "delta"
+        ],
+        "title": "ExportRatingHistoryItemOut",
+        "type": "object"
+      },
+      "ExportRatingOut": {
+        "description": "A current rating, with its reliability and ``demonstration: true``,\nplus the stored detail and versions.",
+        "properties": {
+          "calculated_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculated As Of"
+          },
+          "config_version": {
+            "title": "Config Version",
+            "type": "string"
+          },
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "established": {
+            "description": "True once the rating rests on enough matches to be established.",
+            "title": "Established",
+            "type": "boolean"
+          },
+          "imported_reliability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reliability carried from an external rating, 0 to 100, shown apart from the OPEN-earned reliability. Null when there is none.",
+            "title": "Imported Reliability"
+          },
+          "last_played": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Played"
+          },
+          "live_updates_since_recalculation": {
+            "title": "Live Updates Since Recalculation",
+            "type": "integer"
+          },
+          "matches_played": {
+            "title": "Matches Played",
+            "type": "integer"
+          },
+          "parameter_fingerprint": {
+            "title": "Parameter Fingerprint",
+            "type": "string"
+          },
+          "params_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published parameter set label; null when it is not one.",
+            "title": "Params Version"
+          },
+          "provisional": {
+            "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "rating": {
+            "description": "The rating, as the engine gave it.",
+            "title": "Rating",
+            "type": "number"
+          },
+          "rd": {
+            "title": "Rd",
+            "type": "number"
+          },
+          "reliability": {
+            "description": "OPEN-earned reliability, 0 to 100. The OPEN standard requires any app that shows an OPEN rating to show its reliability next to it.",
+            "title": "Reliability",
+            "type": "number"
+          },
+          "spec_version": {
+            "description": "The OPEN rating spec version the rating follows.",
+            "title": "Spec Version",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the rating last changed.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rd",
+          "matches_played",
+          "last_played",
+          "calculated_as_of",
+          "live_updates_since_recalculation",
+          "config_version",
+          "params_version",
+          "parameter_fingerprint",
+          "engine_version",
+          "rating",
+          "reliability",
+          "imported_reliability",
+          "provisional",
+          "established",
+          "spec_version",
+          "demonstration",
+          "updated_at"
+        ],
+        "title": "ExportRatingOut",
+        "type": "object"
+      },
+      "ExportResultsFileOut": {
+        "description": "A CSV results file the Account uploaded, without its contents.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "description": "Why processing failed; empty if not.",
+            "title": "Error Code",
+            "type": "string"
+          },
+          "game_target": {
+            "title": "Game Target",
+            "type": "integer"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResultsFileStatus"
+          }
+        },
+        "required": [
+          "code",
+          "status",
+          "error_code",
+          "location",
+          "game_target",
+          "created_at",
+          "processed_at"
+        ],
+        "title": "ExportResultsFileOut",
+        "type": "object"
+      },
+      "ExportSessionOut": {
+        "description": "One signed-in session, as the session list records it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "user_agent": {
+            "title": "User Agent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ip",
+          "user_agent",
+          "created_at",
+          "last_seen_at"
+        ],
+        "title": "ExportSessionOut",
+        "type": "object"
+      },
+      "ExportSubmissionBatchOut": {
+        "description": "One upload or bulk request of matches the Account submitted.",
+        "properties": {
+          "club": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Club's OPEN Code, if any.",
+            "title": "Club"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Event's OPEN Code, if any.",
+            "title": "Event"
+          },
+          "expected_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many matches the batch meant to record, if set.",
+            "title": "Expected Size"
+          },
+          "matches": {
+            "description": "The OPEN Codes of its matches.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Matches",
+            "type": "array"
+          },
+          "results_file": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportResultsFileOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "created_at",
+          "event",
+          "club",
+          "matches",
+          "expected_size",
+          "results_file"
+        ],
+        "title": "ExportSubmissionBatchOut",
+        "type": "object"
+      },
+      "ExportSubmittedMatchOut": {
+        "description": "A match the Account submitted.",
+        "properties": {
+          "match": {
+            "description": "The match's OPEN Code.",
+            "title": "Match",
+            "type": "string"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "match",
+          "submitted_at"
+        ],
+        "title": "ExportSubmittedMatchOut",
+        "type": "object"
+      },
+      "ExportVouchOut": {
+        "description": "One vouch the Account gave for a held match.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "match": {
+            "description": "The match's OPEN Code.",
+            "title": "Match",
+            "type": "string"
+          }
+        },
+        "required": [
+          "match",
+          "created_at"
+        ],
+        "title": "ExportVouchOut",
+        "type": "object"
+      },
       "FieldError": {
         "description": "One invalid input: where it is, what kind of error, and a message.\n\n`existing_code` is the earlier match's OPEN code. Only a duplicate match\nitem has it, and only when the submitter may know that match.",
         "properties": {
@@ -429,6 +1831,7 @@
         "title": "Input",
         "type": "object"
       },
+      "JsonValue": {},
       "LiveOut": {
         "properties": {
           "status": {
@@ -776,6 +2179,17 @@
         "title": "MatchStatus",
         "type": "string"
       },
+      "MatchType": {
+        "description": "The match type a Match counts as (ADR 0024, ADR 0035).\n\nThe values are ``open_engine.MatchType``'s. ``record_match`` stores one\nper Match when it is recorded (``apps.matches.services.draft_match``):\nthe Event's kind, ``rec_verified`` for a Club with no Event, and\n``self_reported`` for neither. It never changes afterward, so a later\nchange of an Event's kind moves only matches recorded after it. A\ncorrection (``edit_match``) copies the type of the match it corrects.",
+        "enum": [
+          "tournament",
+          "league",
+          "rec_verified",
+          "self_reported"
+        ],
+        "title": "MatchType",
+        "type": "string"
+      },
       "MemberRole": {
         "description": "A role an Account holds at an Organizer.",
         "enum": [
@@ -848,6 +2262,18 @@
         ],
         "title": "MyPlayerOut",
         "type": "object"
+      },
+      "OAuthRecordKind": {
+        "description": "Which kind of OAuth record an entry describes.",
+        "enum": [
+          "access_token",
+          "refresh_token",
+          "id_token",
+          "grant",
+          "device_grant"
+        ],
+        "title": "OAuthRecordKind",
+        "type": "string"
       },
       "OrganizerMembershipOut": {
         "description": "One of the signed-in Account's own Organizer memberships.\n\n``organizer`` is the Organizer's OPEN Code, the value\n``EventCreateIn.organizer`` takes. ``name`` is the Organizer's name,\nshown only to its own members. ``verified`` says whether the Organizer\nis verified; it does not say whether the Account may act for it now\n(Organizer authority also needs MFA, ADR 0043). ``role`` is the\nAccount's own role there. It names no other member.",
@@ -3163,6 +4589,186 @@
         "summary": "Withdraw Match Dispute",
         "tags": [
           "matches"
+        ]
+      }
+    },
+    "/api/v1/me/export": {
+      "post": {
+        "description": "Ask for a copy of your data.\n\nReauthenticate first, through allauth's `auth/reauthenticate` (your\npassword) or `auth/2fa/reauthenticate` (a two-factor code); without a\nrecent one you get 403 with code `reauthentication_required`. A new\nrequest replaces any earlier export. Once the export is built, an\nemail to your login address links to the web app's download page,\nwhich calls `download_data_export` with the key. The link works once\nand lasts 24 hours. Limited per Account to a few requests a day; past\nthat the answer is 429 with a Retry-After header; a request without a\nrecent reauthentication counts against the Account's general limits\ninstead. 404 when the Account was deleted while the request ran.",
+        "operationId": "request_data_export",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataExportRequestOut"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Request Data Export",
+        "tags": [
+          "data export"
+        ]
+      }
+    },
+    "/api/v1/me/export/download": {
+      "post": {
+        "description": "Download your data export once, with the key from the email.\n\nReturns the export as a JSON file (`open-data-export.json`) and\ndeletes it, so the key works once. A key that is unknown, malformed,\nlonger than 128 characters, expired, already used, not built yet, or\nanother Account's gets the same 404. No reauthentication is needed.",
+        "operationId": "download_data_export",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataExportDownloadIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataExportOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Download Data Export",
+        "tags": [
+          "data export"
         ]
       }
     },
