@@ -35,7 +35,7 @@ One JSON object. Times are ISO 8601 in UTC. Dates are `YYYY-MM-DD`. Records go b
 | `club_roles` | Each Club Role: `club` (code), `name`, `role`. |
 | `organizer_reports` | Each Organizer Report the Account filed: `organizer` (code), `reason`, `created_at`, `closed_at`. Never the close reason or who closed it. |
 | `partner_applications` | Each Partner Application the Account owns: `client_id`, `name`, `organizer` (code), `redirect_uris`, `post_logout_redirect_uris`, `allowed_origins`, `client_type`, `authorization_grant_type`, `skip_authorization`, `algorithm`, `is_sandbox`, `approved_at`, `created`, `updated`. Never the secret or who approved it. |
-| `oauth` | Each OAuth token or grant issued to the Account: `kind` (`access_token`, `refresh_token`, `id_token`, `grant`, or `device_grant`), `application` (`client_id`), `scope`, `redirect_uri` (a grant's), `created`, `expires`, `revoked` (a refresh token's). Never the token or code. |
+| `oauth` | Each OAuth token or grant issued to the Account: `kind` (`access_token`, `refresh_token`, `id_token`, `grant`, or `device_grant`), `application` (`client_id`), `scope`, `redirect_uri` (a grant's), `created` (null for a device grant, which records none), `expires`, `revoked` (a refresh token's). Never the token or code. |
 | `audit_events` | The Audit Events about the Account's own records or made by the Account, oldest first (below). |
 
 ### Audit events
@@ -45,7 +45,7 @@ Each entry has:
 - `action`, such as `privacy.change` or `match.confirm`.
 - `at`, when it was recorded.
 - `target_type`, the target's model as `app.model`, such as `players.player`.
-- `target_code`, the target's OPEN Code, or null when it has none (the Account, a rating, an agreement row) or no longer exists.
+- `target_code`, the target's OPEN Code, or null when it has none (the Account, the privacy settings, a rating, an agreement row) or no longer exists.
 - `actor`: `you` (the Account), `staff` (a staff Account), `other` (another Account or a Partner Application), or `system` (no actor, such as a rating replay).
 - `before` and `after`: the recorded values, only when the target is the Account, its Player, its privacy settings, one of its ratings, or one of its agreement rows. Row ids are removed. Null otherwise.
 
