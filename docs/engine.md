@@ -49,6 +49,10 @@ plain data. It does no rating math.
   `OPEN_ENGINE_PARAMETER_SET` in `config/settings.py` names (`v1`). It is a
   fixed value in code, not an environment variable, because a new set needs a
   full replay.
+- `replay_interval_days()` reads the loaded config's `replay_interval_days`
+  (7 in `v1`), the engine's published replay schedule. The daily
+  `decay_reliability` task asks for a scheduled replay when the latest replay
+  is that old, so inactive players' reliability moves forward (ADR 0060).
 - `rating_update()`, `replay_provenance()`, and `rating_summary()` turn an
   engine `MatchResult`, `ReplayInfo`, and `PlayerSummary` into plain
   dataclasses. `replay_provenance()` adds the installed engine version (hard
