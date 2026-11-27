@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import connection
 from django.test import Client
 from django.urls import reverse
 
@@ -218,9 +217,12 @@ def test_a_refused_verified_organizer_delete_selected_records_nothing(
 # An Account deleted in the admin.
 
 
-def test_deleting_an_account_in_the_admin_records_its_roles_and_grants(
+def test_deleting_an_account_in_the_admin_records_its_roles_and_keeps_its_grants(
     admin_client: Client, superuser: "_User"
 ) -> None:
+    # The admin's delete runs Account deletion (#317): an Account that owns
+    # a Partner Application is kept, cleared, so the application and its
+    # grants stay (ADR 0048).
     role = ClubRoleFactory.create()
     account = role.account
     application = PartnerApplicationFactory.create(user=account)
@@ -231,10 +233,8 @@ def test_deleting_an_account_in_the_admin_records_its_roles_and_grants(
     )
 
     assert response.status_code == 302
-    assert _removed() == {
-        (AuditAction.CLUB_ROLE_REMOVE, str(role.pk)),
-        (AuditAction.ORGANIZER_APPLICATION_GRANT_REMOVE, str(grant.pk)),
-    }
+    assert _removed() == {(AuditAction.CLUB_ROLE_REMOVE, str(role.pk))}
+    assert type(grant)._default_manager.filter(pk=grant.pk).exists()
     assert {e.actor_user for e in _access_events()} == {superuser}
     assert account.email not in str([e.before for e in _access_events()])
 
@@ -253,49 +253,29 @@ def test_delete_selected_accounts_records_each_role(
     assert {e.actor_user for e in _access_events()} == {superuser}
 
 
-def test_a_staff_account_deleting_itself_records_its_role_without_actor(
+def test_a_staff_account_cannot_delete_itself_and_records_nothing(
     client: Client,
 ) -> None:
-    # An event naming the deleted Account would fail the delete at commit.
-    account: _User = UserFactory.create(is_staff=True, is_superuser=True)
-    role = ClubRoleFactory.create(account=account)
-    client.force_login(account)
-
-    response = client.post(
-        reverse("admin:accounts_user_delete", args=[account.pk]), {"post": "yes"}
-    )
-    connection.check_constraints()
-
-    assert response.status_code == 302
-    assert not get_user_model().objects.filter(pk=account.pk).exists()
-    [event] = _access_events()
-    assert (event.action, event.target_object_id) == (
-        AuditAction.CLUB_ROLE_REMOVE,
-        str(role.pk),
-    )
-    assert event.actor_user is None
-    assert event.before is not None
-    assert event.before["account"] == account.pk
-
-
-def test_a_staff_account_in_its_own_delete_selected_records_without_actor(
-    client: Client,
-) -> None:
+    # No staff Account is deleted in the admin (#317, ADR 0048), so the
+    # acting Account never deletes itself there.
     account: _User = UserFactory.create(is_staff=True, is_superuser=True)
     ClubRoleFactory.create(account=account)
     other_role = ClubRoleFactory.create()
     client.force_login(account)
 
-    status = _delete_selected(
+    page = client.post(
+        reverse("admin:accounts_user_delete", args=[account.pk]), {"post": "yes"}
+    )
+    bulk = _delete_selected(
         client,
         "admin:accounts_user_changelist",
         [account.pk, other_role.account_id],
     )
-    connection.check_constraints()
 
-    assert status == 302
-    assert {e.actor_user for e in _access_events()} == {None}
-    assert len(_access_events()) == 2
+    assert page.status_code == 403
+    assert bulk == 403
+    assert get_user_model().objects.filter(pk=account.pk).exists()
+    assert _access_events() == []
 
 
 # A Club Role moved to another Account through the inline.
