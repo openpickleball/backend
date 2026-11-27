@@ -60,10 +60,13 @@ class SoftwarePasskey:
         rp_id: str | None = None,
         user_verified: bool = True,
         resident: bool = True,
+        client_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """The registration response for allauth's creation options.
 
         Keeps the user handle the options name, as an authenticator does.
+        ``client_data`` adds members to the client data (``crossOrigin``,
+        ``topOrigin``).
         """
         options = creation_options["publicKey"]
         self.user_handle = websafe_decode(options["user"]["id"])
@@ -80,17 +83,18 @@ class SoftwarePasskey:
             attested,
         )
         attestation = AttestationObject.create("none", auth_data, {})
-        client_data = CollectedClientData.create(
+        collected = CollectedClientData.create(
             "webauthn.create",
             websafe_decode(options["challenge"]),
             origin or self.origin,
+            **(client_data or {}),
         )
         return {
             "id": self.id,
             "rawId": self.id,
             "type": "public-key",
             "response": {
-                "clientDataJSON": websafe_encode(client_data),
+                "clientDataJSON": websafe_encode(collected),
                 "attestationObject": websafe_encode(attestation),
             },
             "clientExtensionResults": {"credProps": {"rk": resident}},
@@ -105,11 +109,13 @@ class SoftwarePasskey:
         user_verified: bool = True,
         user_handle: bytes | None = None,
         send_user_handle: bool = True,
+        client_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """The authentication response for allauth's request options.
 
         ``user_handle`` replaces the one kept at registration, and
-        ``send_user_handle`` False leaves it out.
+        ``send_user_handle`` False leaves it out. ``client_data`` adds
+        members to the client data (``crossOrigin``, ``topOrigin``).
         """
         options = request_options["publicKey"]
         self.counter += 1
@@ -118,16 +124,17 @@ class SoftwarePasskey:
             self._flags(user_verified),
             self.counter,
         )
-        client_data = CollectedClientData.create(
+        collected = CollectedClientData.create(
             "webauthn.get",
             websafe_decode(options["challenge"]),
             origin or self.origin,
+            **(client_data or {}),
         )
         signature = self.key.sign(
-            bytes(auth_data) + client_data.hash, ec.ECDSA(hashes.SHA256())
+            bytes(auth_data) + collected.hash, ec.ECDSA(hashes.SHA256())
         )
         response: dict[str, Any] = {
-            "clientDataJSON": websafe_encode(client_data),
+            "clientDataJSON": websafe_encode(collected),
             "authenticatorData": websafe_encode(auth_data),
             "signature": websafe_encode(signature),
         }
