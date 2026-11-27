@@ -57,12 +57,15 @@ Organizer's Events through the API (#125): an Account that is a member
 (either role) of that Organizer while it is verified, the same Account
 rule as event authority. An application may not.
 
-``can_change_match`` decides who may void or edit one match. An
-application may change only a match it submitted, while it is approved.
-An Account may change a match whose Event's verified Organizer it is a
-member of. A Club admin, a self-submitter, a participant, and a
-moderator (as such) may not. An edit also needs ``can_create_match`` for
-the corrected match (``edit_match``).
+``can_change_match`` decides who may edit one match (``edit_match``); the
+edit voids the old match as part of the correction. On its own it lets
+no one void a match: a void of a single Match needs its own rule (#327),
+and a disputed Match is voided only through ``resolve_dispute``
+(``settles_dispute``, with a required reason). An application may change
+only a match it submitted, while it is approved. An Account may change a
+match whose Event's verified Organizer it is a member of. A Club admin,
+a self-submitter, a participant, and a moderator (as such) may not. An
+edit also needs ``can_create_match`` for the corrected match.
 
 The confirmation workflow (#26, ``apps.matches.workflow``) adds:
 
@@ -336,7 +339,7 @@ def check_can_create_match(actor: Actor, submission: MatchSubmission) -> None:
 
 
 def can_change_match(actor: Actor, match: Match) -> bool:
-    """True when ``actor`` may void or edit ``match``.
+    """True when ``actor`` may edit ``match`` (``edit_match``).
 
     See the module docstring for the rules.
     """

@@ -190,7 +190,7 @@ def test_a_match_already_voided_is_skipped(
     players: list[Player], event: Event, member: User, moderator: User
 ) -> None:
     batch, matches = _batch_of(3, players, event, member)
-    # Voided first by the Organizer's member, outside the bulk void.
+    # Voided first in setup (void_for_test), outside the bulk void.
     void_for_test(matches[1], actor=member)
 
     result = void_submission_batch(batch, actor=moderator, reason=REASON)

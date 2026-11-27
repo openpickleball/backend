@@ -28,14 +28,14 @@ States and transitions:
 - ``edit_match``: an actor ``can_change_match`` allows voids a match and
   creates its correction (``corrects`` links it to the old one) in one
   transaction, through the creation core ``record_match`` uses:
-  validation, model rules, locks, duplicate checks, and flags. Only the Event's verified Organizer
-  settling the dispute, with a required reason, edits a disputed match
-  with an Event. On the player path (``as_player=True``,
-  #267) a participant corrects a pending or disputed self-reported match
-  (no Event, no Club) with the same teams; the correction is always
-  pending, with the corrector's confirmation, and the corrector's Account
-  is its submitter (the maintainer's decision on #267). Every other edit
-  keeps the old match's submitter (ADR 0013).
+  validation, model rules, locks, duplicate checks, and flags. Only the
+  Event's verified Organizer settling the dispute, with a required
+  reason, edits a disputed match with an Event. On the player path
+  (``as_player=True``, #267) a participant corrects a pending or disputed
+  self-reported match (no Event, no Club) with the same teams; the
+  correction is always pending, with the corrector's confirmation, and
+  the corrector's Account is its submitter (the maintainer's decision on
+  #267). Every other edit keeps the old match's submitter (ADR 0013).
 - ``expire_unconfirmed_matches``: with ``MATCH_CONFIRMATION_EXPIRY_DAYS``
   set, voids pending matches older than that.
 - ``expire_disputes_and_holds``: voids a disputed match whose first open

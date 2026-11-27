@@ -1,8 +1,8 @@
-"""The match confirmation workflow: confirm, dispute, resolve, void, edit (#26).
+"""The match confirmation workflow: confirm, dispute, resolve, edit (#26).
 
-Resolving a dispute, voiding one match, and editing are the Event's
-verified Organizer's (or the submitting application's); a moderator does
-none of them (#273).
+Resolving a dispute and editing are the Event's verified Organizer's (or
+the submitting application's); a moderator does neither (#273). No
+service voids a single match on its own (#327).
 
 Every transition writes exactly one Audit Event and sends its signal
 inside the transaction. A refused or failed action writes nothing and
