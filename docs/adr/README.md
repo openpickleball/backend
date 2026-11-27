@@ -101,3 +101,4 @@ Add each record here when it merges.
 - [0051. Player data export](0051-player-data-export.md) (issue #39)
 - [0052. Plausibility checks: Event dates and a player's daily matches](0052-plausibility-checks-event-dates-and-player-daily-matches.md) (issue #207)
 - [0053. A match shows its Event, Organizer, and Club](0053-match-shows-event-organizer-and-club.md) (issue #302)
+- [0054. Organizer self-service: create, invite members, request verification](0054-organizer-self-service.md) (issue #229)

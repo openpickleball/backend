@@ -33,10 +33,18 @@ The gender division a Player enters for divisions and gender-specific Rating For
 _Avoid_: gender, sex.
 
 **Organizer**:
-A person or body that runs events and submits their results. The verified Organizer is OPEN's only trusted submitter (ADR 0021): an Organizer is unverified until an Account with permission to verify organizers verifies it, and a verified Organizer's submission counts as confirmed. A club that runs its own leagues or ladders becomes, or works through, an Organizer. A person who organizes alone is an Organizer with one Organizer Member. Backend: `clubs.Organizer`.
+A person or body that runs events and submits their results. The verified Organizer is OPEN's only trusted submitter (ADR 0021): an Organizer is unverified until an Account with permission to verify organizers verifies it, and a verified Organizer's submission counts as confirmed. A club that runs its own leagues or ladders becomes, or works through, an Organizer. A person who organizes alone is an Organizer with one Organizer Member. An Account may create an Organizer itself and is then its admin member; it stays unverified until a moderator verifies it (ADR 0054). Backend: `clubs.Organizer`.
 
 **Organizer Member**:
 An Account that acts for an Organizer, with a role: admin or match manager. While the Organizer is verified and the member's Account has two-factor authentication (ADR 0043), a member with either role may create, change, and delete its Events, and submit matches for its Events and change them; a match or Event that names a Club also needs that Club's Club Organizer Grant to the Organizer. This is the only way an Account submits matches other than its own (ADR 0021). An admin member makes and removes the Organizer's Organizer Application Grants. While an Organizer is verified, the Account that verified it cannot be its member. Backend: `clubs.OrganizerMember`.
+
+**Organizer Invite**:
+An admin member's invite of an email address to act for an Organizer, as admin or match manager (ADR 0054). It is emailed as a link that works once and expires; the invitee accepts while signed in with that address, verified, and with a Player. The answer to the admin never says whether the address has an Account. Backend: `clubs.OrganizerInvite`.
+_Avoid_: invitation code, join request.
+
+**Verification Request**:
+An admin member's request that OPEN Moderators verify an Organizer, with a short statement of what it runs (ADR 0054). It changes nothing by itself: a moderator verifies the Organizer, which closes the request, or closes it without verifying. An Organizer has at most one open request. Backend: `clubs.OrganizerVerificationRequest`.
+_Avoid_: application, verification ticket.
 
 **Organizer Report**:
 A player's report of a verified Organizer to OPEN Moderators, with one reason from a fixed list and no free text (ADR 0037). An Account has at most one open report per Organizer. A moderator closes a report, or an unverify of the Organizer closes all of them. A report changes nothing by itself: moderators decide only whether the Organizer stays verified, and may void its matches in bulk. The Organizer never learns who reported it. Backend: `clubs.OrganizerReport`.
