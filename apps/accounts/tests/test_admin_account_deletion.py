@@ -424,3 +424,33 @@ def test_an_account_made_staff_after_the_page_loaded_is_refused(
     target.refresh_from_db()
     assert target.is_staff
     assert target.is_active
+
+
+def test_an_account_deleted_meanwhile_records_no_admin_delete(
+    rf: Any, manager: "_User"
+) -> None:
+    from django.contrib import admin
+
+    account = UserFactory.create()
+    stale = get_user_model()._default_manager.get(pk=account.pk)
+    delete_account(account, actor=account)
+    request = rf.post("/")
+    request.user = manager
+    model_admin = admin.site._registry[get_user_model()]
+
+    model_admin.delete_model(request, stale)
+
+    assert _events(account.pk, AuditAction.ADMIN_DELETE) == []
+
+
+def test_the_success_message_does_not_name_the_email(manager_client: Client) -> None:
+    account = _player_account(played=True)
+    email = account.email
+
+    response = manager_client.post(_delete_url(account), {"post": "yes"}, follow=True)
+
+    assert response.status_code == 200
+    messages = [str(m) for m in response.context["messages"]]
+    assert messages
+    assert all(email not in m for m in messages)
+    assert str(account.pk) in messages[0]

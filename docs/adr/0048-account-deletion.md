@@ -50,7 +50,7 @@ This amends [ADR 0002](0002-player-identity.md) (how a deleted Account's Player 
 
 - The Account admin's delete page and `delete_selected` run `delete_account()` for each Account, with the staff member as actor, so they leave the same state as `DELETE /api/v1/accounts/me`. Each Account is deleted in its own transaction with its `admin.delete` event (ADR 0045), never a whole selection in one, since the deletion's locks last until its transaction ends. The confirmation pages list only the selected Accounts: Django's cascade never runs, so a protected link does not block them.
 - As in the API, no staff or superuser Account is deleted there, by anyone, superusers included. A superuser who means to delete one removes its staff and superuser status first, which the admin audits. Only a superuser deletes an Account that holds a group or a permission (ADR 0045), and an Account a deletion already cleared cannot be deleted again.
-- The admin writes no admin log entry for the delete: its text would be the Account's email, and the deletion deletes the entries tied to the Account. The Audit Events record it.
+- The admin writes no admin log entry for the delete, and its success message names the row id: the entry's text and the message would hold the Account's email, and the deletion deletes the entries tied to the Account. The Audit Events record it.
 
 ### How the Player is shown, and naming it later
 
