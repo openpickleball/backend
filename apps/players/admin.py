@@ -2,9 +2,11 @@
 and an under-13 removal (issue #190, ADR 0059).
 
 Staff with ``players.view_player`` see a Player's OPEN Code, display
-name, city and region, and Account. The legal name, birth year and
-month, and gender division show only as "Hidden": they are never listed,
-searched, filtered, or sorted on. An Account that also has
+name, and city and region. The legal name, birth year and month, and
+gender division show only as "Hidden": they are never listed, searched,
+filtered, or sorted on. The Account (shown as its email) shows only to
+an Account with ``players.view_personal_data``, and "Hidden" to anyone
+else, moderators included (ADR 0059). An Account that also has
 ``players.view_personal_data`` (no role holds it by default; the
 Moderator group holds ``players.view_player`` but not this) sees a
 "Reveal personal data" button. Its POST records one
