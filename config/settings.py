@@ -966,6 +966,13 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=4, minute=0),
         "options": {"expire_seconds": 3600},
     },
+    # Deletes expired Club invites, which hold an address (#230). A run
+    # missed for an hour is dropped.
+    "sweep-club-invites": {
+        "task": "apps.clubs.tasks.sweep_club_invites",
+        "schedule": crontab(hour=4, minute=10),
+        "options": {"expire_seconds": 3600},
+    },
     # Runs pending rating replay requests whose queued task was lost (#47).
     # Does nothing when no request is pending. A run missed for 15 minutes
     # is dropped.
