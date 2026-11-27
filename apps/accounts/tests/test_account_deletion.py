@@ -9,7 +9,7 @@ something protects it. Made-up data only.
 import json
 from datetime import timedelta
 from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from allauth.account.models import EmailAddress
@@ -43,6 +43,8 @@ from apps.clubs.tests.factories import (
     verified_organizer,
 )
 from apps.emails.models import QueuedEmail
+from apps.exports.models import DataExport
+from apps.exports.services import request_export
 from apps.matches.models import Match, MatchParticipant, Team
 from apps.partners.tests.factories import PartnerApplicationFactory
 from apps.players.models import Player, PlayerPrivacy, Visibility
@@ -380,3 +382,19 @@ def test_an_active_account_with_a_placeholder_like_email_is_still_deleted() -> N
     result = delete_account(account, actor=account)
 
     assert result.account_kept is False
+
+
+def test_the_accounts_data_export_is_deleted(
+    django_capture_on_commit_callbacks: Any,
+) -> None:
+    # A kept Account, so only the deletion step (not a cascade) removes it.
+    player = PlayerFactory.create(account=_account_with_rows())
+    _played(player)
+    with django_capture_on_commit_callbacks(execute=True):
+        request_export(player.account)
+    assert DataExport.objects.get(account_id=player.account_id).content is not None
+
+    result = delete_account(player.account, actor=player.account)
+
+    assert result.account_kept is True
+    assert not DataExport.objects.filter(account_id=player.account_id).exists()
