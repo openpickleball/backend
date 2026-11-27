@@ -22,7 +22,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from oauth2_provider.models import get_access_token_model
+from oauth2_provider.models import get_access_token_model, get_device_grant_model
 
 from apps.accounts.deletion import (
     DELETED_EMAIL_DOMAIN,
@@ -398,3 +398,23 @@ def test_the_accounts_data_export_is_deleted(
 
     assert result.account_kept is True
     assert not DataExport.objects.filter(account_id=player.account_id).exists()
+
+
+def test_device_grants_are_deleted_on_a_kept_account() -> None:
+    # A kept Account, so only the deletion step (not a cascade) removes it.
+    player = PlayerFactory.create(account=_account_with_rows())
+    _played(player)
+    get_device_grant_model().objects.create(
+        user=player.account,
+        device_code="made-up-device-code",
+        user_code="MADEUPCODE",
+        client_id="made-up-client",
+        expires=timezone.now() + timedelta(minutes=10),
+    )
+
+    result = delete_account(player.account, actor=player.account)
+
+    assert result.account_kept is True
+    assert (
+        not get_device_grant_model().objects.filter(user_id=player.account_id).exists()
+    )
