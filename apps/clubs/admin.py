@@ -14,6 +14,14 @@ Player's OPEN Code. The Organizer change page shows a read-only
 "Moderator review" section from ``organizer_review`` to Accounts with
 both ``clubs.verify_organizer`` and ``clubs.view_organizerreport`` that
 are not members of that Organizer.
+
+Organizer Verification Requests (#229) are read-only here, for Accounts
+with ``clubs.view_organizerverificationrequest`` (the Moderator group),
+leaving out requests on an Organizer the viewer is a member of. A
+moderator verifies through the Organizer's verify action, which closes
+the open request, or closes one without verifying with the close action,
+which needs a typed reason and calls
+``apps.clubs.verification_requests.close_verification_request``.
 """
 
 from collections.abc import Callable, Sequence
@@ -44,6 +52,7 @@ from apps.clubs.models import (
     Organizer,
     OrganizerMember,
     OrganizerReport,
+    OrganizerVerificationRequest,
     VerifiedOrganizerDelete,
 )
 from apps.clubs.reports import NotAllowedToClose, close_report, organizer_review
@@ -52,10 +61,15 @@ from apps.clubs.services import (
     unverify_organizer,
     verify_organizer,
 )
+from apps.clubs.verification_requests import (
+    NotAllowedToCloseRequest,
+    close_verification_request,
+)
 from apps.players.models import Player
 
 BLANK_REASON = "Give a reason to verify or unverify organizers."
 BLANK_CLOSE_REASON = "Give a reason to close reports."
+BLANK_REQUEST_CLOSE_REASON = "Give a reason to close verification requests."
 REVIEW_FIELD = "moderator_review"
 
 
@@ -500,3 +514,107 @@ class OrganizerReportAdmin(admin.ModelAdmin[OrganizerReport]):
                 )
         if count:
             self.message_user(request, f"{count} report(s) closed.")
+
+
+class OpenRequestFilter(admin.SimpleListFilter):
+    """Open (not closed) or closed verification requests."""
+
+    title = "open"
+    parameter_name = "open"
+
+    def lookups(self, request: HttpRequest, model_admin: Any) -> list[tuple[str, str]]:
+        return [("yes", "Open"), ("no", "Closed")]
+
+    def queryset(
+        self, request: HttpRequest, queryset: QuerySet[OrganizerVerificationRequest]
+    ) -> QuerySet[OrganizerVerificationRequest]:
+        if self.value() == "yes":
+            return queryset.filter(closed_at__isnull=True)
+        if self.value() == "no":
+            return queryset.filter(closed_at__isnull=False)
+        return queryset
+
+
+@admin.register(OrganizerVerificationRequest)
+class OrganizerVerificationRequestAdmin(admin.ModelAdmin[OrganizerVerificationRequest]):
+    """Requests that moderators verify an Organizer (#229). Read-only.
+
+    Requests on an Organizer the viewer is a member of are left out of
+    the list, the change page, and the close action (``get_queryset``),
+    so no member reviews their own request. The requesting Account is
+    not shown; it is only the create event's actor.
+    """
+
+    list_display = ("organizer_code", "created_at", "is_open")
+    list_filter = (OpenRequestFilter,)
+    list_select_related = ("organizer",)
+    search_fields = ("organizer__public_code",)
+    ordering = ("-created_at", "-pk")
+    actions = ("close_selected",)
+    action_form = ReasonActionForm
+    fields = ("organizer_code", "statement", "created_at", "closed_at")
+    readonly_fields = fields
+
+    def get_queryset(
+        self, request: HttpRequest
+    ) -> QuerySet[OrganizerVerificationRequest]:
+        return (
+            super()
+            .get_queryset(request)
+            .exclude(organizer_id__in=_member_organizer_ids(request))
+        )
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: OrganizerVerificationRequest | None = None
+    ) -> bool:
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: OrganizerVerificationRequest | None = None
+    ) -> bool:
+        return False
+
+    def has_verify_permission(self, request: HttpRequest) -> bool:
+        """Django shows an action marked ``permissions=["verify"]`` only
+        when this is True.
+        """
+        return request.user.has_perm(VERIFY_PERMISSION)
+
+    @admin.display(description="Organizer", ordering="organizer__public_code")
+    def organizer_code(self, request: OrganizerVerificationRequest) -> str:
+        return request.organizer.public_code
+
+    @admin.display(boolean=True, description="Open")
+    def is_open(self, request: OrganizerVerificationRequest) -> bool:
+        return request.is_open
+
+    @audited_by_service
+    @admin.action(permissions=["verify"], description="Close selected requests")
+    def close_selected(
+        self, request: HttpRequest, queryset: QuerySet[OrganizerVerificationRequest]
+    ) -> None:
+        reason = action_reason(request)
+        problem = reason_problem(reason, BLANK_REQUEST_CLOSE_REASON)
+        if problem is not None:
+            self.message_user(request, problem, level=messages.WARNING)
+            return
+        count = 0
+        for verification in queryset.select_related("organizer").order_by("pk"):
+            # The OPEN Code only: the name may be a person's.
+            label = f"Request on {verification.organizer.public_code}"
+            try:
+                if close_verification_request(
+                    verification, actor=request.user, reason=reason
+                ):
+                    count += 1
+            except NotAllowedToCloseRequest:
+                self.message_user(
+                    request,
+                    f"{label} was not closed: you may not close it.",
+                    level=messages.WARNING,
+                )
+        if count:
+            self.message_user(request, f"{count} request(s) closed.")
