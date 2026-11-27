@@ -6,7 +6,8 @@ except player search, which keeps only its own ``SearchThrottle`` (ADR
 ``OrganizerReportThrottle`` (#271), and requesting a data export, which
 keeps only its own ``DataExportThrottle`` (#39), and inviting an
 Organizer member, which keeps only its own ``OrganizerInviteThrottle``
-(#229). No public operation is mounted yet;
+(#229), and inviting a Club admin, which keeps only its own
+``ClubInviteThrottle`` (#230). No public operation is mounted yet;
 one would need no sign-in and have only a client IP throttle. The health
 checks are never throttled.
 A refused request gets a 429 ``ErrorResponse`` with code ``throttled``
@@ -30,6 +31,7 @@ from openapi_spec_validator import validate
 
 from apps.accounts.tests.factories import UserFactory
 from apps.clubs.api import OrganizerInviteThrottle, OrganizerReportThrottle
+from apps.clubs.club_api import ClubInviteThrottle
 from apps.exports.api import DataExportThrottle
 from apps.players.api import SearchThrottle
 from config.api import OpenNinjaAPI, api
@@ -51,6 +53,7 @@ OWN_THROTTLE_OPERATIONS = {
     "report_organizer",
     "request_data_export",
     "invite_organizer_member",
+    "invite_club_admin",
 }
 THROTTLED = {"code": "throttled", "message": "Too many requests.", "errors": []}
 
@@ -127,6 +130,15 @@ def test_organizer_invite_has_only_its_own_throttle() -> None:
     assert operation.auth_callbacks == account_auth
     assert len(operation.throttle_objects) == 1
     assert isinstance(operation.throttle_objects[0], OrganizerInviteThrottle)
+    assert not isinstance(operation.throttle_objects[0], AccountThrottle)
+
+
+def test_club_invite_has_only_its_own_throttle() -> None:
+    operation = _by_id()["invite_club_admin"]
+
+    assert operation.auth_callbacks == account_auth
+    assert len(operation.throttle_objects) == 1
+    assert isinstance(operation.throttle_objects[0], ClubInviteThrottle)
     assert not isinstance(operation.throttle_objects[0], AccountThrottle)
 
 

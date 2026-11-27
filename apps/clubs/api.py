@@ -39,6 +39,11 @@ through ``apps.clubs.self_service``:
 
 The invite has its own throttle, ``OrganizerInviteThrottle``, which
 replaces the router's Account throttle, since each invite sends an email.
+
+``GET /organizer/organizers/{code}/club-grants``
+(``list_organizer_club_grants``, #230) lists the Clubs that allow the
+Organizer to name them, for an admin member with MFA, by the same rules.
+Club self-service itself is in ``apps.clubs.club_api``.
 """
 
 from typing import TYPE_CHECKING, Annotated
@@ -61,6 +66,7 @@ from apps.clubs.models import (
 )
 from apps.clubs.reports import ReportExists, ReportRefused, report_organizer
 from apps.clubs.schemas import (
+    OrganizerClubGrantOut,
     OrganizerCreateIn,
     OrganizerInviteAcceptIn,
     OrganizerInviteIn,
@@ -509,3 +515,36 @@ def request_organizer_verification(
         201,
         OrganizerVerificationRequestOut(organizer=code, created_at=made.created_at),
     )
+
+
+@organizer_router.get(
+    "/organizers/{code}/club-grants",
+    response={200: list[OrganizerClubGrantOut], 403: ErrorResponse, 404: ErrorResponse},
+    operation_id="list_organizer_club_grants",
+)
+def list_organizer_club_grants(
+    request: HttpRequest, code: OrganizerCode
+) -> list[OrganizerClubGrantOut]:
+    """The Clubs that allow the Organizer to name them on its Events and
+    matches. For an admin member with MFA.
+
+    Each with its OPEN Code, name, city, region, and when it allowed the
+    Organizer, ordered by Club code. A Club decides this; the Organizer
+    cannot add or remove one.
+    """
+    account = _mfa_admin(request)
+    organizer_id = _organizer_id(code)
+    try:
+        grants = self_service.list_club_grants(organizer_id, actor=account)
+    except self_service.NotFound:
+        raise Http404 from None
+    return [
+        OrganizerClubGrantOut(
+            club=grant.club,
+            name=grant.name,
+            city=grant.city,
+            region=grant.region,
+            created_at=grant.created_at,
+        )
+        for grant in grants
+    ]

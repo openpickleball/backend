@@ -1,14 +1,16 @@
 """The API's request and response schemas for Organizer Reports (#271),
-the signed-in Account's own Organizer memberships (#301), and Organizer
-self-service (#229).
+the signed-in Account's own Organizer memberships (#301), Organizer
+self-service (#229), and Club self-service (#230).
 
 No schema here carries a row id, an email, or names the reporter: an
-Organizer is named by its OPEN Code and a member by its Player's OPEN
-Code. Unknown keys are refused, so a report carries no free text.
+Organizer and a Club are named by their OPEN Codes and a member or Club
+admin by its Player's OPEN Code. A Club grant list names the Organizer
+by its OPEN Code only, never its name. Unknown keys are refused, so a report carries no free text.
 Validation messages are fixed text and never repeat the submitted value.
 """
 
 import unicodedata
+from collections.abc import Callable
 from datetime import datetime
 from typing import Final
 
@@ -24,6 +26,7 @@ from apps.clubs.invites import (
 from apps.clubs.models import MemberRole, OrganizerReportReason
 
 NAME_MAX_LENGTH: Final = 200
+PLACE_MAX_LENGTH: Final = 100
 STATEMENT_MAX_LENGTH: Final = 1000
 _NAME_REQUIRED = "Enter a name."
 _NAME_TOO_LONG = f"Keep the name to {NAME_MAX_LENGTH} characters or fewer."
@@ -43,6 +46,38 @@ def _has_refused(value: str, allowed: frozenset[str] = frozenset()) -> bool:
         unicodedata.category(char) in _REFUSED_CATEGORIES and char not in allowed
         for char in value
     )
+
+
+def _place(label: str) -> Callable[[object], str]:
+    """A check for a Club's city or region: text of at most
+    ``PLACE_MAX_LENGTH`` characters after trimming, empty allowed, with no
+    control characters. ``label`` names the field in the fixed text."""
+    too_long = f"Keep the {label} to {PLACE_MAX_LENGTH} characters or fewer."
+
+    def check(value: object) -> str:
+        if not isinstance(value, str):
+            raise PydanticCustomError("string_type", "Enter text.")
+        value = value.strip()
+        if len(value) > PLACE_MAX_LENGTH:
+            raise PydanticCustomError("too_long", too_long)
+        if _has_refused(value):
+            raise PydanticCustomError("invalid_characters", _CONTROL_CHARACTER)
+        return value
+
+    return check
+
+
+_city_text = _place("city")
+_region_text = _place("region")
+
+
+def _invite_email(value: object) -> str:
+    if not isinstance(value, str):
+        raise PydanticCustomError("string_type", "Enter text.")
+    try:
+        return normalized_invite_email(value)
+    except InvalidInviteEmail:
+        raise PydanticCustomError("invalid_email", str(InvalidInviteEmail())) from None
 
 
 def _organizer_name(value: object) -> str:
@@ -137,14 +172,7 @@ class OrganizerInviteIn(Schema):
     @field_validator("email", mode="before")
     @classmethod
     def _email(cls, value: object) -> str:
-        if not isinstance(value, str):
-            raise PydanticCustomError("string_type", "Enter text.")
-        try:
-            return normalized_invite_email(value)
-        except InvalidInviteEmail:
-            raise PydanticCustomError(
-                "invalid_email", str(InvalidInviteEmail())
-            ) from None
+        return _invite_email(value)
 
 
 class OrganizerInviteSentOut(Schema):
@@ -223,4 +251,133 @@ class OrganizerVerificationRequestOut(Schema):
     statement is not repeated."""
 
     organizer: str
+    created_at: datetime
+
+
+class ClubOut(Schema):
+    """A Club's public profile: its OPEN Code (``club``), name, city, and
+    region. Any signed-in Account may read it. Never a row id or an
+    admin."""
+
+    club: str
+    name: str
+    city: str
+    region: str
+
+
+class ClubCreateIn(Schema):
+    """A new Club. ``name`` is 1 to 200 characters after trimming;
+    ``city`` and ``region`` are optional, at most 100 characters each.
+    None has control characters. A Club is a place or group, not a
+    person: its profile is shown to any signed-in Account."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(max_length=NAME_MAX_LENGTH)
+    city: str = Field("", max_length=PLACE_MAX_LENGTH)
+    region: str = Field("", max_length=PLACE_MAX_LENGTH)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _name(cls, value: object) -> str:
+        return _organizer_name(value)
+
+    @field_validator("city", mode="before")
+    @classmethod
+    def _city(cls, value: object) -> str:
+        return _city_text(value)
+
+    @field_validator("region", mode="before")
+    @classmethod
+    def _region(cls, value: object) -> str:
+        return _region_text(value)
+
+
+class ClubUpdateIn(Schema):
+    """The profile fields to change, with the create's rules. A field left
+    out is not changed; an empty body changes nothing. ``city`` and
+    ``region`` may be set to an empty string; ``name`` may not."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(None, max_length=NAME_MAX_LENGTH)
+    city: str | None = Field(None, max_length=PLACE_MAX_LENGTH)
+    region: str | None = Field(None, max_length=PLACE_MAX_LENGTH)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _name(cls, value: object) -> str:
+        return _organizer_name(value)
+
+    @field_validator("city", mode="before")
+    @classmethod
+    def _city(cls, value: object) -> str:
+        return _city_text(value)
+
+    @field_validator("region", mode="before")
+    @classmethod
+    def _region(cls, value: object) -> str:
+        return _region_text(value)
+
+
+class ClubInviteIn(Schema):
+    """An invite of an email address to be an admin of the Club."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(max_length=EMAIL_MAX_LENGTH)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _email(cls, value: object) -> str:
+        return _invite_email(value)
+
+
+class ClubInviteAcceptIn(OrganizerInviteAcceptIn):
+    """The key from the Club invite email's link."""
+
+
+class ClubAdminOut(Schema):
+    """One admin of a Club, as its admins see it.
+
+    ``player`` is the admin's Player's OPEN Code (the value the remove
+    operation takes), or null when the Account has no Player.
+    ``display_name`` is that Player's display name, or null when there is
+    none or the Account is inactive. ``you`` marks the signed-in Account.
+    Never an email.
+    """
+
+    player: str | None
+    display_name: str | None
+    you: bool
+
+
+class ClubOrganizerGrantIn(Schema):
+    """The Organizer to allow, by its OPEN Code, in any case, with or
+    without hyphens. An unknown or malformed code gets the same 404 as an
+    unknown Club."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    organizer: str
+
+
+class ClubOrganizerGrantOut(Schema):
+    """An Organizer the Club allows to name it: the Organizer's OPEN Code
+    and when the Club allowed it. Never the Organizer's name, which may be
+    a person's."""
+
+    organizer: str
+    created_at: datetime
+
+
+class OrganizerClubGrantOut(Schema):
+    """A Club that allows the Organizer to name it, as the Organizer's
+    admin members see it: the Club's OPEN Code, name, city, and region,
+    and when it allowed it."""
+
+    club: str
+    name: str
+    city: str
+    region: str
     created_at: datetime

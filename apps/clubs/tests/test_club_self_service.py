@@ -7,6 +7,7 @@ the Organizer side list in ``apps.clubs.self_service``. The API tests
 """
 
 import json
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -175,7 +176,7 @@ def test_every_admin_action_refuses_a_non_admin_and_an_admin_without_mfa() -> No
     User.objects.filter(pk=inactive.pk).update(is_active=False)
     inactive.refresh_from_db()
     organizer = OrganizerFactory.create()
-    actions = [
+    actions: list[Callable[[User], object]] = [
         lambda actor: update_club(club.pk, actor=actor, name="Made-up New"),
         lambda actor: invite_admin(club.pk, actor=actor, email="x@example.com"),
         lambda actor: list_admins(club.pk, actor=actor),

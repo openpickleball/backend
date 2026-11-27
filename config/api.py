@@ -19,7 +19,9 @@ delete), at /api/v1/organizer/ the CSV results upload
 (/api/v1/organizer/results-files/{code}) and the signed-in Account's own
 Organizer memberships (/api/v1/organizer/organizers), and at
 /api/v1/organizers/ a report of a verified Organizer to OPEN Moderators
-(/api/v1/organizers/{code}/reports).
+(/api/v1/organizers/{code}/reports), and at /api/v1/clubs/ Club
+self-service (`apps.clubs.club_api.club_router`, #230): creating and
+reading a Club, its profile, admins, invites, and Club Organizer Grants.
 
 Adding an app's endpoints (usually one router per app):
 
@@ -91,6 +93,7 @@ from ninja.schema import NinjaGenerateJsonSchema
 from apps.accounts.api import router as accounts_router
 from apps.clubs.api import organizer_router as clubs_organizer_router
 from apps.clubs.api import router as organizers_router
+from apps.clubs.club_api import club_router
 from apps.events.api import router as events_router
 from apps.exports.api import me_router as exports_me_router
 from apps.matches.api import me_router
@@ -350,3 +353,4 @@ api.add_router("organizer/", events_router)
 api.add_router("organizer/", matches_organizer_router)
 api.add_router("organizer/", clubs_organizer_router)
 api.add_router("organizers/", organizers_router)
+api.add_router("clubs", club_router)
