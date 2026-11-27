@@ -835,7 +835,7 @@
                 "type": "null"
               }
             ],
-            "description": "The OPEN Code of the match this one corrects, if any.",
+            "description": "The OPEN Code of the match this one corrects, only when the player played in that match too; null otherwise.",
             "title": "Corrects"
           },
           "created_at": {

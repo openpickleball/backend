@@ -225,7 +225,11 @@ def _profile(player: Player | None) -> MyPlayerOut | None:
 def _matches(player: Player | None, account: "_User") -> list[ExportMatchOut]:
     if player is None:
         return []
-    played = MatchParticipant.objects.filter(player=player).values("match_id")
+    played = set(
+        MatchParticipant.objects.filter(player=player).values_list(
+            "match_id", flat=True
+        )
+    )
     matches = with_match_details(
         Match.objects.filter(pk__in=played)
         .select_related("corrects")
@@ -240,7 +244,13 @@ def _matches(player: Player | None, account: "_User") -> list[ExportMatchOut]:
             played_at_utc_offset=match.played_at_utc_offset,
             event_label=match.event_label,
             bracket_label=match.bracket_label,
-            corrects=None if match.corrects is None else match.corrects.public_code,
+            # Only a match the player played in: a correction can change
+            # the teams, and the match read hides the old match from others.
+            corrects=(
+                match.corrects.public_code
+                if match.corrects is not None and match.corrects_id in played
+                else None
+            ),
         )
         for match in matches
     ]

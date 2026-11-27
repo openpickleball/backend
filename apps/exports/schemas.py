@@ -226,7 +226,10 @@ class ExportMatchOut(MatchOut):
     event_label: str
     bracket_label: str
     corrects: str | None = Field(
-        description="The OPEN Code of the match this one corrects, if any."
+        description=(
+            "The OPEN Code of the match this one corrects, only when the "
+            "player played in that match too; null otherwise."
+        )
     )
 
 
