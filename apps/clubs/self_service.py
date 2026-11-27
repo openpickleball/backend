@@ -483,7 +483,8 @@ def change_member_role(
     Returns the changed member, read in the change's transaction, so an
     admin who demoted themselves gets it too. ``NotFound`` when no member
     of this Organizer has that Player, and ``Conflict`` when it would
-    leave no active admin with MFA, or would make an admin of an Account
+    leave no active admin with MFA and no New Member Hold in force, or
+    would make an admin of an Account
     that is inactive or whose login address is not verified (#232). An
     unchanged role records nothing.
     """
@@ -518,7 +519,8 @@ def remove_member(organizer_id: int, player_code: str, *, actor: "_User") -> Non
     """Remove the member whose Player has ``player_code``.
 
     ``NotFound`` when no member of this Organizer has that Player, and
-    ``Conflict`` when it would leave no active admin.
+    ``Conflict`` when it would leave no active admin with MFA and no New
+    Member Hold in force (#232).
     """
     with transaction.atomic():
         organizer = _admin_organizer(organizer_id, actor)
