@@ -29,7 +29,8 @@ Account still gets 401, and for a browser session after ninja's CSRF
 check, so an unsafe request without its token still gets the CSRF 403.
 
 `require_step_up(request)` (#232, ADR 0057) refuses an operation with
-403 ``reauthentication_required`` and ``STEP_UP_MESSAGE`` unless the
+403 ``reauthentication_required`` (``STEP_UP_MESSAGE`` for an Account with
+MFA, the general reauthentication text for one without) unless the
 session behind the request took a second factor step (any
 authentication step, for an Account without MFA) within
 ``ORGANIZER_STEP_UP_SECONDS``. Organizer and Club admin changes and the
@@ -138,9 +139,13 @@ def stepped_up(request: HttpRequest) -> bool:
     ``ORGANIZER_STEP_UP_SECONDS``, read from the session behind the
     request (``auth_session``), so both clients work.
     """
+    return _stepped_up(request, has_mfa(request.auth))  # type: ignore[attr-defined]
+
+
+def _stepped_up(request: HttpRequest, enrolled: bool) -> bool:
     account = request.auth  # type: ignore[attr-defined]
     session = auth_session(request)
-    if has_mfa(account):
+    if enrolled:
         last = last_mfa_at(session, account)
     else:
         last = last_authenticated_at(session, account)
@@ -148,11 +153,16 @@ def stepped_up(request: HttpRequest) -> bool:
 
 
 def require_step_up(request: HttpRequest) -> None:
-    """Raise ``ReauthenticationRequired`` with ``STEP_UP_MESSAGE`` unless
-    ``stepped_up``. Call it before any lookup of the path's records, so the
+    """Raise ``ReauthenticationRequired`` unless ``stepped_up``: with
+    ``STEP_UP_MESSAGE`` for an Account with MFA, and the general
+    ``REAUTHENTICATION_REQUIRED_MESSAGE`` for one without, which has no
+    code to give. Call it before any lookup of the path's records, so the
     answer is the same for every well-formed code."""
-    if not stepped_up(request):
-        raise ReauthenticationRequired(STEP_UP_MESSAGE)
+    enrolled = has_mfa(request.auth)  # type: ignore[attr-defined]
+    if not _stepped_up(request, enrolled):
+        raise ReauthenticationRequired(
+            STEP_UP_MESSAGE if enrolled else REAUTHENTICATION_REQUIRED_MESSAGE
+        )
 
 
 def require_mfa(account: Any, session: SessionBase | None) -> Any:

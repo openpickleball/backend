@@ -45,7 +45,7 @@ from apps.matches.csv_format import COLUMNS
 from apps.players.tests.factories import PlayerFactory
 from apps.public_ids.api import PublicCodePath
 from apps.public_ids.codes import CodeType
-from config.auth import STEP_UP_MESSAGE
+from config.auth import REAUTHENTICATION_REQUIRED_MESSAGE, STEP_UP_MESSAGE
 
 pytestmark = pytest.mark.django_db
 
@@ -370,7 +370,12 @@ def test_an_account_without_mfa_counts_a_recent_login_on_the_upload() -> None:
 
     refused = _send(client, case, case.path(setup), setup)
     assert refused.status_code == 403
-    assert refused.json() == STEP_UP
+    # No code to give: the general reauthentication text (#232 review).
+    assert refused.json() == {
+        "code": "reauthentication_required",
+        "message": REAUTHENTICATION_REQUIRED_MESSAGE,
+        "errors": [],
+    }
 
     session = client.session
     session[AUTHENTICATION_METHODS_SESSION_KEY] = [
