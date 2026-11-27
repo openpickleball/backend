@@ -98,4 +98,5 @@ Add each record here when it merges.
 - [0048. Account deletion: what goes, what stays, and how a Player is shown](0048-account-deletion.md) (issue #116)
 - [0049. Flag unusual submissions from trusted submitters](0049-flag-unusual-submissions.md) (issue #206)
 - [0050. An Account reads its own Organizer memberships](0050-own-organizer-memberships.md) (issue #301)
+- [0051. Player data export](0051-player-data-export.md) (issue #39)
 - [0053. A match shows its Event, Organizer, and Club](0053-match-shows-event-organizer-and-club.md) (issue #302)
