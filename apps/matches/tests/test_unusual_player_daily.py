@@ -3,8 +3,9 @@
 A new match with an Event is flagged ``unusual_submission`` with rule
 ``player_daily_matches`` when, once it is recorded, any of its players has
 more than ``UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES`` matches on its
-``played_on``: every match of the player that day but voided ones and
-corrections, self-reported ones included. One flag per match, however many
+``played_on``: every match of the player that day but voided ones,
+self-reported ones included, a correction counting in its voided
+original's place. One flag per match, however many
 players are past the number. The flag is a signal only. Made-up data only.
 """
 
@@ -179,7 +180,7 @@ def test_voided_matches_do_not_count(
     assert _rules(_record(event, member, [player])) == []
 
 
-def test_corrections_do_not_count_and_are_never_flagged(
+def test_a_correction_counts_once_and_is_never_flagged(
     event: Event, member: User, player: Player
 ) -> None:
     original = _record(event, member, [player])
@@ -193,9 +194,9 @@ def test_corrections_do_not_count_and_are_never_flagged(
         games=((11, 1), (11, 2)),
         played_on=DAY,
     )
-    for _ in range(CAP):
-        # The voided original and its correction add nothing.
-        assert _rules(_record(event, member, [player])) == []
+    # The voided original and its correction count once together.
+    assert _rules(_record(event, member, [player])) == []
+    assert _rules(_record(event, member, [player])) == [FlagRule.PLAYER_DAILY_MATCHES]
 
     second = edit_match(
         correction,
@@ -207,6 +208,7 @@ def test_corrections_do_not_count_and_are_never_flagged(
         played_on=DAY,
     )
 
+    # Past the cap, but a correction is never flagged.
     assert _rules(second) == []
 
 
