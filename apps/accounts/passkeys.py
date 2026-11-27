@@ -219,8 +219,16 @@ class AddPasskeyInput(AddWebAuthnInput):  # type: ignore[misc]
         credential = self.cleaned_data.get("credential")
         check_origin(credential)
         response = _parse_registration(credential)
-        canonical = websafe_encode(response.raw_id)
-        if credential.get("id") != canonical:
+        attested = response.response.attestation_object.auth_data.credential_data
+        if attested is None:
+            raise _incorrect()
+        # The stored JSON id must be the attested credential id, in
+        # canonical base64url, since the uniqueness check and the login
+        # lookup read it.
+        canonical = websafe_encode(attested.credential_id)
+        if credential.get("id") != canonical or response.raw_id != (
+            attested.credential_id
+        ):
             raise _incorrect()
         if _registered_with_id(canonical).exists():
             raise _incorrect()
