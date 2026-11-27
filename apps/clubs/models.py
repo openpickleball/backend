@@ -16,7 +16,6 @@ from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.db.models import Q
 from django.db.models.functions import Now
-from django.utils import timezone
 
 from apps.audit.access import AccessChange, Actor, AuditedAccessModel
 from apps.audit.models import AuditAction
@@ -430,11 +429,6 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
         if self.hold_ends_at is not None:
             values["hold_ends_at"] = self.hold_ends_at.isoformat()
         return values
-
-    @property
-    def is_held(self) -> bool:
-        """Whether the New Member Hold still applies (#232)."""
-        return self.hold_ends_at is not None and self.hold_ends_at > timezone.now()
 
     def access_notice(
         self,
