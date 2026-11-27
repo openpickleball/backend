@@ -170,10 +170,11 @@ def download_export(account: "_User", key: str) -> str:
     """Return the export's JSON once, deleting it; ``ExportNotFound`` otherwise.
 
     The export must be ready, unexpired, and ``account``'s, and the
-    Account active. A key that is empty or longer than ``KEY_MAX_LENGTH``
-    is refused before any lookup.
+    Account active. A key that is empty, longer than ``KEY_MAX_LENGTH``,
+    or not ASCII (the build's keys are URL-safe base64, and a lone
+    surrogate cannot be encoded) is refused before any lookup.
     """
-    if not key or len(key) > KEY_MAX_LENGTH:
+    if not key or len(key) > KEY_MAX_LENGTH or not key.isascii():
         raise ExportNotFound
     with transaction.atomic():
         # The Account before the export row, as Account deletion and the
