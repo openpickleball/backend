@@ -355,8 +355,9 @@ def invite_organizer_member(
     Retry-After header.
 
     A two-factor step older than a few minutes gets 403
-    `reauthentication_required`: confirm a code through
-    `auth/2fa/reauthenticate`, then retry.
+    `reauthentication_required`: confirm your two-factor method again
+    (`auth/2fa/reauthenticate` with a code, or
+    `auth/webauthn/reauthenticate` with a passkey), then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)
@@ -453,8 +454,9 @@ def change_organizer_member_role(
     authentication.
 
     A two-factor step older than a few minutes gets 403
-    `reauthentication_required`: confirm a code through
-    `auth/2fa/reauthenticate`, then retry.
+    `reauthentication_required`: confirm your two-factor method again
+    (`auth/2fa/reauthenticate` with a code, or
+    `auth/webauthn/reauthenticate` with a passkey), then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)
@@ -486,8 +488,9 @@ def remove_organizer_member(
     authentication.
 
     A two-factor step older than a few minutes gets 403
-    `reauthentication_required`: confirm a code through
-    `auth/2fa/reauthenticate`, then retry.
+    `reauthentication_required`: confirm your two-factor method again
+    (`auth/2fa/reauthenticate` with a code, or
+    `auth/webauthn/reauthenticate` with a passkey), then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)
@@ -522,8 +525,9 @@ def request_organizer_verification(
     Organizer is already verified or already has an open request.
 
     A two-factor step older than a few minutes gets 403
-    `reauthentication_required`: confirm a code through
-    `auth/2fa/reauthenticate`, then retry.
+    `reauthentication_required`: confirm your two-factor method again
+    (`auth/2fa/reauthenticate` with a code, or
+    `auth/webauthn/reauthenticate` with a passkey), then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)

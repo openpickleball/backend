@@ -93,7 +93,7 @@ REAUTHENTICATION_REQUIRED_MESSAGE = (
 )
 
 
-STEP_UP_MESSAGE = "Confirm a two-factor code again, then retry."
+STEP_UP_MESSAGE = "Confirm your two-factor method again, then retry."
 
 
 class ReauthenticationRequired(HttpError):
@@ -102,8 +102,8 @@ class ReauthenticationRequired(HttpError):
     Fixed text. The client reauthenticates through allauth
     (``auth/reauthenticate`` with the password, or ``auth/2fa/reauthenticate``
     with a code) and sends the request again. The step-up (#232) passes
-    ``STEP_UP_MESSAGE``, since only a code satisfies it for an Account
-    with MFA.
+    ``STEP_UP_MESSAGE``, since only a second factor step (a code or a
+    passkey) satisfies it for an Account with MFA.
     """
 
     def __init__(self, message: str = REAUTHENTICATION_REQUIRED_MESSAGE) -> None:

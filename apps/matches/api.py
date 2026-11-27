@@ -769,8 +769,10 @@ def create_results_file(
     two-factor step (any sign-in step, without two-factor
     authentication) is older than a few minutes gets 403 with code
     `reauthentication_required`: confirm through
-    `auth/2fa/reauthenticate` (or `auth/reauthenticate`), then retry. ``game_target`` (11, 15, or
-    21) and ``location`` apply to every row. Anyone who may not manage the
+    `auth/2fa/reauthenticate` or `auth/webauthn/reauthenticate` (or
+    `auth/reauthenticate` without two-factor authentication), then
+    retry. ``game_target`` (11, 15, or 21) and ``location`` apply to
+    every row. Anyone who may not manage the
     Event's matches gets the same 404 as an unknown Event. A larger file
     gets 413. The file is processed in the background: the response is
     202 with the file pending, and ``get_results_file`` shows the report.

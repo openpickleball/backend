@@ -227,8 +227,9 @@ def invite_club_admin(
     header.
 
     A two-factor step older than a few minutes gets 403
-    `reauthentication_required`: confirm a code through
-    `auth/2fa/reauthenticate`, then retry.
+    `reauthentication_required`: confirm your two-factor method again
+    (`auth/2fa/reauthenticate` with a code, or
+    `auth/webauthn/reauthenticate` with a passkey), then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)
@@ -283,8 +284,9 @@ def remove_club_admin(
     Club stop working.
 
     A two-factor step older than a few minutes gets 403
-    `reauthentication_required`: confirm a code through
-    `auth/2fa/reauthenticate`, then retry.
+    `reauthentication_required`: confirm your two-factor method again
+    (`auth/2fa/reauthenticate` with a code, or
+    `auth/webauthn/reauthenticate` with a passkey), then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)
@@ -350,8 +352,9 @@ def grant_club_organizer(
     when the Club already allows it.
 
     A two-factor step older than a few minutes gets 403
-    `reauthentication_required`: confirm a code through
-    `auth/2fa/reauthenticate`, then retry.
+    `reauthentication_required`: confirm your two-factor method again
+    (`auth/2fa/reauthenticate` with a code, or
+    `auth/webauthn/reauthenticate` with a passkey), then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)
@@ -388,8 +391,9 @@ def remove_club_organizer_grant(
     not allow gets the same 404 as an unknown code.
 
     A two-factor step older than a few minutes gets 403
-    `reauthentication_required`: confirm a code through
-    `auth/2fa/reauthenticate`, then retry.
+    `reauthentication_required`: confirm your two-factor method again
+    (`auth/2fa/reauthenticate` with a code, or
+    `auth/webauthn/reauthenticate` with a passkey), then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)

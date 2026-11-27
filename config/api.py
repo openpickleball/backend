@@ -220,8 +220,9 @@ _MFA_REQUIRED_DESCRIPTION = (
     "reauthentication, or for an admin change to an Organizer or Club and "
     "a results upload a recent two-factor step (any sign-in step for an "
     "Account without two-factor authentication); confirm through allauth's "
-    "`auth/2fa/reauthenticate` or `auth/reauthenticate`, then retry. Only "
-    "operations whose description says so return it."
+    "`auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or "
+    "`auth/reauthenticate`, then retry. Only operations whose description "
+    "says so return it."
 )
 
 
