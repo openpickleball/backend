@@ -105,3 +105,4 @@ Add each record here when it merges.
 - [0055. Club self-service: profiles, admins, and Club Organizer Grants](0055-club-self-service.md) (issue #230)
 - [0056. Passkeys (WebAuthn) for the browser client](0056-passkeys.md) (issue #117)
 - [0057. Organizer and Club admin security](0057-organizer-and-club-admin-security.md) (issue #232)
+- [0058. The full recompute command](0058-full-recompute-command.md) (issue #48)

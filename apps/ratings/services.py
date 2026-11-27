@@ -28,10 +28,15 @@ that deletes a ``RatingState``). It orders replay changes against live
 updates: both lock the engine snapshot row first, so they serialize, and
 it runs only while a request is pending, so a redelivered or repeated
 replay task writes nothing.
+
+``recompute_ratings()`` is the recompute (#48, ADR 0058), behind
+``manage.py recompute_ratings``: the same full replay without a request,
+with a dry run that writes nothing.
 """
 
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from typing import Any
@@ -733,13 +738,61 @@ def replay_as_of() -> date:
     return today if latest is None or latest <= today else latest
 
 
-def _apply_replay(run: ReplayRun, replay: RatingReplay) -> None:
+class RecomputeChangeKind(StrEnum):
+    """What a full replay did, or would do, to one stored rating."""
+
+    CREATED = "created"
+    CHANGED = "changed"
+    REMOVED = "removed"
+    UNCHANGED = "unchanged"
+
+
+@dataclass(frozen=True)
+class RecomputeChange:
+    """One rating a full replay created, changed, removed, or left alone.
+
+    ``player`` is the Player's OPEN Code. ``before`` and ``after`` are the
+    stored and replayed ``rating`` (None where there is none): the
+    engine's values, never computed here (hard rule 2).
+    """
+
+    player: str
+    rating_format: str
+    kind: RecomputeChangeKind
+    before: float | None
+    after: float | None
+
+
+def _change(
+    player: Player,
+    rating_format: str,
+    stored: RatingState | None,
+    summary: RatingSummary | None,
+    kind: RecomputeChangeKind,
+) -> RecomputeChange:
+    return RecomputeChange(
+        player=str(player.public_code),
+        rating_format=rating_format,
+        kind=kind,
+        before=None if stored is None else stored.rating,
+        after=None if summary is None else summary.rating,
+    )
+
+
+def _replayed_by_player(run: ReplayRun) -> dict[str, dict[str, RatingSummary]]:
+    summaries: dict[str, dict[str, RatingSummary]] = {}
+    for summary in run.summaries:
+        summaries.setdefault(summary.player_id, {})[summary.rating_format] = summary
+    return summaries
+
+
+def _apply_replay(run: ReplayRun, replay: RatingReplay) -> list[RecomputeChange]:
     """Store every replayed rating and remove every rating the replay dropped.
 
     Locks every Player the replay rated or who has a stored rating, in one
     query ordered by row id, then goes through them in that order and
-    their formats in sorted order. Runs inside ``replay_ratings()``'s
-    transaction.
+    their formats in sorted order. Runs inside the caller's transaction.
+    Returns what happened to each rating, in that order.
     """
     codes = {summary.player_id for summary in run.summaries}
     players = list(
@@ -752,9 +805,8 @@ def _apply_replay(run: ReplayRun, replay: RatingReplay) -> None:
     )
     if codes - {str(player.public_code) for player in players}:
         raise RatingApplyError("A replayed player has no player record.")
-    summaries: dict[str, dict[str, RatingSummary]] = {}
-    for summary in run.summaries:
-        summaries.setdefault(summary.player_id, {})[summary.rating_format] = summary
+    summaries = _replayed_by_player(run)
+    changes: list[RecomputeChange] = []
     for player in players:
         replayed = summaries.get(str(player.public_code), {})
         stored = {
@@ -762,17 +814,110 @@ def _apply_replay(run: ReplayRun, replay: RatingReplay) -> None:
             for state in RatingState.objects.filter(player=player)
         }
         for rating_format in sorted({*replayed, *stored}):
+            before = stored.get(rating_format)
             if rating_format in replayed:
-                apply_rating(
+                summary = replayed[rating_format]
+                history = apply_rating(
                     player=player,
-                    summary=replayed[rating_format],
+                    summary=summary,
                     kind=RatingChangeKind.REPLAY,
                     replay=replay,
                 )
+                if history is None:
+                    kind = RecomputeChangeKind.UNCHANGED
+                elif before is None:
+                    kind = RecomputeChangeKind.CREATED
+                else:
+                    kind = RecomputeChangeKind.CHANGED
+                changes.append(_change(player, rating_format, before, summary, kind))
             else:
                 _remove_rating(
                     player=player, state=stored[rating_format], replay=replay
                 )
+                changes.append(
+                    _change(
+                        player, rating_format, before, None, RecomputeChangeKind.REMOVED
+                    )
+                )
+    return changes
+
+
+def _planned_changes(run: ReplayRun, spec_version: str) -> list[RecomputeChange]:
+    """What ``_apply_replay()`` would do with ``run``, without any write or lock.
+
+    A replayed rating is unchanged when every value ``apply_rating()``
+    would store (the summary, the replay's engine version, and
+    ``spec_version``) equals the stored one, exactly as ``apply_rating()``
+    decides. The same order as ``_apply_replay()``.
+    """
+    summaries = _replayed_by_player(run)
+    players = list(
+        Player.objects.filter(
+            models.Q(public_code__in=set(summaries))
+            | models.Q(pk__in=RatingState.objects.values("player_id"))
+        ).order_by("pk")
+    )
+    if set(summaries) - {str(player.public_code) for player in players}:
+        raise RatingApplyError("A replayed player has no player record.")
+    changes: list[RecomputeChange] = []
+    for player in players:
+        replayed = summaries.get(str(player.public_code), {})
+        stored = {
+            state.rating_format: state
+            for state in RatingState.objects.filter(player=player)
+        }
+        for rating_format in sorted({*replayed, *stored}):
+            before = stored.get(rating_format)
+            summary = replayed.get(rating_format)
+            if summary is None:
+                kind = RecomputeChangeKind.REMOVED
+            elif before is None:
+                kind = RecomputeChangeKind.CREATED
+            else:
+                values: dict[str, Any] = {
+                    name: getattr(summary, name) for name in SUMMARY_FIELDS
+                }
+                values["engine_version"] = run.provenance.engine_version
+                values["spec_version"] = spec_version
+                kind = (
+                    RecomputeChangeKind.UNCHANGED
+                    if all(
+                        getattr(before, name) == values[name] for name in VALUE_FIELDS
+                    )
+                    else RecomputeChangeKind.CHANGED
+                )
+            changes.append(_change(player, rating_format, before, summary, kind))
+    return changes
+
+
+@dataclass(frozen=True)
+class _ReplayWrite:
+    run: ReplayRun
+    requests: list[RatingReplayRequest]
+    changes: list[RecomputeChange]
+
+
+def _replay_and_write(
+    row: EngineSnapshot,
+    requests: list[RatingReplayRequest],
+    replay_date: date,
+    spec_version: str | None,
+) -> _ReplayWrite:
+    """Replay the counted ledger and store the result, under ``row``'s lock.
+
+    The shared body of ``replay_ratings()`` and ``recompute_ratings()``:
+    runs the replay, stores its provenance, applies and removes ratings,
+    saves the snapshot on ``row``, and deletes exactly ``requests``. The
+    caller holds the transaction and has locked ``row`` first.
+    """
+    run = run_replay(counted_engine_matches(), replay_date)
+    replay = record_replay(run.provenance, spec_version=spec_version)
+    changes = _apply_replay(run, replay)
+    _save_engine_snapshot(row, run)
+    RatingReplayRequest.objects.filter(
+        pk__in=[request.pk for request in requests]
+    ).delete()
+    return _ReplayWrite(run=run, requests=requests, changes=changes)
 
 
 def replay_ratings(*, as_of: date | None = None) -> ReplayOutcome:
@@ -811,13 +956,7 @@ def replay_ratings(*, as_of: date | None = None) -> ReplayOutcome:
             return ReplayOutcome.NOTHING_REQUESTED
         try:
             replay_date = replay_as_of() if as_of is None else as_of
-            run = run_replay(counted_engine_matches(), replay_date)
-            replay = record_replay(run.provenance)
-            _apply_replay(run, replay)
-            _save_engine_snapshot(row, run)
-            RatingReplayRequest.objects.filter(
-                pk__in=[request.pk for request in requests]
-            ).delete()
+            written = _replay_and_write(row, requests, replay_date, None)
         # Any error: log the class only (the text can quote values), then
         # let it propagate; the transaction rolls back.
         except Exception as exc:
@@ -829,7 +968,145 @@ def replay_ratings(*, as_of: date | None = None) -> ReplayOutcome:
             replay_date.isoformat(),
             len(requests),
             min(request.earliest_date for request in requests).isoformat(),
-            run.provenance.matches_considered,
-            run.provenance.matches_counted,
+            written.run.provenance.matches_considered,
+            written.run.provenance.matches_counted,
         )
     return ReplayOutcome.REPLAYED
+
+
+# The recompute (#48, ADR 0058).
+
+
+class RecomputeRefused(ValueError):
+    """``recompute_ratings()`` refused its options. The message is fixed text."""
+
+
+@dataclass(frozen=True)
+class RecomputeResult:
+    """What ``recompute_ratings()`` did, or would do in a dry run.
+
+    ``changes`` covers every stored or replayed rating, in the order the
+    replay applies them, narrowed to ``rating_format`` when one was given
+    (dry run only). ``requests_cleared`` is the number of pending replay
+    requests the recompute deleted (always 0 in a dry run).
+    """
+
+    as_of: date
+    spec_version: str
+    dry_run: bool
+    rating_format: str | None
+    matches_considered: int
+    matches_counted: int
+    requests_cleared: int
+    changes: tuple[RecomputeChange, ...]
+
+    def count(self, kind: RecomputeChangeKind) -> int:
+        """The number of ratings with change ``kind``."""
+        return sum(1 for change in self.changes if change.kind == kind)
+
+
+def _latest_counted_played_on() -> date | None:
+    latest: date | None = Match.objects.counted().aggregate(latest=Max("played_on"))[
+        "latest"
+    ]
+    return latest
+
+
+def recompute_ratings(
+    *,
+    as_of: date | None = None,
+    rating_format: str | None = None,
+    spec_version: str | None = None,
+    dry_run: bool = False,
+) -> RecomputeResult:
+    """Rebuild every rating from the whole counted ledger (#48, ADR 0058).
+
+    A full replay of ``Match.objects.counted()`` through the engine, as of
+    ``as_of`` (default ``replay_as_of()``), whether or not a replay request
+    is pending. Run it after an engine upgrade or a bump of
+    ``OPEN_RATING_SPEC_VERSION`` (``docs/engine.md``).
+
+    A write runs exactly like ``replay_ratings()``: one transaction that
+    locks the engine snapshot row first, stores the replay's provenance
+    with ``spec_version`` (hard rule 4), applies and removes ratings
+    through ``apply_rating()`` and ``_remove_rating()``, saves the
+    snapshot, and deletes the replay requests that existed when it took
+    the lock (it covers them; later ones stay). Running it again writes a
+    new ``RatingReplay`` but no rating change when nothing changed.
+
+    ``dry_run`` replays and compares with the stored ratings, and writes
+    nothing and takes no lock. Only a dry run takes ``rating_format``
+    (which narrows the result), an ``as_of`` before the latest counted
+    ``played_on`` (later matches would drop out of the stored ratings),
+    or a ``spec_version`` other than ``OPEN_RATING_SPEC_VERSION`` (the next
+    replay would put the setting's back). Raises ``RecomputeRefused``
+    (fixed text) for those, and for an unknown format, before any write.
+    Any other error is logged by class only and propagates; a write rolls
+    back.
+    """
+    setting = settings.OPEN_RATING_SPEC_VERSION
+    spec = setting if spec_version is None else spec_version
+    if rating_format is not None and rating_format not in RatingFormat.values:
+        raise RecomputeRefused("Unknown rating format.")
+    if not dry_run:
+        if rating_format is not None:
+            raise RecomputeRefused("A rating format is allowed only in a dry run.")
+        if spec != setting:
+            raise RecomputeRefused(
+                "A spec version other than OPEN_RATING_SPEC_VERSION is allowed "
+                "only in a dry run."
+            )
+    try:
+        if dry_run:
+            replay_date = replay_as_of() if as_of is None else as_of
+            run = run_replay(counted_engine_matches(), replay_date)
+            changes = _planned_changes(run, spec)
+            requests_cleared = 0
+        else:
+            with transaction.atomic():
+                row = _snapshot_row(live_config())
+                requests = list(RatingReplayRequest.objects.order_by("pk"))
+                latest = _latest_counted_played_on()
+                if as_of is not None and latest is not None and as_of < latest:
+                    raise RecomputeRefused(
+                        "An as-of date before the latest counted match is "
+                        "allowed only in a dry run."
+                    )
+                replay_date = replay_as_of() if as_of is None else as_of
+                written = _replay_and_write(row, requests, replay_date, spec)
+                run = written.run
+                changes = written.changes
+                requests_cleared = len(requests)
+    except RecomputeRefused:
+        raise
+    # Any error: log the class only (the text can quote values), then let
+    # it propagate; a write rolls back.
+    except Exception as exc:
+        logger.error("Recompute failed (%s).", type(exc).__name__)
+        raise
+    if rating_format is not None:
+        changes = [c for c in changes if c.rating_format == rating_format]
+    result = RecomputeResult(
+        as_of=replay_date,
+        spec_version=spec,
+        dry_run=dry_run,
+        rating_format=rating_format,
+        matches_considered=run.provenance.matches_considered,
+        matches_counted=run.provenance.matches_counted,
+        requests_cleared=requests_cleared,
+        changes=tuple(changes),
+    )
+    logger.info(
+        "Recompute%s as of %s: %s matches considered, %s counted; %s created, "
+        "%s changed, %s removed, %s unchanged; %s requests cleared.",
+        " (dry run)" if dry_run else "",
+        replay_date.isoformat(),
+        result.matches_considered,
+        result.matches_counted,
+        result.count(RecomputeChangeKind.CREATED),
+        result.count(RecomputeChangeKind.CHANGED),
+        result.count(RecomputeChangeKind.REMOVED),
+        result.count(RecomputeChangeKind.UNCHANGED),
+        requests_cleared,
+    )
+    return result

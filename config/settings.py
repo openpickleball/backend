@@ -1147,7 +1147,7 @@ RATING_REPLAY_DELAY_SECONDS = 60
 # The rating spec version stored with every rating change (#45, decision Q7
 # in #1): the openpickleball/rating-spec tag the ratings follow. The project
 # owner chose its release candidate tag, v1.0.0rc1, stored as 1.0.0rc1. Bump
-# it when rating-spec tags v1.0.0, then run the recompute (#48).
+# it when rating-spec tags v1.0.0, then run recompute_ratings (#48).
 OPEN_RATING_SPEC_VERSION = "1.0.0rc1"
 
 # Where a player's public profile lives (#53): the rating lookup's
