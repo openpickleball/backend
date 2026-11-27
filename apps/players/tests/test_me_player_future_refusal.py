@@ -47,7 +47,8 @@ def _clear_rate_limits() -> Iterator[None]:
 def next_year_body() -> dict[str, object]:
     """A birth month next year: in the future on every clock."""
     return {
-        "display_name": "Robin Q.",
+        "first_name": "Robin",
+        "last_name": "Quill",
         "birth_year": age_limit_date().year + 1,
         "birth_month": 1,
         **DIVISION,
@@ -61,7 +62,8 @@ def next_month_body() -> dict[str, object]:
         (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
     )
     return {
-        "display_name": "Robin Q.",
+        "first_name": "Robin",
+        "last_name": "Quill",
         "birth_year": year,
         "birth_month": month,
         **DIVISION,
@@ -99,7 +101,7 @@ def test_an_adult_retry_after_a_future_month_gets_the_same_answer(base: str) -> 
 def test_the_future_refusal_hides_other_errors(base: str) -> None:
     session = logged_in_session(base)
 
-    response = call(session, "POST", {**next_year_body(), "display_name": " "})
+    response = call(session, "POST", {**next_year_body(), "first_name": " "})
 
     assert response.status_code == 422
     assert response.json()["errors"] == REFUSED_ERRORS

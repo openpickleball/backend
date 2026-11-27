@@ -5,7 +5,9 @@ and the player can no longer change them (ADR 0023). ``PATCH
 /api/v1/me/player`` refuses each of them with a fixed 422 on that field,
 whatever the value: a new one, the stored one, or null. The OpenAPI
 document no longer lists them for PATCH. ``update_profile()`` refuses
-them too. Nothing changes and no Audit Event is recorded. Made-up data
+them too. Nothing changes and no Audit Event is recorded. The display name
+and the legal name are refused the same way, with the same code, since
+they are built from the names given at signup (ADR 0062). Made-up data
 only.
 """
 
@@ -141,7 +143,7 @@ def test_a_set_once_field_blocks_the_rest_of_the_patch(mine: Player) -> None:
     response = patch(
         mine,
         {
-            "display_name": "Robin R.",
+            "city": "Shelbyville",
             "birth_year": OTHER["birth_year"],
             "privacy": {"city_region_visibility": "private"},
         },
@@ -190,10 +192,11 @@ def test_an_under_13_birth_patch_sets_no_flag(base: str) -> None:
 
 
 def test_other_profile_fields_still_change(mine: Player) -> None:
-    response = patch(mine, {"display_name": "Robin R.", "city": "Shelbyville"})
+    response = patch(mine, {"region": "Iowa", "city": "Shelbyville"})
 
     assert response.status_code == 200
-    assert response.json()["display_name"] == "Robin R."
+    assert response.json()["display_name"] == "Robin Q."
+    assert response.json()["city"] == "Shelbyville"
     assert {key: response.json()[key] for key in SET_ONCE} == STORED
 
 
@@ -201,13 +204,7 @@ def test_the_openapi_document_lists_no_set_once_field_for_patch() -> None:
     document = json.loads(schema_path().read_text(encoding="utf-8"))
     properties = document["components"]["schemas"]["PlayerUpdateIn"]["properties"]
 
-    assert set(properties) == {
-        "display_name",
-        "legal_name",
-        "city",
-        "region",
-        "privacy",
-    }
+    assert set(properties) == {"city", "region", "privacy"}
 
 
 # update_profile()

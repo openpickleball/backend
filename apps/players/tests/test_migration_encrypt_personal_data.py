@@ -22,6 +22,10 @@ pytestmark = pytest.mark.django_db
 PLAIN = [("players", "0003_playerprivacy_rating_visibility_and_more")]
 ENCRYPTED = [("players", "0005_encrypt_personal_data")]
 LEGAL_NAME = "Qorvath Made-up Legal"
+# The columns these migrations encrypt. Later migrations add others
+# (ADR 0062), which do not exist at these migrations, so reads load these
+# only.
+COLUMNS = ("legal_name", "birth_year", "birth_month", "gender_division")
 RESTORED_CHECKS = {
     "players_player_birth_month_range",
     "players_player_birth_year_min",
@@ -95,7 +99,7 @@ def test_back_restores_plain_columns_and_forward_encrypts_again(
             player.birth_month,
             player.gender_division,
         )
-        for player in Player.objects.all()
+        for player in Player.objects.only(*COLUMNS)
     }
     assert stored == {
         first.pk: (LEGAL_NAME, 1979, 3, "mens"),
@@ -122,7 +126,7 @@ def test_forward_leaves_a_value_already_encrypted(
     [(legal_name, *others)] = _raw()
     assert legal_name == token
     assert all(isinstance(value, str) and is_token(value) for value in others)
-    stored = Player.objects.get(pk=player.pk)
+    stored = Player.objects.only(*COLUMNS).get(pk=player.pk)
     assert (stored.legal_name, stored.gender_division) == (LEGAL_NAME, "mens")
 
 

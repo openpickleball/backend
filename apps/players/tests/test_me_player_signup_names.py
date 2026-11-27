@@ -109,8 +109,8 @@ def test_the_held_name_and_place_win_over_the_body(base: str) -> None:
     response = _create(
         session,
         {
-            "display_name": "Body Name",
-            "legal_name": "Body Legal",
+            "first_name": "Body",
+            "last_name": "Name",
             "city": "Body City",
             "region": "Body Region",
         },
@@ -123,7 +123,40 @@ def test_the_held_name_and_place_win_over_the_body(base: str) -> None:
 
 
 @pytest.mark.parametrize("base", CLIENTS)
-def test_the_player_can_change_the_starting_display_name(base: str) -> None:
+def test_an_adult_can_show_and_hide_the_full_last_name(base: str) -> None:
+    session = _verified_session(base, first_name="Avery", last_name="Nightjar")
+    _create(session, {})
+    if base == BROWSER:
+        headers = csrf_header(session.client)
+    else:
+        headers = {"X-Session-Token": session.token or ""}
+
+    def name_format(value: str) -> Any:
+        return session.client.patch(
+            ME_PLAYER,
+            json.dumps({"privacy": {"name_format": value}}),
+            content_type="application/json",
+            headers=headers,
+        )
+
+    initial = name_format("first_last_initial")
+
+    assert initial.status_code == 200, initial.json()
+    assert initial.json()["display_name"] == "Avery N."
+    assert initial.json()["privacy"]["name_format"] == "first_last_initial"
+    assert Player.objects.get().display_name == "Avery N."
+
+    full = name_format("full")
+
+    assert full.status_code == 200, full.json()
+    assert full.json()["display_name"] == "Avery Nightjar"
+    player = Player.objects.get()
+    assert player.display_name == player.legal_name == "Avery Nightjar"
+
+
+@pytest.mark.parametrize("base", CLIENTS)
+@pytest.mark.parametrize("field", ["display_name", "legal_name"])
+def test_the_player_cannot_type_a_name(base: str, field: str) -> None:
     session = _verified_session(base)
     _create(session, {})
     if base == BROWSER:
@@ -133,15 +166,17 @@ def test_the_player_can_change_the_starting_display_name(base: str) -> None:
 
     response = session.client.patch(
         ME_PLAYER,
-        json.dumps({"display_name": "Robin Q."}),
+        json.dumps({field: "Robin Q."}),
         content_type="application/json",
         headers=headers,
     )
 
-    assert response.status_code == 200, response.json()
+    assert response.status_code == 422
+    [error] = response.json()["errors"]
+    assert (error["field"], error["code"]) == (f"body.{field}", "set_once")
+    assert "Robin Q." not in response.content.decode()
     player = Player.objects.get()
-    assert player.display_name == "Robin Q."
-    assert player.legal_name == SIGNUP_FULL_NAME
+    assert player.display_name == player.legal_name == SIGNUP_FULL_NAME
 
 
 @pytest.mark.parametrize("base", CLIENTS)
@@ -174,15 +209,15 @@ def _signed_in_verified() -> Client:
     return client
 
 
-@pytest.mark.parametrize("display_name", [..., None])
-def test_with_no_hold_a_missing_display_name_gets_422(display_name: object) -> None:
+@pytest.mark.parametrize("name", [..., None])
+def test_with_no_hold_missing_names_get_422(name: object) -> None:
     data: dict[str, object] = {
         "birth_year": 1985,
         "birth_month": 3,
         "gender_division": "mens",
     }
-    if display_name is not ...:
-        data["display_name"] = display_name
+    if name is not ...:
+        data["first_name"] = data["last_name"] = name
 
     response = _signed_in_verified().post(
         ME_PLAYER, data, content_type="application/json"
@@ -192,7 +227,60 @@ def test_with_no_hold_a_missing_display_name_gets_422(display_name: object) -> N
     assert [
         (error["field"], error["code"], error["message"])
         for error in response.json()["errors"]
-    ] == [("body.display_name", "missing", "Enter a display name.")]
+    ] == [
+        ("body.first_name", "missing", "Enter your first name."),
+        ("body.last_name", "missing", "Enter your last name."),
+    ]
+    assert not Player.objects.exists()
+
+
+@pytest.mark.parametrize(
+    ("names", "field", "code", "message"),
+    [
+        ({"first_name": " "}, "first_name", "required", "Enter your first name."),
+        ({"last_name": "\u0301"}, "last_name", "required", "Enter your last name."),
+        (
+            {"first_name": "A" * 62},
+            "first_name",
+            "max_length",
+            "Your first name can be at most 61 characters.",
+        ),
+        (
+            {"first_name": "A" * 40, "last_name": "B" * 30},
+            "last_name",
+            "max_length",
+            "Your first and last name together can be at most 63 characters.",
+        ),
+        (
+            {"last_name": "Zq\x07xj"},
+            "last_name",
+            "invalid",
+            "Remove control or invalid characters.",
+        ),
+    ],
+)
+def test_with_no_hold_the_names_get_the_signup_checks(
+    names: dict[str, str], field: str, code: str, message: str
+) -> None:
+    data = {
+        "first_name": "Robin",
+        "last_name": "Quillfeather",
+        **names,
+        "birth_year": 1985,
+        "birth_month": 3,
+        "gender_division": "mens",
+    }
+
+    response = _signed_in_verified().post(
+        ME_PLAYER, data, content_type="application/json"
+    )
+
+    assert response.status_code == 422
+    assert [
+        (error["field"], error["code"], error["message"])
+        for error in response.json()["errors"]
+    ] == [(f"body.{field}", code, message)]
+    assert "Zq" not in response.content.decode()
     assert not Player.objects.exists()
 
 
@@ -200,8 +288,8 @@ def test_with_no_hold_the_body_gives_the_name_and_place() -> None:
     response = _signed_in_verified().post(
         ME_PLAYER,
         {
-            "display_name": "Robin Q.",
-            "legal_name": "Robin Quillfeather",
+            "first_name": " Robin ",
+            "last_name": "Quillfeather",
             "birth_year": 1985,
             "birth_month": 3,
             "gender_division": "mens",
@@ -213,7 +301,8 @@ def test_with_no_hold_the_body_gives_the_name_and_place() -> None:
     assert response.status_code == 201, response.json()
     player = Player.objects.get()
     assert (player.display_name, player.legal_name) == (
-        "Robin Q.",
+        "Robin Quillfeather",
         "Robin Quillfeather",
     )
+    assert (player.first_name, player.last_name) == ("Robin", "Quillfeather")
     assert (player.city, player.region) == ("Lakeview", "")

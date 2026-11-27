@@ -26,6 +26,8 @@ MARKER = "zqxjmarker"
 def _valid(**overrides: Any) -> dict[str, Any]:
     values: dict[str, Any] = {
         "display_name": "Made-up Player",
+        "first_name": "Made-up",
+        "last_name": "Player",
         "birth_year": 1990,
         "birth_month": 6,
         "gender_division": "mens",
@@ -55,6 +57,8 @@ def test_player_fields_are_exactly_the_planned_set() -> None:
         "account",
         "display_name",
         "legal_name",
+        "first_name",
+        "last_name",
         "birth_year",
         "birth_month",
         "gender_division",
@@ -63,10 +67,11 @@ def test_player_fields_are_exactly_the_planned_set() -> None:
     }
 
 
-def test_privacy_fields_are_exactly_the_five_settings() -> None:
+def test_privacy_fields_are_exactly_the_settings_and_name_format() -> None:
     names = {field.name for field in PlayerPrivacy._meta.concrete_fields}
 
-    assert names == {"player", *PlayerPrivacy.SETTINGS}
+    assert names == {"player", *PlayerPrivacy.SETTINGS, "name_format"}
+    assert (*PlayerPrivacy.SETTINGS, "name_format") == PlayerPrivacy.FIELDS
     assert PlayerPrivacy.SETTINGS == (
         "city_region_visibility",
         "match_history_visibility",

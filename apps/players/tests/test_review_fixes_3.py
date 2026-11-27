@@ -1,4 +1,8 @@
-"""Review fixes for display name visibility (C12, C13)."""
+"""Review fixes for name visibility (C12, C13).
+
+The display name is built from the first and last name (ADR 0062), so the
+names carry the visibility rules.
+"""
 
 from typing import Any
 
@@ -15,7 +19,8 @@ pytestmark = pytest.mark.django_db
 def _create(**overrides: Any) -> Player:
     values: dict[str, Any] = {
         "account": UserFactory.create(),
-        "display_name": "Made-up Player",
+        "first_name": "Made-up",
+        "last_name": "Player",
         "birth_year": 1990,
         "birth_month": 6,
         "gender_division": "mens",
@@ -28,11 +33,11 @@ def _create(**overrides: Any) -> Player:
 
 
 @pytest.mark.parametrize("value", ["\U0001d159", "\U0001d159\U0001d159"])
-def test_c12_null_notehead_display_name_is_refused(value: str) -> None:
+def test_c12_null_notehead_last_name_is_refused(value: str) -> None:
     with pytest.raises(ValidationError) as caught:
-        _create(display_name=value)
+        _create(last_name=value)
 
-    assert "display_name" in caught.value.message_dict
+    assert "last_name" in caught.value.message_dict
     assert not Player.objects.exists()
 
 
@@ -46,15 +51,15 @@ def test_c12_null_notehead_display_name_is_refused(value: str) -> None:
         "\U00010d50\U00010d51",  # Garay letters, Unicode 16
     ],
 )
-def test_c13_newer_unicode_display_name_is_accepted(value: str) -> None:
-    created = _create(display_name=value)
+def test_c13_newer_unicode_first_name_is_accepted(value: str) -> None:
+    created = _create(first_name=value)
 
-    assert Player.objects.get(pk=created.pk).display_name == value
+    assert Player.objects.get(pk=created.pk).display_name == f"{value} Player"
 
 
 @pytest.mark.parametrize("value", ["́", "", "\U000f0000"])
 def test_c13_combining_or_private_use_alone_is_still_refused(value: str) -> None:
     with pytest.raises(ValidationError) as caught:
-        _create(display_name=value)
+        _create(first_name=value)
 
-    assert "display_name" in caught.value.message_dict
+    assert "first_name" in caught.value.message_dict

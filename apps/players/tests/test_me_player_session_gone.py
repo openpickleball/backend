@@ -65,7 +65,7 @@ def test_a_create_whose_session_was_deleted_still_answers_201(
 
     response = session.client.post(
         "/api/v1/me/player",
-        {"display_name": "Robin Q."},
+        {"first_name": "Robin", "last_name": "Quill"},
         content_type="application/json",
         headers={"X-Session-Token": session.token or ""},
     )

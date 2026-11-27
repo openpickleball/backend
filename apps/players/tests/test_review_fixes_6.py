@@ -27,7 +27,8 @@ def owner() -> "_User":
 def player(owner: "_User") -> Player:
     return create_player(
         account=owner,
-        display_name="Made-up Player",
+        first_name="Made-up",
+        last_name="Player",
         birth_year=1990,
         birth_month=6,
         city="Madeupville",
@@ -36,25 +37,6 @@ def player(owner: "_User") -> Player:
 
 
 # E1: a padded stored value resent as is, or stripped, is unchanged.
-
-
-def test_e1_resent_padded_invalid_display_name_does_not_block(
-    player: Player, owner: "_User"
-) -> None:
-    Player.objects.filter(pk=player.pk).update(display_name="́ ")
-    player.refresh_from_db()
-
-    update_profile(
-        player=player,
-        actor=owner,
-        changes={"display_name": player.display_name, "city": "S"},
-    )
-
-    stored = Player.objects.get(pk=player.pk)
-    assert stored.city == "S"
-    assert stored.display_name == "́ "
-    [event] = AuditEvent.objects.all()
-    assert event.after == {"changed_fields": ["city"]}
 
 
 @pytest.mark.parametrize("resent", [" Madeupville ", "Madeupville"])
@@ -93,11 +75,12 @@ def test_e2_non_text_value_is_refused_on_update(
 
 
 @pytest.mark.parametrize(
-    "field", ["display_name", "legal_name", "city", "region", "gender_division"]
+    "field", ["first_name", "last_name", "city", "region", "gender_division"]
 )
 def test_e2_huge_int_is_refused_on_create(field: str) -> None:
     values: dict[str, Any] = {
-        "display_name": "Made-up Player",
+        "first_name": "Made-up",
+        "last_name": "Player",
         "birth_year": 1990,
         "birth_month": 6,
         "gender_division": "mens",
@@ -111,9 +94,12 @@ def test_e2_huge_int_is_refused_on_create(field: str) -> None:
     assert not Player.objects.exists()
 
 
-def test_e2_none_display_name_is_still_required() -> None:
+@pytest.mark.parametrize("field", ["first_name", "last_name"])
+def test_e2_none_name_is_still_required(field: str) -> None:
     values: dict[str, Any] = {
-        "display_name": None,
+        "first_name": "Made-up",
+        "last_name": "Player",
+        field: None,
         "birth_year": 1990,
         "birth_month": 6,
         "gender_division": "mens",
@@ -122,15 +108,15 @@ def test_e2_none_display_name_is_still_required() -> None:
     with pytest.raises(ValidationError) as caught:
         create_player(account=UserFactory.create(), **values)
 
-    assert "display_name" in caught.value.message_dict
+    assert field in caught.value.message_dict
 
 
 def test_e2_none_still_clears_optional_fields(player: Player, owner: "_User") -> None:
     update_profile(
         player=player,
         actor=owner,
-        changes={"city": None, "legal_name": None},
+        changes={"city": None, "region": None},
     )
 
     stored = Player.objects.get(pk=player.pk)
-    assert (stored.city, stored.legal_name) == ("", "")
+    assert (stored.city, stored.region) == ("", "")

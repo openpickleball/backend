@@ -42,7 +42,8 @@ def test_create_refuses_a_birth_value_that_is_not_an_int(
         user=account, email=account.email, verified=True, primary=True
     )
     data: dict[str, object] = {
-        "display_name": "Robin Q.",
+        "first_name": "Robin",
+        "last_name": "Quill",
         "birth_year": 1985,
         "birth_month": 3,
         name: value,

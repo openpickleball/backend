@@ -75,7 +75,9 @@ CLEARED_FIELDS = [
     "birth_year",
     "city",
     "display_name",
+    "first_name",
     "gender_division",
+    "last_name",
     "legal_name",
     "region",
 ]

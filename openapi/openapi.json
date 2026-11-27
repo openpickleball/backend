@@ -2443,7 +2443,7 @@
         "type": "string"
       },
       "MyPlayerOut": {
-        "description": "The signed-in Account's own Player, with every profile field.\n\nReturned only to that Account. Empty optional text fields are ``\"\"``.\n``gender_division`` is ``\"\"`` only for a Player stored before it was\nrequired (issue #215).",
+        "description": "The signed-in Account's own Player, with every profile field.\n\nReturned only to that Account. Empty optional text fields are ``\"\"``.\n``gender_division`` is ``\"\"`` only for a Player stored before it was\nrequired (issue #215). ``first_name`` and ``last_name`` are the names\ngiven at signup, ``\"\"`` only for a Player stored before them whose\nlegal name did not split (ADR 0062).",
         "properties": {
           "birth_month": {
             "title": "Birth Month",
@@ -2465,13 +2465,26 @@
             "title": "Display Name",
             "type": "string"
           },
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
           "gender_division": {
             "title": "Gender Division",
+            "type": "string"
+          },
+          "last_name": {
+            "title": "Last Name",
             "type": "string"
           },
           "legal_name": {
             "title": "Legal Name",
             "type": "string"
+          },
+          "name_format_locked": {
+            "description": "True while the player is 13 to 17: privacy.name_format cannot be changed to full. Judged at the time of the request, so the app never works out an age.",
+            "title": "Name Format Locked",
+            "type": "boolean"
           },
           "privacy": {
             "$ref": "#/components/schemas/PrivacyOut"
@@ -2485,15 +2498,27 @@
           "code",
           "display_name",
           "legal_name",
+          "first_name",
+          "last_name",
           "birth_year",
           "birth_month",
           "gender_division",
           "city",
           "region",
-          "privacy"
+          "privacy",
+          "name_format_locked"
         ],
         "title": "MyPlayerOut",
         "type": "object"
+      },
+      "NameFormat": {
+        "description": "How the display name shows the last name (issue #354, ADR 0062).\n\n``FIRST_LAST_INITIAL`` is the more private one: the first name and the\nlast name's initial.",
+        "enum": [
+          "full",
+          "first_last_initial"
+        ],
+        "title": "NameFormat",
+        "type": "string"
       },
       "OAuthRecordKind": {
         "description": "Which kind of OAuth record an entry describes.",
@@ -2911,7 +2936,7 @@
       },
       "PlayerCreateIn": {
         "additionalProperties": false,
-        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` take JSON integers only: a boolean,\na numeric string, or a float is refused, as ``Player.clean_fields``\nrefuses them.\n\nThe body is read only when the session holds no details from signup\n(ADR 0017, ADR 0019, ADR 0022): ``display_name``, ``birth_year``,\n``birth_month``, and ``gender_division`` are then required. Held\ndetails are used instead of every field here: the held name (\"First\nLast\") becomes the legal name and, for an adult, the display name (a\nplayer aged 13 to 17 starts with \"First L.\"), with the held city and\nregion. ``gender_division`` is ``mens`` or ``womens``.\nOptional text fields left out or null are empty. Unknown keys are\nrefused.",
+        "description": "A new Player for the signed-in Account.\n\n``birth_year`` and ``birth_month`` take JSON integers only: a boolean,\na numeric string, or a float is refused, as ``Player.clean_fields``\nrefuses them.\n\nThe body is read only when the session holds no details from signup\n(ADR 0017, ADR 0019, ADR 0022): ``first_name``, ``last_name``,\n``birth_year``, ``birth_month``, and ``gender_division`` are then\nrequired, and the names get the same checks as at signup. Held details\nare used instead of every field here. Either way the legal name is\n\"First Last\", and the display name is built from the names: \"First\nLast\" for an adult, \"First L.\" for a player aged 13 to 17 (ADR 0062).\n``gender_division`` is ``mens`` or ``womens``. Optional text fields\nleft out or null are empty. Unknown keys are refused, ``display_name``\nand ``legal_name`` included.",
         "properties": {
           "birth_month": {
             "anyOf": [
@@ -2946,7 +2971,7 @@
             ],
             "title": "City"
           },
-          "display_name": {
+          "first_name": {
             "anyOf": [
               {
                 "type": "string"
@@ -2955,7 +2980,7 @@
                 "type": "null"
               }
             ],
-            "title": "Display Name"
+            "title": "First Name"
           },
           "gender_division": {
             "anyOf": [
@@ -2968,7 +2993,7 @@
             ],
             "title": "Gender Division"
           },
-          "legal_name": {
+          "last_name": {
             "anyOf": [
               {
                 "type": "string"
@@ -2977,7 +3002,7 @@
                 "type": "null"
               }
             ],
-            "title": "Legal Name"
+            "title": "Last Name"
           },
           "region": {
             "anyOf": [
@@ -3139,7 +3164,7 @@
       },
       "PlayerUpdateIn": {
         "additionalProperties": false,
-        "description": "Changes to the signed-in Account's own Player.\n\nOnly the fields sent change. Null clears an optional text field\n(``legal_name``, ``city``, ``region``); the display name cannot be\ncleared. The birth year and month and the gender division are set\nonce, when the Player is created, and cannot be sent here (ADR 0023).\n``privacy`` changes the settings it names. Unknown keys are refused.",
+        "description": "Changes to the signed-in Account's own Player.\n\nOnly the fields sent change. Null clears an optional text field\n(``city``, ``region``). The birth year and month and the gender\ndivision are set once, when the Player is created, and cannot be sent\nhere (ADR 0023). Neither can the display name or the legal name: both\nare built from the first and last name given at signup, and the\nplayer changes only ``privacy.name_format`` (ADR 0062). ``privacy``\nchanges the settings it names. Unknown keys are refused.",
         "properties": {
           "city": {
             "anyOf": [
@@ -3151,28 +3176,6 @@
               }
             ],
             "title": "City"
-          },
-          "display_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "legal_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Legal Name"
           },
           "privacy": {
             "anyOf": [
@@ -3233,6 +3236,17 @@
               }
             ]
           },
+          "name_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NameFormat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the display name shows the last name: full (\"First Last\") or first_last_initial (\"First L.\"), built from the first and last name given at signup. An adult starts with full, a player aged 13 to 17 with first_last_initial. Changing it rebuilds the display name. Only the player can change it, and not to full while name_format_locked is true (the player is 13 to 17). Nothing changes it at 18. Sending the stored value is always accepted."
+          },
           "rating_history_visibility": {
             "anyOf": [
               {
@@ -3280,6 +3294,10 @@
           "match_history_visibility": {
             "$ref": "#/components/schemas/Visibility"
           },
+          "name_format": {
+            "$ref": "#/components/schemas/NameFormat",
+            "description": "How the display name shows the last name: full (\"First Last\") or first_last_initial (\"First L.\"), built from the first and last name given at signup. An adult starts with full, a player aged 13 to 17 with first_last_initial. Changing it rebuilds the display name. Only the player can change it, and not to full while name_format_locked is true (the player is 13 to 17). Nothing changes it at 18. Sending the stored value is always accepted."
+          },
           "rating_history_visibility": {
             "$ref": "#/components/schemas/Visibility"
           },
@@ -3297,7 +3315,8 @@
           "rating_history_visibility",
           "stats_visibility",
           "home_club_visibility",
-          "rating_visibility"
+          "rating_visibility",
+          "name_format"
         ],
         "title": "PrivacyOut",
         "type": "object"
@@ -6916,7 +6935,7 @@
         ]
       },
       "patch": {
-        "description": "Change the signed-in Account's own profile fields and privacy settings.\n\nOnly the fields sent change. The birth year and month and the gender\ndivision are set once, when the Player is created: sending any of\nthem gets a 422, whatever the value (ADR 0023). Both kinds of change\napply together or not at all: a 422 on either changes nothing. Each kind\nthat changes records one Audit Event (profile changes by field name\nonly). 404 when the Account has no Player.",
+        "description": "Change the signed-in Account's own profile fields and privacy settings.\n\nOnly the fields sent change. The birth year and month and the gender\ndivision are set once, when the Player is created: sending any of\nthem gets a 422, whatever the value (ADR 0023). So do the display name\nand the legal name, which are built from the first and last name given\nat signup: ``privacy.name_format`` chooses \"First Last\" or \"First L.\"\nand rebuilds the display name, and ``full`` is refused while the\nplayer is 13 to 17 (``name_format_locked``, ADR 0062). Both kinds of change\napply together or not at all: a 422 on either changes nothing. Each kind\nthat changes records one Audit Event (profile changes by field name\nonly). 404 when the Account has no Player.",
         "operationId": "update_my_player",
         "parameters": [],
         "requestBody": {
@@ -7014,7 +7033,7 @@
         ]
       },
       "post": {
-        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). Every value comes from\nthe details held at signup in this session (ADR 0017, ADR 0019, ADR\n0022), the held name as the legal name and, for an adult, the display\nname (a player aged 13 to 17 starts with \"First L.\"); the body is used\nonly when the session holds none, and its display name, birth year and\nmonth, and gender division are then required. The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13, or a birth year\nand month in the future, is refused with a fixed 422, and the refusal\nholds for the session, as at signup: every later create in it gets the\nsame 422, and so does a signup after logout (ADR 0017).",
+        "description": "Create the signed-in Account's Player.\n\nThe Account's own email address must be verified (403 otherwise), and\nan Account has one Player (409 for a second). Every value comes from\nthe details held at signup in this session (ADR 0017, ADR 0019, ADR\n0022); the body is used only when the session holds none, and its\nfirst and last name, birth year and month, and gender division are\nthen required, the names with signup's checks. The legal name is\n\"First Last\", and the display name is built from the names: \"First\nLast\" for an adult, \"First L.\" for a player aged 13 to 17 (ADR 0062). The held details are\nremoved once the Player exists (on a 409 too), so a create refused for\nany other reason can be retried. A player under 13, or a birth year\nand month in the future, is refused with a fixed 422, and the refusal\nholds for the session, as at signup: every later create in it gets the\nsame 422, and so does a signup after logout (ADR 0017).",
         "operationId": "create_my_player",
         "parameters": [],
         "requestBody": {

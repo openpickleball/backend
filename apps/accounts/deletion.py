@@ -101,7 +101,7 @@ from apps.clubs.reports import delete_reporter_reports
 from apps.clubs.verification_requests import blank_statements
 from apps.emails.models import QueuedEmail
 from apps.exports.services import delete_exports_for
-from apps.players.models import Player, PlayerPrivacy, Visibility
+from apps.players.models import NameFormat, Player, PlayerPrivacy, Visibility
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import AnonymousUser, _User
@@ -121,6 +121,9 @@ DELETED_EMAIL_PREFIX = "deleted-"
 _CLEARED_PLAYER_FIELDS: dict[str, Any] = {
     "display_name": DELETED_PLAYER_NAME,
     "legal_name": "",
+    # NULL, as for a Player stored before the names (ADR 0062).
+    "first_name": None,
+    "last_name": None,
     "birth_year": None,
     "birth_month": None,
     "gender_division": "",
@@ -437,7 +440,8 @@ def _clear_player(player: Player) -> None:
         setattr(player, name, value)
     player.save(update_fields=list(_CLEARED_PLAYER_FIELDS))
     PlayerPrivacy.objects.filter(player=player).update(
-        **dict.fromkeys(PlayerPrivacy.SETTINGS, Visibility.PRIVATE)
+        **dict.fromkeys(PlayerPrivacy.SETTINGS, Visibility.PRIVATE),
+        name_format=NameFormat.FIRST_LAST_INITIAL,
     )
 
 

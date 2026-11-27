@@ -142,6 +142,11 @@ def test_the_profile_has_the_players_own_decrypted_fields() -> None:
     assert profile["birth_month"] == 4
     assert profile["gender_division"] == player.gender_division
     assert profile["privacy"]["rating_visibility"] == "signed_in"
+    # The names and the name format (ADR 0062).
+    assert profile["first_name"] == player.first_name
+    assert profile["last_name"] == player.last_name
+    assert profile["privacy"]["name_format"] == "full"
+    assert profile["name_format_locked"] is False
 
 
 def test_matches_show_other_players_only_as_match_responses_do() -> None:

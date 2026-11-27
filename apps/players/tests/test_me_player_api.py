@@ -139,7 +139,7 @@ def fields(response: Any) -> dict[str, tuple[str, str]]:
 def test_create_takes_the_details_held_at_signup(base: str) -> None:
     session = verified_session(base)
 
-    response = call(session, "POST", {"display_name": "Robin Q."})
+    response = call(session, "POST", {"first_name": "Robin", "last_name": "Quill"})
 
     assert response.status_code == 201, response.json()
     body = response.json()
@@ -155,7 +155,7 @@ def test_create_takes_the_details_held_at_signup(base: str) -> None:
 @pytest.mark.parametrize("base", CLIENTS)
 def test_the_session_still_works_after_create(base: str) -> None:
     session = verified_session(base)
-    call(session, "POST", {"display_name": "Robin Q."})
+    call(session, "POST", {"first_name": "Robin", "last_name": "Quill"})
 
     response = session.client.get(
         "/api/v1/accounts/me",
@@ -173,8 +173,8 @@ def test_the_held_details_win_over_the_body(base: str) -> None:
         session,
         "POST",
         {
-            "display_name": "Robin Q.",
-            "legal_name": "Robin Other",
+            "first_name": "Robin",
+            "last_name": "Other",
             "birth_year": 1980,
             "birth_month": 1,
             "gender_division": "mens",
@@ -218,7 +218,13 @@ def test_with_no_hold_the_body_gives_the_details() -> None:
 
     response = post(
         client,
-        {"display_name": "Robin Q.", "birth_year": 1985, "birth_month": 3, **DIVISION},
+        {
+            "first_name": "Robin",
+            "last_name": "Quill",
+            "birth_year": 1985,
+            "birth_month": 3,
+            **DIVISION,
+        },
     )
 
     assert response.status_code == 201
@@ -244,7 +250,13 @@ def test_details_held_for_another_account_are_not_used() -> None:
 
     response = post(
         client,
-        {"display_name": "Robin Q.", "birth_year": 1985, "birth_month": 3, **DIVISION},
+        {
+            "first_name": "Robin",
+            "last_name": "Quill",
+            "birth_year": 1985,
+            "birth_month": 3,
+            **DIVISION,
+        },
     )
 
     assert response.status_code == 201
@@ -255,7 +267,7 @@ def test_details_held_for_another_account_are_not_used() -> None:
 def test_with_no_hold_missing_details_get_422_on_each_field() -> None:
     client = signed_in(verified_account())
 
-    response = post(client, {"display_name": "Robin Q."})
+    response = post(client, {"first_name": "Robin", "last_name": "Quill"})
 
     assert response.status_code == 422
     assert response.json()["code"] == "validation_error"
@@ -271,7 +283,8 @@ def test_with_no_hold_missing_details_get_422_on_each_field() -> None:
 def test_with_no_hold_a_missing_gender_division_gets_422(division: object) -> None:
     client = signed_in(verified_account())
     data: dict[str, object] = {
-        "display_name": "Robin Q.",
+        "first_name": "Robin",
+        "last_name": "Quill",
         "birth_year": 1985,
         "birth_month": 3,
     }
@@ -293,7 +306,8 @@ def test_with_no_hold_an_empty_gender_division_gets_422() -> None:
     response = post(
         client,
         {
-            "display_name": "Robin Q.",
+            "first_name": "Robin",
+            "last_name": "Quill",
             "birth_year": 1985,
             "birth_month": 3,
             "gender_division": "",
@@ -309,7 +323,8 @@ def test_with_no_hold_a_missing_month_gets_422_on_the_month_only() -> None:
     client = signed_in(verified_account())
 
     response = post(
-        client, {"display_name": "Robin Q.", "birth_year": 1985, **DIVISION}
+        client,
+        {"first_name": "Robin", "last_name": "Quill", "birth_year": 1985, **DIVISION},
     )
 
     assert response.status_code == 422
@@ -325,7 +340,8 @@ def test_an_under_13_age_gets_a_fixed_422_with_no_age_in_it() -> None:
     response = post(
         client,
         {
-            "display_name": "Robin Q.",
+            "first_name": "Robin",
+            "last_name": "Quill",
             "birth_year": this_year - 5,
             "birth_month": 1,
             **DIVISION,
@@ -346,7 +362,8 @@ def test_a_player_aged_13_to_17_starts_with_every_setting_private() -> None:
     response = post(
         client,
         {
-            "display_name": "Robin Q.",
+            "first_name": "Robin",
+            "last_name": "Quill",
             "birth_year": this_year - 15,
             "birth_month": 1,
             **DIVISION,
@@ -354,7 +371,13 @@ def test_a_player_aged_13_to_17_starts_with_every_setting_private() -> None:
     )
 
     assert response.status_code == 201
-    assert set(response.json()["privacy"].values()) == {Visibility.PRIVATE}
+    body = response.json()
+    privacy = body["privacy"]
+    assert privacy.pop("name_format") == "first_last_initial"
+    assert set(privacy.values()) == {Visibility.PRIVATE}
+    assert body["display_name"] == "Robin Q."
+    assert body["legal_name"] == "Robin Quill"
+    assert body["name_format_locked"] is True
 
 
 def test_create_takes_the_optional_profile_fields() -> None:
@@ -363,10 +386,10 @@ def test_create_takes_the_optional_profile_fields() -> None:
     response = post(
         client,
         {
-            "display_name": "Robin Q.",
+            "first_name": "Robin",
+            "last_name": "Quill",
             "birth_year": 1985,
             "birth_month": 3,
-            "legal_name": "Robin Quill",
             "gender_division": "womens",
             "city": "Springfield",
             "region": "Ohio",
@@ -375,9 +398,11 @@ def test_create_takes_the_optional_profile_fields() -> None:
 
     assert response.status_code == 201
     body = response.json()
-    assert body["legal_name"] == "Robin Quill"
+    assert body["legal_name"] == body["display_name"] == "Robin Quill"
+    assert (body["first_name"], body["last_name"]) == ("Robin", "Quill")
     assert body["gender_division"] == "womens"
     assert (body["city"], body["region"]) == ("Springfield", "Ohio")
+    assert body["name_format_locked"] is False
     assert body["privacy"] == {
         "city_region_visibility": "signed_in",
         "match_history_visibility": "signed_in",
@@ -385,6 +410,7 @@ def test_create_takes_the_optional_profile_fields() -> None:
         "stats_visibility": "signed_in",
         "home_club_visibility": "signed_in",
         "rating_visibility": "signed_in",
+        "name_format": "full",
     }
 
 
@@ -394,7 +420,8 @@ def test_an_invalid_value_gets_a_message_without_the_value() -> None:
     response = post(
         client,
         {
-            "display_name": "Robin Q.",
+            "first_name": "Robin",
+            "last_name": "Quill",
             "birth_year": 1985,
             "birth_month": 3,
             "gender_division": "made-up-division",
@@ -408,17 +435,41 @@ def test_an_invalid_value_gets_a_message_without_the_value() -> None:
     assert "made-up-division" not in response.content.decode()
 
 
-def test_a_non_string_display_name_gets_422_without_the_value() -> None:
+@pytest.mark.parametrize("field", ["first_name", "last_name"])
+def test_a_non_string_name_gets_422_without_the_value(field: str) -> None:
+    client = signed_in(verified_account())
+    names: dict[str, object] = {"first_name": "Robin", "last_name": "Quill"}
+
+    response = post(
+        client,
+        {**names, field: 98765, "birth_year": 1985, "birth_month": 3, **DIVISION},
+    )
+
+    assert response.status_code == 422
+    assert f"body.{field}" in fields(response)
+    assert "98765" not in response.content.decode()
+
+
+@pytest.mark.parametrize("field", ["display_name", "legal_name"])
+def test_the_body_takes_no_display_or_legal_name(field: str) -> None:
     client = signed_in(verified_account())
 
     response = post(
         client,
-        {"display_name": 98765, "birth_year": 1985, "birth_month": 3, **DIVISION},
+        {
+            "first_name": "Robin",
+            "last_name": "Quill",
+            field: "Robin Other",
+            "birth_year": 1985,
+            "birth_month": 3,
+            **DIVISION,
+        },
     )
 
     assert response.status_code == 422
-    assert "body.display_name" in fields(response)
-    assert "98765" not in response.content.decode()
+    assert f"body.{field}" in fields(response)
+    assert "Robin Other" not in response.content.decode()
+    assert not Player.objects.exists()
 
 
 def test_an_unknown_key_gets_422() -> None:
@@ -427,7 +478,8 @@ def test_an_unknown_key_gets_422() -> None:
     response = post(
         client,
         {
-            "display_name": "Robin Q.",
+            "first_name": "Robin",
+            "last_name": "Quill",
             "birth_year": 1985,
             "birth_month": 3,
             **DIVISION,
@@ -447,28 +499,35 @@ def test_a_second_create_gets_409_and_creates_nothing() -> None:
     account = verified_account()
     client = signed_in(account)
     data = {
-        "display_name": "Robin Q.",
+        "first_name": "Robin",
+        "last_name": "Quill",
         "birth_year": 1985,
         "birth_month": 3,
         **DIVISION,
     }
     assert post(client, data).status_code == 201
 
-    response = post(client, {**data, "display_name": "Another Name"})
+    response = post(client, {**data, "first_name": "Another"})
 
     assert response.status_code == 409
     assert response.json() == CONFLICT
-    assert Player.objects.get().display_name == "Robin Q."
+    assert Player.objects.get().display_name == "Robin Quill"
 
 
 def test_a_second_create_gets_409_even_with_no_age() -> None:
     client = signed_in(verified_account())
     post(
         client,
-        {"display_name": "Robin Q.", "birth_year": 1985, "birth_month": 3, **DIVISION},
+        {
+            "first_name": "Robin",
+            "last_name": "Quill",
+            "birth_year": 1985,
+            "birth_month": 3,
+            **DIVISION,
+        },
     )
 
-    response = post(client, {"display_name": "Robin Q."})
+    response = post(client, {"first_name": "Robin", "last_name": "Quill"})
 
     assert response.status_code == 409
     assert response.json() == CONFLICT
@@ -480,13 +539,14 @@ def test_a_create_that_loses_a_race_gets_409(
     # Two concurrent creates both pass the first check; create_player's
     # lock makes the second one fail its one-Player check.
     account = verified_account()
-    PlayerFactory.create(account=account, display_name="Robin Q.")
+    PlayerFactory.create(account=account, first_name="Robin", last_name="Quill")
     monkeypatch.setattr(players_api, "_has_player", lambda account: False)
 
     response = post(
         signed_in(account),
         {
-            "display_name": "Another Name",
+            "first_name": "Another",
+            "last_name": "Name",
             "birth_year": 1985,
             "birth_month": 3,
             **DIVISION,
@@ -495,7 +555,7 @@ def test_a_create_that_loses_a_race_gets_409(
 
     assert response.status_code == 409
     assert response.json() == CONFLICT
-    assert Player.objects.get().display_name == "Robin Q."
+    assert Player.objects.get().display_name == "Robin Quill"
 
 
 def test_an_unverified_address_gets_403_and_keeps_the_hold() -> None:
@@ -512,7 +572,7 @@ def test_an_unverified_address_gets_403_and_keeps_the_hold() -> None:
     )
     session.save()
 
-    response = post(client, {"display_name": "Robin Q."})
+    response = post(client, {"first_name": "Robin", "last_name": "Quill"})
 
     assert response.status_code == 403
     assert response.json() == FORBIDDEN
@@ -523,7 +583,13 @@ def test_an_unverified_address_gets_403_and_keeps_the_hold() -> None:
 def test_an_account_with_no_address_row_gets_403() -> None:
     response = post(
         signed_in(UserFactory.create()),
-        {"display_name": "Robin Q.", "birth_year": 1985, "birth_month": 3, **DIVISION},
+        {
+            "first_name": "Robin",
+            "last_name": "Quill",
+            "birth_year": 1985,
+            "birth_month": 3,
+            **DIVISION,
+        },
     )
 
     assert response.status_code == 403
@@ -538,7 +604,13 @@ def test_a_verified_other_address_does_not_count() -> None:
 
     response = post(
         signed_in(account),
-        {"display_name": "Robin Q.", "birth_year": 1985, "birth_month": 3, **DIVISION},
+        {
+            "first_name": "Robin",
+            "last_name": "Quill",
+            "birth_year": 1985,
+            "birth_month": 3,
+            **DIVISION,
+        },
     )
 
     assert response.status_code == 403
@@ -546,7 +618,7 @@ def test_a_verified_other_address_does_not_count() -> None:
 
 
 def test_a_signed_out_create_gets_401() -> None:
-    response = post(Client(), {"display_name": "Robin Q."})
+    response = post(Client(), {"first_name": "Robin", "last_name": "Quill"})
 
     assert response.status_code == 401
     assert response.json()["code"] == "unauthorized"
@@ -556,7 +628,9 @@ def test_a_browser_create_without_csrf_gets_403() -> None:
     session = verified_session(BROWSER)
 
     response = session.client.post(
-        ME_PLAYER, {"display_name": "Robin Q."}, content_type="application/json"
+        ME_PLAYER,
+        {"first_name": "Robin", "last_name": "Quill"},
+        content_type="application/json",
     )
 
     assert response.status_code == 403
@@ -567,7 +641,13 @@ def test_the_account_is_unchanged_by_a_create() -> None:
     account = verified_account()
     post(
         signed_in(account),
-        {"display_name": "Robin Q.", "birth_year": 1985, "birth_month": 3, **DIVISION},
+        {
+            "first_name": "Robin",
+            "last_name": "Quill",
+            "birth_year": 1985,
+            "birth_month": 3,
+            **DIVISION,
+        },
     )
 
     stored = get_user_model().objects.get(pk=account.pk)
@@ -583,8 +663,8 @@ NOT_FOUND = {"code": "not_found", "message": "Not found.", "errors": []}
 @pytest.fixture
 def mine() -> Player:
     return PlayerFactory.create(
-        display_name="Robin Q.",
-        legal_name="Robin Quill",
+        first_name="Robin",
+        last_name="Quill",
         birth_year=1985,
         birth_month=3,
         gender_division="womens",
@@ -607,8 +687,10 @@ def test_get_returns_the_own_profile(mine: Player) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "code": mine.public_code,
-        "display_name": "Robin Q.",
+        "display_name": "Robin Quill",
         "legal_name": "Robin Quill",
+        "first_name": "Robin",
+        "last_name": "Quill",
         "birth_year": 1985,
         "birth_month": 3,
         "gender_division": "womens",
@@ -621,7 +703,9 @@ def test_get_returns_the_own_profile(mine: Player) -> None:
             "stats_visibility": "signed_in",
             "home_club_visibility": "signed_in",
             "rating_visibility": "signed_in",
+            "name_format": "full",
         },
+        "name_format_locked": False,
     }
 
 
@@ -650,30 +734,28 @@ def test_get_works_on_both_clients(base: str) -> None:
 
 
 def test_patch_changes_only_the_profile_fields_sent(mine: Player) -> None:
-    response = patch(
-        signed_in(mine.account), {"display_name": "Robin R.", "city": "Shelbyville"}
-    )
+    response = patch(signed_in(mine.account), {"city": "Shelbyville"})
 
     assert response.status_code == 200
     body = response.json()
-    assert body["display_name"] == "Robin R."
+    assert body["display_name"] == "Robin Quill"
     assert body["city"] == "Shelbyville"
     assert body["region"] == "Ohio"
     assert body["legal_name"] == "Robin Quill"
     mine.refresh_from_db()
     assert (mine.display_name, mine.city, mine.region) == (
-        "Robin R.",
+        "Robin Quill",
         "Shelbyville",
         "Ohio",
     )
 
 
 def test_a_profile_change_records_field_names_only(mine: Player) -> None:
-    patch(signed_in(mine.account), {"display_name": "Robin R.", "city": "Shelbyville"})
+    patch(signed_in(mine.account), {"region": "Iowa", "city": "Shelbyville"})
 
     [event] = events(AuditAction.PLAYER_PROFILE_CHANGE)
     assert event.actor_user_id == mine.account.pk
-    assert event.after == {"changed_fields": ["city", "display_name"]}
+    assert event.after == {"changed_fields": ["city", "region"]}
     assert event.before is None
     assert "Shelbyville" not in str(event.after)
     assert events(AuditAction.PRIVACY_CHANGE) == []
@@ -693,11 +775,11 @@ def test_a_stored_empty_gender_division_can_change_another_field(
 
 
 def test_null_clears_an_optional_text_field(mine: Player) -> None:
-    response = patch(signed_in(mine.account), {"city": None, "legal_name": None})
+    response = patch(signed_in(mine.account), {"city": None, "region": None})
 
     assert response.status_code == 200
     assert response.json()["city"] == ""
-    assert response.json()["legal_name"] == ""
+    assert response.json()["region"] == ""
 
 
 def test_patch_changes_a_privacy_setting(mine: Player) -> None:
@@ -761,7 +843,7 @@ def test_a_null_display_name_gets_422(mine: Player) -> None:
     assert response.status_code == 422
     assert "body.display_name" in fields(response)
     mine.refresh_from_db()
-    assert mine.display_name == "Robin Q."
+    assert mine.display_name == "Robin Quill"
 
 
 def test_a_too_long_city_gets_422_without_the_value(mine: Player) -> None:
@@ -789,7 +871,7 @@ def test_an_empty_patch_changes_nothing(mine: Player) -> None:
     response = patch(signed_in(mine.account), {})
 
     assert response.status_code == 200
-    assert response.json()["display_name"] == "Robin Q."
+    assert response.json()["display_name"] == "Robin Quill"
     assert AuditEvent.objects.count() == 0
 
 
@@ -807,7 +889,7 @@ def test_patch_signed_out_gets_401(mine: Player) -> None:
 @pytest.mark.parametrize("base", CLIENTS)
 def test_patch_works_on_both_clients(base: str) -> None:
     session = verified_session(base)
-    call(session, "POST", {"display_name": "Robin Q."})
+    call(session, "POST", {"first_name": "Robin", "last_name": "Quill"})
 
     response = call(session, "PATCH", {"privacy": {"stats_visibility": "private"}})
 
