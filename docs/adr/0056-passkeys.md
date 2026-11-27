@@ -3,7 +3,7 @@
 - Status: Proposed
 - Date: 2026-11-26
 
-This amends [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (WebAuthn is a method, a passkey can sign in alone, and every passkey change needs a recent reauthentication and is audited).
+This amends [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (WebAuthn is a method, a passkey can sign in alone, and every passkey change needs a recent reauthentication and is audited) and [ADR 0045](0045-harden-the-admin.md) (the admin needs TOTP in particular).
 
 ## Context
 
@@ -26,6 +26,6 @@ allauth's WebAuthn support works, but as it ships it does not meet OPEN's rules.
 - A player can add a passkey from the PWA and sign in with it, use it as a second factor after the password, or reauthenticate with it.
 - A passkey made for a subdomain the PWA does not use, even under `openpb.org`, never signs in to OPEN.
 - Rotating `SECRET_KEY` changes every user handle. Old passkeys keep working while the old key is in `SECRET_KEY_FALLBACKS`; once it is removed, a passkey made before the rotation fails passkey login (it still works at the MFA login stage and for reauthentication), and the player adds it again. Rotating also changes every public passkey id, which the app reads again from the list.
-- The admin's login script still asks for a TOTP code, so staff keep TOTP for the admin. A staff session that signed in with a passkey through the PWA passes the admin's MFA rule.
+- The admin's login script asks only for codes, so the admin needs a TOTP authenticator in particular (`apps.accounts.mfa.has_totp`): a staff Account whose only method is a passkey gets the page asking it to set up two-factor authentication, and staff or superuser status cannot be granted to it. This amends [ADR 0045](0045-harden-the-admin.md). The API and Organizer rules still count a passkey. A staff Account with TOTP whose session signed in with a passkey passes the admin's time limits, since that is an MFA step.
 - Passkey signup needs email verification by code first, with the view overrides ADR 0043 lists, and an OPEN signup view for passkeys. That is a later issue.
 - allauth's private WebAuthn helpers (`complete_authentication`, the payload builder) may change in a minor release. Tests pin the behavior.

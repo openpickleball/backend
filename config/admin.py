@@ -6,10 +6,11 @@ void matches, so the admin asks more than Django's (issue #99, #101, ADR
 
 - It is served at ``settings.ADMIN_URL``, a private path in production
   (``config/urls.py``).
-- It opens only to an active staff Account that has MFA
-  (``apps.accounts.mfa.has_mfa``, read from the database on every
-  request) whose session passed MFA within ``ADMIN_SESSION_SECONDS``
-  (``apps.accounts.mfa.last_mfa_at``).
+- It opens only to an active staff Account that has TOTP
+  (``apps.accounts.mfa.has_totp``, read from the database on every
+  request; a passkey alone does not count, since the login page takes
+  only codes, ADR 0056) whose session passed MFA within
+  ``ADMIN_SESSION_SECONDS`` (``apps.accounts.mfa.last_mfa_at``).
 - A signed-in Account that is not active staff gets 404 on every admin
   URL, the login page included, the same answer as an unknown path.
 - Logout works for any signed-in active staff Account, whatever the limits.
@@ -64,7 +65,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 
-from apps.accounts.mfa import has_mfa, last_mfa_at
+from apps.accounts.mfa import has_totp, last_mfa_at
 from apps.audit.admin_audit import audited_admin_class
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event
@@ -74,7 +75,8 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
 MFA_REQUIRED_MESSAGE = (
-    "Set up two-factor authentication in the OPEN app before using the admin."
+    "Set up two-factor authentication with an authenticator app in the OPEN "
+    "app before using the admin."
 )
 
 # allauth's headless browser client, which the login page's script calls.
@@ -130,7 +132,7 @@ class OpenAdminSite(admin.AdminSite):
         return (
             account is not None
             and _is_active_staff(account)
-            and has_mfa(account)
+            and has_totp(account)
             and _mfa_within(request, account, settings.ADMIN_SESSION_SECONDS)
         )
 
@@ -227,7 +229,7 @@ class OpenAdminSite(admin.AdminSite):
         request.current_app = self.name
         account = _account(request)
         context = {**self.each_context(request), "title": "Log in", "subtitle": None}
-        if account is not None and not has_mfa(account):
+        if account is not None and not has_totp(account):
             return TemplateResponse(
                 request,
                 "admin/open_mfa_required.html",

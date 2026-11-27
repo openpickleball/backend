@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Amended by: [ADR 0048](0048-account-deletion.md) (#317: the Account admin's delete runs Account deletion, and no staff or superuser Account is deleted in the admin)
+- Amended by: [ADR 0056](0056-passkeys.md) (the admin needs a TOTP authenticator: a passkey alone does not open it or allow a staff grant, since the login page takes only codes)
 - Date: 2026-11-26
 
 ## Context

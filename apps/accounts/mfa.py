@@ -7,6 +7,9 @@ Account's id, never from an instance cache:
 - ``has_mfa``: the Account has a method, TOTP or a passkey (WebAuthn,
   #117). Recovery codes alone never count: they are a fallback for a
   method, not one.
+- ``has_totp``: the Account has a TOTP authenticator. The admin needs
+  this method in particular, since its login script takes only codes
+  (``config/admin.py``, ADR 0056); a passkey does not meet it there.
 - ``accounts_with_mfa``: the ids of those Accounts, for ``pk__in=`` and
   ``account_id__in=`` filters in queries that mirror ``has_mfa``.
 - ``mfa_required``: the Account must have a method before it uses the
@@ -85,6 +88,18 @@ def has_mfa(actor: object) -> bool:
         return False
     found: bool = Authenticator.objects.filter(
         user_id=pk, type__in=MFA_METHOD_TYPES
+    ).exists()
+    return found
+
+
+def has_totp(actor: object) -> bool:
+    """True when ``actor`` is a saved Account with a TOTP authenticator,
+    read from the database by id. The admin's rule (ADR 0056)."""
+    pk = _saved_account_pk(actor)
+    if pk is None:
+        return False
+    found: bool = Authenticator.objects.filter(
+        user_id=pk, type=Authenticator.Type.TOTP
     ).exists()
     return found
 

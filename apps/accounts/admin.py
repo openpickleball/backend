@@ -44,7 +44,7 @@ from apps.accounts.forms import (
     UserChangeForm,
     UserCreationForm,
 )
-from apps.accounts.mfa import has_mfa
+from apps.accounts.mfa import has_totp
 from apps.accounts.models import User
 from apps.accounts.sessions import end_sessions_after_password_change
 from apps.audit.admin_access import AccessAuditAdminMixin
@@ -78,8 +78,8 @@ admin.site.unregister(
 GRANT_FIELDS = ("is_staff", "is_superuser", "groups", "user_permissions")
 
 GRANT_NEEDS_MFA_MESSAGE = (
-    "Staff and superuser status need two-factor authentication: the Account "
-    "must set it up in the OPEN app first."
+    "Staff and superuser status need two-factor authentication with an "
+    "authenticator app: the Account must set it up in the OPEN app first."
 )
 
 
@@ -103,15 +103,17 @@ def _holds_power(account: Any) -> bool:
 
 class AccountChangeForm(UserChangeForm):
     """The Account change form, refusing a new grant of staff or superuser
-    status to an Account without MFA (#101), with fixed text that names no
-    Account. A grant the Account already holds is not checked again."""
+    status to an Account without TOTP (#101, ADR 0056: the admin's login
+    takes only codes, so a passkey alone does not count), with fixed text
+    that names no Account. A grant the Account already holds is not
+    checked again."""
 
     def clean(self) -> dict[str, Any]:
         cleaned: dict[str, Any] = super().clean() or {}
         for name in ("is_staff", "is_superuser"):
             # Before _post_clean, the instance still holds the stored values.
             newly_granted = cleaned.get(name) and not getattr(self.instance, name)
-            if newly_granted and not has_mfa(self.instance):
+            if newly_granted and not has_totp(self.instance):
                 self.add_error(name, GRANT_NEEDS_MFA_MESSAGE)
         return cleaned
 
