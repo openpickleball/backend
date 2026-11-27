@@ -72,7 +72,7 @@ from django.db import transaction
 from kombu.exceptions import OperationalError
 
 from apps.accounts.mfa import accounts_with_mfa
-from apps.clubs.models import OrganizerMember
+from apps.clubs.models import OrganizerMember, not_held
 from apps.emails.services import queue_email
 from apps.events.models import Event
 from apps.matches.emails import (
@@ -218,7 +218,8 @@ def send_hold_notices(new_match_pk: int) -> int:
 
 def _organizer_members(match: Match) -> list["_User"]:
     """The active member Accounts of the match's Event's Organizer, by id,
-    that have a method: Organizer authority needs MFA (ADR 0043)."""
+    that have a method and no New Member Hold in force: Organizer
+    authority needs both (ADR 0043, #232)."""
     if match.event_id is None:
         return []
     organizer_id = (
@@ -230,9 +231,9 @@ def _organizer_members(match: Match) -> list["_User"]:
         get_user_model()
         .objects.filter(
             is_active=True,
-            pk__in=OrganizerMember.objects.filter(organizer_id=organizer_id).values(
-                "account_id"
-            ),
+            pk__in=OrganizerMember.objects.filter(
+                not_held(), organizer_id=organizer_id
+            ).values("account_id"),
         )
         .filter(pk__in=accounts_with_mfa())
         .order_by("pk")

@@ -1,0 +1,5 @@
+{% extends "emails/base_message.txt" %}
+{% block content %}{{ summary }}
+
+{{ follow_up }}{% endblock content %}
+{% block reason %}You received this email because you are, or were until this change, an admin of {{ scope }} {{ code }} on OPEN.{% endblock reason %}

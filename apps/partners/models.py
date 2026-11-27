@@ -18,7 +18,7 @@ from django.db import models
 from django.db.models import Q
 from oauth2_provider.models import AbstractApplication
 
-from apps.audit.access import AuditedAccessModel
+from apps.audit.access import AccessChange, Actor, AuditedAccessModel
 from apps.audit.models import AuditAction
 
 # Written only through update_fields, by the approval service (#29).
@@ -281,3 +281,56 @@ class OrganizerApplicationGrant(AuditedAccessModel):
             "organizer": self.organizer.public_code,
             "application": self.application.client_id,
         }
+
+    def access_notice(
+        self,
+        change: AccessChange,
+        *,
+        actor: Actor,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        """Tell the Organizer's admins, but the actor (#232). Never the
+        application's client id or name. A row moved to another Organizer
+        or application reads as a removal from the stored side and an add
+        on the new one."""
+        from apps.clubs.models import Organizer
+        from apps.clubs.notices import (
+            ORGANIZER,
+            NoticeKind,
+            SecurityNotice,
+            account_ids,
+            schedule_notice,
+        )
+
+        if change == "change" and before is not None:
+            old_organizer = (
+                Organizer.objects.filter(public_code=before["organizer"])
+                .values_list("pk", flat=True)
+                .first()
+            )
+            if old_organizer is not None:
+                schedule_notice(
+                    SecurityNotice(
+                        kind=NoticeKind.APPLICATION_GRANT_REMOVED,
+                        scope=ORGANIZER,
+                        scope_id=old_organizer,
+                        code=before["organizer"],
+                        exclude=account_ids(actor),
+                    )
+                )
+
+        kind = (
+            NoticeKind.APPLICATION_GRANT_REMOVED
+            if change == "remove"
+            else NoticeKind.APPLICATION_GRANT_ADDED
+        )
+        schedule_notice(
+            SecurityNotice(
+                kind=kind,
+                scope=ORGANIZER,
+                scope_id=self.organizer_id,
+                code=self.organizer.public_code,
+                exclude=account_ids(actor),
+            )
+        )

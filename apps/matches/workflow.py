@@ -109,7 +109,7 @@ from oauth2_provider.models import get_application_model
 from apps.accounts.mfa import accounts_with_mfa
 from apps.audit.models import AuditAction, AuditEvent
 from apps.audit.services import record_event, snapshot
-from apps.clubs.models import OrganizerMember
+from apps.clubs.models import OrganizerMember, not_held
 from apps.matches.models import (
     ConfirmationDecision,
     FlagReason,
@@ -1155,6 +1155,7 @@ def vouchable_holds(account: "_User") -> QuerySet[Match]:
         ~plays,
         Exists(
             OrganizerMember.objects.filter(
+                not_held(),
                 organizer_id=OuterRef("event__organizer_id"),
                 organizer__verified_at__isnull=False,
                 account_id=account.pk,
@@ -1220,6 +1221,8 @@ def organizer_disputes(account: "_User") -> QuerySet[Match]:
     """
     return (
         Match.objects.filter(
+            # The same member row: no New Member Hold in force (#232).
+            not_held("event__organizer__members__"),
             status=MatchStatus.DISPUTED,
             event__organizer__verified_at__isnull=False,
             event__organizer__members__account=account,

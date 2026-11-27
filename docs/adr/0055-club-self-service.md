@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-26
+- Amended by: [ADR 0057](0057-organizer-and-club-admin-security.md) (Club admin changes need a recent two-factor step, the other admins get security notices, and the last admin must have MFA)
 
 This applies [ADR 0054](0054-organizer-self-service.md)'s invite rules to Clubs, and amends [ADR 0030](0030-api-throttling.md) (inviting a Club admin has its own day throttle), [ADR 0048](0048-account-deletion.md) (deletion also removes Club Invites; the new events keep an Account row), and [ADR 0051](0051-player-data-export.md) (Club Invites are left out of the export).
 

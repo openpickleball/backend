@@ -3790,7 +3790,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "409": {
             "content": {
@@ -3868,7 +3868,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "429": {
             "content": {
@@ -3948,7 +3948,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -4058,7 +4058,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -4178,7 +4178,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -4296,7 +4296,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -4420,7 +4420,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -4478,7 +4478,7 @@
     },
     "/api/v1/clubs/{code}/admins/{player}": {
       "delete": {
-        "description": "Remove an admin, yourself included. For a Club admin with MFA.\n\n``player`` is the admin's player OPEN Code; one that is not an admin\nof this Club gets the same 404 as an unknown code. 409 when it would\nleave the Club with no admin. The invites that admin sent to this\nClub stop working.",
+        "description": "Remove an admin, yourself included. For a Club admin with MFA.\n\n``player`` is the admin's player OPEN Code; one that is not an admin\nof this Club gets the same 404 as an unknown code. 409 when it would\nleave the Club with no admin with two-factor authentication. The invites that admin sent to this\nClub stop working.\n\nA two-factor step older than a few minutes gets 403\n`reauthentication_required`: confirm your two-factor method again\n(`auth/2fa/reauthenticate` with a code, or\n`auth/webauthn/reauthenticate` with a passkey), then retry.",
         "operationId": "remove_club_admin",
         "parameters": [
           {
@@ -4542,7 +4542,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -4610,7 +4610,7 @@
     },
     "/api/v1/clubs/{code}/invites": {
       "post": {
-        "description": "Invite an email address to be an admin of the Club. For a Club\nadmin with MFA.\n\nThe answer is the same whether or not the address has an OPEN\nAccount, is already an admin, or was invited before: an invite email\nwith a link that works once goes to any address that is not an\nadmin's, replacing an earlier invite to it. The invitee accepts\nwhile signed in with that address (`accept_club_invite`). 409 when\nthe Club has too many open invites. Limited per Account to a number\nof invites a day; past that the answer is 429 with a Retry-After\nheader.",
+        "description": "Invite an email address to be an admin of the Club. For a Club\nadmin with MFA.\n\nThe answer is the same whether or not the address has an OPEN\nAccount, is already an admin, or was invited before: an invite email\nwith a link that works once goes to any address that is not an\nadmin's, replacing an earlier invite to it. The invitee accepts\nwhile signed in with that address (`accept_club_invite`). 409 when\nthe Club has too many open invites. Limited per Account to a number\nof invites a day; past that the answer is 429 with a Retry-After\nheader.\n\nA two-factor step older than a few minutes gets 403\n`reauthentication_required`: confirm your two-factor method again\n(`auth/2fa/reauthenticate` with a code, or\n`auth/webauthn/reauthenticate` with a passkey), then retry.",
         "operationId": "invite_club_admin",
         "parameters": [
           {
@@ -4672,7 +4672,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -4796,7 +4796,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -4852,7 +4852,7 @@
         ]
       },
       "post": {
-        "description": "Allow an Organizer to name the Club on its Events and matches. For\na Club admin with MFA.\n\nThe grant is consent, not trust: only a verified Organizer's matches\ncount, and this changes nothing about verification. An unknown or\nmalformed Organizer code gets the same 404 as an unknown Club. 409\nwhen the Club already allows it.",
+        "description": "Allow an Organizer to name the Club on its Events and matches. For\na Club admin with MFA.\n\nThe grant is consent, not trust: only a verified Organizer's matches\ncount, and this changes nothing about verification. An unknown or\nmalformed Organizer code gets the same 404 as an unknown Club. 409\nwhen the Club already allows it.\n\nA two-factor step older than a few minutes gets 403\n`reauthentication_required`: confirm your two-factor method again\n(`auth/2fa/reauthenticate` with a code, or\n`auth/webauthn/reauthenticate` with a passkey), then retry.",
         "operationId": "grant_club_organizer",
         "parameters": [
           {
@@ -4914,7 +4914,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -4982,7 +4982,7 @@
     },
     "/api/v1/clubs/{code}/organizer-grants/{organizer}": {
       "delete": {
-        "description": "Stop allowing an Organizer to name the Club. For a Club admin with\nMFA.\n\nEvents and matches already recorded keep the Club; a new Event or\nmatch naming it is refused from then on. An Organizer the Club does\nnot allow gets the same 404 as an unknown code.",
+        "description": "Stop allowing an Organizer to name the Club. For a Club admin with\nMFA.\n\nEvents and matches already recorded keep the Club; a new Event or\nmatch naming it is refused from then on. An Organizer the Club does\nnot allow gets the same 404 as an unknown code.\n\nA two-factor step older than a few minutes gets 403\n`reauthentication_required`: confirm your two-factor method again\n(`auth/2fa/reauthenticate` with a code, or\n`auth/webauthn/reauthenticate` with a passkey), then retry.",
         "operationId": "remove_club_organizer_grant",
         "parameters": [
           {
@@ -5046,7 +5046,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -5200,7 +5200,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "409": {
             "content": {
@@ -5310,7 +5310,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -5420,7 +5420,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -5550,7 +5550,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -5670,7 +5670,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -5800,7 +5800,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -5930,7 +5930,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -6050,7 +6050,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -6170,7 +6170,7 @@
                 }
               }
             },
-            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Only a signed-in browser session request without a valid CSRF token. A caller who may not change this match gets 404, as for an unknown code. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -6270,7 +6270,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -6360,7 +6360,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -6475,7 +6475,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "422": {
             "content": {
@@ -6580,7 +6580,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "422": {
             "content": {
@@ -6685,7 +6685,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "422": {
             "content": {
@@ -6790,7 +6790,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "422": {
             "content": {
@@ -6870,7 +6870,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -6958,7 +6958,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -7056,7 +7056,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "409": {
             "content": {
@@ -7171,7 +7171,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "422": {
             "content": {
@@ -7259,7 +7259,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "409": {
             "content": {
@@ -7362,7 +7362,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -7490,7 +7490,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -7558,7 +7558,7 @@
     },
     "/api/v1/organizer/events/{code}/results-files": {
       "post": {
-        "description": "Upload a CSV results file for an Event of your verified Organizer.\n\nThe file is in the CSV results format (``docs/csv-format.md``), at\nmost 1 MiB and 1000 match rows. ``players_13_or_older`` must be true:\nit confirms that every player in the file is 13 or older (422\notherwise, checked before anything else). ``game_target`` (11, 15, or\n21) and ``location`` apply to every row. Anyone who may not manage the\nEvent's matches gets the same 404 as an unknown Event. A larger file\ngets 413. The file is processed in the background: the response is\n202 with the file pending, and ``get_results_file`` shows the report.\nOnly the good rows are recorded. A row that repeats a match already\nrecorded, a pending one included, is reported as a duplicate.",
+        "description": "Upload a CSV results file for an Event of your verified Organizer.\n\nThe file is in the CSV results format (``docs/csv-format.md``), at\nmost 1 MiB and 1000 match rows. ``players_13_or_older`` must be true:\nit confirms that every player in the file is 13 or older (422\notherwise, checked before anything else). A session whose latest\ntwo-factor step (any sign-in step, without two-factor\nauthentication) is older than a few minutes gets 403 with code\n`reauthentication_required`: confirm through\n`auth/2fa/reauthenticate` or `auth/webauthn/reauthenticate` (or\n`auth/reauthenticate` without two-factor authentication), then\nretry. ``game_target`` (11, 15, or 21) and ``location`` apply to\nevery row. Anyone who may not manage the\nEvent's matches gets the same 404 as an unknown Event. A larger file\ngets 413. The file is processed in the background: the response is\n202 with the file pending, and ``get_results_file`` shows the report.\nOnly the good rows are recorded. A row that repeats a match already\nrecorded, a pending one included, is reported as a duplicate.",
         "operationId": "create_results_file",
         "parameters": [
           {
@@ -7657,7 +7657,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -7767,7 +7767,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -7871,7 +7871,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "429": {
             "content": {
@@ -7949,7 +7949,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -8079,7 +8079,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -8203,7 +8203,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -8261,7 +8261,7 @@
     },
     "/api/v1/organizer/organizers/{code}/invites": {
       "post": {
-        "description": "Invite an email address to act for the Organizer, as admin or\nmatch manager. For an admin member with MFA.\n\nThe answer is the same whether or not the address has an OPEN\nAccount, is already a member, or was invited before: an invite email\nwith a link that works once goes to any address that is not a\nmember's, replacing an earlier invite to it. The invitee accepts\nwhile signed in with that address (`accept_organizer_invite`). 409\nwhen the Organizer has too many open invites. Limited per Account to\na number of invites a day; past that the answer is 429 with a\nRetry-After header.",
+        "description": "Invite an email address to act for the Organizer, as admin or\nmatch manager. For an admin member with MFA.\n\nThe answer is the same whether or not the address has an OPEN\nAccount, is already a member, or was invited before: an invite email\nwith a link that works once goes to any address that is not a\nmember's, replacing an earlier invite to it. The invitee accepts\nwhile signed in with that address (`accept_organizer_invite`). 409\nwhen the Organizer has too many open invites. Limited per Account to\na number of invites a day; past that the answer is 429 with a\nRetry-After header.\n\nA two-factor step older than a few minutes gets 403\n`reauthentication_required`: confirm your two-factor method again\n(`auth/2fa/reauthenticate` with a code, or\n`auth/webauthn/reauthenticate` with a passkey), then retry.",
         "operationId": "invite_organizer_member",
         "parameters": [
           {
@@ -8323,7 +8323,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -8447,7 +8447,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -8505,7 +8505,7 @@
     },
     "/api/v1/organizer/organizers/{code}/members/{player}": {
       "delete": {
-        "description": "Remove a member, yourself included. For an admin member with MFA.\n\n``player`` is the member's player OPEN Code; one that is not a member\nof this Organizer gets the same 404 as an unknown code. 409 when it\nwould leave the Organizer with no admin.",
+        "description": "Remove a member, yourself included. For an admin member with MFA.\n\n``player`` is the member's player OPEN Code; one that is not a member\nof this Organizer gets the same 404 as an unknown code. 409 when it\nwould leave the Organizer with no admin with two-factor\nauthentication.\n\nA two-factor step older than a few minutes gets 403\n`reauthentication_required`: confirm your two-factor method again\n(`auth/2fa/reauthenticate` with a code, or\n`auth/webauthn/reauthenticate` with a passkey), then retry.",
         "operationId": "remove_organizer_member",
         "parameters": [
           {
@@ -8569,7 +8569,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -8635,7 +8635,7 @@
         ]
       },
       "patch": {
-        "description": "Change a member's role. For an admin member with MFA.\n\n``player`` is the member's player OPEN Code; one that is not a member\nof this Organizer gets the same 404 as an unknown code. 409 when it\nwould leave the Organizer with no admin.",
+        "description": "Change a member's role. For an admin member with MFA.\n\n``player`` is the member's player OPEN Code; one that is not a member\nof this Organizer gets the same 404 as an unknown code. 409 when it\nwould leave the Organizer with no admin with two-factor\nauthentication.\n\nA two-factor step older than a few minutes gets 403\n`reauthentication_required`: confirm your two-factor method again\n(`auth/2fa/reauthenticate` with a code, or\n`auth/webauthn/reauthenticate` with a passkey), then retry.",
         "operationId": "change_organizer_member_role",
         "parameters": [
           {
@@ -8716,7 +8716,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -8784,7 +8784,7 @@
     },
     "/api/v1/organizer/organizers/{code}/verification-request": {
       "post": {
-        "description": "Ask OPEN moderators to verify the Organizer. For an admin member\nwith MFA.\n\n``statement`` says what the Organizer runs, for moderators only. A\nmoderator decides; nothing is verified automatically. 409 when the\nOrganizer is already verified or already has an open request.",
+        "description": "Ask OPEN moderators to verify the Organizer. For an admin member\nwith MFA.\n\n``statement`` says what the Organizer runs, for moderators only. A\nmoderator decides; nothing is verified automatically. 409 when the\nOrganizer is already verified or already has an open request.\n\nA two-factor step older than a few minutes gets 403\n`reauthentication_required`: confirm your two-factor method again\n(`auth/2fa/reauthenticate` with a code, or\n`auth/webauthn/reauthenticate` with a passkey), then retry.",
         "operationId": "request_organizer_verification",
         "parameters": [
           {
@@ -8846,7 +8846,7 @@
                 }
               }
             },
-            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -8966,7 +8966,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -9086,7 +9086,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -9212,7 +9212,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "422": {
             "content": {
@@ -9312,7 +9312,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -9446,7 +9446,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -9580,7 +9580,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {
@@ -9690,7 +9690,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it. Code `reauthentication_required`: the operation needs a recent reauthentication, or for an admin change to an Organizer or Club and a results upload a recent two-factor step (any sign-in step for an Account without two-factor authentication); confirm through allauth's `auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or `auth/reauthenticate`, then retry. Only operations whose description says so return it."
           },
           "404": {
             "content": {

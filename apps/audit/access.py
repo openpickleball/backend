@@ -8,13 +8,19 @@ changes these rows, changes them only through the functions here, passing
 the acting Account explicitly:
 
 - ``save_access_row()`` saves one row and records an add or a change in
-  the same transaction. A save that changes nothing records nothing, and
-  a save that raises records nothing.
+  the same transaction, with an optional ``reason`` (a moderator ending
+  New Member Holds, #232). A save that changes nothing records nothing,
+  and a save that raises records nothing.
 - ``delete_access_row()`` records one row's removal, then deletes it.
 - ``record_cascaded_removals()`` records a removal for every access row a
   delete of other rows (a Club, an Organizer, a Partner Application, an
   Account) will cascade to. Call it in the delete's transaction, just
   before the delete.
+
+After recording an add, a change, or a removal, ``save_access_row`` and
+``delete_access_row`` call the row's ``access_notice``, which schedules
+the security notice to the other admins (#232, ``apps.clubs.notices``).
+``record_cascaded_removals`` sends none: the parent row is going.
 
 A plain ORM save or delete, a cascade outside these functions, and raw
 writes (``bulk_create``, ``QuerySet.update``, ``bulk_update``, raw SQL,
@@ -23,8 +29,9 @@ Codes, Account row ids, and client ids, never an email or an Organizer's
 name.
 """
 
+import logging
 from collections.abc import Iterable
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import AbstractBaseUser
@@ -35,6 +42,8 @@ from django.db.models.deletion import Collector, ProtectedError, RestrictedError
 from apps.audit.models import AuditAction
 
 Actor = AbstractBaseUser | AnonymousUser | None
+AccessChange = Literal["add", "change", "remove"]
+logger = logging.getLogger(__name__)
 
 
 class AuditedAccessModel(models.Model):
@@ -58,9 +67,23 @@ class AuditedAccessModel(models.Model):
         """
         raise NotImplementedError
 
+    def access_notice(
+        self,
+        change: AccessChange,
+        *,
+        actor: "Actor",
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        """Schedule the security notice for a recorded add, change, or
+        removal (#232). Nothing by default. Called inside the change's
+        transaction, after its Audit Event; ``before`` and ``after`` are
+        the event's values."""
 
-def save_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
-    """Save ``row`` and record its add or change with ``actor``."""
+
+def save_access_row(row: AuditedAccessModel, *, actor: Actor, reason: str = "") -> None:
+    """Save ``row`` and record its add or change with ``actor``, and
+    ``reason`` when given (a moderator's, #232)."""
     with transaction.atomic():
         for name in row.AUDIT_LOCK_FIRST:
             field = row._meta.get_field(name)
@@ -80,9 +103,20 @@ def save_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
             raise RuntimeError("The saved row could not be read back.")
         after = saved.audit_values()
         if before is None:
-            _record(saved, saved.AUDIT_ADD, actor, before=None, after=after)
+            _record(
+                saved, saved.AUDIT_ADD, actor, before=None, after=after, reason=reason
+            )
+            _notify(saved, "add", actor, before=None, after=after)
         elif before != after:
-            _record(saved, saved.AUDIT_CHANGE, actor, before=before, after=after)
+            _record(
+                saved,
+                saved.AUDIT_CHANGE,
+                actor,
+                before=before,
+                after=after,
+                reason=reason,
+            )
+            _notify(saved, "change", actor, before=before, after=after)
 
 
 def delete_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
@@ -95,6 +129,7 @@ def delete_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
         if stored is None:
             return
         _record_removal(stored, actor)
+        _notify(stored, "remove", actor, before=stored.audit_values(), after=None)
         row.delete()
 
 
@@ -201,6 +236,33 @@ def _stored_by_pk[M: AuditedAccessModel](
     return stored
 
 
+def _notify(
+    row: AuditedAccessModel,
+    change: AccessChange,
+    actor: Actor,
+    *,
+    before: dict[str, Any] | None,
+    after: dict[str, Any] | None,
+) -> None:
+    """Run the row's ``access_notice``. A failure is logged with the row's
+    id and the error class only, and never fails the change."""
+    try:
+        # A savepoint, so a database error in the hook rolls back only the
+        # hook and leaves the change's transaction usable.
+        with transaction.atomic():
+            row.access_notice(change, actor=actor, before=before, after=after)
+    except Exception as exc:
+        # The broad catch is safe: the hook only builds plain values and
+        # registers an on_commit callback; a notice is never worth failing
+        # the change over.
+        logger.warning(
+            "Could not schedule a security notice for %s %s (%s).",
+            row._meta.label,
+            row.pk,
+            type(exc).__name__,
+        )
+
+
 def _record_removal(stored: AuditedAccessModel, actor: Actor) -> None:
     _record(
         stored, stored.AUDIT_REMOVE, actor, before=stored.audit_values(), after=None
@@ -214,9 +276,17 @@ def _record(
     *,
     before: dict[str, Any] | None,
     after: dict[str, Any] | None,
+    reason: str = "",
 ) -> None:
     # Imported here: apps.audit.services imports django-oauth-toolkit's
     # models, which must not load while the models that use this module do.
     from apps.audit.services import record_event
 
-    record_event(action=action, target=target, actor=actor, before=before, after=after)
+    record_event(
+        action=action,
+        target=target,
+        actor=actor,
+        before=before,
+        after=after,
+        reason=reason,
+    )

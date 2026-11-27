@@ -141,7 +141,7 @@ from apps.players.models import Player
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType, normalize
 from config.api_errors import ErrorResponse, model_validation_error
-from config.auth import account_auth
+from config.auth import account_auth, require_step_up
 from config.throttling import account_throttle
 
 if TYPE_CHECKING:
@@ -744,7 +744,12 @@ ResultsFileCode = Annotated[str, PublicCodePath(CodeType.RESULTS_FILE)]
 
 @organizer_router.post(
     "/events/{code}/results-files",
-    response={202: ResultsFileOut, 404: ErrorResponse, 413: ErrorResponse},
+    response={
+        202: ResultsFileOut,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        413: ErrorResponse,
+    },
     operation_id="create_results_file",
 )
 def create_results_file(
@@ -760,8 +765,14 @@ def create_results_file(
     The file is in the CSV results format (``docs/csv-format.md``), at
     most 1 MiB and 1000 match rows. ``players_13_or_older`` must be true:
     it confirms that every player in the file is 13 or older (422
-    otherwise, checked before anything else). ``game_target`` (11, 15, or
-    21) and ``location`` apply to every row. Anyone who may not manage the
+    otherwise, checked before anything else). A session whose latest
+    two-factor step (any sign-in step, without two-factor
+    authentication) is older than a few minutes gets 403 with code
+    `reauthentication_required`: confirm through
+    `auth/2fa/reauthenticate` or `auth/webauthn/reauthenticate` (or
+    `auth/reauthenticate` without two-factor authentication), then
+    retry. ``game_target`` (11, 15, or 21) and ``location`` apply to
+    every row. Anyone who may not manage the
     Event's matches gets the same 404 as an unknown Event. A larger file
     gets 413. The file is processed in the background: the response is
     202 with the file pending, and ``get_results_file`` shows the report.
@@ -779,6 +790,8 @@ def create_results_file(
                 }
             ]
         )
+    # Before the Event lookup, so every well-formed code gets one answer.
+    require_step_up(request)
     event = get_by_public_code(Event.objects.only("pk", "organizer_id"), code)
     if not can_manage_events(account, event.organizer_id):
         raise Http404

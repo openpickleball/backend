@@ -19,16 +19,21 @@ Organizer made here stays unverified until a moderator verifies it.
 - ``accept_invite``: the invited Account, signed in with the invited
   login address, verified, and with a Player, joins with the invited
   role, while the invite's sender still has admin authority there
-  (active, admin, with MFA). Demoting or removing an admin deletes the invites it
+  (active, admin, with MFA, no New Member Hold). Joining a verified
+  Organizer starts a New Member Hold of
+  ``ORGANIZER_NEW_MEMBER_HOLD_HOURS`` (#232, ADR 0057): until it ends the
+  member has no Organizer or admin authority. Demoting or removing an admin deletes the invites it
   sent there in the same transaction. Every refusal is ``NotFound``.
 
-On these paths an Organizer always keeps one active admin (``Conflict``
-otherwise). Account deletion and the staff admin can still leave an
+On these paths an Organizer always keeps one active admin with MFA
+(``Conflict`` otherwise, #232), and removing TOTP refuses to leave one
+without (``apps.accounts.mfa_views``). Account deletion and the staff admin can still leave an
 Organizer without an admin; staff repair it. A verified Organizer is not
 renamed here (``Conflict``). Once an Organizer is verified, an admin's
-invite gives the new member trusted-submitter authority (ADR 0021) as
-soon as it is accepted and the member has MFA, with no moderator review
-of that member.
+invite gives the new member trusted-submitter authority (ADR 0021) once
+its New Member Hold ends and while the member has MFA, with no moderator
+review of that member; a moderator may end the hold early
+(``apps.clubs.services.end_member_holds``).
 Each change records its Audit Events in its own transaction: never the
 Organizer's name, an address, or a statement (ADR 0009).
 
@@ -67,12 +72,15 @@ from apps.clubs.invites import (
     normalized_invite_email,
 )
 from apps.clubs.models import (
+    ADMIN_ACCOUNT_MESSAGE,
     ClubOrganizerGrant,
     MemberRole,
     Organizer,
     OrganizerInvite,
     OrganizerMember,
     OrganizerVerificationRequest,
+    admin_account_refused,
+    not_held,
 )
 from apps.emails.services import queue_email
 from apps.players.models import Player
@@ -90,13 +98,16 @@ CREATE_LIMIT_MESSAGE: Final = (
 OPEN_INVITES_MESSAGE: Final = (
     "This organizer has too many open invites. Wait until some are accepted or expire."
 )
-LAST_ADMIN_MESSAGE: Final = "An organizer must keep at least one admin."
+LAST_ADMIN_MESSAGE: Final = (
+    "An organizer must keep at least one admin with two-factor authentication."
+)
 ALREADY_MEMBER_MESSAGE: Final = "You are already a member of this organizer."
 ALREADY_VERIFIED_MESSAGE: Final = "This organizer is already verified."
 VERIFIED_RENAME_MESSAGE: Final = (
     "A verified organizer cannot be renamed here. Ask a moderator to unverify it first."
 )
 REQUEST_OPEN_MESSAGE: Final = "This organizer already has an open verification request."
+ADMIN_ACCOUNT_CONFLICT_MESSAGE: Final = ADMIN_ACCOUNT_MESSAGE
 
 
 class NotFound(LookupError):
@@ -186,8 +197,9 @@ def _admin_organizer(organizer_id: int, actor: "_User") -> Organizer:
     """Lock and return the Organizer when ``actor`` is its admin member.
 
     Call inside a transaction. Holds the Account first, then locks the
-    Organizer ``FOR UPDATE``, then checks the membership, MFA, and
-    ``is_active`` from the database. ``NotFound`` otherwise.
+    Organizer ``FOR UPDATE``, then checks the membership, MFA, no New
+    Member Hold in force, and ``is_active`` from the database
+    (``_is_admin``). ``NotFound`` otherwise.
     """
     if actor.pk is None or not hold_active_account(actor.pk):
         raise NotFound
@@ -200,6 +212,8 @@ def _admin_organizer(organizer_id: int, actor: "_User") -> Organizer:
 def _is_admin(account_id: int, organizer_id: int) -> bool:
     return bool(
         OrganizerMember.objects.filter(
+            # A held member has no admin authority either (#232).
+            not_held(),
             organizer_id=organizer_id,
             account_id=account_id,
             role=MemberRole.ADMIN,
@@ -352,7 +366,10 @@ def accept_invite(key: str, *, actor: "_User") -> OrganizerMember:
             already_member = True
         else:
             membership = OrganizerMember(
-                organizer=organizer, account=actor, role=invite.role
+                organizer=organizer,
+                account=actor,
+                role=invite.role,
+                hold_ends_at=_hold_ends_at(organizer),
             )
             try:
                 save_access_row(membership, actor=actor)
@@ -365,10 +382,22 @@ def accept_invite(key: str, *, actor: "_User") -> OrganizerMember:
     return membership
 
 
+def _hold_ends_at(organizer: Organizer) -> datetime | None:
+    """When a member joining ``organizer`` now gets authority (#232, ADR
+    0057): ``ORGANIZER_NEW_MEMBER_HOLD_HOURS`` from now while it is
+    verified (read under the Organizer lock), None when it is not or the
+    hold is off."""
+    hours = settings.ORGANIZER_NEW_MEMBER_HOLD_HOURS
+    if not organizer.is_verified or hours <= 0:
+        return None
+    return timezone.now() + timedelta(hours=hours)
+
+
 def _sender_still_admin(invite: OrganizerInvite) -> bool:
     """Whether the invite's sender still has admin authority there: the
-    same rule as ``_is_admin`` (active, admin role, MFA). Call under the
-    Organizer lock, which every membership change takes first."""
+    same rule as ``_is_admin`` (active, admin role, MFA, no New Member
+    Hold in force). Call under the Organizer lock, which every membership
+    change takes first."""
     return _is_admin(invite.invited_by_id, invite.organizer_id)
 
 
@@ -429,13 +458,16 @@ def _target_membership(organizer: Organizer, player_code: str) -> OrganizerMembe
 
 
 def _keeps_an_admin(organizer: Organizer, leaving: OrganizerMember) -> bool:
-    """Whether an active admin other than ``leaving`` stays. Call under the
-    Organizer lock, so concurrent changes count in turn."""
+    """Whether an active admin with MFA and no New Member Hold in force,
+    other than ``leaving``, stays (#232). Call under the Organizer lock, so
+    concurrent changes count in turn."""
     others = (
         OrganizerMember.objects.filter(
+            not_held(),
             organizer_id=organizer.pk,
             role=MemberRole.ADMIN,
             account__is_active=True,
+            account_id__in=accounts_with_mfa(),
         )
         .exclude(pk=leaving.pk)
         .count()
@@ -451,7 +483,10 @@ def change_member_role(
     Returns the changed member, read in the change's transaction, so an
     admin who demoted themselves gets it too. ``NotFound`` when no member
     of this Organizer has that Player, and ``Conflict`` when it would
-    leave no active admin. An unchanged role records nothing.
+    leave no active admin with MFA and no New Member Hold in force, or
+    would make an admin of an Account
+    that is inactive or whose login address is not verified (#232). An
+    unchanged role records nothing.
     """
     role = MemberRole(role)
     with transaction.atomic():
@@ -463,6 +498,13 @@ def change_member_role(
             and not _keeps_an_admin(organizer, membership)
         ):
             raise Conflict(LAST_ADMIN_MESSAGE)
+        if (
+            role == MemberRole.ADMIN
+            and membership.role != MemberRole.ADMIN
+            and admin_account_refused(membership.account_id)
+        ):
+            # An admin needs an active Account with a verified address (#232).
+            raise Conflict(ADMIN_ACCOUNT_CONFLICT_MESSAGE)
         if membership.role == MemberRole.ADMIN and role != MemberRole.ADMIN:
             _delete_sent_invites(organizer, membership.account_id)
         membership.role = role
@@ -477,7 +519,8 @@ def remove_member(organizer_id: int, player_code: str, *, actor: "_User") -> Non
     """Remove the member whose Player has ``player_code``.
 
     ``NotFound`` when no member of this Organizer has that Player, and
-    ``Conflict`` when it would leave no active admin.
+    ``Conflict`` when it would leave no active admin with MFA and no New
+    Member Hold in force (#232).
     """
     with transaction.atomic():
         organizer = _admin_organizer(organizer_id, actor)

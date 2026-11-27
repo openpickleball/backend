@@ -3,7 +3,9 @@
 Verification is read-only on the change form. It changes only through the
 verify and unverify actions, which call ``apps.clubs.services`` and are
 shown only to Accounts with ``clubs.verify_organizer``. Both need a typed
-reason (``ReasonActionForm``), which goes into the Audit Event.
+reason (``ReasonActionForm``), which goes into the Audit Event. So does
+"End new member holds" (#232), which calls
+``apps.clubs.services.end_member_holds``.
 
 Organizer Reports (#271) are read-only here. A moderator closes open
 ones with the close action, which needs a typed reason and calls
@@ -57,7 +59,9 @@ from apps.clubs.models import (
 )
 from apps.clubs.reports import NotAllowedToClose, close_report, organizer_review
 from apps.clubs.services import (
+    NotAllowedToEndHolds,
     NotAllowedToVerify,
+    end_member_holds,
     unverify_organizer,
     verify_organizer,
 )
@@ -70,6 +74,7 @@ from apps.players.models import Player
 BLANK_REASON = "Give a reason to verify or unverify organizers."
 BLANK_CLOSE_REASON = "Give a reason to close reports."
 BLANK_REQUEST_CLOSE_REASON = "Give a reason to close verification requests."
+BLANK_HOLD_REASON = "Give a reason to end new member holds."
 REVIEW_FIELD = "moderator_review"
 
 
@@ -77,6 +82,9 @@ class OrganizerMemberInline(admin.TabularInline[OrganizerMember, Organizer]):
     model = OrganizerMember
     extra = 0
     autocomplete_fields = ("account",)
+    # The New Member Hold (#232): set only by an accepted invite, ended
+    # early only by the "End new member holds" action.
+    readonly_fields = ("hold_ends_at",)
 
 
 class ClubRoleInline(admin.TabularInline[ClubRole, Club]):
@@ -117,7 +125,12 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
     readonly_fields = ("public_code", "verified_at", "verified_by")
     search_fields = ("public_code", "name")
     inlines = (OrganizerMemberInline,)
-    actions = ("verify_selected", "unverify_selected", "delete_selected")
+    actions = (
+        "verify_selected",
+        "unverify_selected",
+        "end_member_holds_selected",
+        "delete_selected",
+    )
     action_form = ReasonActionForm
 
     def _shows_review(self, request: HttpRequest, obj: Organizer | None) -> bool:
@@ -312,6 +325,38 @@ class OrganizerAdmin(AccessAuditAdminMixin, admin.ModelAdmin[Organizer]):
         self, request: HttpRequest, queryset: QuerySet[Organizer]
     ) -> None:
         self._apply(request, queryset, unverify_organizer, "unverified")
+
+    @audited_by_service
+    @admin.action(permissions=["verify"], description="End new member holds")
+    def end_member_holds_selected(
+        self, request: HttpRequest, queryset: QuerySet[Organizer]
+    ) -> None:
+        """End the New Member Holds of the selected Organizers (#232)."""
+        reason = action_reason(request)
+        problem = reason_problem(reason, BLANK_HOLD_REASON)
+        if problem is not None:
+            self.message_user(request, problem, level=messages.WARNING)
+            return
+        count = 0
+        for organizer in queryset.order_by("pk"):
+            try:
+                count += end_member_holds(organizer, actor=request.user, reason=reason)
+            except NotAllowedToEndHolds:
+                # The OPEN Code only: the name may be a person's.
+                self.message_user(
+                    request,
+                    f"{organizer.public_code} was not changed: you may not end "
+                    "its new member holds.",
+                    level=messages.WARNING,
+                )
+            except Organizer.DoesNotExist:
+                self.message_user(
+                    request,
+                    f"{organizer.public_code} was not changed: it no longer exists.",
+                    level=messages.WARNING,
+                )
+        if count:
+            self.message_user(request, f"{count} new member hold(s) ended.")
 
     def _apply(
         self,

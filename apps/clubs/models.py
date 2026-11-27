@@ -11,11 +11,13 @@ from collections.abc import Collection
 from typing import Any, ClassVar
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.db.models import Q
+from django.db.models.functions import Now
 
-from apps.audit.access import AuditedAccessModel
+from apps.audit.access import AccessChange, Actor, AuditedAccessModel
 from apps.audit.models import AuditAction
 from apps.clubs.invites import InviteModel
 from apps.public_ids.codes import CodeType
@@ -43,6 +45,11 @@ REPORT_VIEW_PERMISSION = "clubs.view_organizerreport"
 VERIFICATION_REQUEST_VIEW_PERMISSION = "clubs.view_organizerverificationrequest"
 _VERIFIER_MEMBER = "The account that verified this organizer cannot be its member."
 VERIFIED_DELETE_MESSAGE = "A verified organizer cannot be deleted: unverify it first."
+# An admin role needs an active Account with a verified login address
+# (#232, ADR 0057). Fixed text, never the address.
+ADMIN_ACCOUNT_MESSAGE = (
+    "An admin needs an active account with a verified email address."
+)
 # Control characters (Postgres cannot store NUL) and lone surrogates
 # (not encodable as UTF-8).
 _REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
@@ -71,6 +78,54 @@ def _clean_text_fields(
         if any(unicodedata.category(char) in _REFUSED_CATEGORIES for char in value):
             errors[name] = [ValidationError(_CONTROL_CHARACTER)]
     return errors
+
+
+def admin_rule_applies(row: models.Model, account_id: object, role: str) -> bool:
+    """Whether the admin role rule applies to ``row``: it is new, or its
+    stored account or role differs (#232). An untouched admin row whose
+    Account was deactivated later stays valid, so its parent can still be
+    saved in the admin."""
+    if row.pk is None:
+        return True
+    stored = (
+        type(row)._base_manager.filter(pk=row.pk).values("account_id", "role").first()
+    )
+    if stored is None:
+        return True
+    return bool(str(stored["account_id"]) != str(account_id) or stored["role"] != role)
+
+
+def admin_account_refused(account_id: int | str) -> bool:
+    """Whether the Account ``account_id`` exists and may not hold an admin
+    role: inactive, or without a verified login address
+    (``has_verified_login_address``). Read from the database. False for
+    an unknown or malformed id, which field validation reports."""
+    # Imported here: allauth's models load after this module's app.
+    from apps.accounts.addresses import has_verified_login_address
+
+    try:
+        account = (
+            get_user_model()
+            .objects.filter(pk=account_id)
+            .only("pk", "email", "is_active")
+            .first()
+        )
+    except (TypeError, ValueError, ValidationError):
+        return False
+    if account is None:
+        return False
+    return not (account.is_active and has_verified_login_address(account))
+
+
+def not_held(prefix: str = "") -> Q:
+    """Organizer Members whose New Member Hold is over or never applied
+    (#232, ADR 0057), as a filter. ``prefix`` is the lookup path to the
+    member (``"event__organizer__members__"``), empty on the member's own
+    queryset. Compared with the database's ``Now()``. Every rule that
+    grants Organizer or admin authority adds it."""
+    return Q(**{f"{prefix}hold_ends_at__isnull": True}) | Q(
+        **{f"{prefix}hold_ends_at__lte": Now()}
+    )
 
 
 class _LinkMessagesModel(models.Model):
@@ -312,6 +367,10 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
     role = models.CharField(
         max_length=16, choices=MemberRole, error_messages=_CHOICE_MESSAGES
     )
+    # The New Member Hold (#232, ADR 0057): until this time the member has
+    # no Organizer authority and no admin authority (``not_held``). Set
+    # when an invite to a verified Organizer is accepted; empty otherwise.
+    hold_ends_at = models.DateTimeField(null=True, blank=True)
 
     AUDIT_ADD = AuditAction.ORGANIZER_MEMBER_ADD
     AUDIT_CHANGE = AuditAction.ORGANIZER_MEMBER_CHANGE
@@ -350,15 +409,104 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
     def clean(self) -> None:
         if self._account_verified_organizer(lock=False):
             raise ValidationError({"account": _VERIFIER_MEMBER})
+        if (
+            self.role == MemberRole.ADMIN
+            and self.account_id is not None
+            and admin_rule_applies(self, self.account_id, self.role)
+            and admin_account_refused(self.account_id)
+        ):
+            raise ValidationError({"account": ADMIN_ACCOUNT_MESSAGE})
 
     def audit_values(self) -> dict[str, Any]:
         # The Account's row id, never its email; the Organizer's OPEN Code,
-        # never its name (ADR 0009).
-        return {
+        # never its name (ADR 0009). The hold's end only when set, so an
+        # unheld member's events keep their shape.
+        values: dict[str, Any] = {
             "organizer": self.organizer.public_code,
             "account": self.account_id,
             "role": self.role,
         }
+        if self.hold_ends_at is not None:
+            values["hold_ends_at"] = self.hold_ends_at.isoformat()
+        return values
+
+    def access_notice(
+        self,
+        change: AccessChange,
+        *,
+        actor: Actor,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        """Tell the Organizer's other admins (#232). A change of the hold
+        alone sends nothing; a move to another Account reads as a removal
+        of the old Account, which is told when it was an admin, then an
+        add of the new one."""
+        from apps.clubs.notices import (
+            ORGANIZER,
+            NoticeKind,
+            SecurityNotice,
+            account_ids,
+            schedule_notice,
+            subject_told,
+        )
+
+        kind = {
+            "add": NoticeKind.MEMBER_ADDED,
+            "remove": NoticeKind.MEMBER_REMOVED,
+        }.get(change)
+        if change == "change" and before is not None and after is not None:
+            if before["account"] != after["account"]:
+                kind = NoticeKind.MEMBER_ADDED
+            elif before["role"] != after["role"]:
+                kind = NoticeKind.MEMBER_ROLE_CHANGED
+        if kind is None:
+            return
+        subjects = [values["account"] for values in (before, after) if values]
+        told: frozenset[int] = frozenset()
+        # A removed or demoted admin, or an admin row moved off its
+        # Account, is told too: it is no admin at commit.
+        if (
+            before is not None
+            and before["role"] == MemberRole.ADMIN
+            and (
+                after is None
+                or after["role"] != MemberRole.ADMIN
+                or before["account"] != after["account"]
+            )
+        ):
+            told = subject_told(actor, before["account"])
+        exclude = account_ids(actor, *subjects)
+        if (
+            before is not None
+            and after is not None
+            and before["account"] != after["account"]
+        ):
+            schedule_notice(
+                SecurityNotice(
+                    kind=NoticeKind.MEMBER_REMOVED,
+                    scope=ORGANIZER,
+                    scope_id=self.organizer_id,
+                    code=self.organizer.public_code,
+                    exclude=exclude,
+                    told=told,
+                )
+            )
+            told = frozenset()
+        schedule_notice(
+            SecurityNotice(
+                kind=kind,
+                scope=ORGANIZER,
+                scope_id=self.organizer_id,
+                code=self.organizer.public_code,
+                role=self.role,
+                hold_ends_at=(
+                    self.hold_ends_at if kind == NoticeKind.MEMBER_ADDED else None
+                ),
+                exclude=exclude,
+                told=told,
+            )
+        )
 
     def _account_verified_organizer(self, *, lock: bool) -> bool:
         """True when ``account`` is the Organizer's ``verified_by``."""
@@ -429,6 +577,15 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
         # Never the Account's email (CLAUDE.md, Personal data).
         return f"{self.club.public_code} {self.role}"
 
+    def clean(self) -> None:
+        if (
+            self.role == ClubRoleKind.ADMIN
+            and self.account_id is not None
+            and admin_rule_applies(self, self.account_id, self.role)
+            and admin_account_refused(self.account_id)
+        ):
+            raise ValidationError({"account": ADMIN_ACCOUNT_MESSAGE})
+
     def audit_values(self) -> dict[str, Any]:
         # The Account's row id, never its email (ADR 0009).
         return {
@@ -436,6 +593,69 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
             "account": self.account_id,
             "role": self.role,
         }
+
+    def access_notice(
+        self,
+        change: AccessChange,
+        *,
+        actor: Actor,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        """Tell the Club's other admins (#232). A move to another Account
+        reads as a removal of the old Account, which is told, then an add
+        of the new one."""
+        from apps.clubs.notices import (
+            CLUB,
+            NoticeKind,
+            SecurityNotice,
+            account_ids,
+            schedule_notice,
+            subject_told,
+        )
+
+        if change == "remove":
+            kind = NoticeKind.CLUB_ADMIN_REMOVED
+        elif change == "add" or (
+            before is not None
+            and after is not None
+            and before["account"] != after["account"]
+        ):
+            kind = NoticeKind.CLUB_ADMIN_ADDED
+        else:
+            return
+        subjects = [values["account"] for values in (before, after) if values]
+        # A removed admin, or one whose row moved to another Account, is
+        # told too: it is no admin at commit.
+        told = (
+            subject_told(actor, before["account"])
+            if before is not None
+            else frozenset()
+        )
+        exclude = account_ids(actor, *subjects)
+        if change == "change":
+            # A move: the old Account lost the role first.
+            schedule_notice(
+                SecurityNotice(
+                    kind=NoticeKind.CLUB_ADMIN_REMOVED,
+                    scope=CLUB,
+                    scope_id=self.club_id,
+                    code=self.club.public_code,
+                    exclude=exclude,
+                    told=told,
+                )
+            )
+            told = frozenset()
+        schedule_notice(
+            SecurityNotice(
+                kind=kind,
+                scope=CLUB,
+                scope_id=self.club_id,
+                code=self.club.public_code,
+                exclude=exclude,
+                told=told,
+            )
+        )
 
 
 class ClubOrganizerGrant(_LinkMessagesModel, AuditedAccessModel):
@@ -486,6 +706,58 @@ class ClubOrganizerGrant(_LinkMessagesModel, AuditedAccessModel):
             "club": self.club.public_code,
             "organizer": self.organizer.public_code,
         }
+
+    def access_notice(
+        self,
+        change: AccessChange,
+        *,
+        actor: Actor,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        """Tell the Club's admins, but the actor (#232). A row moved to
+        another Club or Organizer reads as a removal from the stored side
+        and an add on the new one."""
+        from apps.clubs.notices import (
+            CLUB,
+            NoticeKind,
+            SecurityNotice,
+            account_ids,
+            schedule_notice,
+        )
+
+        if change == "change" and before is not None:
+            old_club = (
+                Club.objects.filter(public_code=before["club"])
+                .values_list("pk", flat=True)
+                .first()
+            )
+            if old_club is not None:
+                schedule_notice(
+                    SecurityNotice(
+                        kind=NoticeKind.CLUB_GRANT_REMOVED,
+                        scope=CLUB,
+                        scope_id=old_club,
+                        code=before["club"],
+                        organizer_code=before["organizer"],
+                        exclude=account_ids(actor),
+                    )
+                )
+        kind = (
+            NoticeKind.CLUB_GRANT_REMOVED
+            if change == "remove"
+            else NoticeKind.CLUB_GRANT_ADDED
+        )
+        schedule_notice(
+            SecurityNotice(
+                kind=kind,
+                scope=CLUB,
+                scope_id=self.club_id,
+                code=self.club.public_code,
+                organizer_code=self.organizer.public_code,
+                exclude=account_ids(actor),
+            )
+        )
 
 
 class OrganizerReportReason(models.TextChoices):

@@ -215,14 +215,22 @@ _MFA_REQUIRED_DESCRIPTION = (
     "authentication (staff, superusers, moderators, and owners of a "
     "production application) and has none, or an Account with it whose "
     "session did not pass it, such as a password-only session. It can "
-    "still use allauth's endpoints to set it up or sign in with it."
+    "still use allauth's endpoints to set it up or sign in with it. "
+    "Code `reauthentication_required`: the operation needs a recent "
+    "reauthentication, or for an admin change to an Organizer or Club and "
+    "a results upload a recent two-factor step (any sign-in step for an "
+    "Account without two-factor authentication); confirm through allauth's "
+    "`auth/2fa/reauthenticate`, `auth/webauthn/reauthenticate`, or "
+    "`auth/reauthenticate`, then retry. Only operations whose description "
+    "says so return it."
 )
 
 
 def _document_mfa_required(
     operation: dict[str, Any], error_ref: dict[str, str]
 ) -> None:
-    """Document the 403 `mfa_required` on a signed-in operation (ADR 0043)."""
+    """Document the 403 `mfa_required` and `reauthentication_required` on a
+    signed-in operation (ADR 0043, #232)."""
     responses = operation.setdefault("responses", {})
     # ninja keys responses by int status; JSON rendering makes them strings.
     declared = [code for code in responses if str(code) == str(MFA_REQUIRED_STATUS)]
@@ -254,8 +262,10 @@ def _document_errors(schema: OpenAPISchema, throttled: set[str]) -> None:
     401 and a 403 response to every operation that takes auth, and a 429
     response to every operation in `throttled`.
 
-    The 403 is `mfa_required` (ADR 0043). An operation that declares its
-    own 403 keeps its description, with the `mfa_required` case added,
+    The 403 is `mfa_required` (ADR 0043), or `reauthentication_required`
+    on the operations that need a recent reauthentication or step-up
+    (#116, #232); the one description names both codes. An operation that
+    declares its own 403 keeps its description, with these cases added,
     and must declare `ErrorResponse`, the schema every 403 returns."""
     error_schema = ErrorResponse.model_json_schema(
         ref_template=_SCHEMA_REF, schema_generator=NinjaGenerateJsonSchema

@@ -12,7 +12,8 @@ A verified Organizer is the only trusted submitter (ADR 0021, amending
 ADR 0012). Event authority over an Event:
 
 - an Account that is a member (either role) of the Event's Organizer,
-  while that Organizer is verified and the Account has MFA (below);
+  while that Organizer is verified, the Account has MFA, and no New
+  Member Hold applies to the member (below);
 - an application that the Event's Organizer owns, or that the Organizer
   granted an Organizer Application Grant, while that Organizer is
   verified.
@@ -29,6 +30,11 @@ membership through ``_account_acts_for``, which checks it:
 ``apps.matches.workflow.organizer_disputes`` and ``vouchable_holds`` and
 the notice recipients in ``apps.matches.notices``, filter the same way.
 A self-submission needs no MFA, and applications are not affected.
+
+A member who joined a verified Organizer by invite has no Organizer
+authority until its New Member Hold ends (#232, ADR 0057).
+``_account_acts_for`` and the mirroring queries add
+``apps.clubs.models.not_held()``.
 
 A Club Role gives no authority to submit or change a match.
 
@@ -128,7 +134,13 @@ from django.contrib.auth.models import AnonymousUser
 from oauth2_provider.models import get_application_model
 
 from apps.accounts.mfa import accounts_with_mfa
-from apps.clubs.models import Club, ClubOrganizerGrant, Organizer, OrganizerMember
+from apps.clubs.models import (
+    Club,
+    ClubOrganizerGrant,
+    Organizer,
+    OrganizerMember,
+    not_held,
+)
 from apps.events.models import Event
 from apps.matches.models import Match, MatchParticipant
 from apps.partners.models import OrganizerApplicationGrant
@@ -212,8 +224,10 @@ def _verified_organizer_id(event_id: int | None) -> int | None:
 
 def _account_acts_for(account: "_User", organizer_id: int) -> bool:
     """True when ``account`` is a member (either role) of ``organizer_id``
-    and has a method (ADR 0043). One query."""
+    with no New Member Hold in force (#232) and has a method (ADR 0043).
+    One query."""
     acts: bool = OrganizerMember.objects.filter(
+        not_held(),
         organizer_id=organizer_id,
         account=account,
         account_id__in=accounts_with_mfa(),
@@ -347,8 +361,8 @@ def can_manage_events(actor: Actor, organizer_id: int) -> bool:
     """True when ``actor`` may create, change, and delete the Organizer's Events.
 
     An active Account with MFA that is a member (either role) of
-    ``organizer_id`` while that Organizer is verified (ADR 0021, #125,
-    ADR 0043). An application, a
+    ``organizer_id``, with no New Member Hold in force, while that
+    Organizer is verified (ADR 0021, #125, ADR 0043, ADR 0057). An application, a
     Club admin, and anyone else may not. Verification, membership, and
     ``is_active`` are read from the database by id.
     """

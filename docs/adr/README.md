@@ -104,3 +104,4 @@ Add each record here when it merges.
 - [0054. Organizer self-service: create, invite members, request verification](0054-organizer-self-service.md) (issue #229)
 - [0055. Club self-service: profiles, admins, and Club Organizer Grants](0055-club-self-service.md) (issue #230)
 - [0056. Passkeys (WebAuthn) for the browser client](0056-passkeys.md) (issue #117)
+- [0057. Organizer and Club admin security](0057-organizer-and-club-admin-security.md) (issue #232)

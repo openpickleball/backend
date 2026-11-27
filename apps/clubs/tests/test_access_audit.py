@@ -31,6 +31,7 @@ from apps.clubs.tests.factories import (
     OrganizerFactory,
     OrganizerMemberFactory,
     verify,
+    verify_login_address,
 )
 
 if TYPE_CHECKING:
@@ -123,7 +124,7 @@ def test_adding_a_member_in_the_inline_records_one_event(
     admin_client: Client, superuser: "_User"
 ) -> None:
     organizer = OrganizerFactory.create()
-    account = UserFactory.create()
+    account = verify_login_address(UserFactory.create())
 
     response = _post_organizer(
         admin_client,
@@ -154,6 +155,7 @@ def test_changing_a_member_role_in_the_inline_records_one_event(
     admin_client: Client, superuser: "_User"
 ) -> None:
     member = OrganizerMemberFactory.create(role=MemberRole.MATCH_MANAGER)
+    verify_login_address(member.account)
     organizer = member.organizer
     before = len(_access_events())
 
@@ -307,7 +309,7 @@ def test_club_role_add_and_remove_in_the_inline_each_record_one_event(
     admin_client: Client, superuser: "_User"
 ) -> None:
     club = ClubFactory.create()
-    account = UserFactory.create()
+    account = verify_login_address(UserFactory.create())
 
     added = _post_club(
         admin_client,

@@ -3,6 +3,7 @@
 - Status: Accepted
 - Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (a member acts for a verified Organizer only while the member's Account has MFA)
 - Date: 2026-11-23
+- Amended by: [ADR 0057](0057-organizer-and-club-admin-security.md) (a taken-over admin Account of a verified Organizer is bounded by step-up, notices, a New Member Hold, and an admin with MFA)
 
 ## Context
 
@@ -39,6 +40,7 @@ This amends ADR 0012 (submission and change rules) and ADR 0013 (the duplicate p
 - The code, the `ClubRole` choices, the `ClubApplicationGrant` model, `CONTEXT.md`, `CLAUDE.md`, and the personal data inventory change in the issue that carries this out. Nothing has been deployed, so there is no data to move.
 - Every grant and role change is a permission change in a security-sensitive area, so each records an Audit Event (#158 widens to cover the new grants; ADR 0033 records them from the admin and services).
 - A verified Organizer carries all trusted submissions, so abuse by one is handled by review signals and cleanup (#205, #206, #208), not by a second kind of trust.
+- A taken-over admin Account of a verified Organizer could add members who submit trusted matches. ADR 0057 bounds it: a step-up for admin changes, notices to the other admins, a New Member Hold, and an admin with MFA kept on every Organizer.
 
 ## Alternatives considered
 

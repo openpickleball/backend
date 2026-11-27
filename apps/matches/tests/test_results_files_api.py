@@ -340,7 +340,10 @@ def test_a_location_over_the_limit_is_a_422(event: Event, member: User) -> None:
 
 
 def test_a_non_member_gets_404(event: Event) -> None:
-    response = _upload(_client(UserFactory.create()), event.public_code, _form())
+    # With MFA, so its sign-in passes the step-up (#232) and the lookup runs.
+    response = _upload(
+        _client(UserFactory.create(mfa=True)), event.public_code, _form()
+    )
 
     assert response.status_code == 404
     assert response.json() == NOT_FOUND

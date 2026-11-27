@@ -14,6 +14,14 @@ It renders only; ``apps.clubs.self_service.invite_member`` queues it.
 Club's OPEN Code, the expiry in UTC, and the single-use link
 ``{FRONTEND_URL}/clubs/invites/{key}``, never the inviter or the Club's
 name. ``apps.clubs.club_self_service.invite_admin`` queues it.
+
+``render_security_notice`` renders one security notice (#232, ADR 0057)
+to an admin of an Organizer or Club
+(``templates/clubs/email/security_notice_*``): the OPEN Code, a fixed
+sentence about the change, and what to do if it was not expected. It
+never names a person, an email address, an Organizer's or Club's name,
+or a client id. ``apps.clubs.notices`` builds the sentences and queues
+it.
 """
 
 from datetime import UTC, datetime
@@ -27,6 +35,7 @@ from apps.emails.rendering import render_email
 
 ORGANIZER_INVITE: Final = "clubs/email/organizer_invite"
 CLUB_INVITE: Final = "clubs/email/club_invite"
+SECURITY_NOTICE: Final = "clubs/email/security_notice"
 
 
 def invite_url(key: str) -> str:
@@ -72,4 +81,17 @@ def render_club_invite(
             "invite_url": club_invite_url(key),
             "expires_at": expires_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC"),
         },
+    )
+
+
+def render_security_notice(
+    to: str, *, scope: str, code: str, summary: str, follow_up: str
+) -> EmailMultiAlternatives:
+    """The security notice to ``to``. ``scope`` is ``organizer`` or
+    ``club``; ``summary`` and ``follow_up`` are fixed sentences from
+    ``apps.clubs.notices``, holding only OPEN Codes, a role, and a time."""
+    return render_email(
+        SECURITY_NOTICE,
+        to,
+        {"scope": scope, "code": code, "summary": summary, "follow_up": follow_up},
     )

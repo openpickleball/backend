@@ -21,8 +21,8 @@ Organizer's members with MFA still submit counted matches.
   while the invite's sender is still an admin there by the same rule
   (active, admin, with MFA). Every refusal is ``NotFound``.
 
-On these paths a Club always keeps one active admin (``Conflict``
-otherwise). Account deletion and the staff admin can still leave a Club
+On these paths a Club always keeps one active admin with MFA
+(``Conflict`` otherwise, #232). Account deletion and the staff admin can still leave a Club
 without one; staff repair it. Removing an admin deletes the invites it
 sent to that Club in the same transaction. Role and grant writes go
 through ``apps.audit.access`` with the acting Account. ``club.change``
@@ -96,7 +96,9 @@ CREATE_LIMIT_MESSAGE: Final = (
 OPEN_INVITES_MESSAGE: Final = (
     "This club has too many open invites. Wait until some are accepted or expire."
 )
-LAST_ADMIN_MESSAGE: Final = "A club must keep at least one admin."
+LAST_ADMIN_MESSAGE: Final = (
+    "A club must keep at least one admin with two-factor authentication."
+)
 ALREADY_ADMIN_MESSAGE: Final = "You are already an admin of this club."
 ALREADY_GRANTED_MESSAGE: Final = "This club already allows that organizer."
 NAMED_RENAME_MESSAGE: Final = (
@@ -412,7 +414,11 @@ def remove_admin(club_id: int, player_code: str, *, actor: "_User") -> None:
             raise NotFound
         others = (
             ClubRole.objects.filter(
-                club_id=club.pk, role=ClubRoleKind.ADMIN, account__is_active=True
+                club_id=club.pk,
+                role=ClubRoleKind.ADMIN,
+                account__is_active=True,
+                # An admin with MFA, who can act (#232).
+                account_id__in=accounts_with_mfa(),
             )
             .exclude(pk=role.pk)
             .count()

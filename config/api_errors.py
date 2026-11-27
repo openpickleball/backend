@@ -50,7 +50,12 @@ fixed text, and no items, on every signed-in operation.
 
 An operation that needs a recent reauthentication (Account deletion,
 `config.auth.ReauthenticationRequired`, #116) gets 403 with code
-"reauthentication_required", fixed text, and no items.
+"reauthentication_required", fixed text, and no items. The Organizer and
+Club admin changes and the results file upload (#232, ADR 0057) get the
+same code when the session's latest two-factor step is older than
+`ORGANIZER_STEP_UP_SECONDS`, before any lookup of the path's records:
+with the fixed text `config.auth.STEP_UP_MESSAGE` for an Account with
+MFA, and the general reauthentication text for one without.
 
 An `HttpError` takes its code from its status: 413 (a file over an
 upload's size limit) is "too_large".

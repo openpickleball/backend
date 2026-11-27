@@ -8,6 +8,7 @@ or the test passes ``mfa=False``.
 from datetime import timedelta
 from typing import Any
 
+from allauth.account.models import EmailAddress
 from django.contrib.auth.models import Permission
 from django.utils import timezone
 from factory.declarations import LazyFunction, PostGeneration, Sequence, SubFactory
@@ -57,6 +58,17 @@ class OrganizerFactory(DjangoModelFactory[Organizer]):
         model = Organizer
 
     name = LazyFunction(_company_name)  # type: ignore[no-untyped-call]
+
+
+def verify_login_address(account: Any) -> Any:
+    """Give ``account`` a verified row for its login address, as an admin
+    role needs (#232), and return it."""
+    EmailAddress.objects.update_or_create(
+        user=account,
+        email=account.email,
+        defaults={"verified": True, "primary": True},
+    )
+    return account
 
 
 def _enroll_member(

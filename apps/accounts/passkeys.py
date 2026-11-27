@@ -46,7 +46,7 @@ from fido2.cose import CoseKey
 from fido2.utils import websafe_encode
 from fido2.webauthn import AuthenticationResponse, RegistrationResponse
 
-from apps.accounts.mfa import record_mfa_change
+from apps.accounts.mfa import MFA_METHOD_TYPES, record_mfa_change
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -161,7 +161,9 @@ def remove_passkeys_after_reset(account: "_User") -> None:
     ``removed recovery_codes`` when no other method keeps the codes, as
     the passkey view does. Someone who knew the password could have added
     a passkey, which signs in alone. Call inside the reset's transaction:
-    the Account row is locked first, before any authenticator row.
+    the Account row is locked first, before any authenticator row. When
+    the passkeys were the last method, the other admins get the security
+    notice (#232), registered in this transaction.
     """
     list(
         get_user_model()
@@ -192,6 +194,15 @@ def remove_passkeys_after_reset(account: "_User") -> None:
         record_mfa_change(account, "removed", Authenticator.Type.RECOVERY_CODES)
         codes.delete()
     Authenticator.objects.filter(pk__in=[row.pk for row in rows]).delete()
+    if not Authenticator.objects.filter(
+        user_id=account.pk, type__in=MFA_METHOD_TYPES
+    ).exists():
+        # The reset is never refused, but the other admins of the
+        # Account's Organizers and Clubs hear it lost its last method
+        # (#232, ADR 0057). Imported here: apps.clubs imports this app.
+        from apps.clubs.notices import schedule_mfa_removed
+
+        schedule_mfa_removed(account.pk)
 
 
 # Fixed text: never the id that was sent.
