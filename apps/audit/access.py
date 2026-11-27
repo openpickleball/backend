@@ -247,7 +247,10 @@ def _notify(
     """Run the row's ``access_notice``. A failure is logged with the row's
     id and the error class only, and never fails the change."""
     try:
-        row.access_notice(change, actor=actor, before=before, after=after)
+        # A savepoint, so a database error in the hook rolls back only the
+        # hook and leaves the change's transaction usable.
+        with transaction.atomic():
+            row.access_notice(change, actor=actor, before=before, after=after)
     except Exception as exc:
         # The broad catch is safe: the hook only builds plain values and
         # registers an on_commit callback; a notice is never worth failing
