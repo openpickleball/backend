@@ -110,6 +110,8 @@ class RoutingTests(SimpleTestCase):
         assert _queue_for("apps.emails.tasks.x") == "email"
 
     def test_email_outbox_tasks_go_to_email(self) -> None:
+        import apps.emails.tasks  # noqa: F401
+
         for name in (
             "apps.emails.tasks.send_queued_email",
             "apps.emails.tasks.sweep_queued_emails",
