@@ -671,8 +671,10 @@ class ReplayReason(models.TextChoices):
     """Why a replay was requested.
 
     The ``MatchChange`` values (``apps.matches.signals``), plus ``late``
-    (a match played before a player's last match) and ``replay_needed``
-    (a live update that could not be queued or failed in a worker).
+    (a match played before a player's last match), ``replay_needed``
+    (a live update that could not be queued or failed in a worker), and
+    ``scheduled`` (the scheduled replay that moves inactive players'
+    reliability forward, #52, ADR 0060).
     """
 
     VOID = "void", "Void"
@@ -682,6 +684,7 @@ class ReplayReason(models.TextChoices):
     RELEASE = "release", "Release"
     LATE = "late", "Late match"
     REPLAY_NEEDED = "replay_needed", "Replay needed"
+    SCHEDULED = "scheduled", "Scheduled replay"
 
 
 class RatingReplayRequest(models.Model):

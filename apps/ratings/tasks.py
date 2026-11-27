@@ -117,3 +117,38 @@ replay_ratings: "Task[..., str]" = shared_task(
     soft_time_limit=1500,
     time_limit=1800,
 )(_replay_ratings)
+
+
+def _decay_reliability(self: "Task[..., str]") -> str:
+    """Ask for the scheduled replay when it is due (#52, ADR 0060).
+
+    Takes no arguments and returns only the outcome's value, so no
+    personal data passes through the broker or the worker log. Safe to
+    run twice: a replay that is not due, or a ``scheduled`` request
+    already pending, writes nothing. The replay task it queues does the
+    rating work.
+
+    In a worker, any error is logged once with the error class, and
+    replaced by a fixed-text ``ReplayFailed`` with no context, as in the
+    replay task. In eager mode (tests, local development) the original
+    error propagates. The task is not retried: the next daily run asks
+    again.
+    """
+    try:
+        return str(services.decay_reliability())
+    except Exception as exc:
+        if self.request.is_eager:
+            raise
+        error_class = type(exc).__name__
+        logger.error("Reliability decay task failed (%s).", error_class)
+        raise services.ReplayFailed(error_class) from None
+
+
+# Named explicitly, like the other rating tasks. It only reads and stores
+# one request, so short limits, well under the visibility timeout.
+decay_reliability: "Task[..., str]" = shared_task(
+    bind=True,
+    name="apps.ratings.tasks.decay_reliability",
+    soft_time_limit=240,
+    time_limit=300,
+)(_decay_reliability)
