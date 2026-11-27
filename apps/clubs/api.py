@@ -31,7 +31,10 @@ through ``apps.clubs.self_service``:
   and the verification request. An Account without MFA gets 403
   ``mfa_required`` before any database lookup, the same for every
   well-formed code (ADR 0043); a malformed code is already a 404 when
-  ``PublicCodePath`` reads the path. A non-member, a match manager, and
+  ``PublicCodePath`` reads the path. Then the invite, a member's role
+  and removal, and the verification request need a recent two-factor
+  step (``require_step_up``, #232, ADR 0057): an older one gets 403
+  ``reauthentication_required``, still before any lookup. A non-member, a match manager, and
   an unknown or malformed code (or member Player code) all get the same
   404.
 - ``POST /organizer/invites/accept`` (``accept_organizer_invite``): the
@@ -350,6 +353,10 @@ def invite_organizer_member(
     when the Organizer has too many open invites. Limited per Account to
     a number of invites a day; past that the answer is 429 with a
     Retry-After header.
+
+    A two-factor step older than a few minutes gets 403
+    `reauthentication_required`: confirm a code through
+    `auth/2fa/reauthenticate`, then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)
@@ -442,7 +449,12 @@ def change_organizer_member_role(
 
     ``player`` is the member's player OPEN Code; one that is not a member
     of this Organizer gets the same 404 as an unknown code. 409 when it
-    would leave the Organizer with no admin.
+    would leave the Organizer with no admin with two-factor
+    authentication.
+
+    A two-factor step older than a few minutes gets 403
+    `reauthentication_required`: confirm a code through
+    `auth/2fa/reauthenticate`, then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)
@@ -470,7 +482,12 @@ def remove_organizer_member(
 
     ``player`` is the member's player OPEN Code; one that is not a member
     of this Organizer gets the same 404 as an unknown code. 409 when it
-    would leave the Organizer with no admin.
+    would leave the Organizer with no admin with two-factor
+    authentication.
+
+    A two-factor step older than a few minutes gets 403
+    `reauthentication_required`: confirm a code through
+    `auth/2fa/reauthenticate`, then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)
@@ -503,6 +520,10 @@ def request_organizer_verification(
     ``statement`` says what the Organizer runs, for moderators only. A
     moderator decides; nothing is verified automatically. 409 when the
     Organizer is already verified or already has an open request.
+
+    A two-factor step older than a few minutes gets 403
+    `reauthentication_required`: confirm a code through
+    `auth/2fa/reauthenticate`, then retry.
     """
     account = _mfa_admin(request)
     require_step_up(request)

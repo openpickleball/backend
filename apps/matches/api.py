@@ -766,9 +766,10 @@ def create_results_file(
     most 1 MiB and 1000 match rows. ``players_13_or_older`` must be true:
     it confirms that every player in the file is 13 or older (422
     otherwise, checked before anything else). A session whose latest
-    two-factor step is older than a few minutes gets 403
-    ``reauthentication_required``: confirm a code again
-    (``auth/2fa/reauthenticate``), then retry. ``game_target`` (11, 15, or
+    two-factor step (any sign-in step, without two-factor
+    authentication) is older than a few minutes gets 403 with code
+    `reauthentication_required`: confirm through
+    `auth/2fa/reauthenticate` (or `auth/reauthenticate`), then retry. ``game_target`` (11, 15, or
     21) and ``location`` apply to every row. Anyone who may not manage the
     Event's matches gets the same 404 as an unknown Event. A larger file
     gets 413. The file is processed in the background: the response is

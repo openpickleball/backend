@@ -197,8 +197,9 @@ def _admin_organizer(organizer_id: int, actor: "_User") -> Organizer:
     """Lock and return the Organizer when ``actor`` is its admin member.
 
     Call inside a transaction. Holds the Account first, then locks the
-    Organizer ``FOR UPDATE``, then checks the membership, MFA, and
-    ``is_active`` from the database. ``NotFound`` otherwise.
+    Organizer ``FOR UPDATE``, then checks the membership, MFA, no New
+    Member Hold in force, and ``is_active`` from the database
+    (``_is_admin``). ``NotFound`` otherwise.
     """
     if actor.pk is None or not hold_active_account(actor.pk):
         raise NotFound
@@ -394,8 +395,9 @@ def _hold_ends_at(organizer: Organizer) -> datetime | None:
 
 def _sender_still_admin(invite: OrganizerInvite) -> bool:
     """Whether the invite's sender still has admin authority there: the
-    same rule as ``_is_admin`` (active, admin role, MFA). Call under the
-    Organizer lock, which every membership change takes first."""
+    same rule as ``_is_admin`` (active, admin role, MFA, no New Member
+    Hold in force). Call under the Organizer lock, which every membership
+    change takes first."""
     return _is_admin(invite.invited_by_id, invite.organizer_id)
 
 
