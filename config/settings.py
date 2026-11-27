@@ -972,10 +972,10 @@ CELERY_BEAT_SCHEDULE = {
         "options": {"expire_seconds": 3600},
     },
     # Asks for the scheduled replay when the most recently created replay
-    # is at least the engine's replay_interval_days old, so inactive players' reliability
-    # moves forward (#52, ADR 0060). After the two expiry tasks, so a
-    # replay they ask for usually runs first. A run missed for an hour is
-    # dropped.
+    # is at least the engine's replay_interval_days old, so inactive
+    # players' reliability moves forward (#52, ADR 0060). After the two
+    # expiry tasks, so a replay they ask for usually runs first. A run
+    # missed for an hour is dropped.
     "decay-reliability": {
         "task": "apps.ratings.tasks.decay_reliability",
         "schedule": crontab(hour=3, minute=45),
@@ -1029,8 +1029,8 @@ CELERY_BEAT_SCHEDULE = {
     # (#52): deletes expired access tokens with no refresh token, expired
     # ID tokens with no access token, expired grants, and orphaned refresh
     # tokens. Revoked refresh tokens (for reuse detection), expired access
-    # tokens with a refresh token, and device grants stay. A run missed
-    # for an hour is dropped.
+    # tokens with a refresh token, and device grants (never touched) stay.
+    # A run missed for an hour is dropped.
     "clear-expired-tokens": {
         "task": "apps.partners.tasks.clear_expired_tokens",
         "schedule": crontab(hour=4, minute=20),

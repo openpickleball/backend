@@ -25,7 +25,7 @@ So the engine's decay is a replay as of a later date. ADR 0028 replays only whil
 ## Consequences
 
 - A due replay is a full replay that holds the snapshot row lock. It runs at most once per `replay_interval_days` unless match changes replay sooner. Live updates wait for it, as for every replay.
-- A scheduled replay runs on a new UTC day, so, as ADR 0028 notes for the first replay of each day, it moves `calculated_as_of` for every rated state. It writes one `replay` history row and one `rating.change` Audit Event per stored rating, active players included, about once a week.
+- A scheduled replay runs on a new UTC day, so, as ADR 0028 notes for the first replay of each day, it moves `calculated_as_of` for nearly every rated state. It writes one `replay` history row and one `rating.change` Audit Event for each stored rating whose values change, which on a new UTC day is nearly every one, active players included, about once a week. A rating a live update already took as of that day can come out unchanged, and then nothing is written for it.
 - A recompute with an earlier `--as-of` (ADR 0058) makes the scheduled replay due sooner, since the most recently created replay's `as_of` is what counts.
 
 ## Alternatives considered
