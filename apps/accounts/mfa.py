@@ -30,7 +30,10 @@ Account's id, never from an instance cache:
   MFA stage, is not signed in at all. The admin needs it too
   (``config/admin.py``).
 - ``last_mfa_at``: when the session last passed the second factor, for
-  the admin's session and reauthentication limits (``config/admin.py``).
+  the admin's session and reauthentication limits (``config/admin.py``)
+  and the Organizer step-up (``config/auth.py``, #232).
+- ``last_authenticated_at``: when the session last took any
+  authentication step, for the step-up of an Account without MFA.
 - ``record_mfa_change``: the one Audit Event per MFA change, written in
   the change's transaction (``apps/accounts/mfa_views.py``).
 """
@@ -224,24 +227,42 @@ def session_passed_mfa(session: SessionBase, account: "_User") -> bool:
     return any(record.get("method") == "mfa" for record in records)
 
 
+def _latest_at(
+    session: SessionBase, account: "_User", *, mfa_only: bool
+) -> float | None:
+    records = get_authentication_records(SimpleNamespace(session=session), account)
+    times = [
+        float(record["at"])
+        for record in records
+        if isinstance(record, dict)
+        and (not mfa_only or record.get("method") == "mfa")
+        and isinstance(record.get("at"), int | float)
+        and not isinstance(record.get("at"), bool)
+        and math.isfinite(record["at"])
+    ]
+    return max(times, default=None)
+
+
 def last_mfa_at(session: SessionBase, account: "_User") -> float | None:
     """When ``account`` last passed the second factor in ``session``.
 
     The latest ``at`` (seconds since the epoch, allauth's ``time.time()``)
     of the session's ``mfa`` records bound to ``account``, or None when it
     has none. A record without a finite number for its time is skipped.
-    The admin's time limits read it (``config/admin.py``).
+    The admin's time limits read it (``config/admin.py``), and so does the
+    Organizer step-up (``config.auth.require_step_up``).
     """
-    records = get_authentication_records(SimpleNamespace(session=session), account)
-    times = [
-        float(record["at"])
-        for record in records
-        if record.get("method") == "mfa"
-        and isinstance(record.get("at"), int | float)
-        and not isinstance(record.get("at"), bool)
-        and math.isfinite(record["at"])
-    ]
-    return max(times, default=None)
+    return _latest_at(session, account, mfa_only=True)
+
+
+def last_authenticated_at(session: SessionBase, account: "_User") -> float | None:
+    """When ``account`` last took any authentication step in ``session``.
+
+    Like ``last_mfa_at``, but over every allauth record (a login or a
+    reauthentication, by password or MFA). The step-up reads it for an
+    Account without MFA (``config.auth.require_step_up``).
+    """
+    return _latest_at(session, account, mfa_only=False)
 
 
 def record_mfa_change(account: "_User", change: MFAChange, kind: str) -> None:

@@ -51,7 +51,7 @@ from apps.matches.api import request_account
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
 from config.api_errors import ErrorResponse, model_validation_error
-from config.auth import account_auth
+from config.auth import account_auth, require_step_up
 from config.throttling import (
     DAY,
     FixedWindowThrottle,
@@ -224,6 +224,7 @@ def invite_club_admin(
     header.
     """
     account = _mfa_admin(request)
+    require_step_up(request)
     club_id = _club_id(code)
     try:
         club_self_service.invite_admin(club_id, actor=account, email=payload.email)
@@ -275,6 +276,7 @@ def remove_club_admin(
     Club stop working.
     """
     account = _mfa_admin(request)
+    require_step_up(request)
     club_id = _club_id(code)
     try:
         club_self_service.remove_admin(club_id, player, actor=account)
@@ -337,6 +339,7 @@ def grant_club_organizer(
     when the Club already allows it.
     """
     account = _mfa_admin(request)
+    require_step_up(request)
     club_id = _club_id(code)
     try:
         grant = club_self_service.grant_organizer(
@@ -370,6 +373,7 @@ def remove_club_organizer_grant(
     not allow gets the same 404 as an unknown code.
     """
     account = _mfa_admin(request)
+    require_step_up(request)
     club_id = _club_id(code)
     try:
         club_self_service.remove_grant(club_id, organizer, actor=account)

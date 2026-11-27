@@ -84,7 +84,7 @@ from apps.matches.api import request_account
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
 from config.api_errors import ErrorResponse, model_validation_error
-from config.auth import MFARequired, account_auth
+from config.auth import MFARequired, account_auth, require_step_up
 from config.throttling import (
     DAY,
     FixedWindowThrottle,
@@ -352,6 +352,7 @@ def invite_organizer_member(
     Retry-After header.
     """
     account = _mfa_admin(request)
+    require_step_up(request)
     organizer_id = _organizer_id(code)
     try:
         self_service.invite_member(
@@ -444,6 +445,7 @@ def change_organizer_member_role(
     would leave the Organizer with no admin.
     """
     account = _mfa_admin(request)
+    require_step_up(request)
     organizer_id = _organizer_id(code)
     try:
         changed = self_service.change_member_role(
@@ -471,6 +473,7 @@ def remove_organizer_member(
     would leave the Organizer with no admin.
     """
     account = _mfa_admin(request)
+    require_step_up(request)
     organizer_id = _organizer_id(code)
     try:
         self_service.remove_member(organizer_id, player, actor=account)
@@ -502,6 +505,7 @@ def request_organizer_verification(
     Organizer is already verified or already has an open request.
     """
     account = _mfa_admin(request)
+    require_step_up(request)
     organizer_id = _organizer_id(code)
     try:
         made = self_service.request_verification(

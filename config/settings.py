@@ -167,6 +167,26 @@ def _seconds(name: str, default: int, minimum: int = 1) -> int:
     return int(value)
 
 
+_MAX_HOURS = 8760
+
+
+def _hours(name: str, default: int) -> int:
+    """A whole number of hours from 0 to 8760, or ``default`` when unset or
+    empty. 0 is allowed (it turns a period off). Only ASCII digits, at most
+    4, checked before the conversion. The error names the variable and the
+    range and never echoes the value.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return default
+    if not re.fullmatch(r"[0-9]{1,4}", value) or not int(value) <= _MAX_HOURS:
+        raise ImproperlyConfigured(
+            f"Set {name} to a whole number of hours from 0 to {_MAX_HOURS}, or "
+            "leave it empty (see .env.example)."
+        )
+    return int(value)
+
+
 _MIN_PASSWORD_LENGTH = 8
 _MAX_PASSWORD_LENGTH = 128
 # A slow breach check holds the request that sets a password.
@@ -1055,6 +1075,18 @@ ORGANIZER_OPEN_INVITES_LIMIT = _version("ORGANIZER_OPEN_INVITES_LIMIT", 50)
 # Days an Organizer invite link works. Unset or empty gives 7.
 ORGANIZER_INVITE_DAYS = _days("ORGANIZER_INVITE_DAYS", 7)
 
+# Organizer and Club admin security (#232, ADR 0057)
+
+# How recent a second factor step (an MFA login, MFA reauthentication, or
+# enrollment) must be for an admin change to an Organizer or Club, or a
+# results file upload (config.auth.require_step_up). Whole seconds from
+# 30 to 86400. Unset or empty gives 300.
+ORGANIZER_STEP_UP_SECONDS = _seconds("ORGANIZER_STEP_UP_SECONDS", 300, minimum=30)
+# Hours a member who joins a verified Organizer by invite waits before it
+# has any Organizer authority (the New Member Hold). Whole hours from 0 to
+# 8760; 0 turns the hold off. Unset or empty gives 24.
+ORGANIZER_NEW_MEMBER_HOLD_HOURS = _hours("ORGANIZER_NEW_MEMBER_HOLD_HOURS", 24)
+
 
 # Club self-service (#230)
 
@@ -1339,6 +1371,23 @@ SESSION_IDLE_DAYS = _days("SESSION_IDLE_DAYS", 7)
 if SESSION_IDLE_DAYS > SESSION_MAX_AGE_DAYS:
     raise ImproperlyConfigured(
         "Set SESSION_IDLE_DAYS to at most SESSION_MAX_AGE_DAYS (see .env.example)."
+    )
+# The shorter lifetimes of an Account with any Organizer membership or Club
+# Role (#232, ADR 0057), each at most its player value above. Unset or
+# empty gives 7 (or SESSION_MAX_AGE_DAYS when lower) and 1.
+ORGANIZER_SESSION_MAX_AGE_DAYS = _days(
+    "ORGANIZER_SESSION_MAX_AGE_DAYS", min(7, SESSION_MAX_AGE_DAYS)
+)
+ORGANIZER_SESSION_IDLE_DAYS = _days("ORGANIZER_SESSION_IDLE_DAYS", 1)
+if ORGANIZER_SESSION_MAX_AGE_DAYS > SESSION_MAX_AGE_DAYS:
+    raise ImproperlyConfigured(
+        "Set ORGANIZER_SESSION_MAX_AGE_DAYS to at most SESSION_MAX_AGE_DAYS "
+        "(see .env.example)."
+    )
+if min(SESSION_IDLE_DAYS, ORGANIZER_SESSION_MAX_AGE_DAYS) < ORGANIZER_SESSION_IDLE_DAYS:
+    raise ImproperlyConfigured(
+        "Set ORGANIZER_SESSION_IDLE_DAYS to at most SESSION_IDLE_DAYS and "
+        "ORGANIZER_SESSION_MAX_AGE_DAYS (see .env.example)."
     )
 # A signed-out session (a signup in progress holds the legal name and birth
 # year and month there, and TOTP setup a pending secret) expires after

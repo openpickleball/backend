@@ -28,6 +28,13 @@ session, such as one made before the Account enrolled, gets the same
 Account still gets 401, and for a browser session after ninja's CSRF
 check, so an unsafe request without its token still gets the CSRF 403.
 
+`require_step_up(request)` (#232, ADR 0057) refuses an operation with
+403 ``reauthentication_required`` and ``STEP_UP_MESSAGE`` unless the
+session behind the request took a second factor step (any
+authentication step, for an Account without MFA) within
+``ORGANIZER_STEP_UP_SECONDS``. Organizer and Club admin changes and the
+results file upload call it.
+
 `auth_session(request)` returns the session behind the request's
 authentication: the session the `X-Session-Token` names for the app
 client, `request.session` for the browser client. A view that reads or
@@ -36,6 +43,7 @@ session is saved by Django's middleware; a view that changes the token
 session saves it itself (`save()` keeps its key, so the token still works).
 """
 
+import time
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -45,12 +53,19 @@ from allauth.account.internal.flows.reauthentication import (
 from allauth.headless.contrib.ninja.security import XSessionTokenAuth
 from allauth.headless.internal.sessionkit import authenticate_by_x_session_token
 from allauth.usersessions.internal import usersessionkit
+from django.conf import settings
 from django.contrib.sessions.backends.base import SessionBase
 from django.http import HttpRequest
 from ninja.errors import HttpError
 from ninja.security import SessionAuth as NinjaSessionAuth
 
-from apps.accounts.mfa import mfa_status, session_passed_mfa
+from apps.accounts.mfa import (
+    has_mfa,
+    last_authenticated_at,
+    last_mfa_at,
+    mfa_status,
+    session_passed_mfa,
+)
 
 # Where SessionTokenAuth keeps the token's session on the request.
 _TOKEN_SESSION_ATTRIBUTE = "open_token_session"
@@ -77,18 +92,21 @@ REAUTHENTICATION_REQUIRED_MESSAGE = (
 )
 
 
+STEP_UP_MESSAGE = "Confirm a two-factor code again, then retry."
+
+
 class ReauthenticationRequired(HttpError):
     """The operation needs a recent reauthentication (403, #116).
 
     Fixed text. The client reauthenticates through allauth
     (``auth/reauthenticate`` with the password, or ``auth/2fa/reauthenticate``
-    with a code) and sends the request again.
+    with a code) and sends the request again. The step-up (#232) passes
+    ``STEP_UP_MESSAGE``, since only a code satisfies it for an Account
+    with MFA.
     """
 
-    def __init__(self) -> None:
-        super().__init__(
-            REAUTHENTICATION_REQUIRED_STATUS, REAUTHENTICATION_REQUIRED_MESSAGE
-        )
+    def __init__(self, message: str = REAUTHENTICATION_REQUIRED_MESSAGE) -> None:
+        super().__init__(REAUTHENTICATION_REQUIRED_STATUS, message)
 
 
 def recently_reauthenticated(request: HttpRequest) -> bool:
@@ -108,6 +126,33 @@ def require_recent_reauthentication(request: HttpRequest) -> None:
     """Raise ``ReauthenticationRequired`` unless ``recently_reauthenticated``."""
     if not recently_reauthenticated(request):
         raise ReauthenticationRequired
+
+
+def stepped_up(request: HttpRequest) -> bool:
+    """Whether the request's session took a recent enough step (#232).
+
+    For an Account with MFA, its latest second factor step (an MFA login,
+    an MFA reauthentication, or enrollment: ``last_mfa_at``); for one
+    without, its latest authentication record of any kind
+    (``last_authenticated_at``). Recent means within
+    ``ORGANIZER_STEP_UP_SECONDS``, read from the session behind the
+    request (``auth_session``), so both clients work.
+    """
+    account = request.auth  # type: ignore[attr-defined]
+    session = auth_session(request)
+    if has_mfa(account):
+        last = last_mfa_at(session, account)
+    else:
+        last = last_authenticated_at(session, account)
+    return last is not None and time.time() - last <= settings.ORGANIZER_STEP_UP_SECONDS
+
+
+def require_step_up(request: HttpRequest) -> None:
+    """Raise ``ReauthenticationRequired`` with ``STEP_UP_MESSAGE`` unless
+    ``stepped_up``. Call it before any lookup of the path's records, so the
+    answer is the same for every well-formed code."""
+    if not stepped_up(request):
+        raise ReauthenticationRequired(STEP_UP_MESSAGE)
 
 
 def require_mfa(account: Any, session: SessionBase | None) -> Any:

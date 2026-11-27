@@ -19,6 +19,7 @@ from apps.accounts.mfa import (
     accounts_with_mfa,
     has_mfa,
     lacks_required_mfa,
+    last_authenticated_at,
     last_mfa_at,
     mfa_required,
     mfa_status,
@@ -303,3 +304,25 @@ def test_last_mfa_at_ignores_a_step_without_a_time(at: object) -> None:
     session = _session_with([{"method": "mfa", "at": at}], account)
 
     assert last_mfa_at(session, account) is None
+
+
+def test_last_authenticated_at_is_the_latest_step_of_any_kind() -> None:
+    account = UserFactory.create()
+    session = _session_with(
+        [
+            {"method": "mfa", "at": 100.0, "type": "totp"},
+            {"method": "password", "at": 500.0, "reauthenticated": True},
+            {"method": "password", "at": "600"},
+            "not-a-record",
+        ],
+        account,
+    )
+
+    assert last_authenticated_at(session, account) == 500.0
+
+
+def test_last_authenticated_at_ignores_another_accounts_steps() -> None:
+    account, other = UserFactory.create(), UserFactory.create()
+    session = _session_with([{"method": "password", "at": 300.0}], other)
+
+    assert last_authenticated_at(session, account) is None
