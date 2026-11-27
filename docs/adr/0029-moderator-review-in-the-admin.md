@@ -5,7 +5,7 @@
 - Amended by: [ADR 0037](0037-organizer-reports.md) (the `Moderator` group also views Organizer Reports, and moderators close them from the admin)
 - Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (every staff Account, moderators included, needs MFA to use the admin)
 - Amended by: [ADR 0054](0054-organizer-self-service.md) (the `Moderator` group also views Organizer Verification Requests, `clubs.view_organizerverificationrequest`, and moderators close them from the admin with a typed reason)
-- Amended by: [ADR 0059](0059-moderator-removal-of-an-under-13-player.md) (the `Moderator` group also holds `players.remove_underage_player`, the removal of an under-13 player's personal data)
+- Amended by: [ADR 0059](0059-moderator-removal-of-an-under-13-player.md) (the `Moderator` group also holds `players.view_player`, the read-only Player admin with the encrypted fields hidden, and `players.remove_underage_player`, the removal of an under-13 player's personal data)
 - Date: 2026-11-24
 
 ## Context
