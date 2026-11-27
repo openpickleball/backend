@@ -4,7 +4,7 @@ A player can download a copy of the data OPEN holds about their Account (issue #
 
 ## How a player gets it
 
-1. The player reauthenticates (allauth's `auth/reauthenticate` with the password, or `auth/2fa/reauthenticate` with a code), then calls `POST /api/v1/me/export`. The answer is 202 with `requested_at`. Without a recent reauthentication it is 403 `reauthentication_required`. A new request replaces an earlier export. An Account may ask a few times a day (`API_DATA_EXPORT_THROTTLE_PER_DAY`, default 3); past that the answer is 429.
+1. The player reauthenticates (allauth's `auth/reauthenticate` with the password, or `auth/2fa/reauthenticate` with a code), then calls `POST /api/v1/me/export`. The answer is 202 with `requested_at`. Without a recent reauthentication it is 403 `reauthentication_required`. A new request replaces an earlier export. An Account may ask a few times a day (`API_DATA_EXPORT_THROTTLE_PER_DAY`, default 3), a refused request included; past that the answer is 429.
 2. A task builds the file and emails the Account's login address a link to `{FRONTEND_URL}/account/export/{key}`. The email has no attachment.
 3. That web app page, signed in as the same Account, calls `POST /api/v1/me/export/download` with `{"key": "..."}`. The answer is the file, `open-data-export.json`, sent once with `Cache-Control: no-store`. The file is then deleted, so the key works once.
 
