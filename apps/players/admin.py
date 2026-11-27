@@ -163,6 +163,10 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
             args=[player.pk],
             current_app=self.admin_site.name,
         )
+        changelist_url = reverse(
+            f"admin:{self.opts.app_label}_{self.opts.model_name}_changelist",
+            current_app=self.admin_site.name,
+        )
         if request.method == "GET":
             context = {
                 **self.admin_site.each_context(request),
@@ -184,6 +188,9 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
                 "this removal is not allowed or was already done.",
                 messages.ERROR,
             )
+            # Another removal may have deleted the Player meanwhile.
+            if not Player.objects.filter(pk=player.pk).exists():
+                return HttpResponseRedirect(changelist_url)
             return HttpResponseRedirect(change_url)
         self.message_user(
             request,
@@ -192,12 +199,7 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
         )
         if result.player_kept:
             return HttpResponseRedirect(change_url)
-        return HttpResponseRedirect(
-            reverse(
-                f"admin:{self.opts.app_label}_{self.opts.model_name}_changelist",
-                current_app=self.admin_site.name,
-            )
-        )
+        return HttpResponseRedirect(changelist_url)
 
     def personal_data_view(self, request: HttpRequest, object_id: str) -> HttpResponse:
         """Record one Audit Event, then show the four values in this response."""
