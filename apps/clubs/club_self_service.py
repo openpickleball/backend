@@ -33,13 +33,15 @@ address.
 Lock order: the acting Account (``FOR KEY SHARE`` through
 ``hold_active_account``, ``FOR NO KEY UPDATE`` in ``create_club``), then,
 in ``accept_club_invite``, the invite sender's Account (``FOR KEY
-SHARE``), then the Club row (``FOR UPDATE``), then invite, role, and
-grant rows. Account deletion and TOTP removal lock an Account
+SHARE``), then the Club row (``FOR UPDATE``), then, in
+``grant_organizer``, the Organizer row (``FOR KEY SHARE``), then invite,
+role, and grant rows. Account deletion and TOTP removal lock an Account
 ``FOR UPDATE`` and never the Club, so the Club lock does not make an
 accept wait for them: holding the sender does, and the sender's role
 and MFA are read after it. Deletion locks the sender before deleting
 its invite rows, so the sender comes before the invite row here.
-Never add a Club lock to deletion.
+Deletion locks Organizers but never the Club, so the Organizer after the
+Club forms no cycle. Never add a Club lock to deletion.
 """
 
 from dataclasses import dataclass
@@ -48,7 +50,7 @@ from typing import TYPE_CHECKING, Final
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
@@ -427,6 +429,26 @@ def _organizer_id(raw: str) -> int | None:
     return found.first()
 
 
+def _hold_organizer(raw: str) -> int | None:
+    """Like ``_organizer_id``, holding the row ``FOR KEY SHARE`` until the
+    transaction ends, so it cannot be deleted before a grant names it.
+
+    A delete that held the row first is waited for, and then the row is
+    gone: None. Django has no share modes, so this is raw SQL, as in
+    ``apps.accounts.locks``.
+    """
+    code = normalize(raw, CodeType.ORGANIZER)
+    if code is None:
+        return None
+    table = connection.ops.quote_name(Organizer._meta.db_table)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT id FROM {table} WHERE public_code = %s FOR KEY SHARE", [code]
+        )
+        row = cursor.fetchone()
+    return int(row[0]) if row else None
+
+
 def grant_organizer(
     club_id: int, organizer_code: str, *, actor: "_User"
 ) -> ClubOrganizerGrant:
@@ -438,7 +460,7 @@ def grant_organizer(
     """
     with transaction.atomic():
         club = _admin_club(club_id, actor)
-        organizer_id = _organizer_id(organizer_code)
+        organizer_id = _hold_organizer(organizer_code)
         if organizer_id is None:
             raise NotFound
         if ClubOrganizerGrant.objects.filter(
