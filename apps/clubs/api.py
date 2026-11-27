@@ -286,7 +286,12 @@ def create_organizer_operation(
 
 @organizer_router.patch(
     "/organizers/{code}",
-    response={200: OrganizerMembershipOut, 403: ErrorResponse, 404: ErrorResponse},
+    response={
+        200: OrganizerMembershipOut,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        409: ErrorResponse,
+    },
     operation_id="update_organizer",
 )
 def update_organizer(
@@ -294,7 +299,9 @@ def update_organizer(
 ) -> OrganizerMembershipOut:
     """Change the Organizer's name. For an admin member with MFA.
 
-    Anyone else, and an unknown code, gets the same 404.
+    Anyone else, and an unknown code, gets the same 404. 409 while the
+    Organizer is verified: a moderator verified it under its name, so a
+    moderator unverifies it first, or staff rename it.
     """
     account = _mfa_admin(request)
     organizer_id = _organizer_id(code)
@@ -302,6 +309,8 @@ def update_organizer(
         self_service.rename_organizer(organizer_id, actor=account, name=payload.name)
     except self_service.NotFound:
         raise Http404 from None
+    except self_service.Conflict as error:
+        raise HttpError(409, str(error)) from None
     except DjangoValidationError as error:
         raise model_validation_error(error) from None
     return _membership(account, organizer_id)

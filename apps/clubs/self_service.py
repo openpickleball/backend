@@ -85,6 +85,9 @@ OPEN_INVITES_MESSAGE: Final = (
 LAST_ADMIN_MESSAGE: Final = "An organizer must keep at least one admin."
 ALREADY_MEMBER_MESSAGE: Final = "You are already a member of this organizer."
 ALREADY_VERIFIED_MESSAGE: Final = "This organizer is already verified."
+VERIFIED_RENAME_MESSAGE: Final = (
+    "A verified organizer cannot be renamed here. Ask a moderator to unverify it first."
+)
 REQUEST_OPEN_MESSAGE: Final = "This organizer already has an open verification request."
 
 
@@ -185,9 +188,14 @@ def rename_organizer(organizer_id: int, *, actor: "_User", name: str) -> bool:
 
     An unchanged name records nothing. A change records one
     ``organizer.change`` event naming the field, never its value.
+    ``Conflict`` while the Organizer is verified, checked under its lock:
+    a moderator verified it under its name, so a new name needs that
+    review again (unverify first, or staff rename it in the admin).
     """
     with transaction.atomic():
         organizer = _admin_organizer(organizer_id, actor)
+        if organizer.is_verified:
+            raise Conflict(VERIFIED_RENAME_MESSAGE)
         old = organizer.name
         organizer.name = name
         organizer.full_clean(exclude=["public_code"])

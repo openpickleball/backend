@@ -6552,7 +6552,7 @@
     },
     "/api/v1/organizer/organizers/{code}": {
       "patch": {
-        "description": "Change the Organizer's name. For an admin member with MFA.\n\nAnyone else, and an unknown code, gets the same 404.",
+        "description": "Change the Organizer's name. For an admin member with MFA.\n\nAnyone else, and an unknown code, gets the same 404. 409 while the\nOrganizer is verified: a moderator verified it under its name, so a\nmoderator unverifies it first, or staff rename it.",
         "operationId": "update_organizer",
         "parameters": [
           {
@@ -6625,6 +6625,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
