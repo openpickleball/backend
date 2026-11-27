@@ -452,6 +452,7 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
             SecurityNotice,
             account_ids,
             schedule_notice,
+            subject_told,
         )
 
         kind = {
@@ -466,6 +467,19 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
         if kind is None:
             return
         subjects = [values["account"] for values in (before, after) if values]
+        told: frozenset[int] = frozenset()
+        # A removed or demoted admin, or an admin row moved off its
+        # Account, is told too: it is no admin at commit.
+        if (
+            before is not None
+            and before["role"] == MemberRole.ADMIN
+            and (
+                after is None
+                or after["role"] != MemberRole.ADMIN
+                or before["account"] != after["account"]
+            )
+        ):
+            told = subject_told(actor, before["account"])
         schedule_notice(
             SecurityNotice(
                 kind=kind,
@@ -477,6 +491,7 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
                     self.hold_ends_at if kind == NoticeKind.MEMBER_ADDED else None
                 ),
                 exclude=account_ids(actor, *subjects),
+                told=told,
             )
         )
 
@@ -582,6 +597,7 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
             SecurityNotice,
             account_ids,
             schedule_notice,
+            subject_told,
         )
 
         if change == "remove":
@@ -595,6 +611,13 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
         else:
             return
         subjects = [values["account"] for values in (before, after) if values]
+        # A removed admin, or one whose row moved to another Account, is
+        # told too: it is no admin at commit.
+        told = (
+            subject_told(actor, before["account"])
+            if before is not None
+            else frozenset()
+        )
         schedule_notice(
             SecurityNotice(
                 kind=kind,
@@ -602,6 +625,7 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
                 scope_id=self.club_id,
                 code=self.club.public_code,
                 exclude=account_ids(actor, *subjects),
+                told=told,
             )
         )
 

@@ -19,7 +19,9 @@ email, so a takeover of one admin's Account is seen by the rest:
 
 Recipients are every active admin of the Organizer (members with role
 admin) or the Club (admin Club Roles) when the change commits, except
-the acting Account and the Account the change is about. Each gets one
+the acting Account and the Account the change is about. On a removal,
+or a role change away from admin, that Account is told too when it is
+active and is not the actor, since at commit it is no longer an admin. Each gets one
 email through ``queue_email()``, registered with ``transaction.on_commit``
 in the change's transaction, so a rolled-back change queues nothing.
 
@@ -40,6 +42,7 @@ from typing import Final
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 
 from apps.clubs.emails import SECURITY_NOTICE, render_security_notice
 from apps.clubs.models import ClubRole, ClubRoleKind, MemberRole, OrganizerMember
@@ -126,8 +129,10 @@ class SecurityNotice:
 
     ``scope_id`` is the Organizer's or Club's row id, ``code`` its OPEN
     Code. ``exclude`` holds the Account ids that get no copy: the actor
-    and the Account the change is about. Plain values only, read when
-    the change was made, since the rows may be gone at commit.
+    and the Account the change is about. ``told`` holds the Account ids
+    that get a copy though they are no longer admins: a removed or demoted
+    admin, never the actor (``subject_told``). Plain values only, read
+    when the change was made, since the rows may be gone at commit.
     """
 
     kind: NoticeKind
@@ -138,6 +143,7 @@ class SecurityNotice:
     organizer_code: str = ""
     hold_ends_at: datetime | None = None
     exclude: frozenset[int] = field(default_factory=frozenset)
+    told: frozenset[int] = field(default_factory=frozenset)
 
     def summary(self) -> str:
         text = _SUMMARIES[self.kind].format(
@@ -172,6 +178,14 @@ def account_ids(*accounts: object) -> frozenset[int]:
         if isinstance(pk, int) and getattr(account, "is_authenticated", False):
             ids.add(pk)
     return frozenset(ids)
+
+
+def subject_told(actor: object, account_id: object) -> frozenset[int]:
+    """``account_id`` as the removed or demoted admin to tell, unless it is
+    the actor (an admin who leaves is not told) or not an id."""
+    if not isinstance(account_id, int) or account_id in account_ids(actor):
+        return frozenset()
+    return frozenset({account_id})
 
 
 def schedule_notice(notice: SecurityNotice) -> None:
@@ -219,22 +233,25 @@ def send_notice(notice: SecurityNotice) -> int:
 
 
 def _recipients(notice: SecurityNotice) -> list[str]:
-    """The login addresses of the active admins, by Account id."""
-    users = get_user_model().objects.filter(is_active=True)
+    """The login addresses of the active admins and of the active Accounts
+    in ``told``, by Account id, without ``exclude`` (``told`` wins)."""
     if notice.scope == ORGANIZER:
-        users = users.filter(
+        admins = Q(
             pk__in=OrganizerMember.objects.filter(
                 organizer_id=notice.scope_id, role=MemberRole.ADMIN
             ).values("account_id")
         )
     else:
-        users = users.filter(
+        admins = Q(
             pk__in=ClubRole.objects.filter(
                 club_id=notice.scope_id, role=ClubRoleKind.ADMIN
             ).values("account_id")
         )
+    users = get_user_model().objects.filter(
+        admins | Q(pk__in=notice.told), is_active=True
+    )
     emails: list[str] = list(
-        users.exclude(pk__in=notice.exclude)
+        users.exclude(pk__in=notice.exclude - notice.told)
         .order_by("pk")
         .values_list("email", flat=True)
     )

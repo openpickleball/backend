@@ -360,7 +360,8 @@ def test_a_club_admin_added_and_removed(
         ),
     )
 
-    assert _recipients() == {other.email}
+    # The removed admin is told too (#232 review).
+    assert _recipients() == {other.email, invitee.email}
     _holds_nothing_identifying(club.name, invitee.email)
 
 
