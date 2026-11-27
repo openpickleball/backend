@@ -52,7 +52,12 @@ def test_unusual_submission_is_a_signal_reason() -> None:
 
 
 def test_rules() -> None:
-    assert set(FlagRule.values) == {"first_matches", "large_batch", "daily_volume"}
+    assert set(FlagRule.values) == {
+        "first_matches",
+        "large_batch",
+        "daily_volume",
+        "player_daily_matches",
+    }
 
 
 @pytest.mark.parametrize("rule", FlagRule.values)

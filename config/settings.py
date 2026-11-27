@@ -992,6 +992,12 @@ MATCH_DUPLICATE_HOLD_DAYS = _days("MATCH_DUPLICATE_HOLD_DAYS", 14)
 UNUSUAL_SUBMISSION_FIRST_MATCHES = _version("UNUSUAL_SUBMISSION_FIRST_MATCHES", 25)
 UNUSUAL_SUBMISSION_BATCH_SIZE = _version("UNUSUAL_SUBMISSION_BATCH_SIZE", 100)
 UNUSUAL_SUBMISSION_DAILY_MATCHES = _version("UNUSUAL_SUBMISSION_DAILY_MATCHES", 200)
+# It is also flagged when one of its players has more than this many
+# matches on its date played, voided matches and corrections left out
+# (#207, ADR 0052). Unset or empty gives 30.
+UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES = _version(
+    "UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES", 30
+)
 
 
 # Organizer review (#271)
