@@ -14,8 +14,9 @@ clients, ahead of allauth's URLconf.
   other sessions and app tokens, all in one transaction. The session
   that made the change stays signed in.
 - ``ResetPasswordView`` (``auth/password/reset``): allauth's reset from a
-  key, then one ``password.change`` Audit Event and the end of every
-  session of the Account, in one transaction. It answers after the
+  key, then one ``password.change`` Audit Event, the removal of every
+  passkey (audited, ADR 0056), and the end of every session of the
+  Account, in one transaction. It answers after the
   sessions ended, so a session signed in to the Account is told it is
   signed out.
 
@@ -37,6 +38,7 @@ from allauth.usersessions.models import UserSession
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from apps.accounts.passkeys import remove_passkeys_after_reset
 from apps.accounts.sessions import (
     end_all_sessions,
     end_other_sessions,
@@ -167,6 +169,9 @@ class ResetPasswordView(BaseResetPasswordView):
                 target=account,
                 after={"method": "reset"},
             )
+            # A passkey someone added with the old password goes too
+            # (#117, ADR 0056).
+            remove_passkeys_after_reset(account)
             end_all_sessions(request, account)
             if getattr(request.user, "pk", None) == account.pk:
                 # Signed in to this Account without a user session row:

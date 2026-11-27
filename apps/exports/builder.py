@@ -32,6 +32,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 from django.db.models import Exists, OuterRef, Q
+from django.db.models.fields.json import KT
 from django.utils import timezone
 from oauth2_provider.models import (
     get_access_token_model,
@@ -190,17 +191,22 @@ def _sessions(account: "_User") -> list[ExportSessionOut]:
 
 
 def _mfa_methods(account: "_User") -> list[ExportMFAMethodOut]:
-    # Never ``data``, which holds the secrets.
+    # Never ``data``, which holds the secrets: only a passkey's name is
+    # read from it (#117), never its credential.
     rows = (
         Authenticator.objects.filter(user_id=account.pk)
-        .only("type", "created_at", "last_used_at")
+        .annotate(passkey_name=KT("data__name"))
+        .values_list("type", "passkey_name", "created_at", "last_used_at")
         .order_by("created_at", "pk")
     )
     return [
         ExportMFAMethodOut(
-            type=row.type, created_at=row.created_at, last_used_at=row.last_used_at
+            type=kind,
+            name=name if kind == Authenticator.Type.WEBAUTHN else None,
+            created_at=created_at,
+            last_used_at=last_used_at,
         )
-        for row in rows
+        for kind, name, created_at, last_used_at in rows
     ]
 
 

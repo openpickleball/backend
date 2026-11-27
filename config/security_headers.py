@@ -6,7 +6,7 @@ Policy. Django has no setting for Permissions-Policy, so this middleware
 turns off every browser feature in ``DISABLED_FEATURES``, which no OPEN
 page uses. A header a view already set is kept.
 
-``publickey-credentials-get`` (passkeys, for a later MFA issue) and
+``publickey-credentials-get`` (passkeys, #117, ADR 0056) and
 ``fullscreen`` are left out on purpose, so those can work when needed.
 """
 

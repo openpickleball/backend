@@ -89,9 +89,13 @@ class ExportSessionOut(Schema):
 
 
 class ExportMFAMethodOut(Schema):
-    """One two-factor method: its type and dates, never its secret."""
+    """One two-factor method: its type, a passkey's name, and its dates,
+    never its secret or credential."""
 
     type: str
+    name: str | None = Field(
+        None, description="The name the player chose for a passkey; null otherwise."
+    )
     created_at: datetime
     last_used_at: datetime | None
 

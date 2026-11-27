@@ -980,7 +980,7 @@
         "type": "object"
       },
       "ExportMFAMethodOut": {
-        "description": "One two-factor method: its type and dates, never its secret.",
+        "description": "One two-factor method: its type, a passkey's name, and its dates,\nnever its secret or credential.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -998,6 +998,18 @@
               }
             ],
             "title": "Last Used At"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The name the player chose for a passkey; null otherwise.",
+            "title": "Name"
           },
           "type": {
             "title": "Type",

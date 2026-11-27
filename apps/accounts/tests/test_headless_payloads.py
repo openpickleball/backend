@@ -4,6 +4,8 @@ The user object carries no row id (CLAUDE.md, Public identifiers), social
 login is off (AC-C), and allauth's own OpenAPI document is served.
 """
 
+import json
+
 import pytest
 from django.conf import settings
 from django.test import Client
@@ -75,11 +77,15 @@ def test_config_has_no_socialaccount_section() -> None:
     assert data["account"]["login_methods"] == ["email"]
 
 
-def test_config_offers_totp_and_recovery_codes_only() -> None:
+def test_config_offers_totp_recovery_codes_and_passkeys() -> None:
     data = Client().get(f"{BROWSER}/config").json()["data"]
 
-    assert sorted(data["mfa"]["supported_types"]) == ["recovery_codes", "totp"]
-    assert data["mfa"]["passkey_login_enabled"] is False
+    assert sorted(data["mfa"]["supported_types"]) == [
+        "recovery_codes",
+        "totp",
+        "webauthn",
+    ]
+    assert data["mfa"]["passkey_login_enabled"] is True
 
 
 def test_served_spec_lists_the_mfa_endpoints() -> None:
@@ -89,7 +95,20 @@ def test_served_spec_lists_the_mfa_endpoints() -> None:
     assert "/_allauth/{client}/v1/auth/2fa/reauthenticate" in paths
     assert "/_allauth/{client}/v1/account/authenticators/totp" in paths
     assert "/_allauth/{client}/v1/account/authenticators/recovery-codes" in paths
-    assert "/_allauth/{client}/v1/account/authenticators/webauthn" not in paths
+    assert "/_allauth/{client}/v1/account/authenticators/webauthn" in paths
+    assert "/_allauth/{client}/v1/account/authenticators" in paths
+    assert "/_allauth/{client}/v1/auth/webauthn/authenticate" in paths
+    assert "/_allauth/{client}/v1/auth/webauthn/reauthenticate" in paths
+    assert "/_allauth/{client}/v1/auth/webauthn/login" in paths
+    # Passkey signup stays off (#117).
+    assert "/_allauth/{client}/v1/auth/webauthn/signup" not in paths
+
+
+def test_served_spec_names_passkeys_by_string_ids() -> None:
+    spec = Client().get("/_allauth/openapi.json").json()
+
+    assert spec["components"]["schemas"]["AuthenticatorID"]["type"] == "string"
+    assert "123" not in json.dumps(spec["components"]["schemas"]["AuthenticatorID"])
 
 
 def test_provider_redirect_is_not_found() -> None:

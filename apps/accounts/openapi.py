@@ -6,7 +6,9 @@ path, so OPEN's views for ``/_allauth/openapi.json`` and ``.yaml``
 signup age check (ADR 0020) and password check (ADR 0039) added, and
 with OPEN's account security changes (#100, ADR 0047): sessions by
 opaque string ids, the app client's ``X-Device-Token`` on login and the
-MFA login stage, and login's 429. This uses allauth's internal
+MFA login stage (passkey login and the passkey stage too), and login's
+429. Passkeys (#117, ADR 0056) are named by
+opaque string ids too, never a row id. This uses allauth's internal
 ``get_schema``: check it when upgrading allauth (a test pins the result).
 """
 
@@ -228,13 +230,31 @@ _SESSION_ID = {
 }
 
 
+_PASSKEY_ID = {
+    "type": "string",
+    "description": (
+        "An opaque id for the passkey, from the authenticator list. Never a row id."
+    ),
+    "example": "9b2e7d4c1a0f8e3b6d5c4a2918f7e6d5",
+}
+
+
 def _add_account_security(spec: dict[str, Any], root: str, pinned: bool) -> None:
     """Sessions by string ids, the device token, and login's 429 (#100)."""
     schemas = spec["components"]["schemas"]
     schemas["Session"]["properties"]["id"] = dict(_SESSION_ID)
     schemas["EndSessions"]["properties"]["sessions"]["items"] = dict(_SESSION_ID)
+    # allauth's passkey ids (list, add, rename, remove) are its row ids.
+    schemas["AuthenticatorID"] = dict(_PASSKEY_ID)
     client = "{client}" if not pinned else next(iter(app_settings.CLIENTS))
-    for endpoint in ("auth/login", "auth/2fa/authenticate"):
+    # Every completed login reads and writes it (apps/accounts/devices.py),
+    # passkey login and the passkey MFA stage included (#117).
+    for endpoint in (
+        "auth/login",
+        "auth/2fa/authenticate",
+        "auth/webauthn/login",
+        "auth/webauthn/authenticate",
+    ):
         operation = spec["paths"][f"{root}/{client}/v1/{endpoint}"]["post"]
         operation.setdefault("parameters", []).append(
             {
@@ -263,6 +283,8 @@ def _add_account_security(spec: dict[str, Any], root: str, pinned: bool) -> None
         "auth/2fa/authenticate",
         "auth/reauthenticate",
         "auth/2fa/reauthenticate",
+        "auth/webauthn/authenticate",
+        "auth/webauthn/reauthenticate",
     ):
         operation = spec["paths"][f"{root}/{client}/v1/{endpoint}"]["post"]
         operation["responses"]["429"] = {

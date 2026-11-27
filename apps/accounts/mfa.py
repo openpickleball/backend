@@ -4,9 +4,12 @@ allauth.mfa stores each Account's authenticators. These helpers answer
 the questions OPEN's rules ask of them, always from the database by the
 Account's id, never from an instance cache:
 
-- ``has_mfa``: the Account has a method, TOTP (or WebAuthn, once #117
-  turns it on). Recovery codes alone never count: they are a fallback
-  for a method, not one.
+- ``has_mfa``: the Account has a method, TOTP or a passkey (WebAuthn,
+  #117). Recovery codes alone never count: they are a fallback for a
+  method, not one.
+- ``has_totp``: the Account has a TOTP authenticator. The admin needs
+  this method in particular, since its login script takes only codes
+  (``config/admin.py``, ADR 0056); a passkey does not meet it there.
 - ``accounts_with_mfa``: the ids of those Accounts, for ``pk__in=`` and
   ``account_id__in=`` filters in queries that mirror ``has_mfa``.
 - ``mfa_required``: the Account must have a method before it uses the
@@ -17,7 +20,8 @@ Account's id, never from an instance cache:
   ``lacks_required_mfa`` asks both questions in one query, and
   ``mfa_status`` returns both answers in one query.
 - ``session_passed_mfa``: the session passed the second factor (an MFA
-  login, an MFA reauthentication, or enrolling in it). The API
+  login, a passkey login, an MFA reauthentication, or enrolling in it).
+  The API
   (``config/auth.py``) and the MFA management views
   (``apps/accounts/mfa_views.py``) need it for an Account with MFA, so a
   password-only session (one made before the Account enrolled, or by a
@@ -77,12 +81,25 @@ def _saved_account_pk(actor: object) -> int | None:
 
 
 def has_mfa(actor: object) -> bool:
-    """True when ``actor`` is a saved Account with a method (TOTP)."""
+    """True when ``actor`` is a saved Account with a method (TOTP or a
+    passkey)."""
     pk = _saved_account_pk(actor)
     if pk is None:
         return False
     found: bool = Authenticator.objects.filter(
         user_id=pk, type__in=MFA_METHOD_TYPES
+    ).exists()
+    return found
+
+
+def has_totp(actor: object) -> bool:
+    """True when ``actor`` is a saved Account with a TOTP authenticator,
+    read from the database by id. The admin's rule (ADR 0056)."""
+    pk = _saved_account_pk(actor)
+    if pk is None:
+        return False
+    found: bool = Authenticator.objects.filter(
+        user_id=pk, type=Authenticator.Type.TOTP
     ).exists()
     return found
 
@@ -230,7 +247,8 @@ def last_mfa_at(session: SessionBase, account: "_User") -> float | None:
 def record_mfa_change(account: "_User", change: MFAChange, kind: str) -> None:
     """Record one ``mfa.change`` Audit Event for ``account``.
 
-    ``kind`` is the authenticator type (``totp`` or ``recovery_codes``).
+    ``kind`` is the authenticator type (``totp``, ``recovery_codes``, or
+    ``webauthn``).
     Never a secret, a code, or a seed. Call it inside the change's
     ``transaction.atomic()``.
     """

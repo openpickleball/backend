@@ -19,8 +19,8 @@ ADR 0012). Event authority over an Event:
 
 Organizer authority needs MFA (issue #99, ADR 0043): a member's Account
 acts for its Organizer only while it has a method
-(``apps.accounts.mfa.has_mfa``, TOTP; recovery codes alone do not
-count). Every Account rule that grants Organizer authority reads
+(``apps.accounts.mfa.has_mfa``, TOTP or a passkey; recovery codes
+alone do not count). Every Account rule that grants Organizer authority reads
 membership through ``_account_acts_for``, which checks it:
 ``can_create_match`` for a match with an Event, ``can_change_match``,
 ``can_manage_events``, ``can_confirm_as_organizer``, ``settles_dispute``

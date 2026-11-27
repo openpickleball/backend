@@ -37,6 +37,11 @@ allauth's URLconf (`config/urls.py`).
 - MFA (issue #99, ADR 0043): allauth's TOTP, recovery codes, MFA login,
   and MFA reauthentication views, recording an Audit Event for each
   change in the change's transaction (`apps/accounts/mfa_views.py`).
+- Passkeys (issue #117, ADR 0056): allauth's authenticator list, passkey,
+  passkey login stage, passkey reauthentication, and passkey login views,
+  with passkeys named by opaque ids, only the allowed origins, and
+  audited changes (`apps/accounts/mfa_views.py`,
+  `apps/accounts/passkeys.py`). Passkey signup is not served.
 - Login and password reauthentication (#100): allauth's failed login
   limit answers 429 (``apps/accounts/lockout.py``).
 - Sessions, password change, and password reset from a key (#100, ADR
@@ -91,8 +96,13 @@ from apps.accounts.forms import SignupAgeForm, SignupBirthForm, signup_full_name
 from apps.accounts.lockout import LockoutAnswers429
 from apps.accounts.mfa_views import (
     AuthenticateView,
+    AuthenticateWebAuthnView,
+    AuthenticatorsView,
+    LoginWebAuthnView,
     ManageRecoveryCodesView,
     ManageTOTPView,
+    ManageWebAuthnView,
+    ReauthenticateWebAuthnView,
 )
 from apps.accounts.mfa_views import ReauthenticateView as MFAReauthenticateView
 from apps.accounts.openapi import open_schema
@@ -546,8 +556,9 @@ def headless_urlpatterns() -> list[URLPattern]:
     """OPEN's views at allauth's paths, for each enabled headless client,
     and its own age and password checks under allauth's sign-up.
 
-    The MFA views assume ``MFA_SUPPORTED_TYPES`` holds TOTP and recovery
-    codes (settings, ADR 0043), as allauth would mount them."""
+    The MFA views assume ``MFA_SUPPORTED_TYPES`` holds TOTP, recovery
+    codes, and WebAuthn, with passkey login on and passkey signup off
+    (settings, ADR 0043, ADR 0056), as allauth would mount them."""
     patterns = []
     if settings.HEADLESS_SERVE_SPECIFICATION:
         patterns += [
@@ -605,6 +616,26 @@ def headless_urlpatterns() -> list[URLPattern]:
             path(
                 f"{client.value}/v1/account/authenticators/recovery-codes",
                 ManageRecoveryCodesView.as_api_view(client=client),
+            ),
+            path(
+                f"{client.value}/v1/account/authenticators",
+                AuthenticatorsView.as_api_view(client=client),
+            ),
+            path(
+                f"{client.value}/v1/account/authenticators/webauthn",
+                ManageWebAuthnView.as_api_view(client=client),
+            ),
+            path(
+                f"{prefix}webauthn/authenticate",
+                AuthenticateWebAuthnView.as_api_view(client=client),
+            ),
+            path(
+                f"{prefix}webauthn/reauthenticate",
+                ReauthenticateWebAuthnView.as_api_view(client=client),
+            ),
+            path(
+                f"{prefix}webauthn/login",
+                LoginWebAuthnView.as_api_view(client=client),
             ),
         ]
     return patterns

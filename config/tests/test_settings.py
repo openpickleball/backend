@@ -59,6 +59,8 @@ SETTINGS_VARS = (
     "SESSION_MAX_AGE_DAYS",
     "SESSION_IDLE_DAYS",
     "SIGN_IN_DEVICE_COOKIE_DAYS",
+    "WEBAUTHN_RP_ID",
+    "WEBAUTHN_ALLOWED_ORIGINS",
 )
 
 DEPLOY_CHECK = "uv run python manage.py check --deploy --fail-level WARNING"
@@ -88,6 +90,9 @@ PRODUCTION_LIKE = {
     "DEFAULT_FROM_EMAIL": "OPEN <noreply@example.org>",
     # Made up: production's path is a secret set by hand (#101).
     "ADMIN_URL": "staff-test-x7/",
+    # The made-up hosts' registrable domain, so the deploy check's
+    # accounts.W001 (passkey origins under the relying party ID) holds.
+    "WEBAUTHN_RP_ID": "example.org",
 }
 
 LOCAL_DEBUG = {
@@ -99,6 +104,7 @@ LOCAL_DEBUG = {
     "CSRF_TRUSTED_ORIGINS": "",
     "CORS_ALLOWED_ORIGINS": "",
     "FRONTEND_URL": "http://localhost:8081",
+    "WEBAUTHN_RP_ID": "localhost",
 }
 
 PRINT_SETTINGS = """

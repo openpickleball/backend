@@ -422,6 +422,27 @@ def _frontend_url(name: str, *, require_https: bool) -> str:
     return value
 
 
+# A WebAuthn relying party ID: a lowercase DNS name of labels made of
+# a-z, 0-9, and inner hyphens, with at least one dot and a last label
+# that is not all digits (so no IP address), or localhost. No scheme,
+# port, path, or trailing dot.
+_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_RP_ID = re.compile(rf"(?:{_LABEL}\.)+(?=[a-z0-9-]*[a-z])" + _LABEL + "|localhost")
+
+
+def _rp_id(name: str, default: str) -> str:
+    """Read an optional WebAuthn relying party ID, failing fast without
+    echoing it. Unset or empty gives ``default``."""
+    value = _raw(name).strip() or default
+    if len(value) > 253 or _RP_ID.fullmatch(value) is None:
+        raise ImproperlyConfigured(
+            f"{name} is not a relying party ID. Use a lowercase domain name, "
+            "such as the site's registrable domain, or localhost, with no "
+            "scheme, port, path, or trailing dot (see .env.example)."
+        )
+    return value
+
+
 # A base URL that a code is appended to: a lowercase http or https scheme,
 # a host as in _ORIGIN, an optional port, and a path that ends in "/", made
 # of unreserved characters, percent escapes, and the sub-delimiters, ":"
@@ -643,7 +664,8 @@ INSTALLED_APPS = [
     "anymail",
     # Account sign-up, login, email verification, and password reset,
     # served only as JSON at /_allauth/ (allauth.headless), two-factor
-    # authentication with TOTP and recovery codes (allauth.mfa, ADR 0043),
+    # authentication with TOTP, recovery codes, and passkeys (allauth.mfa,
+    # ADR 0043, ADR 0056),
     # and the list of a player's sessions (allauth.usersessions, #100,
     # ADR 0047). No social login: see the Accounts section below.
     "allauth",
@@ -1378,18 +1400,43 @@ HEADLESS_FRONTEND_URLS = {
 # Two-factor authentication (allauth.mfa, issue #99, ADR 0043)
 # https://docs.allauth.org/en/latest/mfa/configuration.html
 
-# TOTP, with recovery codes made alongside the first method. WebAuthn and
-# passkeys stay off until #117.
-MFA_SUPPORTED_TYPES = ["totp", "recovery_codes"]
-MFA_PASSKEY_LOGIN_ENABLED = False
+# TOTP and passkeys (WebAuthn, #117), with recovery codes made alongside
+# the first method. A passkey can also sign in alone (passkey login).
+MFA_SUPPORTED_TYPES = ["totp", "recovery_codes", "webauthn"]
+MFA_PASSKEY_LOGIN_ENABLED = True
+# Passkey signup stays off: allauth needs email verification by code for
+# it (allauth/mfa/checks.py), which stays off (ADR 0043, ADR 0056), and
+# its signup view would skip OPEN's own (age, agreements, names).
 MFA_PASSKEY_SIGNUP_ENABLED = False
+# The browser must be on an https origin (or http://localhost), always.
+MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = False
+# Passkey login takes no secret that could be guessed per Account, so
+# allauth limits it per client IP only (its default, set here so it is
+# seen): 10 a minute from one IP (OPEN's client IP, CLIENT_IP_HEADER).
+MFA_RATE_LIMITS = {"webauthn_login": "10/m/ip"}
+# The WebAuthn relying party ID: the registrable domain the PWA's origin
+# is under, so passkeys keep working if the PWA moves to another
+# subdomain and native apps can share them later (#185). OPEN's MFA
+# adapter gives it to allauth, never the request's host. The production
+# domain is confirmed by #182.
+WEBAUTHN_RP_ID = _rp_id("WEBAUTHN_RP_ID", "openpb.org")
+# The exact origins a passkey may be used from, like CORS_ALLOWED_ORIGINS
+# entries, https only when DEBUG is off. Unset or empty means the PWA's
+# origin (FRONTEND_URL) only. OPEN refuses a credential from any other
+# origin, even a subdomain of the relying party ID (apps/accounts/
+# passkeys.py). The system check accounts.W001 warns when one is not
+# under WEBAUTHN_RP_ID.
+WEBAUTHN_ALLOWED_ORIGINS = _origins(
+    "WEBAUTHN_ALLOWED_ORIGINS", require_https=not DEBUG
+) or [FRONTEND_URL]
 # No "trust this browser": every login with a method asks for a code.
 MFA_TRUST_ENABLED = False
 # Recovery codes are shown once, right after they are made, and can be
 # made again.
 MFA_RECOVERY_CODES_SHOW_ONCE = True
-# Adding or removing TOTP and making new recovery codes need a recent
-# reauthentication (ACCOUNT_REAUTHENTICATION_TIMEOUT, allauth's default).
+# Adding or removing TOTP or a passkey and making new recovery codes need
+# a recent reauthentication (ACCOUNT_REAUTHENTICATION_TIMEOUT, allauth's
+# default).
 MFA_REAUTHENTICATION_REQUIRED = True
 # The issuer an authenticator app shows, so the request's host never is.
 MFA_TOTP_ISSUER = "OPEN"

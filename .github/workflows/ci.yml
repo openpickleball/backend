@@ -109,6 +109,8 @@ jobs:
           RESEND_API_KEY: re_made_up_ci_only_not_a_key
           DEFAULT_FROM_EMAIL: OPEN <noreply@example.org>
           ADMIN_URL: ci-made-up-staff-path-x7/
+          # The made-up hosts' registrable domain (passkeys, accounts.W001).
+          WEBAUTHN_RP_ID: example.org
       - run: uv run python manage.py makemigrations --check --dry-run
       # Fails when openapi/openapi.json differs from the API it documents.
       - run: uv run python manage.py export_openapi_schema --check

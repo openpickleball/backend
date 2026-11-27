@@ -3,6 +3,7 @@
 - Status: Proposed
 - Amended by: [ADR 0045](0045-harden-the-admin.md) (the admin login asks for the code through allauth's headless login, admin sessions are short, and writes need a recent code), [ADR 0046](0046-encrypt-personal-data-fields.md) (TOTP secrets and recovery code seeds are stored encrypted)
 - Amended by: [ADR 0047](0047-account-security-limits-and-sessions.md) (removing TOTP ends the Account's other sessions)
+- Amended by: [ADR 0056](0056-passkeys.md) (passkeys are a method and can sign in alone; every passkey change needs a recent reauthentication and is audited)
 - Date: 2026-11-25
 
 ## Context
