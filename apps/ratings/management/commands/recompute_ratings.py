@@ -6,10 +6,11 @@ full replay through ``apps.ratings.services.recompute_ratings()``, in one
 transaction like the regular replay, and safe to run again.
 
 ``--dry-run`` writes nothing and prints what would change. Only a dry run
-takes ``--format``, an ``--as-of`` before the latest counted match, or a
-``--spec-version`` other than ``OPEN_RATING_SPEC_VERSION``, so a backtest
-can compare without touching the stored ratings. The output names players
-by OPEN Code only, never by name.
+takes ``--format``, an ``--as-of`` before the latest counted match or
+after the default replay date, or a ``--spec-version`` other than
+``OPEN_RATING_SPEC_VERSION``, so a replay can be compared without
+touching the stored ratings. The output names no player: it holds
+counts only.
 """
 
 from datetime import date
@@ -33,10 +34,6 @@ def _date(value: str) -> date:
         raise CommandError("--as-of must be a date such as 2026-03-31.") from None
 
 
-def _rating(value: float | None) -> str:
-    return "none" if value is None else repr(value)
-
-
 class Command(BaseCommand):
     help = (
         "Rebuild every rating with a full replay of the counted ledger. "
@@ -48,8 +45,8 @@ class Command(BaseCommand):
             "--as-of",
             help=(
                 "Replay as of this date (YYYY-MM-DD). Default: today in UTC, or "
-                "the latest counted match date when later. An earlier date than "
-                "the latest counted match needs --dry-run."
+                "the latest counted match date when later. A date before the "
+                "latest counted match, or after the default, needs --dry-run."
             ),
         )
         parser.add_argument(
@@ -107,10 +104,13 @@ class Command(BaseCommand):
             self.stdout.write(f"Replay requests cleared: {result.requests_cleared}")
         if verbosity < 2:
             return
-        for change in result.changes:
-            if change.kind == RecomputeChangeKind.UNCHANGED:
-                continue
-            self.stdout.write(
-                f"{change.kind.value} {change.player} {change.rating_format}: "
-                f"{_rating(change.before)} -> {_rating(change.after)}"
+        # Counts per format only: a player's code next to a category
+        # format would reveal their gender division.
+        formats = sorted({change.rating_format for change in result.changes})
+        for rating_format in formats:
+            counts = ", ".join(
+                f"{kind.value} "
+                f"{sum(1 for c in result.changes if c.rating_format == rating_format and c.kind == kind)}"
+                for kind in RecomputeChangeKind
             )
+            self.stdout.write(f"{rating_format}: {counts}")

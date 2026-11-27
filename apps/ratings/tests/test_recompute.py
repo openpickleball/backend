@@ -131,7 +131,17 @@ def test_a_recompute_matches_the_live_updates() -> None:
     inactive = set()
     for key, before in live.items():
         after = recomputed[key]
-        for name in ("rating", "matches_played", "last_played", "established"):
+        for name in (
+            "rating",
+            "matches_played",
+            "last_played",
+            "established",
+            "config_version",
+            "params_version",
+            "parameter_fingerprint",
+            "engine_version",
+            "spec_version",
+        ):
             assert after[name] == before[name], (key, name)
         if before["last_played"] == LAST_PLAYED:
             assert after["rd"] == before["rd"], key
@@ -275,15 +285,19 @@ def test_a_dry_run_predicts_what_the_write_does() -> None:
     assert written.count(RecomputeChangeKind.CHANGED) > 0
 
 
-def test_a_dry_run_lists_changes_by_open_code_at_verbosity_two() -> None:
-    (_, _, second_singles, _, _), c = _seeded()
+def test_verbosity_two_counts_by_format_and_names_no_player() -> None:
+    matches, c = _seeded()
+    (_, _, second_singles, _, _) = matches
     raw_update(second_singles, status=MatchStatus.VOIDED)
 
     out = _run("--dry-run", "--as-of", LAST_PLAYED.isoformat(), "--verbosity", "2")
 
-    assert f"removed {c.public_code} singles: " in out
+    assert "singles: created 0, changed 2, removed 1, unchanged 0" in out
+    assert "mixed_doubles: created 0, changed 4, removed 0, unchanged 0" in out
     assert "Ratings removed: 1" in out
-    assert c.display_name not in out
+    for match in matches:
+        for participant in match.participants.select_related("player"):
+            assert str(participant.player.public_code) not in out
     assert RatingState.objects.filter(player=c).exists()
 
 
@@ -321,6 +335,7 @@ def test_a_dry_run_takes_an_earlier_date_and_another_spec_version() -> None:
         ("--format", "singles"),
         ("--spec-version", "1.0.0"),
         ("--as-of", "2026-03-14"),
+        ("--as-of", "2099-01-01"),
     ],
 )
 def test_options_for_a_dry_run_are_refused_for_a_write(args: tuple[str, ...]) -> None:
@@ -342,6 +357,26 @@ def test_a_refused_write_on_an_empty_database_creates_no_snapshot_row() -> None:
         recompute_ratings(as_of=date(2026, 2, 1))
 
     assert not EngineSnapshot.objects.exists()
+
+
+def test_a_future_date_is_allowed_in_a_dry_run() -> None:
+    _seeded()
+    counts = _counts()
+
+    result = recompute_ratings(as_of=date(2099, 1, 1), dry_run=True)
+
+    assert result.as_of == date(2099, 1, 1)
+    assert _counts() == counts
+
+
+def test_a_write_on_an_empty_ledger_stores_an_empty_replay() -> None:
+    out = _run()
+
+    replay = RatingReplay.objects.get()
+    assert replay.matches_counted == 0
+    assert not RatingState.objects.exists()
+    assert EngineSnapshot.objects.count() == 1
+    assert "Ratings created: 0" in out
 
 
 def test_an_unknown_format_is_refused() -> None:

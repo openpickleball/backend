@@ -247,8 +247,8 @@ def apply_rating(
     rows that point at the Player, such as Match Participants, are not
     blocked), so applies for one player serialize, a first apply included,
     and then the state row. The locks last until
-    the outermost transaction ends, so the caller chooses the transaction
-    for each batch. The callers (#46, #47) own ordering, and the lock
+    the outermost transaction ends, so the caller chooses the transaction.
+    The callers (#46, #47, #48) own ordering, and the lock
     order across players.
     """
     _check(
@@ -338,7 +338,7 @@ def _remove_rating(
 ) -> RatingHistory:
     """Delete ``player``'s ``state``, which ``replay`` no longer produces.
 
-    Private to the replay (``replay_ratings()``): the only path that
+    Private to the replay (``replay_ratings()`` and ``recompute_ratings()``): the only path that
     deletes a ``RatingState``. Within the caller's transaction it locks
     the Player row (``FOR NO KEY UPDATE``) and then the state row, appends
     a ``removed`` history row naming ``replay`` with the values removed,
@@ -499,7 +499,8 @@ def _snapshot_row(labels: LiveConfig) -> EngineSnapshot:
 def _save_engine_snapshot(row: EngineSnapshot, source: LiveUpdate | ReplayRun) -> None:
     """Store ``source``'s snapshot and config labels on the locked ``row``.
 
-    The one writer of a snapshot, for the live update and the replay.
+    The one writer of a snapshot, for the live update, the replay, and the
+    recompute.
     """
     row.snapshot = source.snapshot
     row.config_fingerprint = source.config_fingerprint
@@ -1035,9 +1036,12 @@ def recompute_ratings(
     new ``RatingReplay`` but no rating change when nothing changed.
 
     ``dry_run`` replays and compares with the stored ratings, and writes
-    nothing and takes no lock. Only a dry run takes ``rating_format``
+    nothing and takes no lock. It is a preview, not one consistent read: a
+    live update that commits while it runs can show up in part of it. Only a dry run takes ``rating_format``
     (which narrows the result), an ``as_of`` before the latest counted
     ``played_on`` (later matches would drop out of the stored ratings),
+    an ``as_of`` after ``replay_as_of()`` (every rating, and every later
+    live update, would be taken as of that future date),
     or a ``spec_version`` other than ``OPEN_RATING_SPEC_VERSION`` (the next
     replay would put the setting's back). Raises ``RecomputeRefused``
     (fixed text) for those, and for an unknown format, before any write.
@@ -1072,7 +1076,13 @@ def recompute_ratings(
                         "An as-of date before the latest counted match is "
                         "allowed only in a dry run."
                     )
-                replay_date = replay_as_of() if as_of is None else as_of
+                default_date = replay_as_of()
+                if as_of is not None and as_of > default_date:
+                    raise RecomputeRefused(
+                        "An as-of date after the replay date is allowed only "
+                        "in a dry run."
+                    )
+                replay_date = default_date if as_of is None else as_of
                 written = _replay_and_write(row, requests, replay_date, spec)
                 run = written.run
                 changes = written.changes

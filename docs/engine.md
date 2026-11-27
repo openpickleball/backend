@@ -105,15 +105,15 @@ steps below.
    Score the same ledger matches with the engine's evaluation (`evaluate`),
    then compare the two reports. A change that makes predictions worse needs
    a reason before it ships. The backend has no backtest command yet.
-5. Once the new version is deployed, run the recompute (below), so every
-   published rating comes from it (hard rule 3).
-6. Open one pull request with the bump, the changelog notes from step 1, and
+5. Open one pull request with the bump, the changelog notes from step 1, and
    the backtest result.
+6. Once it is merged and deployed, run the recompute (below), so every
+   published rating comes from it (hard rule 3).
 
 ## The recompute
 
 `manage.py recompute_ratings` rebuilds every rating with a full replay of
-the counted ledger (ADR 0058). Each run stores its replay's `as_of` date,
+the counted ledger (ADR 0058). Each write stores its replay's `as_of` date,
 config version, config fingerprint, and engine and spec versions (hard
 rule 4). Run it after an engine upgrade, a change of
 `OPEN_ENGINE_PARAMETER_SET`, or a bump of `OPEN_RATING_SPEC_VERSION`, once
@@ -126,8 +126,9 @@ uv run python manage.py recompute_ratings
 
 It writes in one transaction, like the regular replay, so live updates wait
 for it, and it is safe to run again. It clears the replay requests that were
-pending when it started. `--dry-run` writes nothing and prints how many
+pending when it took the engine snapshot lock. `--dry-run` writes nothing and prints how many
 ratings would be created, changed, removed, or left alone (at verbosity 2,
-each change by OPEN Code). Only a dry run takes `--format`, an `--as-of`
-before the latest counted match, or a `--spec-version` other than the
-setting, so a backtest can compare without changing stored ratings.
+per rating format). It names no player. Only a dry run takes `--format`, an
+`--as-of` before the latest counted match or after today (in UTC, or the
+latest counted match date when later), or a `--spec-version` other than the
+setting, so you can compare a replay without changing stored ratings.

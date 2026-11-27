@@ -613,10 +613,11 @@ class EngineSnapshot(models.Model):
     One row per parameter fingerprint, the published parameter set's
     values. ``snapshot`` is ``RatingEngine.to_snapshot()`` output, empty
     until the first live update or replay. It holds Player OPEN Codes and
-    their rating states, never a name. It has two writers, both in
+    their rating states, never a name. Its writers are all in
     ``apps.ratings.services``: the live update
-    (``update_ratings_for_match()``) and the replay (``replay_ratings()``).
-    Each locks the row first, so they serialize. It is never deleted or
+    (``update_ratings_for_match()``), the replay (``replay_ratings()``),
+    and the recompute (``recompute_ratings()``, #48). Each locks the row
+    first, so they serialize. It is never deleted or
     bulk changed.
     """
 
@@ -687,8 +688,9 @@ class RatingReplayRequest(models.Model):
     """A request for a replay of the Ledger (#47).
 
     Inserted only through ``apps.ratings.services.request_replay()``, and
-    deleted only by the replay (``replay_ratings()``), which takes every
-    pending request, so quick successive changes share one replay.
+    deleted only by the replay (``replay_ratings()``) and the recompute
+    (``recompute_ratings()``, #48), each of which takes every pending
+    request, so quick successive changes share one replay.
     ``earliest_date`` is the earliest date the change can affect, kept for
     logging only: every replay is a full replay. Names no Player and holds
     no personal data.
