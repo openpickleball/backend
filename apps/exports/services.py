@@ -12,7 +12,8 @@ ADR 0051).
   builds only a pending row: the JSON (encrypted by its field), the
   download key's SHA-256, the build and expiry times, and one email with
   the link, in one transaction. Run twice, it builds and mails once.
-- ``download_export(account, key)`` finds a ready, unexpired export of
+- ``download_export(account, key)`` holds the Account (``FOR KEY
+  SHARE``, checking it is active), finds a ready, unexpired export of
   that Account by the key's hash under ``FOR UPDATE``, records one
   ``data_export.download`` Audit Event, deletes the row, and returns the
   JSON. Every refusal is ``ExportNotFound``, so the API answers one 404.
@@ -168,12 +169,18 @@ def render_export_ready(
 def download_export(account: "_User", key: str) -> str:
     """Return the export's JSON once, deleting it; ``ExportNotFound`` otherwise.
 
-    The export must be ready, unexpired, and ``account``'s. A key that is
-    empty or longer than ``KEY_MAX_LENGTH`` is refused before any lookup.
+    The export must be ready, unexpired, and ``account``'s, and the
+    Account active. A key that is empty or longer than ``KEY_MAX_LENGTH``
+    is refused before any lookup.
     """
     if not key or len(key) > KEY_MAX_LENGTH:
         raise ExportNotFound
     with transaction.atomic():
+        # The Account before the export row, as Account deletion and the
+        # build take them: the event's actor key would otherwise lock the
+        # Account at commit, after the export row.
+        if not hold_active_account(account.pk):
+            raise ExportNotFound
         export = (
             DataExport.objects.select_for_update()
             .filter(
