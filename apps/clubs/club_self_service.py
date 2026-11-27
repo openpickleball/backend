@@ -203,10 +203,14 @@ def update_club(
     A field left as None is not changed. A change records one
     ``club.change`` event naming the changed fields, never their values;
     no change records nothing. ``Conflict`` for a new name while any
-    Event or Match names the Club, checked under the Club lock (an Event
-    or Match insert holds the Club ``FOR KEY SHARE``, so it runs in turn):
-    participants see the name on recorded matches, so staff rename it in
-    the admin. City and region may still change.
+    Event or Match names the Club: participants see the name on recorded
+    matches, so staff rename it in the admin. City and region may still
+    change. The check reads committed Events and Matches under the Club
+    lock. Nothing on the Event or match paths locks the Club (their
+    foreign keys are deferred, so the key check runs at their commit), so
+    a first Event or match committing at the same moment may miss it.
+    That is accepted: nothing is recorded under the old name yet, the
+    same as a rename just before it.
     """
     given = {"name": name, "city": city, "region": region}
     with transaction.atomic():
