@@ -239,7 +239,9 @@ class _RatingDetail(Schema):
     calculated_as_of: date | None
     live_updates_since_recalculation: int
     config_version: str
-    params_version: str
+    params_version: str | None = Field(
+        description="The published parameter set label; null when it is not one."
+    )
     parameter_fingerprint: str
     engine_version: str
 

@@ -1292,8 +1292,16 @@
             "type": "string"
           },
           "params_version": {
-            "title": "Params Version",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published parameter set label; null when it is not one.",
+            "title": "Params Version"
           },
           "provisional": {
             "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
@@ -1426,8 +1434,16 @@
             "type": "string"
           },
           "params_version": {
-            "title": "Params Version",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published parameter set label; null when it is not one.",
+            "title": "Params Version"
           },
           "provisional": {
             "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
