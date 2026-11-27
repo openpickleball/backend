@@ -2,7 +2,7 @@
 
 Resolving a dispute and editing are the Event's verified Organizer's (or
 the submitting application's); a moderator does neither (#273). No
-service voids a single match on its own (#327).
+standalone service voids a single match (#327).
 
 Every transition writes exactly one Audit Event and sends its signal
 inside the transaction. A refused or failed action writes nothing and
@@ -353,7 +353,7 @@ def test_only_a_disputed_match_is_resolved(
         )
 
 
-# Voiding. No service voids a single match on its own (#327); these use the
+# Voiding. No standalone service voids a single match (#327); these use the
 # test helper to check what ``_void`` does.
 
 
