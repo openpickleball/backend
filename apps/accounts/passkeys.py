@@ -277,9 +277,10 @@ def _text_within(value: object, max_bytes: int) -> bool:
 # ``authenticatorAttachment`` and ``type`` are fido2 string enums, whose
 # lookup gives None for an unknown value rather than raising.
 # After parsing, a COSE key's values reach int.from_bytes or cryptography.
-# int.from_bytes takes bytes or a sequence of small ints (a CBOR array
-# from the authenticator data, bounded by its cap) and refuses other
-# values with TypeError; cryptography refuses non-bytes. The key is
+# int.from_bytes takes bytes or any iterable of ints from 0 to 255 (a
+# CBOR array, or a CBOR map's keys, bounded by the cap) and raises
+# TypeError or ValueError on anything else, both caught; cryptography
+# refuses non-bytes. The key is
 # probed when added (_public_key_usable) and its errors are caught when an
 # assertion is verified. fido2's server decodes only the session's own
 # challenge.
@@ -442,8 +443,10 @@ class CredentialField(forms.JSONField):
     The headless clients send the credential as an object. Django's
     JSONField would parse a string with ``json.loads`` and catch only
     JSONDecodeError, so a string of deeply nested JSON (RecursionError)
-    or a long run of digits (ValueError) was a 500. Anything but an
-    object gets allauth's ``incorrect_code``.
+    or a long run of digits (ValueError) was a 500. A missing or empty
+    value (null, ``{}``, ``[]``, ``""``) gets Django's ``required``, as
+    allauth's field gave; any other value that is not an object gets
+    allauth's ``incorrect_code``.
     """
 
     def to_python(self, value: Any) -> Any:
