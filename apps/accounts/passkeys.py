@@ -204,12 +204,16 @@ _DECODE_ERRORS = (
     struct.error,
 )
 
-# Generous caps on the binary members of a credential, in bytes, checked
-# on their base64url text before anything is decoded. Real values are far
-# smaller: an attestation object of a few hundred bytes (a few KiB with a
-# certificate chain), authenticator data and a signature of under 200
-# bytes. The caps bound the decoders' work; RecursionError covers nesting
-# that fits under them.
+# Generous caps on the binary members of a credential, in bytes. Each
+# binary member must be base64url text within its cap before anything is
+# decoded: fido2 turns a JSON integer N into N zero bytes and a list of
+# integers into bytes, so a member of another type is refused, never
+# parsed. Real values are far smaller: an attestation object of a few
+# hundred bytes (a few KiB with a certificate chain), authenticator data
+# and a signature of under 200 bytes. The caps bound the decoders' work;
+# RecursionError covers nesting that fits under them.
+_MAX_CREDENTIAL_ID_BYTES = 1023  # WebAuthn's limit for a credential id
+_MAX_USER_HANDLE_BYTES = 64  # WebAuthn's limit for a user handle
 _MAX_ATTESTATION_OBJECT_BYTES = 16384
 _MAX_AUTHENTICATOR_DATA_BYTES = 4096
 _MAX_SIGNATURE_BYTES = 4096
@@ -220,21 +224,37 @@ def _text_length(max_bytes: int) -> int:
     return -(-max_bytes // 3) * 4
 
 
-def _within_caps(credential: dict[str, Any], caps: dict[str, int]) -> bool:
-    """Whether each capped member of the credential's response, when it
-    is text, is no longer than its cap."""
+def _text_within(value: object, max_bytes: int) -> bool:
+    return isinstance(value, str) and len(value) <= _text_length(max_bytes)
+
+
+def _binary_members_ok(
+    credential: dict[str, Any], response_caps: dict[str, int]
+) -> bool:
+    """Whether ``id``, ``rawId``, and each capped response member are text
+    within their caps, and ``userHandle``, when present and not null, too."""
     response = credential.get("response")
     if not isinstance(response, dict):
-        return True
-    return all(
-        not isinstance(response.get(name), str)
-        or len(response[name]) <= _text_length(cap)
-        for name, cap in caps.items()
-    )
+        return False
+    if not all(
+        _text_within(credential.get(name), _MAX_CREDENTIAL_ID_BYTES)
+        for name in ("id", "rawId")
+    ):
+        return False
+    if not all(
+        _text_within(response.get(name), cap) for name, cap in response_caps.items()
+    ):
+        return False
+    handle = response.get("userHandle")
+    return handle is None or _text_within(handle, _MAX_USER_HANDLE_BYTES)
 
 
-_REGISTRATION_CAPS = {"attestationObject": _MAX_ATTESTATION_OBJECT_BYTES}
+_REGISTRATION_CAPS = {
+    "clientDataJSON": _MAX_CLIENT_DATA_BYTES,
+    "attestationObject": _MAX_ATTESTATION_OBJECT_BYTES,
+}
 _AUTHENTICATION_CAPS = {
+    "clientDataJSON": _MAX_CLIENT_DATA_BYTES,
     "authenticatorData": _MAX_AUTHENTICATOR_DATA_BYTES,
     "signature": _MAX_SIGNATURE_BYTES,
 }
@@ -247,7 +267,7 @@ def _parse_registration(credential: object) -> RegistrationResponse:
     attestation object that does not decode was a 500, and fido2 asserts
     that the authenticator data holds the attested credential data.
     """
-    if not isinstance(credential, dict) or not _within_caps(
+    if not isinstance(credential, dict) or not _binary_members_ok(
         credential, _REGISTRATION_CAPS
     ):
         raise _incorrect()
@@ -263,7 +283,7 @@ def _parse_registration(credential: object) -> RegistrationResponse:
 
 def _parse_authentication(credential: object) -> AuthenticationResponse:
     """The authentication response, or allauth's ``incorrect_code``."""
-    if not isinstance(credential, dict) or not _within_caps(
+    if not isinstance(credential, dict) or not _binary_members_ok(
         credential, _AUTHENTICATION_CAPS
     ):
         raise _incorrect()
