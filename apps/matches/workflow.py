@@ -151,6 +151,7 @@ from apps.matches.services import (
     hold_event,
     hold_submitting_account,
     insert_draft,
+    keep_rating_format,
     lock_draft,
     near_duplicates,
     refuse_inactive_players,
@@ -721,6 +722,9 @@ def edit_match(
     organizer change made after the first check refuses the edit with
     ``MatchActionDenied`` before any lock or write. The correction keeps
     the old match's stored match type, never the Event's current kind.
+    A correction with the same two teams (in either order) also keeps the
+    old match's stored rating format; one that changes a team derives it
+    again from the players' divisions (#318, ADR 0024).
 
     The correction keeps the old match's external id, Event, and Club,
     and links to it through ``corrects``. Off the player path it keeps the
@@ -859,6 +863,8 @@ def edit_match(
         if locked.status == MatchStatus.VOIDED:
             raise MatchStateError
         _keep_deleted_players(draft, locked)
+        # Same teams, same rating format, even after a division removal (#318).
+        keep_rating_format(draft, locked)
         if player_path:
             # A player corrects only a pending or disputed match: a
             # confirmed one is disputed first.

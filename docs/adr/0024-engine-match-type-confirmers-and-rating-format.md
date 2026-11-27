@@ -1,7 +1,7 @@
 # 0024. Engine match type, confirmers, and a stored rating format
 
 - Status: Proposed
-- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer confirm self-reported matches, so the every-participant confirmers rule has nothing to apply to); [ADR 0035](0035-stored-match-type-and-event-changes.md) (the match type is stored on each Match when it is recorded, and the adapter reads it instead of the Event's current kind); [ADR 0048](0048-account-deletion.md) (Account deletion keeps stored rating formats)
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer confirm self-reported matches, so the every-participant confirmers rule has nothing to apply to); [ADR 0035](0035-stored-match-type-and-event-changes.md) (the match type is stored on each Match when it is recorded, and the adapter reads it instead of the Event's current kind); [ADR 0048](0048-account-deletion.md) (Account deletion keeps stored rating formats); #318 (a correction that keeps its teams keeps its rating format)
 - Date: 2026-11-23
 
 ## Context
@@ -22,7 +22,7 @@ The project owner decided all three on 2026-11-23 (comment on issue #44).
   - a `dispute.outcome` Audit Event on the match with the outcome `confirmed`; or
   - the match is a correction, and the `match.edit` Audit Event on the match it corrects shows that match was confirmed or disputed, so the correction was created confirmed. Only a moderator can edit a match with no Event and no Club (ADR 0012, ADR 0013).
 - A moderator cannot confirm a pending self-reported match alone through `confirm_match`. The duplicate path, in which an Event submitter confirms a player's pending match, is not a moderator action (a Club submitter could too before ADR 0021). That match stays self-reported (ADR 0013), so it rates only once both teams have confirmed it.
-- **Rating format.** Each Match stores one rating format (`Match.rating_format`): `singles`, `doubles`, `mixed_doubles`, `doubles_men`, or `doubles_women`, the engine's rating format values. `record_match()`'s creation core sets it from the players' gender divisions at that moment. That core also creates `edit_match()`'s corrections, so a correction gets its own format. A doubles match is men's doubles when all four players are men's, women's doubles when all four are women's, and mixed doubles when each team has one men's and one women's player. Any other mix, or a player with no division, is overall doubles. The ledger guard keeps the value unchanged afterward, and a check constraint ties it to the match's `format`. The adapter reads the stored value, never the current divisions.
+- **Rating format.** Each Match stores one rating format (`Match.rating_format`): `singles`, `doubles`, `mixed_doubles`, `doubles_men`, or `doubles_women`, the engine's rating format values. `record_match()`'s creation core sets it from the players' gender divisions at that moment. That core also creates `edit_match()`'s corrections. A correction with the same format and the same two teams, in either order, keeps the stored format of the match it corrects (#318); one that changes a team gets its own format from the divisions at that moment. A doubles match is men's doubles when all four players are men's, women's doubles when all four are women's, and mixed doubles when each team has one men's and one women's player. Any other mix, or a player with no division, is overall doubles. The ledger guard keeps the value unchanged afterward, and a check constraint ties it to the match's `format`. The adapter reads the stored value, never the current divisions.
 
 ## Consequences
 
@@ -31,12 +31,15 @@ The project owner decided all three on 2026-11-23 (comment on issue #44).
 - The adapter depends on those audit rows. Audit rows are append-only (ADR 0007), so the record cannot be changed after the fact. A match whose rows were written outside the workflow (raw SQL, `loaddata`) gets only its Match Confirmations.
 - A self-reported match confirmed through the duplicate path with one team's confirmation counts in the backend (`counted()`) but not in the engine, until the other team confirms. A partner or the web app that reads "confirmed" as "rated" must allow for this.
 - A stored category format reveals the gender division of all four players. It is listed in the personal data inventory, and the API does not return it.
-- Removing a gender division does not change any stored rating format, so past matches keep their category. Account deletion leaves them as they are (ADR 0048).
+- Removing a gender division does not change any stored rating format, so past matches keep their category. Account deletion leaves them as they are (ADR 0048). A correction that keeps its teams keeps its category too (#318), so correcting a match after one of its players deleted their Account does not move it to overall doubles, and a replay rates it in the same format.
+- A correction that changes a team derives its format again. With a player whose division was removed, a men's, women's, or mixed doubles match whose teams change becomes overall doubles.
 - The field's default is `singles`, the only value the check constraint allows for a singles match. A doubles match must set its own value, or the constraint refuses it. Nothing has been deployed. A local database that already holds a doubles match fails the migration when it adds the constraint. Reset it (`docker compose down -v`) and migrate again.
 
 ## Alternatives considered
 
 - Read the rating format from current divisions at each replay. Rejected: a profile change would move other players' ratings, and a replay would not be repeatable.
+- Derive every correction's format again, even with the same teams. Rejected (#318): a correction after a division removal would move the match to overall doubles though nobody's team changed, and a replay would then rate it differently.
+- Keep the format through any correction. Rejected: a correction that changes a team is a different lineup, and the old format may not fit it.
 - Copy confirmations onto a correction. Rejected: the teams confirmed the old score, not the corrected one.
 - Turn off `self_reported_requires_both_teams`. Rejected: that is an engine parameter, set by the published parameter set, not by the backend (hard rule 2).
 - Keep Club matches self-reported. Rejected: they have no Match Confirmations, so the engine would never rate them.
