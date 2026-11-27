@@ -159,12 +159,16 @@ def _registered_with_id(credential_id: str) -> QuerySet[Authenticator]:
 
 
 class _ChecksOrigin:
-    """Check the credential's origin before allauth verifies it."""
+    """Check the credential's origin and shape before allauth verifies
+    it. allauth's parser lets a KeyError or AttributeError through (a
+    500), so OPEN's parser reads it first."""
 
     cleaned_data: dict[str, Any]
 
     def clean_credential(self) -> Any:
-        check_origin(self.cleaned_data.get("credential"))
+        credential = self.cleaned_data.get("credential")
+        check_origin(credential)
+        _parse_authentication(credential)
         return super().clean_credential()  # type: ignore[misc]
 
 
