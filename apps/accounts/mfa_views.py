@@ -115,6 +115,7 @@ from allauth.headless.mfa.views import ReauthenticateView as BaseReauthenticateV
 from allauth.headless.mfa.views import (
     ReauthenticateWebAuthnView as BaseReauthenticateWebAuthnView,
 )
+from allauth.mfa.adapter import get_adapter as get_mfa_adapter
 from allauth.mfa.models import Authenticator
 from allauth.mfa.totp.internal import flows as totp_flows
 from allauth.mfa.webauthn.internal import flows as webauthn_flows
@@ -369,8 +370,10 @@ class AuthenticatorsResponse(APIResponse):
         )
 
 
-class AuthenticatorsView(BaseAuthenticatorsView):
-    """allauth's authenticator list, passkeys by public ids (#117)."""
+@method_decorator(transaction.atomic, name="dispatch")
+class AuthenticatorsView(_LocksSignedInAccount, BaseAuthenticatorsView):
+    """allauth's authenticator list, passkeys by public ids (#117), read
+    under the Account's row lock like the other MFA views."""
 
     def get(self, request: "HttpRequest", *args: Any, **kwargs: Any) -> "HttpResponse":
         rows = list(
@@ -497,15 +500,35 @@ class ReauthenticateWebAuthnView(
 @method_decorator(transaction.atomic, name="dispatch")
 class LoginWebAuthnView(BaseLoginWebAuthnView):
     """allauth's passkey login (#117), keeping its per-IP rate limit, with
-    the Account found by the credential (``LoginPasskeyInput``) and its
-    row locked before the login. allauth's login rules then apply (an
-    inactive Account, the email verification stage, OPEN's adapter)."""
+    the Account found by the credential (``LoginPasskeyInput``).
+
+    The input reads the passkey and verifies the assertion without a
+    lock. Then the Account's row is locked first, before anything is
+    written, and the passkey and its Account are read again under that
+    lock: a passkey removed meanwhile is refused with allauth's
+    ``incorrect_code``, and the login uses the Account as it is now.
+    allauth's login rules then apply (an inactive Account, the email
+    verification stage, OPEN's adapter)."""
 
     input_class: ClassVar[dict[str, Any]] = {"POST": LoginPasskeyInput}
 
     def post(self, request: "HttpRequest", *args: Any, **kwargs: Any) -> "HttpResponse":
-        passkey: Authenticator = self.input.cleaned_data["credential"]
-        _lock_account(passkey.user_id)
+        checked: Authenticator = self.input.cleaned_data["credential"]
+        _lock_account(checked.user_id)
+        passkey = (
+            Authenticator.objects.select_related("user")
+            .filter(
+                pk=checked.pk,
+                user_id=checked.user_id,
+                type=Authenticator.Type.WEBAUTHN,
+            )
+            .first()
+        )
+        if passkey is None:
+            self.input.add_error(
+                "credential", get_mfa_adapter().validation_error("incorrect_code")
+            )
+            return cast("HttpResponse", self.handle_invalid_input(self.input))
         login = Login(user=passkey.user, redirect_url=None)
         webauthn_flows.perform_passwordless_login(request, passkey, login)
         _strip_mfa_ids(request)
