@@ -15,17 +15,27 @@ call that would change
 nothing records nothing. Each call sets
 ``organizer.verification_changed`` to whether that call changed the
 status, so a caller (the admin) reports only its own changes.
+
+``end_member_holds`` lets a moderator end an Organizer's New Member Holds
+early (#232, ADR 0057), with a required reason in each event.
 """
 
 from typing import TYPE_CHECKING
 
 from django.db import transaction
+from django.db.models.functions import Now
 from django.utils import timezone
 
+from apps.audit.access import save_access_row
+from apps.audit.admin_actions import REASON_MAX_LENGTH
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
 from apps.clubs.models import VERIFY_PERMISSION, Organizer, OrganizerMember
-from apps.clubs.reports import RULE_ORGANIZER_UNVERIFIED, close_open_reports
+from apps.clubs.reports import (
+    RULE_ORGANIZER_UNVERIFIED,
+    close_open_reports,
+    may_close,
+)
 from apps.clubs.verification_requests import close_open_verification_requests
 
 if TYPE_CHECKING:
@@ -36,6 +46,43 @@ _FIELDS = ["verified_at", "verified_by"]
 
 class NotAllowedToVerify(PermissionError):
     """The actor may not verify or unverify this Organizer."""
+
+
+class NotAllowedToEndHolds(PermissionError):
+    """The actor may not end this Organizer's New Member Holds."""
+
+
+def end_member_holds(organizer: Organizer, *, actor: "_User", reason: str) -> int:
+    """End every New Member Hold still in force on ``organizer`` (#232,
+    ADR 0057) and return how many.
+
+    For an actor ``apps.clubs.reports.may_close`` allows (active, with
+    ``clubs.verify_organizer``, not a member of the Organizer):
+    ``NotAllowedToEndHolds`` otherwise, and ``ValueError`` for a blank
+    reason or one over ``REASON_MAX_LENGTH``, both before any write. Under
+    the Organizer lock (``FOR UPDATE``) first, each held member's
+    ``hold_ends_at`` is cleared through ``save_access_row``, which records
+    one ``organizer_member.change`` event with ``reason``.
+    """
+    if not may_close(actor, organizer.pk):
+        raise NotAllowedToEndHolds(
+            "Only an active Account with permission that is not a member can "
+            "end new member holds."
+        )
+    reason = reason.strip()
+    if not reason or len(reason) > REASON_MAX_LENGTH:
+        raise ValueError("Give a reason of at most 1000 characters.")
+    ended = 0
+    with transaction.atomic():
+        locked = Organizer.objects.select_for_update().get(pk=organizer.pk)
+        held = OrganizerMember.objects.filter(
+            organizer_id=locked.pk, hold_ends_at__gt=Now()
+        ).order_by("pk")
+        for member in held:
+            member.hold_ends_at = None
+            save_access_row(member, actor=actor, reason=reason)
+            ended += 1
+    return ended
 
 
 def verify_organizer(

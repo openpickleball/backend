@@ -8,8 +8,9 @@ changes these rows, changes them only through the functions here, passing
 the acting Account explicitly:
 
 - ``save_access_row()`` saves one row and records an add or a change in
-  the same transaction. A save that changes nothing records nothing, and
-  a save that raises records nothing.
+  the same transaction, with an optional ``reason`` (a moderator ending
+  New Member Holds, #232). A save that changes nothing records nothing,
+  and a save that raises records nothing.
 - ``delete_access_row()`` records one row's removal, then deletes it.
 - ``record_cascaded_removals()`` records a removal for every access row a
   delete of other rows (a Club, an Organizer, a Partner Application, an
@@ -59,8 +60,9 @@ class AuditedAccessModel(models.Model):
         raise NotImplementedError
 
 
-def save_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
-    """Save ``row`` and record its add or change with ``actor``."""
+def save_access_row(row: AuditedAccessModel, *, actor: Actor, reason: str = "") -> None:
+    """Save ``row`` and record its add or change with ``actor``, and
+    ``reason`` when given (a moderator's, #232)."""
     with transaction.atomic():
         for name in row.AUDIT_LOCK_FIRST:
             field = row._meta.get_field(name)
@@ -80,9 +82,18 @@ def save_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
             raise RuntimeError("The saved row could not be read back.")
         after = saved.audit_values()
         if before is None:
-            _record(saved, saved.AUDIT_ADD, actor, before=None, after=after)
+            _record(
+                saved, saved.AUDIT_ADD, actor, before=None, after=after, reason=reason
+            )
         elif before != after:
-            _record(saved, saved.AUDIT_CHANGE, actor, before=before, after=after)
+            _record(
+                saved,
+                saved.AUDIT_CHANGE,
+                actor,
+                before=before,
+                after=after,
+                reason=reason,
+            )
 
 
 def delete_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
@@ -214,9 +225,17 @@ def _record(
     *,
     before: dict[str, Any] | None,
     after: dict[str, Any] | None,
+    reason: str = "",
 ) -> None:
     # Imported here: apps.audit.services imports django-oauth-toolkit's
     # models, which must not load while the models that use this module do.
     from apps.audit.services import record_event
 
-    record_event(action=action, target=target, actor=actor, before=before, after=after)
+    record_event(
+        action=action,
+        target=target,
+        actor=actor,
+        before=before,
+        after=after,
+        reason=reason,
+    )
