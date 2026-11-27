@@ -2275,8 +2275,130 @@
         "title": "OAuthRecordKind",
         "type": "string"
       },
+      "OrganizerCreateIn": {
+        "additionalProperties": false,
+        "description": "A new Organizer. ``name`` is 1 to 200 characters after trimming,\nwith no control characters. It may be a person's name: it is shown\nonly to the Organizer's members and staff.",
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OrganizerCreateIn",
+        "type": "object"
+      },
+      "OrganizerInviteAcceptIn": {
+        "additionalProperties": false,
+        "description": "The key from the invite email's link.",
+        "properties": {
+          "key": {
+            "description": "The key from the link in the invite email. A key longer than 128 characters gets the same 404 as an unknown one.",
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "OrganizerInviteAcceptIn",
+        "type": "object"
+      },
+      "OrganizerInviteIn": {
+        "additionalProperties": false,
+        "description": "An invite of an email address to act for the Organizer as ``role``.",
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MemberRole"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "OrganizerInviteIn",
+        "type": "object"
+      },
+      "OrganizerInviteSentOut": {
+        "description": "The same answer for every accepted invite request: it never says\nwhether the address has an Account, is a member, or was invited.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "OrganizerInviteSentOut",
+        "type": "object"
+      },
+      "OrganizerMemberOut": {
+        "description": "One member of an Organizer, as its admins see it.\n\n``player`` is the member's Player's OPEN Code (the value the member\noperations take), or null when the Account has no Player.\n``display_name`` is that Player's display name, or null when there is\nnone or the Account is inactive. ``you`` marks the signed-in Account.\nNever an email.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "player": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Player"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MemberRole"
+          },
+          "you": {
+            "title": "You",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "player",
+          "display_name",
+          "role",
+          "you"
+        ],
+        "title": "OrganizerMemberOut",
+        "type": "object"
+      },
+      "OrganizerMemberRoleIn": {
+        "additionalProperties": false,
+        "description": "A member's new role.",
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/MemberRole"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "OrganizerMemberRoleIn",
+        "type": "object"
+      },
       "OrganizerMembershipOut": {
-        "description": "One of the signed-in Account's own Organizer memberships.\n\n``organizer`` is the Organizer's OPEN Code, the value\n``EventCreateIn.organizer`` takes. ``name`` is the Organizer's name,\nshown only to its own members. ``verified`` says whether the Organizer\nis verified; it does not say whether the Account may act for it now\n(Organizer authority also needs MFA, ADR 0043). ``role`` is the\nAccount's own role there. It names no other member.",
+        "description": "One of the signed-in Account's own Organizer memberships.\n\n``organizer`` is the Organizer's OPEN Code, the value\n``EventCreateIn.organizer`` takes. ``name`` is the Organizer's name,\nshown only to its own members. ``verified`` says whether the Organizer\nis verified; it does not say whether the Account may act for it now\n(Organizer authority also needs MFA, ADR 0043).\n``verification_requested`` says whether a request that moderators\nverify it is open (#229). ``role`` is the Account's own role there.\nIt names no other member.",
         "properties": {
           "name": {
             "title": "Name",
@@ -2289,6 +2411,10 @@
           "role": {
             "$ref": "#/components/schemas/MemberRole"
           },
+          "verification_requested": {
+            "title": "Verification Requested",
+            "type": "boolean"
+          },
           "verified": {
             "title": "Verified",
             "type": "boolean"
@@ -2298,6 +2424,7 @@
           "organizer",
           "name",
           "verified",
+          "verification_requested",
           "role"
         ],
         "title": "OrganizerMembershipOut",
@@ -2352,6 +2479,58 @@
         ],
         "title": "OrganizerReportReason",
         "type": "string"
+      },
+      "OrganizerUpdateIn": {
+        "additionalProperties": false,
+        "description": "A new name for an Organizer, with the create's rules.",
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OrganizerUpdateIn",
+        "type": "object"
+      },
+      "OrganizerVerificationRequestIn": {
+        "additionalProperties": false,
+        "description": "A request that moderators verify the Organizer.\n\n``statement`` says what the Organizer runs, for moderators only: 1 to\n1000 characters after trimming, with no control characters except\nline breaks and tabs.",
+        "properties": {
+          "statement": {
+            "maxLength": 1000,
+            "title": "Statement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "statement"
+        ],
+        "title": "OrganizerVerificationRequestIn",
+        "type": "object"
+      },
+      "OrganizerVerificationRequestOut": {
+        "description": "The request just made: the Organizer's OPEN Code and when. The\nstatement is not repeated.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "organizer": {
+            "title": "Organizer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizer",
+          "created_at"
+        ],
+        "title": "OrganizerVerificationRequestOut",
+        "type": "object"
       },
       "PagedEventOut": {
         "properties": {
@@ -6079,6 +6258,116 @@
         ]
       }
     },
+    "/api/v1/organizer/invites/accept": {
+      "post": {
+        "description": "Accept an invite to act for an Organizer, with the key from its email.\n\nSign in with the invited address, verified, and have a player\nprofile. A key that is unknown, malformed, expired, already used, or\nfor another address, an unverified address, an Account with no\nplayer, and anyone else refused get the same 404. 409 when you are\nalready a member; the invite is used up then too.",
+        "operationId": "accept_organizer_invite",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizerInviteAcceptIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerMembershipOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Accept Organizer Invite",
+        "tags": [
+          "organizers"
+        ]
+      }
+    },
     "/api/v1/organizer/organizers": {
       "get": {
         "description": "The Organizers the signed-in Account is a member of.\n\nVerified or not, each with its OPEN Code (the value an Event create\ntakes as ``organizer``), its name, whether it is verified, and the\nAccount's own role there. Ordered by OPEN Code. Empty for an Account\nwith no memberships. No other member is listed. ``verified`` is the\nOrganizer's state: acting for a verified Organizer also needs MFA on\nthe Account (ADR 0043).",
@@ -6148,6 +6437,887 @@
           }
         ],
         "summary": "List My Organizers",
+        "tags": [
+          "organizers"
+        ]
+      },
+      "post": {
+        "description": "Create an Organizer, with you as its only admin.\n\nYour login address must be verified (403 otherwise). The Organizer\nstarts unverified: it cannot record counted matches or manage Events\nuntil an OPEN moderator verifies it (ask with\n`request_organizer_verification`). 409 when you are already an admin\nof as many Organizers as an Account may create. No MFA is needed to\ncreate one; every admin action on it needs MFA.",
+        "operationId": "create_organizer",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizerCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerMembershipOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create Organizer Operation",
+        "tags": [
+          "organizers"
+        ]
+      }
+    },
+    "/api/v1/organizer/organizers/{code}": {
+      "patch": {
+        "description": "Change the Organizer's name. For an admin member with MFA.\n\nAnyone else, and an unknown code, gets the same 404.",
+        "operationId": "update_organizer",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "G-7K3M-QX9Q"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "G-7K3M-QX9Q"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizerUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerMembershipOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Organizer",
+        "tags": [
+          "organizers"
+        ]
+      }
+    },
+    "/api/v1/organizer/organizers/{code}/invites": {
+      "post": {
+        "description": "Invite an email address to act for the Organizer, as admin or\nmatch manager. For an admin member with MFA.\n\nThe answer is the same whether or not the address has an OPEN\nAccount, is already a member, or was invited before: an invite email\nwith a link that works once goes to any address that is not a\nmember's, replacing an earlier invite to it. The invitee accepts\nwhile signed in with that address (`accept_organizer_invite`). 409\nwhen the Organizer has too many open invites. Limited per Account to\na number of invites a day; past that the answer is 429 with a\nRetry-After header.",
+        "operationId": "invite_organizer_member",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "G-7K3M-QX9Q"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "G-7K3M-QX9Q"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizerInviteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerInviteSentOut"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Invite Organizer Member",
+        "tags": [
+          "organizers"
+        ]
+      }
+    },
+    "/api/v1/organizer/organizers/{code}/members": {
+      "get": {
+        "description": "The Organizer's members. For an admin member with MFA.\n\nEach with its player's OPEN Code and display name, its role, and\nwhether it is you; admins first. Never an email.",
+        "operationId": "list_organizer_members",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "G-7K3M-QX9Q"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "G-7K3M-QX9Q"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrganizerMemberOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Organizer Members",
+        "tags": [
+          "organizers"
+        ]
+      }
+    },
+    "/api/v1/organizer/organizers/{code}/members/{player}": {
+      "delete": {
+        "description": "Remove a member, yourself included. For an admin member with MFA.\n\n``player`` is the member's player OPEN Code; one that is not a member\nof this Organizer gets the same 404 as an unknown code. 409 when it\nwould leave the Organizer with no admin.",
+        "operationId": "remove_organizer_member",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "G-7K3M-QX9Q"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "G-7K3M-QX9Q"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "P-7K3M-QX9H"
+              }
+            },
+            "in": "path",
+            "name": "player",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "P-7K3M-QX9H"
+              ],
+              "title": "Player",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Remove Organizer Member",
+        "tags": [
+          "organizers"
+        ]
+      },
+      "patch": {
+        "description": "Change a member's role. For an admin member with MFA.\n\n``player`` is the member's player OPEN Code; one that is not a member\nof this Organizer gets the same 404 as an unknown code. 409 when it\nwould leave the Organizer with no admin.",
+        "operationId": "change_organizer_member_role",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "G-7K3M-QX9Q"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "G-7K3M-QX9Q"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "P-7K3M-QX9H"
+              }
+            },
+            "in": "path",
+            "name": "player",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a player. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "P-7K3M-QX9H"
+              ],
+              "title": "Player",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizerMemberRoleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerMemberOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Change Organizer Member Role",
+        "tags": [
+          "organizers"
+        ]
+      }
+    },
+    "/api/v1/organizer/organizers/{code}/verification-request": {
+      "post": {
+        "description": "Ask OPEN moderators to verify the Organizer. For an admin member\nwith MFA.\n\n``statement`` says what the Organizer runs, for moderators only. A\nmoderator decides; nothing is verified automatically. 409 when the\nOrganizer is already verified or already has an open request.",
+        "operationId": "request_organizer_verification",
+        "parameters": [
+          {
+            "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+            "examples": {
+              "example0": {
+                "value": "G-7K3M-QX9Q"
+              }
+            },
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An OPEN Code for a organizer. Any case, with or without hyphens and the prefix.",
+              "examples": [
+                "G-7K3M-QX9Q"
+              ],
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizerVerificationRequestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerVerificationRequestOut"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not authenticated."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests. Retry after the seconds in Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the request can be allowed again: when the refusing limit resets, or when a later limit that is already used up resets.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionTokenAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Request Organizer Verification",
         "tags": [
           "organizers"
         ]
