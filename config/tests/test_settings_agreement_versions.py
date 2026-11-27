@@ -31,14 +31,14 @@ def _versions(values: dict[str, str]) -> object:
 
 @pytest.mark.parametrize("value", ["", "  "])
 def test_unset_means_the_published_versions(value: str) -> None:
-    # Terms of Service "Version 1", Privacy Policy "Version 2".
-    assert _versions({TERMS: value, PRIVACY: value}) == [1, 2]
+    # Terms of Service "Version 2", Privacy Policy "Version 3" (#345).
+    assert _versions({TERMS: value, PRIVACY: value}) == [2, 3]
 
 
 @pytest.mark.parametrize(("value", "version"), [("1", 1), (" 3 ", 3), ("12", 12)])
 def test_a_whole_number_sets_each_version(value: str, version: int) -> None:
-    assert _versions({TERMS: value}) == [version, 2]
-    assert _versions({PRIVACY: value}) == [1, version]
+    assert _versions({TERMS: value}) == [version, 3]
+    assert _versions({PRIVACY: value}) == [2, version]
 
 
 @pytest.mark.parametrize("name", [TERMS, PRIVACY])
