@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 REMOVE_UNDERAGE_PERMISSION = "players.remove_underage_player"
 
 
-class UnderageRemovalRefused(PermissionError):
+class UnderageRemovalRefused(Exception):
     """The moderator may not remove this Player's personal data.
 
     The message is fixed and names nobody.
@@ -45,17 +45,24 @@ class UnderageRemovalRefused(PermissionError):
 def remove_underage_player(
     player: Player, *, moderator: "_User | AnonymousUser"
 ) -> AccountDeletion:
-    """Remove the personal data of ``player``'s Account, as Account deletion does.
+    """Remove the personal data of ``player``'s Account, as Account deletion
+    does.
 
     Only an active Account with ``players.remove_underage_player`` (an
-    active superuser holds it) may run it, checked on the stored Account
-    under its lock and on a freshly loaded instance, so a stale in-memory
-    Account or permission cache counts for nothing. It refuses
-    (``UnderageRemovalRefused``) the moderator's own Player, and a Player
-    whose Account is staff, superuser, or holds a group or permission (as
-    the Account admin refuses, #317). A signed-out moderator is refused. It raises ``AccountAlreadyDeleted``
-    when a deletion already cleared the Account. Every refusal comes
-    before any write, so it changes nothing.
+    active superuser holds it) may run it. It reads ``is_active`` from the
+    stored row held ``FOR KEY SHARE`` and checks the permission on a
+    freshly loaded instance, so a stale in-memory Account or permission
+    cache counts for nothing. The lock waits only for a ``FOR UPDATE``
+    (Account deletion, ``create_player``), not for a plain update that
+    deactivates the moderator or revokes the permission: one of those
+    that commits at the same time may let one removal finish (whichever
+    commits first). It refuses (``UnderageRemovalRefused``) a signed-out
+    moderator, the moderator's own Player, and a Player whose Account is
+    staff, superuser, or holds a group or permission (as the Account admin
+    refuses, #317). It raises ``AccountAlreadyDeleted`` when a deletion
+    already cleared the Account. It checks no age: whether the player is
+    under 13 is the moderator's judgment. Every refusal comes before any
+    write, so it changes nothing.
 
     Lock order: the moderator's Account ``FOR KEY SHARE``
     (``hold_active_account``), then the Player's Account ``FOR UPDATE``,

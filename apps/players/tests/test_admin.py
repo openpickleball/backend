@@ -1,4 +1,7 @@
-"""The read-only Player admin and its audited reveal (issue #115, ADR 0046).
+"""The Player admin and its audited reveal (issue #115, ADR 0046).
+
+The admin is read-only except the under-13 removal (ADR 0059), tested in
+``test_admin_underage_removal.py``.
 
 Staff see a Player's OPEN Code, display name, place, and Account. The
 legal name, birth year and month, and gender division show as "Hidden".

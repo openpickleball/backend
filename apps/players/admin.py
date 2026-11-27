@@ -1,4 +1,5 @@
-"""A read-only Player admin with an audited reveal (issue #115, ADR 0046).
+"""The Player admin: read-only, with an audited reveal (issue #115, ADR 0046)
+and an under-13 removal (issue #190, ADR 0059).
 
 Staff with ``players.view_player`` see a Player's OPEN Code, display
 name, city and region, and Account. The legal name, birth year and
@@ -8,9 +9,10 @@ searched, filtered, or sorted on. An Account that also has
 Moderator group does not) sees a "Reveal personal data" button. Its POST
 records one ``player.personal_data_view`` Audit Event, naming the fields
 and never a value, and shows the values in that response only. A POST is
-an admin write, so it needs a recent MFA step (ADR 0045). Nobody adds,
-changes, or deletes a Player here: Players change only through
-``apps.players.services``.
+an admin write, so it needs a recent MFA step (ADR 0045). Nobody adds
+or edits a Player here, and nobody deletes one except through the
+under-13 removal below: Players change only through
+``apps.players.services`` and ``apps.players.underage``.
 
 An Account with ``players.remove_underage_player`` (no role holds it by
 default) sees a "Remove personal data (under 13)" button (#190, ADR
@@ -54,7 +56,10 @@ REVEALED_FIELDS = ("birth_month", "birth_year", "gender_division", "legal_name")
 
 @admin.register(Player)
 class PlayerAdmin(admin.ModelAdmin[Player]):
-    """Read-only Players. Personal data only through the audited reveal."""
+    """Read-only Players, except the under-13 removal (ADR 0059).
+
+    Personal data only through the audited reveal.
+    """
 
     list_display = ("public_code", "display_name")
     search_fields = ("public_code",)
