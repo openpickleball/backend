@@ -19,9 +19,10 @@ email, so a takeover of one admin's Account is seen by the rest:
 
 Recipients are every active admin of the Organizer (members with role
 admin) or the Club (admin Club Roles) when the change commits, except
-the acting Account and the Account the change is about. On a removal,
-or a role change away from admin, that Account is told too when it is
-active and is not the actor, since at commit it is no longer an admin. Each gets one
+the acting Account and the Account the change is about. On a removal, a
+role change away from admin, or a staff move of its admin row to
+another Account, that Account is told too when it is active and is not
+the actor, since at commit it is no longer an admin. Each gets one
 email through ``queue_email()``, registered with ``transaction.on_commit``
 in the change's transaction, so a rolled-back change queues nothing.
 
