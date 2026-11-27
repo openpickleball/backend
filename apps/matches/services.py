@@ -19,11 +19,11 @@ After that check, ``record_match`` refuses a Player whose Account is
 inactive, reads the Event's stored start and end dates by id, and runs
 ``validate_match`` (which refuses a date played outside them,
 ``outside_event_dates``, #207, ADR 0052) and every model rule on the
-Match, its participants, and its games. The only read before validation
-is those dates, by id, after the permission checks, so nothing invalid
-reaches a lock, a duplicate lookup, or the database. ``edit_match`` drafts its correction the
-same way, so a correction outside the stored Event's dates is refused
-too. It then detects duplicates (a security-sensitive area,
+Match, its participants, and its games. The Event's dates are read by
+id after the permission checks, with the batch and inactive player reads,
+before validation, so nothing invalid reaches a lock, a duplicate lookup,
+or a write. ``edit_match`` drafts its correction the same way, so a
+correction outside the stored Event's dates is refused too. It then detects duplicates (a security-sensitive area,
 CLAUDE.md hard rule 8). In one transaction, under advisory locks, it:
 
 - refuses an external id the same Partner Application already used, for a

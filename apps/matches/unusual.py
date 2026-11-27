@@ -36,8 +36,8 @@ ones too, and the new match itself. ``player_daily_matches`` counts
 every match a player played that day that is not voided, in any other
 status, self-reported matches included, so a player's own submissions
 count toward it. A correction counts in place of the original it voided,
-so each real match counts once and editing never resets the count; the
-correction itself is never flagged. It takes no per-player lock:
+so each real match counts once and editing it does not drop it from the
+count; the correction itself is never flagged. It takes no per-player lock:
 the submitter lock does not make it exact, and two concurrent
 submissions of one player's matches may each miss the other, which errs
 toward no flag (ADR 0052). Values are read from the database by id, and
