@@ -19,7 +19,10 @@ Organizer made here stays unverified until a moderator verifies it.
 - ``accept_invite``: the invited Account, signed in with the invited
   login address, verified, and with a Player, joins with the invited
   role, while the invite's sender still has admin authority there
-  (active, admin, with MFA). Demoting or removing an admin deletes the invites it
+  (active, admin, with MFA, no New Member Hold). Joining a verified
+  Organizer starts a New Member Hold of
+  ``ORGANIZER_NEW_MEMBER_HOLD_HOURS`` (#232, ADR 0057): until it ends the
+  member has no Organizer or admin authority. Demoting or removing an admin deletes the invites it
   sent there in the same transaction. Every refusal is ``NotFound``.
 
 On these paths an Organizer always keeps one active admin with MFA
@@ -27,9 +30,10 @@ On these paths an Organizer always keeps one active admin with MFA
 without (``apps.accounts.mfa_views``). Account deletion and the staff admin can still leave an
 Organizer without an admin; staff repair it. A verified Organizer is not
 renamed here (``Conflict``). Once an Organizer is verified, an admin's
-invite gives the new member trusted-submitter authority (ADR 0021) as
-soon as it is accepted and the member has MFA, with no moderator review
-of that member.
+invite gives the new member trusted-submitter authority (ADR 0021) once
+its New Member Hold ends and while the member has MFA, with no moderator
+review of that member; a moderator may end the hold early
+(``apps.clubs.services.end_member_holds``).
 Each change records its Audit Events in its own transaction: never the
 Organizer's name, an address, or a statement (ADR 0009).
 
@@ -76,6 +80,7 @@ from apps.clubs.models import (
     OrganizerMember,
     OrganizerVerificationRequest,
     admin_account_refused,
+    not_held,
 )
 from apps.emails.services import queue_email
 from apps.players.models import Player
@@ -206,6 +211,8 @@ def _admin_organizer(organizer_id: int, actor: "_User") -> Organizer:
 def _is_admin(account_id: int, organizer_id: int) -> bool:
     return bool(
         OrganizerMember.objects.filter(
+            # A held member has no admin authority either (#232).
+            not_held(),
             organizer_id=organizer_id,
             account_id=account_id,
             role=MemberRole.ADMIN,
@@ -358,7 +365,10 @@ def accept_invite(key: str, *, actor: "_User") -> OrganizerMember:
             already_member = True
         else:
             membership = OrganizerMember(
-                organizer=organizer, account=actor, role=invite.role
+                organizer=organizer,
+                account=actor,
+                role=invite.role,
+                hold_ends_at=_hold_ends_at(organizer),
             )
             try:
                 save_access_row(membership, actor=actor)
@@ -369,6 +379,17 @@ def accept_invite(key: str, *, actor: "_User") -> OrganizerMember:
     if already_member:
         raise Conflict(ALREADY_MEMBER_MESSAGE)
     return membership
+
+
+def _hold_ends_at(organizer: Organizer) -> datetime | None:
+    """When a member joining ``organizer`` now gets authority (#232, ADR
+    0057): ``ORGANIZER_NEW_MEMBER_HOLD_HOURS`` from now while it is
+    verified (read under the Organizer lock), None when it is not or the
+    hold is off."""
+    hours = settings.ORGANIZER_NEW_MEMBER_HOLD_HOURS
+    if not organizer.is_verified or hours <= 0:
+        return None
+    return timezone.now() + timedelta(hours=hours)
 
 
 def _sender_still_admin(invite: OrganizerInvite) -> bool:

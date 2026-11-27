@@ -15,6 +15,8 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.db.models import Q
+from django.db.models.functions import Now
+from django.utils import timezone
 
 from apps.audit.access import AuditedAccessModel
 from apps.audit.models import AuditAction
@@ -99,6 +101,17 @@ def admin_account_refused(account_id: object) -> bool:
     if account is None:
         return False
     return not (account.is_active and has_verified_login_address(account))
+
+
+def not_held(prefix: str = "") -> Q:
+    """Organizer Members whose New Member Hold is over or never applied
+    (#232, ADR 0057), as a filter. ``prefix`` is the lookup path to the
+    member (``"event__organizer__members__"``), empty on the member's own
+    queryset. Compared with the database's ``Now()``. Every rule that
+    grants Organizer or admin authority adds it."""
+    return Q(**{f"{prefix}hold_ends_at__isnull": True}) | Q(
+        **{f"{prefix}hold_ends_at__lte": Now()}
+    )
 
 
 class _LinkMessagesModel(models.Model):
@@ -340,6 +353,10 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
     role = models.CharField(
         max_length=16, choices=MemberRole, error_messages=_CHOICE_MESSAGES
     )
+    # The New Member Hold (#232, ADR 0057): until this time the member has
+    # no Organizer authority and no admin authority (``not_held``). Set
+    # when an invite to a verified Organizer is accepted; empty otherwise.
+    hold_ends_at = models.DateTimeField(null=True, blank=True)
 
     AUDIT_ADD = AuditAction.ORGANIZER_MEMBER_ADD
     AUDIT_CHANGE = AuditAction.ORGANIZER_MEMBER_CHANGE
@@ -387,12 +404,21 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
 
     def audit_values(self) -> dict[str, Any]:
         # The Account's row id, never its email; the Organizer's OPEN Code,
-        # never its name (ADR 0009).
-        return {
+        # never its name (ADR 0009). The hold's end only when set, so an
+        # unheld member's events keep their shape.
+        values: dict[str, Any] = {
             "organizer": self.organizer.public_code,
             "account": self.account_id,
             "role": self.role,
         }
+        if self.hold_ends_at is not None:
+            values["hold_ends_at"] = self.hold_ends_at.isoformat()
+        return values
+
+    @property
+    def is_held(self) -> bool:
+        """Whether the New Member Hold still applies (#232)."""
+        return self.hold_ends_at is not None and self.hold_ends_at > timezone.now()
 
     def _account_verified_organizer(self, *, lock: bool) -> bool:
         """True when ``account`` is the Organizer's ``verified_by``."""

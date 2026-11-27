@@ -128,7 +128,13 @@ from django.contrib.auth.models import AnonymousUser
 from oauth2_provider.models import get_application_model
 
 from apps.accounts.mfa import accounts_with_mfa
-from apps.clubs.models import Club, ClubOrganizerGrant, Organizer, OrganizerMember
+from apps.clubs.models import (
+    Club,
+    ClubOrganizerGrant,
+    Organizer,
+    OrganizerMember,
+    not_held,
+)
 from apps.events.models import Event
 from apps.matches.models import Match, MatchParticipant
 from apps.partners.models import OrganizerApplicationGrant
@@ -212,8 +218,10 @@ def _verified_organizer_id(event_id: int | None) -> int | None:
 
 def _account_acts_for(account: "_User", organizer_id: int) -> bool:
     """True when ``account`` is a member (either role) of ``organizer_id``
-    and has a method (ADR 0043). One query."""
+    with no New Member Hold in force (#232) and has a method (ADR 0043).
+    One query."""
     acts: bool = OrganizerMember.objects.filter(
+        not_held(),
         organizer_id=organizer_id,
         account=account,
         account_id__in=accounts_with_mfa(),

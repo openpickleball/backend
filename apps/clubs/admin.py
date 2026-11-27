@@ -77,6 +77,9 @@ class OrganizerMemberInline(admin.TabularInline[OrganizerMember, Organizer]):
     model = OrganizerMember
     extra = 0
     autocomplete_fields = ("account",)
+    # The New Member Hold (#232): set only by an accepted invite, ended
+    # early only by the "End new member holds" action.
+    readonly_fields = ("hold_ends_at",)
 
 
 class ClubRoleInline(admin.TabularInline[ClubRole, Club]):
