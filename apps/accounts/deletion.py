@@ -72,6 +72,7 @@ from django.db.models.functions import Lower
 from oauth2_provider.models import (
     get_access_token_model,
     get_application_model,
+    get_device_grant_model,
     get_grant_model,
     get_id_token_model,
     get_refresh_token_model,
@@ -309,12 +310,14 @@ def _remove_memberships(
 
 
 def _delete_oauth_rows(account: "_User") -> None:
-    """Delete the OAuth tokens and grants issued to the Account."""
+    """Delete the OAuth tokens and grants issued to the Account, device
+    grants included."""
     for model in (
         get_refresh_token_model(),
         get_access_token_model(),
         get_id_token_model(),
         get_grant_model(),
+        get_device_grant_model(),
     ):
         model.objects.filter(user_id=account.pk).delete()
 
