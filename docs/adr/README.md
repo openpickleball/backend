@@ -103,3 +103,4 @@ Add each record here when it merges.
 - [0053. A match shows its Event, Organizer, and Club](0053-match-shows-event-organizer-and-club.md) (issue #302)
 - [0054. Organizer self-service: create, invite members, request verification](0054-organizer-self-service.md) (issue #229)
 - [0055. Club self-service: profiles, admins, and Club Organizer Grants](0055-club-self-service.md) (issue #230)
+- [0056. Passkeys (WebAuthn) for the browser client](0056-passkeys.md) (issue #117)
