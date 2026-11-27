@@ -181,6 +181,7 @@ def remove_passkeys_after_reset(account: "_User") -> None:
 
 # Fixed text: never the id that was sent.
 UNKNOWN_PASSKEY = "Select passkeys from your passkey list."
+PASSKEY_NAME_NOT_TEXT = "Enter the passkey's name as text."
 
 
 def _incorrect() -> ValidationError:
@@ -255,7 +256,17 @@ class AddPasskeyInput(AddWebAuthnInput):  # type: ignore[misc]
     """allauth's add input, from an allowed origin only, refusing a
     credential id that any Account already holds (WebAuthn's
     registration step that allauth leaves out), so passkey login finds
-    one passkey by its id."""
+    one passkey by its id. The name is text of at most 100 characters,
+    as a rename takes."""
+
+    name = inputs.CharField(required=False, max_length=100)
+
+    def clean_name(self) -> str:
+        sent = self.data.get("name")
+        if sent is not None and not isinstance(sent, str):
+            raise ValidationError(PASSKEY_NAME_NOT_TEXT, code="invalid")
+        name: str = super().clean_name()
+        return name
 
     def clean_credential(self) -> Any:
         credential = self.cleaned_data.get("credential")

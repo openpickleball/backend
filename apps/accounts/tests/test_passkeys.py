@@ -8,6 +8,7 @@ the exact ``WEBAUTHN_ALLOWED_ORIGINS`` pass, no row id reaches a
 response, an option, or the session, and every change is audited.
 """
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -868,3 +869,47 @@ def test_both_clients_serve_the_passkey_views(base: str, account: "_User") -> No
     assert session.get(REAUTHENTICATE_PATH).status_code == 200
     anonymous = HeadlessSession(base)
     assert anonymous.get(LOGIN_PATH).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("name", "param"),
+    [("x" * 101, "name"), (5, "name"), (["Phone"], "name")],
+    ids=["too-long", "number", "list"],
+)
+def test_a_bad_passkey_name_is_refused(
+    account: "_User", passkey: SoftwarePasskey, name: object, param: str
+) -> None:
+    session = _signed_in(BROWSER, account)
+    credential = passkey.register(_creation_options(session))
+
+    response = session.post(
+        PASSKEY_PATH, {"name": name, "credential": credential, "passwordless": True}
+    )
+
+    assert response.status_code == 400
+    assert [error.get("param") for error in response.json()["errors"]] == [param]
+    assert str(name) not in json.dumps(response.json()["errors"])
+    assert _passkeys(account) == []
+
+
+def test_a_passkey_name_of_100_characters_is_kept(
+    account: "_User", passkey: SoftwarePasskey
+) -> None:
+    session = _signed_in(BROWSER, account)
+
+    response = _add(session, passkey, name="x" * 100)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["data"]["name"] == "x" * 100
+
+
+def test_the_app_client_cannot_add_a_passkey_from_a_native_origin(
+    account: "_User", passkey: SoftwarePasskey
+) -> None:
+    session = _signed_in(APP, account)
+
+    response = _add(session, passkey, origin="android:apk-key-hash:made-up-hash")
+
+    assert response.status_code == 400
+    assert _error_codes(response) == ["incorrect_code"]
+    assert _passkeys(account) == []
