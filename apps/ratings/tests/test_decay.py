@@ -273,6 +273,23 @@ def test_a_second_run_on_the_same_day_changes_nothing(
     assert _counts() == after_first
 
 
+def test_running_the_task_twice_on_the_same_day_changes_nothing(
+    clock: Clock, django_capture_on_commit_callbacks: Capture
+) -> None:
+    _replayed_ratings()
+    clock.set_days_after_play(7)
+    with django_capture_on_commit_callbacks(execute=True):
+        assert tasks.decay_reliability.delay().get() == "requested"
+    after_first = _counts()
+    assert after_first[0] == 0  # the replay took the request
+
+    with django_capture_on_commit_callbacks(execute=True) as callbacks:
+        assert tasks.decay_reliability.delay().get() == "not_due"
+
+    assert callbacks == []
+    assert _counts() == after_first
+
+
 def test_the_log_holds_dates_and_no_player(
     clock: Clock, ratings_logs: pytest.LogCaptureFixture
 ) -> None:
