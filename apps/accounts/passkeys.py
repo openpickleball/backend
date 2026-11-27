@@ -21,6 +21,7 @@ import base64
 import binascii
 import hmac
 import json
+import struct
 from typing import TYPE_CHECKING, Any
 
 from allauth.headless.internal.restkit import inputs
@@ -128,15 +129,34 @@ def _incorrect() -> ValidationError:
     return error
 
 
+# What fido2's JSON and CBOR decoders raise on malformed input.
+_DECODE_ERRORS = (
+    TypeError,
+    ValueError,
+    KeyError,
+    AttributeError,
+    IndexError,
+    OverflowError,
+    struct.error,
+)
+
+
 def _parse_registration(credential: object) -> RegistrationResponse:
-    """The registration response, or allauth's ``incorrect_code``. allauth
-    catches only TypeError, so a mismatched ``id`` would be a 500."""
+    """The registration response, or allauth's ``incorrect_code``.
+
+    allauth catches only TypeError, so a mismatched ``id`` or an
+    attestation object that does not decode was a 500, and fido2 asserts
+    that the authenticator data holds the attested credential data.
+    """
     if not isinstance(credential, dict):
         raise _incorrect()
     try:
         parsed: RegistrationResponse = RegistrationResponse.from_dict(credential)
-    except (TypeError, ValueError, KeyError, AttributeError) as error:
+        auth_data = parsed.response.attestation_object.auth_data
+    except _DECODE_ERRORS as error:
         raise _incorrect() from error
+    if auth_data.credential_data is None:
+        raise _incorrect()
     return parsed
 
 
@@ -146,7 +166,7 @@ def _parse_authentication(credential: object) -> AuthenticationResponse:
         raise _incorrect()
     try:
         parsed: AuthenticationResponse = AuthenticationResponse.from_dict(credential)
-    except (TypeError, ValueError, KeyError, AttributeError) as error:
+    except _DECODE_ERRORS as error:
         raise _incorrect() from error
     return parsed
 
