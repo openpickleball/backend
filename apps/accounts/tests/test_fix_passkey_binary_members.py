@@ -1,5 +1,5 @@
-"""Every binary member of a passkey credential must be base64url text
-within its size cap, or allauth's 400 ``incorrect_code`` answers (issue
+"""Every binary member of a passkey credential must be text within its
+size cap, or allauth's 400 ``incorrect_code`` answers (issue
 #117). fido2 turns a JSON integer N into N zero bytes and a list of
 integers into bytes, which skipped the text caps: a large integer made
 a pre-authentication allocation, or a MemoryError. Made-up data only."""
