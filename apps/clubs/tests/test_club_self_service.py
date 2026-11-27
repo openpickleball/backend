@@ -466,7 +466,9 @@ def test_the_last_active_admin_cannot_be_removed() -> None:
     with pytest.raises(Conflict) as caught:
         remove_admin(club.pk, admin.player.public_code, actor=admin)
 
-    assert str(caught.value) == "A club must keep at least one admin."
+    assert str(caught.value) == (
+        "A club must keep at least one admin with two-factor authentication."
+    )
     assert ClubRole.objects.filter(account=admin).exists()
 
 

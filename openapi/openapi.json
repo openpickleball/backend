@@ -7558,7 +7558,7 @@
     },
     "/api/v1/organizer/events/{code}/results-files": {
       "post": {
-        "description": "Upload a CSV results file for an Event of your verified Organizer.\n\nThe file is in the CSV results format (``docs/csv-format.md``), at\nmost 1 MiB and 1000 match rows. ``players_13_or_older`` must be true:\nit confirms that every player in the file is 13 or older (422\notherwise, checked before anything else). ``game_target`` (11, 15, or\n21) and ``location`` apply to every row. Anyone who may not manage the\nEvent's matches gets the same 404 as an unknown Event. A larger file\ngets 413. The file is processed in the background: the response is\n202 with the file pending, and ``get_results_file`` shows the report.\nOnly the good rows are recorded. A row that repeats a match already\nrecorded, a pending one included, is reported as a duplicate.",
+        "description": "Upload a CSV results file for an Event of your verified Organizer.\n\nThe file is in the CSV results format (``docs/csv-format.md``), at\nmost 1 MiB and 1000 match rows. ``players_13_or_older`` must be true:\nit confirms that every player in the file is 13 or older (422\notherwise, checked before anything else). A session whose latest\ntwo-factor step is older than a few minutes gets 403\n``reauthentication_required``: confirm a code again\n(``auth/2fa/reauthenticate``), then retry. ``game_target`` (11, 15, or\n21) and ``location`` apply to every row. Anyone who may not manage the\nEvent's matches gets the same 404 as an unknown Event. A larger file\ngets 413. The file is processed in the background: the response is\n202 with the file pending, and ``get_results_file`` shows the report.\nOnly the good rows are recorded. A row that repeats a match already\nrecorded, a pending one included, is reported as a duplicate.",
         "operationId": "create_results_file",
         "parameters": [
           {
@@ -7657,7 +7657,7 @@
                 }
               }
             },
-            "description": "Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+            "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
           },
           "404": {
             "content": {

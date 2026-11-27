@@ -519,7 +519,9 @@ def test_the_last_admin_cannot_be_demoted_or_removed() -> None:
 
     assert demoted.status_code == 409
     assert removed.status_code == 409
-    assert demoted.json()["message"] == "An organizer must keep at least one admin."
+    assert demoted.json()["message"] == (
+        "An organizer must keep at least one admin with two-factor authentication."
+    )
     assert OrganizerMember.objects.get(account=admin).role == "admin"
 
 

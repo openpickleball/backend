@@ -25,6 +25,7 @@ from apps.clubs.tests.factories import (
     OrganizerFactory,
     OrganizerMemberFactory,
     verify,
+    verify_login_address,
 )
 from apps.partners.tests.factories import (
     OrganizerApplicationGrantFactory,
@@ -286,7 +287,7 @@ def test_moving_a_club_role_to_another_account_in_the_inline_records_one_change(
 ) -> None:
     role = ClubRoleFactory.create()
     club = role.club
-    other = UserFactory.create()
+    other = verify_login_address(UserFactory.create())
     old_account = role.account_id
 
     response = admin_client.post(

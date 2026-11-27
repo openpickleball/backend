@@ -11,6 +11,7 @@ from collections.abc import Collection
 from typing import Any, ClassVar
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.db.models import Q
@@ -43,6 +44,11 @@ REPORT_VIEW_PERMISSION = "clubs.view_organizerreport"
 VERIFICATION_REQUEST_VIEW_PERMISSION = "clubs.view_organizerverificationrequest"
 _VERIFIER_MEMBER = "The account that verified this organizer cannot be its member."
 VERIFIED_DELETE_MESSAGE = "A verified organizer cannot be deleted: unverify it first."
+# An admin role needs an active Account with a verified login address
+# (#232, ADR 0057). Fixed text, never the address.
+ADMIN_ACCOUNT_MESSAGE = (
+    "An admin needs an active account with a verified email address."
+)
 # Control characters (Postgres cannot store NUL) and lone surrogates
 # (not encodable as UTF-8).
 _REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
@@ -71,6 +77,28 @@ def _clean_text_fields(
         if any(unicodedata.category(char) in _REFUSED_CATEGORIES for char in value):
             errors[name] = [ValidationError(_CONTROL_CHARACTER)]
     return errors
+
+
+def admin_account_refused(account_id: object) -> bool:
+    """Whether the Account ``account_id`` exists and may not hold an admin
+    role: inactive, or without a verified login address
+    (``has_verified_login_address``). Read from the database. False for
+    an unknown or malformed id, which field validation reports."""
+    # Imported here: allauth's models load after this module's app.
+    from apps.accounts.addresses import has_verified_login_address
+
+    try:
+        account = (
+            get_user_model()
+            .objects.filter(pk=account_id)
+            .only("pk", "email", "is_active")
+            .first()
+        )
+    except (TypeError, ValueError, ValidationError):
+        return False
+    if account is None:
+        return False
+    return not (account.is_active and has_verified_login_address(account))
 
 
 class _LinkMessagesModel(models.Model):
@@ -350,6 +378,12 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
     def clean(self) -> None:
         if self._account_verified_organizer(lock=False):
             raise ValidationError({"account": _VERIFIER_MEMBER})
+        if (
+            self.role == MemberRole.ADMIN
+            and self.account_id is not None
+            and admin_account_refused(self.account_id)
+        ):
+            raise ValidationError({"account": ADMIN_ACCOUNT_MESSAGE})
 
     def audit_values(self) -> dict[str, Any]:
         # The Account's row id, never its email; the Organizer's OPEN Code,
@@ -428,6 +462,14 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
     def __str__(self) -> str:
         # Never the Account's email (CLAUDE.md, Personal data).
         return f"{self.club.public_code} {self.role}"
+
+    def clean(self) -> None:
+        if (
+            self.role == ClubRoleKind.ADMIN
+            and self.account_id is not None
+            and admin_account_refused(self.account_id)
+        ):
+            raise ValidationError({"account": ADMIN_ACCOUNT_MESSAGE})
 
     def audit_values(self) -> dict[str, Any]:
         # The Account's row id, never its email (ADR 0009).

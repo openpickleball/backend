@@ -584,7 +584,9 @@ def test_remove_an_admin_then_the_last_admin_is_409() -> None:
     assert not ClubRole.objects.filter(account=other).exists()
     assert not ClubInvite.objects.exists()
     assert last.status_code == 409
-    assert last.json()["message"] == "A club must keep at least one admin."
+    assert last.json()["message"] == (
+        "A club must keep at least one admin with two-factor authentication."
+    )
     assert ClubRole.objects.filter(account=admin).exists()
 
 

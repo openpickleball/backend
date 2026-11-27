@@ -75,6 +75,13 @@ locks its row before allauth's login, which keeps every login rule.
 A removal that succeeds ends the Account's other sessions (#100, ADR
 0047): those with a user session row, in the removal's transaction.
 
+A removal that would leave the Account with no method is refused with
+409 ``last_mfa_admin`` (allauth's error shape, fixed text) when the
+Account is an admin of an Organizer with no other active admin with MFA
+(#232, ADR 0057). It removes and records nothing. The check runs after
+the reauthentication requirement, and locks those Organizers
+``FOR NO KEY UPDATE`` after the Account row. Clubs get no such block.
+
 A removal records its events first, in a savepoint, so a refusal raised
 inside it rolls the events back before allauth answers. A refused or
 wrong code writes nothing. Otherwise the responses, status codes, and
@@ -122,10 +129,17 @@ from allauth.mfa.totp.internal import flows as totp_flows
 from allauth.mfa.webauthn.internal import flows as webauthn_flows
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 
 from apps.accounts.lockout import LockoutAnswers429
-from apps.accounts.mfa import has_mfa, record_mfa_change, session_passed_mfa
+from apps.accounts.mfa import (
+    MFA_METHOD_TYPES,
+    accounts_with_mfa,
+    has_mfa,
+    record_mfa_change,
+    session_passed_mfa,
+)
 from apps.accounts.passkeys import (
     AddPasskeyInput,
     AuthenticatePasskeyInput,
@@ -158,6 +172,52 @@ def _lock_account(pk: int) -> None:
         .filter(pk=pk)
         .values_list("pk", flat=True)
     )
+
+
+LAST_MFA_ADMIN_MESSAGE = (
+    "You are the last admin with two-factor authentication of an organizer. "
+    "Make another admin, or have one set up two-factor authentication, first."
+)
+
+
+def _leaves_organizer_without_mfa_admin(account: "_User") -> bool:
+    """Whether ``account`` is an admin of an Organizer with no other active
+    admin with MFA (#232).
+
+    Locks those Organizers ``FOR NO KEY UPDATE``, ordered by id, after the
+    Account row the view already holds and before counting, so this runs
+    in turn with the self-service changes (which take the Organizer
+    ``FOR UPDATE``) and with another admin's removal, without blocking a
+    membership insert's ``FOR KEY SHARE``. Never a Club: no Club lock may
+    be taken on this path (ADR 0055).
+    """
+    # Imported here: apps.clubs imports this app's modules.
+    from apps.clubs.models import MemberRole, Organizer, OrganizerMember
+
+    organizer_ids = list(
+        Organizer.objects.select_for_update(no_key=True)
+        .filter(
+            pk__in=OrganizerMember.objects.filter(
+                account_id=account.pk, role=MemberRole.ADMIN
+            ).values("organizer_id")
+        )
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    for organizer_id in organizer_ids:
+        others = (
+            OrganizerMember.objects.filter(
+                organizer_id=organizer_id,
+                role=MemberRole.ADMIN,
+                account__is_active=True,
+                account_id__in=accounts_with_mfa(),
+            )
+            .exclude(account_id=account.pk)
+            .exists()
+        )
+        if not others:
+            return True
+    return False
 
 
 def _strip_mfa_ids(request: "HttpRequest") -> None:
@@ -300,6 +360,24 @@ class ManageTOTPView(_GuardsMFAChanges, BaseManageTOTPView):
             nothing: HttpResponse = super().delete(request, *args, **kwargs)
             return nothing
         account = _account(request.user)
+        last_method = (
+            not Authenticator.objects.filter(
+                user_id=account.pk, type__in=MFA_METHOD_TYPES
+            )
+            .exclude(pk=totp.pk)
+            .exists()
+        )
+        if last_method and _leaves_organizer_without_mfa_admin(account):
+            # Nothing removed or recorded (#232).
+            return JsonResponse(
+                {
+                    "status": HTTPStatus.CONFLICT,
+                    "errors": [
+                        {"message": LAST_MFA_ADMIN_MESSAGE, "code": "last_mfa_admin"}
+                    ],
+                },
+                status=HTTPStatus.CONFLICT,
+            )
         # The codes go with the last method (allauth's
         # delete_dangling_recovery_codes).
         codes_go = (

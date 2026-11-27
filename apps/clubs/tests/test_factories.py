@@ -18,6 +18,7 @@ from apps.clubs.tests.factories import (
     OrganizerFactory,
     OrganizerMemberFactory,
     verified_organizer,
+    verify_login_address,
 )
 
 pytestmark = pytest.mark.django_db
@@ -51,6 +52,8 @@ def test_organizer_member_is_valid() -> None:
 
 def test_club_role_is_valid() -> None:
     role = ClubRoleFactory.create()
+    # An admin role needs a verified login address (#232).
+    verify_login_address(role.account)
 
     stored = ClubRole.objects.get(pk=role.pk)
     stored.full_clean()

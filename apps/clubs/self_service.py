@@ -22,8 +22,9 @@ Organizer made here stays unverified until a moderator verifies it.
   (active, admin, with MFA). Demoting or removing an admin deletes the invites it
   sent there in the same transaction. Every refusal is ``NotFound``.
 
-On these paths an Organizer always keeps one active admin (``Conflict``
-otherwise). Account deletion and the staff admin can still leave an
+On these paths an Organizer always keeps one active admin with MFA
+(``Conflict`` otherwise, #232), and removing TOTP refuses to leave one
+without (``apps.accounts.mfa_views``). Account deletion and the staff admin can still leave an
 Organizer without an admin; staff repair it. A verified Organizer is not
 renamed here (``Conflict``). Once an Organizer is verified, an admin's
 invite gives the new member trusted-submitter authority (ADR 0021) as
@@ -67,12 +68,14 @@ from apps.clubs.invites import (
     normalized_invite_email,
 )
 from apps.clubs.models import (
+    ADMIN_ACCOUNT_MESSAGE,
     ClubOrganizerGrant,
     MemberRole,
     Organizer,
     OrganizerInvite,
     OrganizerMember,
     OrganizerVerificationRequest,
+    admin_account_refused,
 )
 from apps.emails.services import queue_email
 from apps.players.models import Player
@@ -90,13 +93,16 @@ CREATE_LIMIT_MESSAGE: Final = (
 OPEN_INVITES_MESSAGE: Final = (
     "This organizer has too many open invites. Wait until some are accepted or expire."
 )
-LAST_ADMIN_MESSAGE: Final = "An organizer must keep at least one admin."
+LAST_ADMIN_MESSAGE: Final = (
+    "An organizer must keep at least one admin with two-factor authentication."
+)
 ALREADY_MEMBER_MESSAGE: Final = "You are already a member of this organizer."
 ALREADY_VERIFIED_MESSAGE: Final = "This organizer is already verified."
 VERIFIED_RENAME_MESSAGE: Final = (
     "A verified organizer cannot be renamed here. Ask a moderator to unverify it first."
 )
 REQUEST_OPEN_MESSAGE: Final = "This organizer already has an open verification request."
+ADMIN_ACCOUNT_CONFLICT_MESSAGE: Final = ADMIN_ACCOUNT_MESSAGE
 
 
 class NotFound(LookupError):
@@ -429,13 +435,14 @@ def _target_membership(organizer: Organizer, player_code: str) -> OrganizerMembe
 
 
 def _keeps_an_admin(organizer: Organizer, leaving: OrganizerMember) -> bool:
-    """Whether an active admin other than ``leaving`` stays. Call under the
-    Organizer lock, so concurrent changes count in turn."""
+    """Whether an active admin with MFA other than ``leaving`` stays (#232).
+    Call under the Organizer lock, so concurrent changes count in turn."""
     others = (
         OrganizerMember.objects.filter(
             organizer_id=organizer.pk,
             role=MemberRole.ADMIN,
             account__is_active=True,
+            account_id__in=accounts_with_mfa(),
         )
         .exclude(pk=leaving.pk)
         .count()
@@ -451,7 +458,9 @@ def change_member_role(
     Returns the changed member, read in the change's transaction, so an
     admin who demoted themselves gets it too. ``NotFound`` when no member
     of this Organizer has that Player, and ``Conflict`` when it would
-    leave no active admin. An unchanged role records nothing.
+    leave no active admin with MFA, or would make an admin of an Account
+    that is inactive or whose login address is not verified (#232). An
+    unchanged role records nothing.
     """
     role = MemberRole(role)
     with transaction.atomic():
@@ -463,6 +472,13 @@ def change_member_role(
             and not _keeps_an_admin(organizer, membership)
         ):
             raise Conflict(LAST_ADMIN_MESSAGE)
+        if (
+            role == MemberRole.ADMIN
+            and membership.role != MemberRole.ADMIN
+            and admin_account_refused(membership.account_id)
+        ):
+            # An admin needs an active Account with a verified address (#232).
+            raise Conflict(ADMIN_ACCOUNT_CONFLICT_MESSAGE)
         if membership.role == MemberRole.ADMIN and role != MemberRole.ADMIN:
             _delete_sent_invites(organizer, membership.account_id)
         membership.role = role
