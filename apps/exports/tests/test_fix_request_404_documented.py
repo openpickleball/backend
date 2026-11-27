@@ -26,7 +26,7 @@ def test_the_document_lists_the_404() -> None:
     operation = api.get_openapi_schema()["paths"][REQUEST]["post"]
 
     assert operation["operationId"] == "request_data_export"
-    response = operation["responses"]["404"]
+    response = operation["responses"][404]
     assert response["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/ErrorResponse"
     }
