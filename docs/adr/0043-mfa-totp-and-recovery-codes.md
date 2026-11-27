@@ -5,6 +5,7 @@
 - Amended by: [ADR 0047](0047-account-security-limits-and-sessions.md) (removing TOTP ends the Account's other sessions)
 - Amended by: [ADR 0056](0056-passkeys.md) (passkeys are a method and can sign in alone; every passkey change needs a recent reauthentication and is audited)
 - Date: 2026-11-25
+- Amended by: [ADR 0057](0057-organizer-and-club-admin-security.md) (removing TOTP is refused while it would leave an Organizer the Account is an admin of with no other active admin with MFA, so changing a method by removing TOTP first needs another such admin)
 
 ## Context
 
