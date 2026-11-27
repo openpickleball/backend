@@ -46,6 +46,7 @@ EXPECTED = {
     "clubs.verify_organizer",
     "clubs.view_organizer",
     "clubs.view_organizerreport",
+    "clubs.view_organizerverificationrequest",
 }
 
 

@@ -5,15 +5,18 @@ Organizer authority needs MFA, unless the Account already has a method
 or the test passes ``mfa=False``.
 """
 
+from datetime import timedelta
 from typing import Any
 
 from django.contrib.auth.models import Permission
-from factory.declarations import LazyFunction, PostGeneration, SubFactory
+from django.utils import timezone
+from factory.declarations import LazyFunction, PostGeneration, Sequence, SubFactory
 from factory.django import DjangoModelFactory
 from faker import Faker
 
 from apps.accounts.mfa import has_mfa
 from apps.accounts.tests.factories import UserFactory, enroll_totp
+from apps.clubs.invites import hash_invite_key, new_invite_key
 from apps.clubs.models import (
     Club,
     ClubOrganizerGrant,
@@ -21,7 +24,9 @@ from apps.clubs.models import (
     ClubRoleKind,
     MemberRole,
     Organizer,
+    OrganizerInvite,
     OrganizerMember,
+    OrganizerVerificationRequest,
 )
 from apps.clubs.services import verify_organizer
 
@@ -95,6 +100,36 @@ class ClubOrganizerGrantFactory(DjangoModelFactory[ClubOrganizerGrant]):
 
     club = SubFactory(ClubFactory)  # type: ignore[no-untyped-call]
     organizer = SubFactory(OrganizerFactory)  # type: ignore[no-untyped-call]
+
+
+class OrganizerInviteFactory(DjangoModelFactory[OrganizerInvite]):
+    """An open invite to a made-up address, as a match manager.
+
+    The key is random and not kept; pass ``key_hash=hash_invite_key(key)``
+    to know it.
+    """
+
+    class Meta:
+        model = OrganizerInvite
+
+    organizer = SubFactory(OrganizerFactory)  # type: ignore[no-untyped-call]
+    invited_by = SubFactory(UserFactory)  # type: ignore[no-untyped-call]
+    email = Sequence(lambda n: f"invitee{n}@example.com")  # type: ignore[no-untyped-call]
+    key_hash = LazyFunction(lambda: hash_invite_key(new_invite_key()))  # type: ignore[no-untyped-call]
+    role = MemberRole.MATCH_MANAGER
+    expires_at = LazyFunction(lambda: timezone.now() + timedelta(days=7))  # type: ignore[no-untyped-call]
+
+
+class OrganizerVerificationRequestFactory(
+    DjangoModelFactory[OrganizerVerificationRequest]
+):
+    """An open verification request with a made-up statement."""
+
+    class Meta:
+        model = OrganizerVerificationRequest
+
+    organizer = SubFactory(OrganizerFactory)  # type: ignore[no-untyped-call]
+    statement = "Made-up weekly ladder at a community center."
 
 
 def verify(organizer: Organizer) -> Organizer:

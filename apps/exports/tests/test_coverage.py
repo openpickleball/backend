@@ -53,6 +53,10 @@ EXCLUDED: dict[tuple[str, str], str] = {
         "events in audit_events."
     ),
     ("exports.DataExport", "account"): "The export itself.",
+    ("clubs.OrganizerInvite", "invited_by"): (
+        "Short-lived and deleted once accepted or expired; the sender's own "
+        "organizer_invite.create events are in audit_events."
+    ),
 }
 
 
