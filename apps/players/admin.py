@@ -86,6 +86,21 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
         # not break the page. The reveal reads them on access.
         return super().get_queryset(request).defer(*REVEALED_FIELDS)
 
+    def _shown_fields(self, request: HttpRequest) -> tuple[str, ...]:
+        # The Account renders as its email (User.__str__): only an Account
+        # that may reveal personal data sees it (ADR 0059).
+        if request.user.has_perm(VIEW_PERSONAL_DATA_PERMISSION):
+            return tuple(self.fields)
+        return tuple(
+            "hidden_account" if name == "account" else name for name in self.fields
+        )
+
+    def get_fields(self, request: HttpRequest, obj: Any = None) -> Any:
+        return self._shown_fields(request)
+
+    def get_readonly_fields(self, request: HttpRequest, obj: Any = None) -> Any:
+        return self._shown_fields(request)
+
     def lookup_allowed(self, lookup: str, value: str, request: HttpRequest) -> bool:
         """Refuse every query-string lookup (Django answers 400).
 
@@ -103,6 +118,10 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
 
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
         return False
+
+    @admin.display(description="Account")
+    def hidden_account(self, player: Player) -> str:
+        return HIDDEN
 
     @admin.display(description="Legal name")
     def hidden_legal_name(self, player: Player) -> str:
