@@ -3942,7 +3942,7 @@
     },
     "/api/v1/me/export": {
       "post": {
-        "description": "Ask for a copy of your data.\n\nReauthenticate first, through allauth's `auth/reauthenticate` (your\npassword) or `auth/2fa/reauthenticate` (a two-factor code); without a\nrecent one you get 403 with code `reauthentication_required`. A new\nrequest replaces any earlier export. Once the export is built, an\nemail to your login address links to the web app's download page,\nwhich calls `download_data_export` with the key. The link works once\nand lasts 24 hours. Limited per Account to a few requests a day; past\nthat the answer is 429 with a Retry-After header.",
+        "description": "Ask for a copy of your data.\n\nReauthenticate first, through allauth's `auth/reauthenticate` (your\npassword) or `auth/2fa/reauthenticate` (a two-factor code); without a\nrecent one you get 403 with code `reauthentication_required`. A new\nrequest replaces any earlier export. Once the export is built, an\nemail to your login address links to the web app's download page,\nwhich calls `download_data_export` with the key. The link works once\nand lasts 24 hours. Limited per Account to a few requests a day; past\nthat the answer is 429 with a Retry-After header; a request without a\nrecent reauthentication counts against the Account's general limits\ninstead. 404 when the Account was deleted while the request ran.",
         "operationId": "request_data_export",
         "parameters": [],
         "responses": {
@@ -3975,6 +3975,16 @@
               }
             },
             "description": "Forbidden. Code `mfa_required`: an Account that must have two-factor authentication (staff, superusers, moderators, and owners of a production application) and has none, or an Account with it whose session did not pass it, such as a password-only session. It can still use allauth's endpoints to set it up or sign in with it."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
           },
           "429": {
             "content": {

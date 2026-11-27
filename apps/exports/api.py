@@ -86,7 +86,7 @@ class DataExportThrottle(FixedWindowThrottle):
 
 @me_router.post(
     "/export",
-    response={202: DataExportRequestOut, 403: ErrorResponse},
+    response={202: DataExportRequestOut, 403: ErrorResponse, 404: ErrorResponse},
     operation_id="request_data_export",
     throttle=DataExportThrottle("data_export"),
 )
@@ -100,7 +100,9 @@ def request_data_export(request: HttpRequest) -> Status[DataExportRequestOut]:
     email to your login address links to the web app's download page,
     which calls `download_data_export` with the key. The link works once
     and lasts 24 hours. Limited per Account to a few requests a day; past
-    that the answer is 429 with a Retry-After header.
+    that the answer is 429 with a Retry-After header; a request without a
+    recent reauthentication counts against the Account's general limits
+    instead. 404 when the Account was deleted while the request ran.
     """
     account = request_account(request)
     require_recent_reauthentication(request)
