@@ -69,7 +69,7 @@ def create(session: HeadlessSession) -> Any:
         headers = {"X-Session-Token": session.token or ""}
     return session.client.post(
         ME_PLAYER,
-        {"display_name": "Another Name"},
+        {"first_name": "Another", "last_name": "Name"},
         content_type="application/json",
         headers=headers,
     )
@@ -122,7 +122,9 @@ def test_a_409_keeps_an_age_held_for_another_account() -> None:
     store.save()
 
     response = client.post(
-        ME_PLAYER, {"display_name": "Robin Q."}, content_type="application/json"
+        ME_PLAYER,
+        {"first_name": "Robin", "last_name": "Quill"},
+        content_type="application/json",
     )
 
     assert response.status_code == 409

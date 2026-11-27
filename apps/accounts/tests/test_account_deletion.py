@@ -47,7 +47,7 @@ from apps.exports.models import DataExport
 from apps.exports.services import request_export
 from apps.matches.models import Match, MatchParticipant, Team
 from apps.partners.tests.factories import PartnerApplicationFactory
-from apps.players.models import Player, PlayerPrivacy, Visibility
+from apps.players.models import NameFormat, Player, PlayerPrivacy, Visibility
 from apps.players.tests.factories import PlayerFactory
 from apps.ratings.tests.builders import saved_match
 
@@ -117,6 +117,7 @@ def test_a_player_in_the_ledger_is_kept_with_its_personal_data_cleared() -> None
     assert kept.public_code == code
     assert kept.display_name == DELETED_PLAYER_NAME
     assert kept.legal_name == ""
+    assert (kept.first_name, kept.last_name) == (None, None)
     assert kept.birth_year is None
     assert kept.birth_month is None
     assert kept.gender_division == ""
@@ -125,6 +126,7 @@ def test_a_player_in_the_ledger_is_kept_with_its_personal_data_cleared() -> None
     assert {getattr(privacy, name) for name in PlayerPrivacy.SETTINGS} == {
         Visibility.PRIVATE
     }
+    assert privacy.name_format == NameFormat.FIRST_LAST_INITIAL
     assert MatchParticipant.objects.filter(match=match, player=kept).exists()
 
     row = get_user_model().objects.get(pk=pk)
@@ -458,7 +460,9 @@ def test_the_underage_action_records_its_event_with_the_field_names() -> None:
             "birth_year",
             "city",
             "display_name",
+            "first_name",
             "gender_division",
+            "last_name",
             "legal_name",
             "region",
         ],

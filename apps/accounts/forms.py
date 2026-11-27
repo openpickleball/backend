@@ -152,6 +152,43 @@ def signup_full_name(first_name: str, last_name: str) -> str:
     return f"{first_name} {last_name}"
 
 
+def _check_name_lengths(form: forms.Form, cleaned: dict[str, Any]) -> None:
+    """Add the length errors for a first and last name to ``form``.
+
+    A first name leaves room for "First L.", and "First Last" fits the
+    display name (ADR 0022). Fixed messages, never the value.
+    """
+    first, last = cleaned.get("first_name"), cleaned.get("last_name")
+    if first and len(first) > SIGNUP_FIRST_NAME_MAX_LENGTH:
+        form.add_error(
+            "first_name",
+            forms.ValidationError(_FIRST_NAME_TOO_LONG, code="max_length"),
+        )
+    elif (
+        first and last and len(signup_full_name(first, last)) > (SIGNUP_NAME_MAX_LENGTH)
+    ):
+        form.add_error(
+            "last_name", forms.ValidationError(_NAME_TOO_LONG, code="max_length")
+        )
+
+
+class PlayerNamesForm(forms.Form):
+    """A first and last name with signup's checks (issue #354, ADR 0062).
+
+    The Player create endpoint's body path, used when the session holds no
+    signup details, checks its names with this form, so they follow the
+    same rules as at signup.
+    """
+
+    first_name = SignupNameField(error_messages=_FIRST_NAME_MESSAGES)
+    last_name = SignupNameField(error_messages=_LAST_NAME_MESSAGES)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned: dict[str, Any] = super().clean() or {}
+        _check_name_lengths(self, cleaned)
+        return cleaned
+
+
 class SignupAgeForm(SignupBirthForm):
     """The signup details on allauth's signup (issues #114, #215, #221, #222).
 
@@ -212,20 +249,7 @@ class SignupAgeForm(SignupBirthForm):
     def clean(self) -> dict[str, Any]:
         """allauth's signup form calls this through its own ``clean()``."""
         cleaned: dict[str, Any] = super().clean() or {}
-        first, last = cleaned.get("first_name"), cleaned.get("last_name")
-        if first and len(first) > SIGNUP_FIRST_NAME_MAX_LENGTH:
-            self.add_error(
-                "first_name",
-                forms.ValidationError(_FIRST_NAME_TOO_LONG, code="max_length"),
-            )
-        elif (
-            first
-            and last
-            and len(signup_full_name(first, last)) > (SIGNUP_NAME_MAX_LENGTH)
-        ):
-            self.add_error(
-                "last_name", forms.ValidationError(_NAME_TOO_LONG, code="max_length")
-            )
+        _check_name_lengths(self, cleaned)
         return cleaned
 
     def signup(self, request: "HttpRequest", user: "AbstractBaseUser") -> None:

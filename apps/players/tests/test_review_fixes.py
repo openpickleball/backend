@@ -35,7 +35,8 @@ def owner() -> "_User":
 def player(owner: "_User") -> Player:
     return create_player(
         account=owner,
-        display_name="Made-up Player",
+        first_name="Made-up",
+        last_name="Player",
         birth_year=1990,
         birth_month=6,
         gender_division="mens",
@@ -47,6 +48,8 @@ def _build(**overrides: Any) -> Player:
     values: dict[str, Any] = {
         "account": UserFactory.create(),
         "display_name": "Made-up Player",
+        "first_name": "Made-up",
+        "last_name": "Player",
         "birth_year": 1990,
         "birth_month": 6,
         "gender_division": "mens",
@@ -167,7 +170,8 @@ def test_c4_create_player_locks_the_account_row() -> None:
     with CaptureQueriesContext(connection) as queries:
         create_player(
             account=account,
-            display_name="Made-up Player",
+            first_name="Made-up",
+            last_name="Player",
             birth_year=1990,
             birth_month=6,
             gender_division="mens",
@@ -183,7 +187,8 @@ def test_c4_second_player_is_a_validation_error(player: Player) -> None:
     with pytest.raises(ValidationError) as caught:
         create_player(
             account=player.account,
-            display_name="Another Made-up Player",
+            first_name="Another",
+            last_name="Made-up Player",
             birth_year=1991,
             birth_month=2,
             gender_division="mens",
@@ -196,7 +201,7 @@ def test_c4_second_player_is_a_validation_error(player: Player) -> None:
 # C5: None clears an optional text field.
 
 
-@pytest.mark.parametrize("field", ["legal_name", "city", "region"])
+@pytest.mark.parametrize("field", ["city", "region"])
 def test_c5_none_clears_optional_field_on_update(
     player: Player, owner: "_User", field: str
 ) -> None:
@@ -205,12 +210,13 @@ def test_c5_none_clears_optional_field_on_update(
     assert getattr(Player.objects.get(pk=player.pk), field) == ""
 
 
-@pytest.mark.parametrize("field", ["legal_name", "city", "region"])
+@pytest.mark.parametrize("field", ["city", "region"])
 def test_c5_none_is_stored_empty_on_create(field: str) -> None:
     values: dict[str, Any] = {field: None}
     created = create_player(
         account=UserFactory.create(),
-        display_name="Made-up Player",
+        first_name="Made-up",
+        last_name="Player",
         birth_year=1990,
         birth_month=6,
         gender_division="mens",
@@ -247,7 +253,10 @@ def test_c6_birth_fields_need_a_real_int(field: str, value: object) -> None:
 # C7: text normalization and display name rules.
 
 
-@pytest.mark.parametrize("field", ["display_name", "legal_name", "city", "region"])
+@pytest.mark.parametrize(
+    "field",
+    ["display_name", "legal_name", "first_name", "last_name", "city", "region"],
+)
 @pytest.mark.parametrize("value", ["zq\x00xj", "zq\x07xj", "zq\x1bxj", "zq\x85xj"])
 def test_c7_control_characters_are_refused(field: str, value: str) -> None:
     candidate = _build(**{field: value})

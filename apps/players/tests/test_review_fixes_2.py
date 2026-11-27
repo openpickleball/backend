@@ -15,7 +15,10 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.django_db
 
-TEXT_FIELDS = ["display_name", "legal_name", "city", "region"]
+# The display name and legal name are built from the first and last name
+# (ADR 0062), so create takes the names and a change takes only the place.
+CREATE_TEXT_FIELDS = ["first_name", "last_name", "city", "region"]
+UPDATE_TEXT_FIELDS = ["city", "region"]
 
 
 @pytest.fixture
@@ -27,7 +30,8 @@ def owner() -> "_User":
 def player(owner: "_User") -> Player:
     return create_player(
         account=owner,
-        display_name="Made-up Player",
+        first_name="Made-up",
+        last_name="Player",
         birth_year=1990,
         birth_month=6,
         gender_division="mens",
@@ -38,7 +42,8 @@ def player(owner: "_User") -> Player:
 def _create(**overrides: Any) -> Player:
     values: dict[str, Any] = {
         "account": UserFactory.create(),
-        "display_name": "Made-up Player",
+        "first_name": "Made-up",
+        "last_name": "Player",
         "birth_year": 1990,
         "birth_month": 6,
         "gender_division": "mens",
@@ -50,7 +55,7 @@ def _create(**overrides: Any) -> Player:
 # C10: a lone surrogate is refused, not left to fail at save.
 
 
-@pytest.mark.parametrize("field", TEXT_FIELDS)
+@pytest.mark.parametrize("field", CREATE_TEXT_FIELDS)
 @pytest.mark.parametrize("value", ["Zq\ud800", "\udfff", "Zq\udc00xj"])
 def test_c10_surrogate_is_refused_on_create(field: str, value: str) -> None:
     with pytest.raises(ValidationError) as caught:
@@ -61,7 +66,7 @@ def test_c10_surrogate_is_refused_on_create(field: str, value: str) -> None:
     assert not Player.objects.exists()
 
 
-@pytest.mark.parametrize("field", TEXT_FIELDS)
+@pytest.mark.parametrize("field", UPDATE_TEXT_FIELDS)
 def test_c10_surrogate_is_refused_on_update(
     player: Player, owner: "_User", field: str
 ) -> None:
@@ -75,7 +80,8 @@ def test_c10_surrogate_is_refused_on_update(
     assert not AuditEvent.objects.exists()
 
 
-# C11: a display name that renders blank is refused.
+# C11: a name that renders blank is refused, so the display name built
+# from it always renders.
 
 
 @pytest.mark.parametrize(
@@ -92,11 +98,12 @@ def test_c10_surrogate_is_refused_on_update(
         "ㅤ́​ ⠀",
     ],
 )
-def test_c11_blank_rendering_display_name_is_refused(value: str) -> None:
+@pytest.mark.parametrize("field", ["first_name", "last_name"])
+def test_c11_blank_rendering_name_is_refused(field: str, value: str) -> None:
     with pytest.raises(ValidationError) as caught:
-        _create(display_name=value)
+        _create(**{field: value})
 
-    assert "display_name" in caught.value.message_dict
+    assert field in caught.value.message_dict
     assert not Player.objects.exists()
 
 
@@ -112,7 +119,7 @@ def test_c11_blank_rendering_display_name_is_refused(value: str) -> None:
         "Ab",  # private use next to a letter
     ],
 )
-def test_c11_visible_display_name_is_accepted(value: str) -> None:
-    created = _create(display_name=value)
+def test_c11_visible_first_name_is_accepted(value: str) -> None:
+    created = _create(first_name=value)
 
-    assert Player.objects.get(pk=created.pk).display_name == value
+    assert Player.objects.get(pk=created.pk).display_name == f"{value} Player"

@@ -24,6 +24,7 @@ from apps.accounts.tests.headless import (
     key_from_link,
     link_in_last_mail,
 )
+from apps.audit.models import AuditEvent
 from apps.players.age import age_limit_date
 from apps.players.models import Player
 from apps.players.signup import SIGNUP_DETAILS_SESSION_KEY
@@ -155,11 +156,33 @@ def test_a_first_name_with_no_room_for_an_initial_is_a_field_error(
 
 
 @pytest.mark.parametrize("base", CLIENTS)
-def test_a_minor_can_change_the_starting_display_name(base: str) -> None:
+def test_a_minor_cannot_show_the_full_last_name(base: str) -> None:
+    session = _verified_session(base, **NAMES, **_born(15))
+    created = _send(session, "POST", {})
+    assert created.json()["name_format_locked"] is True
+
+    response = _send(session, "PATCH", {"privacy": {"name_format": "full"}})
+
+    assert response.status_code == 422
+    [error] = response.json()["errors"]
+    assert error == {
+        "field": "body.privacy.name_format",
+        "code": "invalid",
+        "message": "Your full last name can be shown only from age 18.",
+    }
+    assert Player.objects.get().display_name == "Avery N."
+    assert not AuditEvent.objects.exists()
+
+
+@pytest.mark.parametrize("base", CLIENTS)
+def test_a_minor_may_resend_the_stored_name_format(base: str) -> None:
     session = _verified_session(base, **NAMES, **_born(15))
     _send(session, "POST", {})
 
-    response = _send(session, "PATCH", {"display_name": "Avery Nightjar"})
+    response = _send(
+        session, "PATCH", {"privacy": {"name_format": "first_last_initial"}}
+    )
 
     assert response.status_code == 200, response.json()
-    assert Player.objects.get().display_name == "Avery Nightjar"
+    assert response.json()["display_name"] == "Avery N."
+    assert not AuditEvent.objects.exists()

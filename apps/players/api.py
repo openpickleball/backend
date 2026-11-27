@@ -32,16 +32,19 @@ issue #124). POST creates it, once per Account, only for an Account whose
 own login address is verified. The birth year and month, the gender
 division, the name, and the city and region come from the details the
 signup held in the session (ADR 0017, ADR 0019, ADR 0022, ``auth_session``
-for either headless client): the held name ("First Last") is the legal
-name and, for an adult, the starting display name; a player aged 13 to
-17 starts with "First L.". The body is read only when
-the session holds none, where the display name, birth year and month,
-and gender division are required.
+for either headless client): the held first and last name make the legal
+name ("First Last") and the display name, "First Last" for an adult and
+"First L." for a player aged 13 to 17 (ADR 0062). The body is read only
+when the session holds none, where the first and last name, birth year
+and month, and gender division are required, and the names get signup's
+checks.
 An under-13 or future age refuses the session as signup does (issues
 #220 and #225): the create sets the signup refusal flag, and every later
 create in that session gets the same fixed 422, whatever its body. PATCH
 refuses the birth year and month and the gender division: they are set
-once, when the Player is created (ADR 0023).
+once, when the Player is created (ADR 0023). It refuses the display name
+and the legal name too: they are built from the names given at signup,
+and the player chooses only ``privacy.name_format`` (ADR 0062).
 """
 
 import contextlib
@@ -62,18 +65,18 @@ from pydantic import BeforeValidator
 from pydantic_core import PydanticCustomError
 
 from apps.accounts.addresses import has_verified_login_address
+from apps.accounts.forms import PlayerNamesForm
 from apps.matches.api import request_account
 from apps.matches.models import Match, MatchStatus
 from apps.matches.pagination import (
     MatchHistoryPagination,
 )
 from apps.matches.schemas import MatchOut, with_match_details
-from apps.players.age import is_minor
 from apps.players.models import (
+    BIRTH_FIELDS,
     FUTURE_BIRTH_MONTH_MESSAGE,
     UNDER_MINIMUM_AGE_MESSAGE,
     Player,
-    has_visible_character,
 )
 from apps.players.schemas import (
     MyPlayerOut,
@@ -128,7 +131,8 @@ SEARCH_DAY_LIMIT = 300
 EMAIL_NOT_VERIFIED_MESSAGE = "Verify your email address before creating your player."
 ALREADY_HAS_PLAYER_MESSAGE = "This account already has a player."
 _MISSING_DETAIL_MESSAGES = {
-    "display_name": "Enter a display name.",
+    "first_name": "Enter your first name.",
+    "last_name": "Enter your last name.",
     "birth_year": "Enter your birth year.",
     "birth_month": "Enter your birth month.",
     "gender_division": "Choose a gender division.",
@@ -348,8 +352,8 @@ def _is_duplicate_player(error: DjangoValidationError) -> bool:
 class _NewProfile(TypedDict):
     """``create_player``'s values besides the Account."""
 
-    display_name: str
-    legal_name: str | None
+    first_name: str
+    last_name: str
     birth_year: int
     birth_month: int
     gender_division: str
@@ -357,37 +361,16 @@ class _NewProfile(TypedDict):
     region: str | None
 
 
-def starting_display_name(details: SignupDetails, *, minor: bool) -> str:
-    """The display name a Player made from ``details`` starts with.
-
-    The legal name ("First Last") for an adult. For a player aged 13 to
-    17, "First L.": the first name, a space, the last name's first
-    character that renders, with the combining marks after it, and a
-    period (ADR 0022). The signup form makes sure the last name has a
-    character that renders.
-    """
-    if not minor:
-        return details.legal_name
-    last = details.last_name
-    start = next((i for i, char in enumerate(last) if has_visible_character(char)), 0)
-    end = start + 1
-    while end < len(last) and unicodedata.category(last[end]).startswith("M"):
-        end += 1
-    return f"{details.first_name} {last[start:end]}."
-
-
 def _profile_from_hold(details: SignupDetails) -> _NewProfile:
     """``create_player``'s values from the details held at signup.
 
-    The held legal name ("First Last") is also the starting display name
-    (ADR 0022), except for a player aged 13 to 17, who starts with "First
-    L.": the first name, a space, the last name's first character, and a
-    period. Either can change it later.
+    ``create_player`` builds the legal name ("First Last") and the display
+    name from the held first and last name: "First Last" for an adult,
+    "First L." for a player aged 13 to 17 (ADR 0062).
     """
-    minor = is_minor(details.birth_year, details.birth_month)
     return {
-        "display_name": starting_display_name(details, minor=minor),
-        "legal_name": details.legal_name,
+        "first_name": details.first_name,
+        "last_name": details.last_name,
         "birth_year": details.birth_year,
         "birth_month": details.birth_month,
         "gender_division": details.gender_division,
@@ -396,24 +379,71 @@ def _profile_from_hold(details: SignupDetails) -> _NewProfile:
     }
 
 
+class _BodyNameError(Exception):
+    """The body's names failed signup's checks: ``validation_error`` is the
+    422 to raise unless the age refuses the session first."""
+
+    def __init__(self, validation_error: NinjaValidationError) -> None:
+        super().__init__("The body's names were refused.")
+        self.validation_error = validation_error
+
+
+def _is_refused_birth(year: int | None, month: int | None) -> bool:
+    """Whether ``create_player`` would refuse this age as under 13 or future."""
+    candidate = Player(birth_year=year, birth_month=month)
+    try:
+        candidate._clean_rules(BIRTH_FIELDS)
+    except DjangoValidationError as error:
+        return _is_refused_age(error)
+    return False
+
+
+def _body_names(payload: PlayerCreateIn) -> tuple[str, str]:
+    """The body's first and last name after signup's checks, or a 422.
+
+    ``PlayerNamesForm`` applies the signup rules (ADR 0022), with its fixed
+    messages on ``body.first_name`` and ``body.last_name``.
+    """
+    form = PlayerNamesForm(
+        data={"first_name": payload.first_name, "last_name": payload.last_name}
+    )
+    if not form.is_valid():
+        raise _BodyNameError(
+            NinjaValidationError(
+                [
+                    {
+                        "loc": ("body", name),
+                        "type": error.code or "invalid",
+                        "msg": message,
+                    }
+                    for name, errors in form.errors.as_data().items()
+                    for error in errors
+                    for message in error.messages
+                ]
+            )
+        )
+    return form.cleaned_data["first_name"], form.cleaned_data["last_name"]
+
+
 def _profile_from_body(payload: PlayerCreateIn) -> _NewProfile:
     """``create_player``'s values from the body, when nothing is held.
 
-    A 422 names each required value missing (left out or null).
-    ``create_player`` checks the values.
+    A 422 names each required value missing (left out or null), then each
+    name signup's checks refuse. ``create_player`` checks the values.
     """
     missing = [
         {"loc": ("body", name), "type": "missing", "msg": message}
         for name, message in _MISSING_DETAIL_MESSAGES.items()
         if getattr(payload, name) is None
     ]
-    name, year, month = payload.display_name, payload.birth_year, payload.birth_month
+    year, month = payload.birth_year, payload.birth_month
     division = payload.gender_division
-    if missing or name is None or year is None or month is None or division is None:
+    if missing or year is None or month is None or division is None:
         raise NinjaValidationError(missing)
+    first, last = _body_names(payload)
     return {
-        "display_name": name,
-        "legal_name": payload.legal_name,
+        "first_name": first,
+        "last_name": last,
         "birth_year": year,
         "birth_month": month,
         "gender_division": division,
@@ -489,10 +519,11 @@ def create_my_player(
     The Account's own email address must be verified (403 otherwise), and
     an Account has one Player (409 for a second). Every value comes from
     the details held at signup in this session (ADR 0017, ADR 0019, ADR
-    0022), the held name as the legal name and, for an adult, the display
-    name (a player aged 13 to 17 starts with "First L."); the body is used
-    only when the session holds none, and its display name, birth year and
-    month, and gender division are then required. The held details are
+    0022); the body is used only when the session holds none, and its
+    first and last name, birth year and month, and gender division are
+    then required, the names with signup's checks. The legal name is
+    "First Last", and the display name is built from the names: "First
+    Last" for an adult, "First L." for a player aged 13 to 17 (ADR 0062). The held details are
     removed once the Player exists (on a 409 too), so a create refused for
     any other reason can be retried. A player under 13, or a birth year
     and month in the future, is refused with a fixed 422, and the refusal
@@ -511,7 +542,17 @@ def create_my_player(
         # Never reads the body's age: the answer depends on nothing sent.
         raise _refuse(request, session)
     held = peek_signup_details(session, account)
-    profile = _profile_from_hold(held) if held else _profile_from_body(payload)
+    if held:
+        profile = _profile_from_hold(held)
+    else:
+        try:
+            profile = _profile_from_body(payload)
+        except _BodyNameError as error:
+            # An age refusal wins over a name error, as in create_player:
+            # the first refused create hides every other error.
+            if _is_refused_birth(payload.birth_year, payload.birth_month):
+                raise _refuse(request, session) from None
+            raise error.validation_error from None
     try:
         player = create_player(account=account, **profile)
     except DjangoValidationError as error:
@@ -557,7 +598,11 @@ def update_my_player(request: HttpRequest, payload: PlayerUpdateIn) -> MyPlayerO
 
     Only the fields sent change. The birth year and month and the gender
     division are set once, when the Player is created: sending any of
-    them gets a 422, whatever the value (ADR 0023). Both kinds of change
+    them gets a 422, whatever the value (ADR 0023). So do the display name
+    and the legal name, which are built from the first and last name given
+    at signup: ``privacy.name_format`` chooses "First Last" or "First L."
+    and rebuilds the display name, and ``full`` is refused while the
+    player is 13 to 17 (``name_format_locked``, ADR 0062). Both kinds of change
     apply together or not at all: a 422 on either changes nothing. Each kind
     that changes records one Audit Event (profile changes by field name
     only). 404 when the Account has no Player.

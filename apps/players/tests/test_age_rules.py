@@ -31,7 +31,8 @@ def _at(monkeypatch: pytest.MonkeyPatch, moment: datetime) -> None:
 def _create(account: "_User", birth_year: int, birth_month: int) -> Player:
     return create_player(
         account=account,
-        display_name="Made-up Player",
+        first_name="Made-up",
+        last_name="Player",
         birth_year=birth_year,
         birth_month=birth_month,
         gender_division="mens",

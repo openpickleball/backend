@@ -25,7 +25,8 @@ def owner() -> "_User":
 def player(owner: "_User") -> Player:
     return create_player(
         account=owner,
-        display_name="Made-up Player",
+        first_name="Made-up",
+        last_name="Player",
         birth_year=1990,
         birth_month=6,
         gender_division="mens",
@@ -49,33 +50,20 @@ def test_c14_stored_invalid_display_name_does_not_block_city_change(
     assert event.after == {"changed_fields": ["city"]}
 
 
-@pytest.mark.parametrize("field", ["legal_name", "city", "region"])
+@pytest.mark.parametrize("field", ["display_name", "legal_name", "region"])
 def test_c14_stored_control_character_does_not_block_other_change(
     player: Player, owner: "_User", field: str
 ) -> None:
     Player.objects.filter(pk=player.pk).update(**{field: "Zq\x07xj"})
     player.refresh_from_db()
 
-    update_profile(
-        player=player, actor=owner, changes={"display_name": "New Made-up Name"}
-    )
+    update_profile(player=player, actor=owner, changes={"city": "Springfield"})
 
     stored = Player.objects.get(pk=player.pk)
-    assert stored.display_name == "New Made-up Name"
+    assert stored.city == "Springfield"
     assert getattr(stored, field) == "Zq\x07xj"
     [event] = AuditEvent.objects.all()
-    assert event.after == {"changed_fields": ["display_name"]}
-
-
-def test_c14_changing_display_name_to_invalid_is_still_refused(
-    player: Player, owner: "_User"
-) -> None:
-    with pytest.raises(ValidationError) as caught:
-        update_profile(player=player, actor=owner, changes={"display_name": "́"})
-
-    assert caught.value.message_dict == {"display_name": ["Enter a display name."]}
-    assert Player.objects.get(pk=player.pk).display_name == "Made-up Player"
-    assert not AuditEvent.objects.exists()
+    assert event.after == {"changed_fields": ["city"]}
 
 
 def test_c14_changed_text_field_still_gets_field_validation(
@@ -86,13 +74,3 @@ def test_c14_changed_text_field_still_gets_field_validation(
 
     assert "city" in caught.value.message_dict
     assert not AuditEvent.objects.exists()
-
-
-def test_c14_unicode_16_display_name_change_is_accepted(
-    player: Player, owner: "_User"
-) -> None:
-    update_profile(player=player, actor=owner, changes={"display_name": "\U0001fae9"})
-
-    assert Player.objects.get(pk=player.pk).display_name == "\U0001fae9"
-    [event] = AuditEvent.objects.all()
-    assert event.after == {"changed_fields": ["display_name"]}

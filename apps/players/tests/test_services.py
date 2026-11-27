@@ -9,7 +9,13 @@ from django.core.exceptions import ValidationError
 
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import AuditAction, AuditEvent
-from apps.players.models import Player, PlayerPrivacy, Visibility
+from apps.players.models import (
+    SET_ONCE_MESSAGES,
+    NameFormat,
+    Player,
+    PlayerPrivacy,
+    Visibility,
+)
 from apps.players.services import (
     PROFILE_FIELDS,
     NotOwnPlayer,
@@ -33,10 +39,10 @@ def owner() -> "_User":
 def player(owner: "_User") -> Player:
     return create_player(
         account=owner,
-        display_name="Made-up Player",
+        first_name="Made-up",
+        last_name="Player",
         birth_year=1990,
         birth_month=6,
-        legal_name="Made-up Legal Name",
         gender_division="mens",
         city="Madeupville",
         region="Made-up Region",
@@ -85,7 +91,8 @@ def test_create_player_stores_the_values(player: Player, owner: "_User") -> None
 @pytest.mark.parametrize("field", ["birth_year", "birth_month", "gender_division"])
 def test_create_player_without_a_required_detail_fails(field: str) -> None:
     values: dict[str, Any] = {
-        "display_name": "Made-up Player",
+        "first_name": "Made-up",
+        "last_name": "Player",
         "birth_year": 1990,
         "birth_month": 6,
         "gender_division": "womens",
@@ -105,7 +112,8 @@ def test_create_player_with_an_empty_gender_division_fails() -> None:
     with pytest.raises(ValidationError) as caught:
         create_player(
             account=UserFactory.create(),
-            display_name="Made-up Player",
+            first_name="Made-up",
+            last_name="Player",
             birth_year=1990,
             birth_month=6,
             gender_division="",
@@ -121,7 +129,8 @@ def test_create_player_needs_a_gender_division_argument() -> None:
     with pytest.raises(TypeError):
         create_player(  # type: ignore[call-arg]
             account=UserFactory.create(),
-            display_name="Made-up Player",
+            first_name="Made-up",
+            last_name="Player",
             birth_year=1990,
             birth_month=6,
         )
@@ -133,7 +142,8 @@ def test_create_player_twice_for_one_account_fails(player: Player) -> None:
     with pytest.raises(ValidationError) as caught:
         create_player(
             account=player.account,
-            display_name="Another Made-up Player",
+            first_name="Another",
+            last_name="Made-up Player",
             birth_year=1991,
             birth_month=2,
             gender_division="mens",
@@ -163,13 +173,37 @@ def test_owner_updates_profile(player: Player, owner: "_User") -> None:
     update_profile(
         player=player,
         actor=owner,
-        changes={"display_name": "New Made-up Name", "city": "Othertown"},
+        changes={"city": "Othertown", "region": "Other Region"},
     )
 
     stored = Player.objects.get(pk=player.pk)
-    assert stored.display_name == "New Made-up Name"
-    assert stored.city == "Othertown"
-    assert player.display_name == "New Made-up Name"
+    assert (stored.city, stored.region) == ("Othertown", "Other Region")
+    assert player.city == "Othertown"
+
+
+def test_create_player_builds_the_names(player: Player) -> None:
+    # ADR 0062: "First Last" is the legal name and an adult's display name.
+    assert (player.first_name, player.last_name) == ("Made-up", "Player")
+    assert player.legal_name == "Made-up Player"
+    assert player.display_name == "Made-up Player"
+    assert player.privacy.name_format == NameFormat.FULL
+
+
+@pytest.mark.parametrize("field", ["display_name", "legal_name"])
+def test_the_names_cannot_be_changed(
+    player: Player, owner: "_User", field: str
+) -> None:
+    with pytest.raises(ValidationError) as caught:
+        update_profile(
+            player=player,
+            actor=owner,
+            changes={field: "Made-up Player", "city": "Othertown"},
+        )
+
+    assert caught.value.message_dict == {field: [SET_ONCE_MESSAGES[field]]}
+    assert caught.value.error_dict[field][0].code == "set_once"
+    assert Player.objects.get(pk=player.pk).city == "Madeupville"
+    assert _events() == []
 
 
 def test_profile_change_records_field_names_only(
@@ -177,8 +211,6 @@ def test_profile_change_records_field_names_only(
 ) -> None:
     old = {name: getattr(player, name) for name in PROFILE_FIELDS}
     new: dict[str, object] = {
-        "display_name": "New Made-up Name",
-        "legal_name": "New Made-up Legal",
         "city": "Othertown",
         "region": "Other Region",
     }
@@ -206,7 +238,7 @@ def test_profile_change_lists_only_changed_fields(
     update_profile(
         player=player,
         actor=owner,
-        changes={"display_name": "Made-up Player", "city": "Othertown"},
+        changes={"city": "Othertown", "region": player.region},
     )
 
     [event] = _events()
@@ -216,9 +248,7 @@ def test_profile_change_lists_only_changed_fields(
 def test_profile_change_with_nothing_changed_records_nothing(
     player: Player, owner: "_User"
 ) -> None:
-    update_profile(
-        player=player, actor=owner, changes={"display_name": "Made-up Player"}
-    )
+    update_profile(player=player, actor=owner, changes={"city": "Madeupville"})
 
     assert _events() == []
 
@@ -226,9 +256,7 @@ def test_profile_change_with_nothing_changed_records_nothing(
 def test_whitespace_only_difference_is_not_a_change(
     player: Player, owner: "_User"
 ) -> None:
-    update_profile(
-        player=player, actor=owner, changes={"display_name": "  Made-up Player  "}
-    )
+    update_profile(player=player, actor=owner, changes={"city": "  Madeupville  "})
 
     assert _events() == []
 

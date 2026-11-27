@@ -2,26 +2,15 @@
 
 "First L." takes the last name's first character that renders, with any
 combining marks after it, so a direction mark or a decomposed accent in
-pasted text does not give an invisible or broken initial (ADR 0022).
+pasted text does not give an invisible or broken initial (ADR 0022). The
+name format builds it the same way (ADR 0062).
 Made-up names only.
 """
 
 import pytest
 
-from apps.players.api import starting_display_name
-from apps.players.signup import SignupDetails
-
-
-def _minor(last_name: str) -> SignupDetails:
-    return SignupDetails(
-        birth_year=2000,
-        birth_month=1,
-        gender_division="womens",
-        legal_name=f"Ann {last_name}",
-        city="",
-        region="",
-        first_name="Ann",
-    )
+from apps.players.models import DISPLAY_NAME_MAX_LENGTH, NameFormat
+from apps.players.names import display_name_for
 
 
 @pytest.mark.parametrize(
@@ -39,10 +28,24 @@ def _minor(last_name: str) -> SignupDetails:
 def test_the_initial_is_the_first_visible_character(
     last_name: str, display_name: str
 ) -> None:
-    assert starting_display_name(_minor(last_name), minor=True) == display_name
+    built = display_name_for("Ann", last_name, NameFormat.FIRST_LAST_INITIAL)
+
+    assert built == display_name
 
 
-def test_an_adult_starts_with_the_legal_name() -> None:
-    details = _minor("‎Smith")
+def test_the_full_format_is_first_and_last_name() -> None:
+    assert display_name_for("Ann", "Smith", NameFormat.FULL) == "Ann Smith"
 
-    assert starting_display_name(details, minor=False) == details.legal_name
+
+def test_an_unknown_format_gives_the_initial() -> None:
+    assert display_name_for("Ann", "Smith", "something else") == "Ann S."
+
+
+def test_combining_marks_are_dropped_to_fit_the_display_name() -> None:
+    first = "A" * (DISPLAY_NAME_MAX_LENGTH - 3)
+    last = "E" + "\u0301" * 5
+
+    built = display_name_for(first, last, NameFormat.FIRST_LAST_INITIAL)
+
+    assert built == f"{first} E."
+    assert len(built) == DISPLAY_NAME_MAX_LENGTH

@@ -19,10 +19,12 @@ from pydantic_core import PydanticCustomError
 from apps.players.models import (
     SET_ONCE_CODE,
     SET_ONCE_MESSAGES,
+    NameFormat,
     Player,
     PlayerPrivacy,
     Visibility,
 )
+from apps.players.services import is_name_format_locked
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -36,22 +38,23 @@ class PlayerCreateIn(Schema):
     refuses them.
 
     The body is read only when the session holds no details from signup
-    (ADR 0017, ADR 0019, ADR 0022): ``display_name``, ``birth_year``,
-    ``birth_month``, and ``gender_division`` are then required. Held
-    details are used instead of every field here: the held name ("First
-    Last") becomes the legal name and, for an adult, the display name (a
-    player aged 13 to 17 starts with "First L."), with the held city and
-    region. ``gender_division`` is ``mens`` or ``womens``.
-    Optional text fields left out or null are empty. Unknown keys are
-    refused.
+    (ADR 0017, ADR 0019, ADR 0022): ``first_name``, ``last_name``,
+    ``birth_year``, ``birth_month``, and ``gender_division`` are then
+    required, and the names get the same checks as at signup. Held details
+    are used instead of every field here. Either way the legal name is
+    "First Last", and the display name is built from the names: "First
+    Last" for an adult, "First L." for a player aged 13 to 17 (ADR 0062).
+    ``gender_division`` is ``mens`` or ``womens``. Optional text fields
+    left out or null are empty. Unknown keys are refused, ``display_name``
+    and ``legal_name`` included.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    display_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
     birth_year: StrictInt | None = None
     birth_month: StrictInt | None = None
-    legal_name: str | None = None
     gender_division: str | None = None
     city: str | None = None
     region: str | None = None
@@ -66,6 +69,17 @@ _RATING_VISIBILITY = (
 )
 
 
+_NAME_FORMAT = (
+    'How the display name shows the last name: full ("First Last") or '
+    'first_last_initial ("First L."), built from the first and last name '
+    "given at signup. An adult starts with full, a player aged 13 to 17 with "
+    "first_last_initial. Changing it rebuilds the display name. Only the "
+    "player can change it, and not to full while name_format_locked is true "
+    "(the player is 13 to 17). Nothing changes it at 18. Sending the stored "
+    "value is always accepted."
+)
+
+
 class PrivacyIn(Schema):
     """Privacy settings to change. Only the settings sent change."""
 
@@ -77,6 +91,7 @@ class PrivacyIn(Schema):
     stats_visibility: Visibility | None = None
     home_club_visibility: Visibility | None = None
     rating_visibility: Visibility | None = Field(None, description=_RATING_VISIBILITY)
+    name_format: NameFormat | None = Field(None, description=_NAME_FORMAT)
 
 
 def _refuse_set_once(name: str) -> BeforeValidator:
@@ -93,6 +108,8 @@ def _refuse_set_once(name: str) -> BeforeValidator:
 
 
 # Left out of the OpenAPI document, since no value is accepted.
+SetOnceDisplayName = SkipJsonSchema[Annotated[object, _refuse_set_once("display_name")]]
+SetOnceLegalName = SkipJsonSchema[Annotated[object, _refuse_set_once("legal_name")]]
 SetOnceBirthYear = SkipJsonSchema[Annotated[object, _refuse_set_once("birth_year")]]
 SetOnceBirthMonth = SkipJsonSchema[Annotated[object, _refuse_set_once("birth_month")]]
 SetOnceGenderDivision = SkipJsonSchema[
@@ -104,16 +121,18 @@ class PlayerUpdateIn(Schema):
     """Changes to the signed-in Account's own Player.
 
     Only the fields sent change. Null clears an optional text field
-    (``legal_name``, ``city``, ``region``); the display name cannot be
-    cleared. The birth year and month and the gender division are set
-    once, when the Player is created, and cannot be sent here (ADR 0023).
-    ``privacy`` changes the settings it names. Unknown keys are refused.
+    (``city``, ``region``). The birth year and month and the gender
+    division are set once, when the Player is created, and cannot be sent
+    here (ADR 0023). Neither can the display name or the legal name: both
+    are built from the first and last name given at signup, and the
+    player changes only ``privacy.name_format`` (ADR 0062). ``privacy``
+    changes the settings it names. Unknown keys are refused.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    display_name: str | None = None
-    legal_name: str | None = None
+    display_name: SetOnceDisplayName = None
+    legal_name: SetOnceLegalName = None
     birth_year: SetOnceBirthYear = None
     birth_month: SetOnceBirthMonth = None
     gender_division: SetOnceGenderDivision = None
@@ -131,6 +150,14 @@ class PrivacyOut(Schema):
     stats_visibility: Visibility
     home_club_visibility: Visibility
     rating_visibility: Visibility = Field(description=_RATING_VISIBILITY)
+    name_format: NameFormat = Field(description=_NAME_FORMAT)
+
+
+_NAME_FORMAT_LOCKED = (
+    "True while the player is 13 to 17: privacy.name_format cannot be changed "
+    "to full. Judged at the time of the request, so the app never works out "
+    "an age."
+)
 
 
 class MyPlayerOut(Schema):
@@ -138,18 +165,23 @@ class MyPlayerOut(Schema):
 
     Returned only to that Account. Empty optional text fields are ``""``.
     ``gender_division`` is ``""`` only for a Player stored before it was
-    required (issue #215).
+    required (issue #215). ``first_name`` and ``last_name`` are the names
+    given at signup, ``""`` only for a Player stored before them whose
+    legal name did not split (ADR 0062).
     """
 
     code: str
     display_name: str
     legal_name: str
+    first_name: str
+    last_name: str
     birth_year: int
     birth_month: int
     gender_division: str
     city: str
     region: str
     privacy: PrivacyOut
+    name_format_locked: bool = Field(description=_NAME_FORMAT_LOCKED)
 
 
 def my_player_out(player: Player, privacy: PlayerPrivacy) -> MyPlayerOut:
@@ -158,14 +190,17 @@ def my_player_out(player: Player, privacy: PlayerPrivacy) -> MyPlayerOut:
         code=player.public_code,
         display_name=player.display_name,
         legal_name=player.legal_name,
+        first_name=player.first_name or "",
+        last_name=player.last_name or "",
         birth_year=player.birth_year,
         birth_month=player.birth_month,
         gender_division=player.gender_division,
         city=player.city,
         region=player.region,
         privacy=PrivacyOut(
-            **{name: getattr(privacy, name) for name in PlayerPrivacy.SETTINGS}
+            **{name: getattr(privacy, name) for name in PlayerPrivacy.FIELDS}
         ),
+        name_format_locked=is_name_format_locked(player),
     )
 
 

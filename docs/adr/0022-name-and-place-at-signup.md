@@ -1,7 +1,7 @@
 # 0022. First and last name and a place at signup
 
 - Status: Proposed
-- Amended by: [ADR 0026](0026-legal-agreements-at-signup.md) (signup also requires accepting the legal agreements, whose versions are held with the other details)
+- Amended by: [ADR 0026](0026-legal-agreements-at-signup.md) (signup also requires accepting the legal agreements, whose versions are held with the other details), [ADR 0062](0062-display-name-from-signup-names.md) (the first and last name are stored too; the display name is built from them and a `name_format` setting, and neither the player nor anyone else can change it or the legal name; the create body takes `first_name` and `last_name`)
 - Date: 2026-11-23
 
 ## Context

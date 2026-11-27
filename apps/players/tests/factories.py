@@ -14,9 +14,13 @@ from apps.players.services import create_player
 _faker = Faker()
 
 
-def _display_name() -> str:
-    # A first name and a last initial: short, and fits max_length.
-    return f"{_faker.first_name()} {_faker.random_uppercase_letter()}."[:64]
+def _first_name() -> str:
+    # Short enough that "First Last" fits the display name (ADR 0022).
+    return str(_faker.first_name())[:30]
+
+
+def _last_name() -> str:
+    return str(_faker.last_name())[:30]
 
 
 def _birth_year() -> int:
@@ -42,6 +46,12 @@ class PlayerFactory(DjangoModelFactory[Player]):
 
     An adult by default. ``minor=True`` makes a player aged 13 to 17, who
     starts with every privacy setting private.
+
+    The display name and legal name are built from ``first_name`` and
+    ``last_name``, as ``create_player`` builds them (ADR 0062). A test may
+    still pass ``display_name`` or ``legal_name``: the factory then saves
+    that value over the built one, a shortcut for tests only, since no
+    player can set either.
     """
 
     class Meta:
@@ -52,8 +62,8 @@ class PlayerFactory(DjangoModelFactory[Player]):
 
     # factory_boy's declarations carry no type hints.
     account = SubFactory(UserFactory)  # type: ignore[no-untyped-call]
-    display_name = LazyFunction(_display_name)  # type: ignore[no-untyped-call]
-    legal_name = ""
+    first_name = LazyFunction(_first_name)  # type: ignore[no-untyped-call]
+    last_name = LazyFunction(_last_name)  # type: ignore[no-untyped-call]
     birth_year = LazyFunction(_birth_year)  # type: ignore[no-untyped-call]
     birth_month = LazyFunction(lambda: _faker.random_int(min=1, max=12))  # type: ignore[no-untyped-call]
     gender_division = LazyFunction(_gender_division)  # type: ignore[no-untyped-call]
@@ -62,5 +72,20 @@ class PlayerFactory(DjangoModelFactory[Player]):
 
     @classmethod
     def _create(cls, model_class: type[Any], *args: Any, **kwargs: Any) -> Player:
-        """A saved Player, created through the service."""
-        return create_player(**kwargs)
+        """A saved Player, created through the service.
+
+        A ``display_name`` or ``legal_name`` passed in is saved over the
+        built one afterwards, through ``save()``, so the model's checks
+        still run.
+        """
+        overrides = {
+            name: kwargs.pop(name)
+            for name in ("display_name", "legal_name")
+            if name in kwargs
+        }
+        player = create_player(**kwargs)
+        if overrides:
+            for name, value in overrides.items():
+                setattr(player, name, value)
+            player.save(update_fields=list(overrides))
+        return player

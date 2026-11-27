@@ -57,6 +57,9 @@ VIEW_PERSONAL_DATA_PERMISSION = "players.view_personal_data"
 HIDDEN = "Hidden"
 # The fields a reveal shows, as the Audit Event names them.
 REVEALED_FIELDS = ("birth_month", "birth_year", "gender_division", "legal_name")
+# Encrypted too, and never shown: the legal name the reveal shows is the
+# same first and last name joined (ADR 0062).
+_UNSHOWN_ENCRYPTED_FIELDS = ("first_name", "last_name")
 
 
 @admin.register(Player)
@@ -86,7 +89,11 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
         # Never load the encrypted fields for the list or the detail page,
         # which show none of them: a row no configured key decrypts must
         # not break the page. The reveal reads them on access.
-        return super().get_queryset(request).defer(*REVEALED_FIELDS)
+        return (
+            super()
+            .get_queryset(request)
+            .defer(*REVEALED_FIELDS, *_UNSHOWN_ENCRYPTED_FIELDS)
+        )
 
     def _shown_fields(self, request: HttpRequest) -> tuple[str, ...]:
         # The Account renders as its email (User.__str__): only an Account

@@ -38,8 +38,13 @@ UNDER_MINIMUM_AGE_MESSAGE = "This birth year and month can't be used."
 # session for it too, as signup does (issue #225).
 FUTURE_BIRTH_MONTH_MESSAGE = "The birth year and month cannot be in the future."
 # Set once, when the Player is created, and never changed by the player
-# after that (issue #225). Fixed messages, never the submitted value.
+# after that (issue #225). The display name and legal name are built from
+# the first and last name given at signup (issue #354, ADR 0062): the
+# player chooses only how the last name is shown (``name_format``). Fixed
+# messages, never the submitted value.
 SET_ONCE_MESSAGES = {
+    "display_name": "Your display name can't be changed.",
+    "legal_name": "Your legal name can't be changed.",
     "birth_year": "Your birth year and month can't be changed.",
     "birth_month": "Your birth year and month can't be changed.",
     "gender_division": "Your gender division can't be changed.",
@@ -71,7 +76,18 @@ _VISIBLE_CATEGORY_GROUPS = ("L", "N", "P", "S", "Cn")
 
 # Text fields stripped and checked for control characters before field
 # validation, so max_length counts the stored value.
-TEXT_FIELDS = ("display_name", "legal_name", "city", "region")
+TEXT_FIELDS = (
+    "display_name",
+    "legal_name",
+    "first_name",
+    "last_name",
+    "city",
+    "region",
+)
+# The first and last name given at signup (issue #354, ADR 0062). Required
+# for every new Player; NULL only for a Player stored before them whose
+# legal name did not split, or after a removal (#190, #116).
+NAME_FIELDS = ("first_name", "last_name")
 # Optional text fields where None means cleared, stored as "".
 OPTIONAL_TEXT_FIELDS = ("legal_name", "city", "region")
 # Fields that take only text (or None). Django's own conversion calls
@@ -82,9 +98,18 @@ _NOT_TEXT = "Enter text."
 BIRTH_FIELDS = ("birth_year", "birth_month")
 
 EARLIEST_BIRTH_YEAR = 1900
+DISPLAY_NAME_MAX_LENGTH = 64
+_FIRST_NAME_REQUIRED = "Enter your first name."
+_LAST_NAME_REQUIRED = "Enter your last name."
+_FIRST_NAME_MESSAGES = {"blank": _FIRST_NAME_REQUIRED, "null": _FIRST_NAME_REQUIRED}
+_LAST_NAME_MESSAGES = {"blank": _LAST_NAME_REQUIRED, "null": _LAST_NAME_REQUIRED}
+NAME_REQUIRED_MESSAGES = {
+    "first_name": _FIRST_NAME_REQUIRED,
+    "last_name": _LAST_NAME_REQUIRED,
+}
 # Fields save() checks, since the database cannot (ADR 0046): their
 # columns are text, with no length limit or check constraint.
-ENCRYPTED_TEXT_FIELDS = ("legal_name", "gender_division")
+ENCRYPTED_TEXT_FIELDS = ("legal_name", "first_name", "last_name", "gender_division")
 ENCRYPTED_CHECKED_FIELDS = (*BIRTH_FIELDS, *ENCRYPTED_TEXT_FIELDS)
 
 # One setting per profile detail other than the display name, which has
@@ -98,6 +123,9 @@ PRIVACY_SETTINGS = (
     "home_club_visibility",
     "rating_visibility",
 )
+# Every field ``update_privacy()`` changes: the visibility settings, and
+# how the last name is shown in the display name (issue #354, ADR 0062).
+PRIVACY_FIELDS = (*PRIVACY_SETTINGS, "name_format")
 
 
 class Visibility(models.TextChoices):
@@ -117,6 +145,17 @@ class GenderDivision(models.TextChoices):
 
     MENS = "mens", "Men's"
     WOMENS = "womens", "Women's"
+
+
+class NameFormat(models.TextChoices):
+    """How the display name shows the last name (issue #354, ADR 0062).
+
+    ``FIRST_LAST_INITIAL`` is the more private one: the first name and the
+    last name's initial.
+    """
+
+    FULL = "full", "First and last name"
+    FIRST_LAST_INITIAL = "first_last_initial", "First name and last initial"
 
 
 # The values save() accepts: a division, or "" for a later removal.
@@ -142,11 +181,27 @@ class Player(_LinkMessagesModel, PublicCodeModel):
         related_name="player",
         error_messages={"invalid": "Choose an existing account."},
     )
-    display_name = models.CharField(max_length=64)
+    display_name = models.CharField(max_length=DISPLAY_NAME_MAX_LENGTH)
     # Legal name, birth year and month, and gender division are stored
     # encrypted (ADR 0046). The database cannot check them, so save()
     # applies their rules (_check_encrypted_fields).
     legal_name = EncryptedCharField(max_length=200, blank=True)
+    # The first and last name given at signup (issue #354, ADR 0062), set
+    # once, when the Player is created: the display name is built from them
+    # and ``PlayerPrivacy.name_format``. Encrypted, like the legal name
+    # they make up (ADR 0046). NULL only for a Player stored before them
+    # whose legal name did not split at a space, or after a removal (#190,
+    # #116): the column then needs no key to add.
+    first_name = EncryptedCharField(
+        max_length=DISPLAY_NAME_MAX_LENGTH,
+        null=True,
+        error_messages=_FIRST_NAME_MESSAGES,
+    )
+    last_name = EncryptedCharField(
+        max_length=DISPLAY_NAME_MAX_LENGTH,
+        null=True,
+        error_messages=_LAST_NAME_MESSAGES,
+    )
     # Required for every new Player (blank=False, so full_clean refuses
     # None). NULL only after Account deletion (#116) or a moderator's
     # under-13 removal (#190, ADR 0059) removes them.
@@ -346,6 +401,12 @@ class Player(_LinkMessagesModel, PublicCodeModel):
         name_changed = fields is None or "display_name" in fields
         if name_changed and not has_visible_character(self.display_name):
             errors["display_name"] = "Enter a display name."
+        for name in NAME_FIELDS:
+            value = getattr(self, name)
+            checked = fields is None or name in fields
+            # None is field validation's to report (blank=False).
+            if checked and isinstance(value, str) and not has_visible_character(value):
+                errors[name] = NAME_REQUIRED_MESSAGES[name]
         birth_changed = fields is None or not set(BIRTH_FIELDS).isdisjoint(fields)
         if birth_changed and self._birth_month_is_in_the_future():
             errors["birth_month"] = FUTURE_BIRTH_MONTH_MESSAGE
@@ -433,6 +494,9 @@ class PlayerPrivacy(_LinkMessagesModel, models.Model):
     """
 
     SETTINGS: ClassVar[tuple[str, ...]] = PRIVACY_SETTINGS
+    # The settings and ``name_format``: every field ``update_privacy()``
+    # changes.
+    FIELDS: ClassVar[tuple[str, ...]] = PRIVACY_FIELDS
 
     player = models.OneToOneField(
         Player,
@@ -477,16 +541,33 @@ class PlayerPrivacy(_LinkMessagesModel, models.Model):
         default=Visibility.PRIVATE,
         error_messages=_CHOICE_MESSAGES,
     )
+    # How the display name shows the last name (issue #354, ADR 0062).
+    # ``create_player()`` sets ``FULL`` for an adult; the model default is
+    # the more private format, so a row made outside it fails closed. A
+    # player aged 13 to 17 cannot change it to ``FULL``
+    # (``update_privacy()``), and nothing changes it at 18.
+    name_format = models.CharField(
+        max_length=32,
+        choices=NameFormat,
+        default=NameFormat.FIRST_LAST_INITIAL,
+        error_messages=_CHOICE_MESSAGES,
+    )
 
     class Meta:
         verbose_name = "player privacy settings"
         verbose_name_plural = "player privacy settings"
         constraints: ClassVar[list[models.BaseConstraint]] = [
+            *(
+                models.CheckConstraint(
+                    condition=Q(**{f"{name}__in": Visibility.values}),
+                    name=f"players_playerprivacy_{name}_valid",
+                )
+                for name in PRIVACY_SETTINGS
+            ),
             models.CheckConstraint(
-                condition=Q(**{f"{name}__in": Visibility.values}),
-                name=f"players_playerprivacy_{name}_valid",
-            )
-            for name in PRIVACY_SETTINGS
+                condition=Q(name_format__in=NameFormat.values),
+                name="players_playerprivacy_name_format_valid",
+            ),
         ]
 
     def __str__(self) -> str:

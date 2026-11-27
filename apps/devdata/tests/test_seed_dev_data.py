@@ -194,18 +194,24 @@ def test_missing_dev_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.django_db
 @pytest.mark.usefixtures("debug_on")
 def test_players_get_made_up_personal_data_stored_encrypted() -> None:
-    # The factories set these (issue #115): no legal name, and a made-up
-    # adult birth year and month and division. The columns hold tokens.
+    # The factories set these (issue #115): a made-up legal name built from
+    # the first and last name (ADR 0062), and a made-up adult birth year and
+    # month and division. The columns hold tokens.
     call_command("seed_dev_data", "--players", "8")
 
     players = list(
         Player.objects.values_list(
-            "legal_name", "birth_year", "birth_month", "gender_division"
+            "legal_name",
+            "first_name",
+            "last_name",
+            "birth_year",
+            "birth_month",
+            "gender_division",
         )
     )
     assert len(players) == 8
-    for legal_name, birth_year, birth_month, division in players:
-        assert legal_name == ""
+    for legal_name, first, last, birth_year, birth_month, division in players:
+        assert legal_name == f"{first} {last}"
         assert isinstance(birth_year, int)
         assert birth_month is not None
         assert 1 <= birth_month <= 12

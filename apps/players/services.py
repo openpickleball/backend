@@ -2,7 +2,10 @@
 
 Only the player changes their own Player (ADR 0009). The birth year and
 month and the gender division are set once, when the Player is created:
-``update_profile`` refuses them (ADR 0023). ``update_profile`` and
+``update_profile`` refuses them (ADR 0023). So are the first and last
+name, and the display name and legal name are built from them: the player
+changes only ``name_format``, through ``update_privacy``, which rebuilds the
+display name (issue #354, ADR 0062). ``update_profile`` and
 ``update_privacy`` refuse any other actor before writing anything. Each
 change records one Audit Event in the same transaction. A profile change
 records only the changed field names, never a value, because these are
@@ -22,20 +25,25 @@ from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
 from apps.players.age import is_minor
 from apps.players.models import (
+    NAME_REQUIRED_MESSAGES,
     SET_ONCE_CODE,
     SET_ONCE_FIELDS,
     SET_ONCE_MESSAGES,
+    NameFormat,
     Player,
     PlayerPrivacy,
     Visibility,
+    has_visible_character,
     normalize_input,
 )
+from apps.players.names import display_name_for, full_name
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
 
 # Every profile field. ``update_profile`` refuses the set-once ones among
-# them (``SET_ONCE_FIELDS``) before anything else (ADR 0023).
+# them (``SET_ONCE_FIELDS``, which hold the display name and legal name
+# too) before anything else (ADR 0023, ADR 0062).
 PROFILE_FIELDS: tuple[str, ...] = (
     "display_name",
     "legal_name",
@@ -52,16 +60,72 @@ class NotOwnPlayer(PermissionError):
 
 
 INACTIVE_ACCOUNT_MESSAGE = "This account cannot have a player."
+_NOT_TEXT = "Enter text."
+
+
+def is_name_format_locked(player: Player) -> bool:
+    """Whether ``name_format`` must stay ``first_last_initial`` now.
+
+    True while the player is 13 to 17 on the age limit date
+    (``apps.players.age``), judged at the time of the call, and for a
+    Player whose birth year or month was removed, so it fails closed
+    (issue #354, ADR 0062).
+    """
+    year, month = player.birth_year, player.birth_month
+    if not isinstance(year, int) or not isinstance(month, int):
+        return True
+    if not 1 <= month <= 12:
+        return True
+    return is_minor(year, month)
+
+
+def _starting_name_format(birth_year: object, birth_month: object) -> NameFormat:
+    """``full`` for an adult, ``first_last_initial`` for anyone else.
+
+    A malformed birth year or month gets the private format; ``full_clean``
+    then refuses the Player anyway.
+    """
+    if (
+        isinstance(birth_year, int)
+        and not isinstance(birth_year, bool)
+        and isinstance(birth_month, int)
+        and not isinstance(birth_month, bool)
+        and 1 <= birth_month <= 12
+        and not is_minor(birth_year, birth_month)
+    ):
+        return NameFormat.FULL
+    return NameFormat.FIRST_LAST_INITIAL
+
+
+def _clean_names(first_name: object, last_name: object) -> tuple[str, str]:
+    """The names, stripped, or ``ValidationError`` with fixed messages.
+
+    Each must be text with a character that renders, so the display name
+    is never built from nothing. ``full_clean`` checks the rest (control
+    characters, lengths).
+    """
+    errors: dict[str, list[ValidationError]] = {}
+    cleaned: dict[str, str] = {}
+    for name, value in (("first_name", first_name), ("last_name", last_name)):
+        if value is not None and not isinstance(value, str):
+            errors[name] = [ValidationError(_NOT_TEXT)]
+        elif value is None or not has_visible_character(value):
+            errors[name] = [ValidationError(NAME_REQUIRED_MESSAGES[name])]
+        else:
+            cleaned[name] = value.strip()
+    if errors:
+        raise ValidationError(errors)
+    return cleaned["first_name"], cleaned["last_name"]
 
 
 def create_player(
     *,
     account: "_User",
-    display_name: str,
+    first_name: str,
+    last_name: str,
     birth_year: int,
     birth_month: int,
     gender_division: str,
-    legal_name: str | None = "",
     city: str | None = "",
     region: str | None = "",
 ) -> Player:
@@ -70,14 +134,20 @@ def create_player(
     Raises ``ValidationError`` for an invalid or missing value, for a
     player under 13 on the age limit date (``apps.players.age``), when
     the Account already has a Player, or when the stored Account is gone
-    or inactive (read under its lock). ``gender_division`` is required,
-    ``mens`` or ``womens`` (issue #215). None for an optional text field
-    means empty. A player aged 13 to 17 starts with every privacy setting
-    ``PRIVATE``; an older one starts with every setting ``SIGNED_IN``,
-    ``rating_visibility`` included (its model default is ``PRIVATE``).
-    Turning 18 later changes no setting. Records no Audit Event: creating a Player changes
-    no privacy setting.
+    or inactive (read under its lock). ``first_name`` and ``last_name``
+    are required (issue #354, ADR 0062): the legal name is "First Last",
+    and the display name is built from them and the starting
+    ``name_format``. ``gender_division`` is required, ``mens`` or
+    ``womens`` (issue #215). None for an optional text field means empty.
+    A player aged 13 to 17 starts with every privacy setting ``PRIVATE``
+    and ``name_format`` ``first_last_initial`` ("First L."); an older one
+    starts with every setting ``SIGNED_IN``, ``rating_visibility``
+    included (its model default is ``PRIVATE``), and ``name_format``
+    ``full`` ("First Last"). Turning 18 later changes no setting. Records
+    no Audit Event: creating a Player changes no privacy setting.
     """
+    first, last = _clean_names(first_name, last_name)
+    name_format = _starting_name_format(birth_year, birth_month)
     with transaction.atomic():
         # Lock the Account row, so two calls for one Account run their
         # one-Player check in turn and the second gets a ValidationError.
@@ -90,8 +160,10 @@ def create_player(
             raise ValidationError({"account": [INACTIVE_ACCOUNT_MESSAGE]})
         player = Player(
             account=account,
-            display_name=display_name,
-            legal_name=legal_name or "",
+            display_name=display_name_for(first, last, name_format),
+            legal_name=full_name(first, last),
+            first_name=first,
+            last_name=last,
             birth_year=birth_year,
             birth_month=birth_month,
             gender_division=gender_division,
@@ -102,10 +174,14 @@ def create_player(
         player.save()
         if is_minor(player.birth_year, player.birth_month):
             private = dict.fromkeys(PlayerPrivacy.SETTINGS, Visibility.PRIVATE)
-            PlayerPrivacy.objects.create(player=player, **private)
+            PlayerPrivacy.objects.create(
+                player=player, name_format=NameFormat.FIRST_LAST_INITIAL, **private
+            )
         else:
             shown = dict.fromkeys(PlayerPrivacy.SETTINGS, Visibility.SIGNED_IN)
-            PlayerPrivacy.objects.create(player=player, **shown)
+            PlayerPrivacy.objects.create(
+                player=player, name_format=NameFormat.FULL, **shown
+            )
     return player
 
 
@@ -117,6 +193,7 @@ RATINGS_ALWAYS_SHOWN_MESSAGE = (
 RATINGS_SHOWN_FROM_18_MESSAGE = (
     "Current ratings can be shown to other players only from age 18."
 )
+FULL_NAME_FROM_18_MESSAGE = "Your full last name can be shown only from age 18."
 
 
 def _refuse_unless_owner(player: Player, actor: "_User | AnonymousUser | None") -> None:
@@ -259,6 +336,37 @@ def _refuse_rating_visibility(player: Player, stored: str, value: object) -> Non
         )
 
 
+def _refuse_name_format(player: Player, stored: str, value: object) -> None:
+    """Refuse ``full`` while ``is_name_format_locked`` (issue #354).
+
+    The stored value is always accepted. Fixed message, never the value.
+    """
+    if value == stored or value != NameFormat.FULL:
+        return
+    if is_name_format_locked(player):
+        raise ValidationError(
+            {"name_format": ValidationError(FULL_NAME_FROM_18_MESSAGE, code="invalid")}
+        )
+
+
+def _rebuild_display_name(player: Player, name_format: str) -> None:
+    """Rebuild and save the display name from the stored names.
+
+    Call inside ``update_privacy``'s transaction, with the locked Player.
+    A Player with no stored first or last name (stored before them, and
+    its legal name did not split, ADR 0062) keeps its display name.
+    """
+    first, last = player.first_name, player.last_name
+    if not first or not last:
+        return
+    name = display_name_for(first, last, name_format)
+    if name == player.display_name:
+        return
+    player.display_name = name
+    player.validate_changes({"display_name"})
+    player.save(update_fields=["display_name"])
+
+
 def update_privacy(
     *,
     player: Player,
@@ -268,30 +376,38 @@ def update_privacy(
     """Apply ``changes`` to the player's privacy settings and return them.
 
     Raises like ``update_profile``, with keys checked against
-    ``PlayerPrivacy.SETTINGS``. A change to ``rating_visibility`` follows
-    ``_refuse_rating_visibility``, checked before anything is written. The
+    ``PlayerPrivacy.FIELDS``. A change to ``rating_visibility`` follows
+    ``_refuse_rating_visibility``, and one to ``name_format`` follows
+    ``_refuse_name_format``, both checked before anything is written. A
+    ``name_format`` change rebuilds the display name from the stored first
+    and last name in the same transaction (issue #354, ADR 0062). The
     Audit Event targets the Player, so it is one of the events about that
-    player (#39).
+    player (#39), and records the old and new levels of the changed
+    settings, ``name_format`` included, never a name.
     """
     _refuse_unless_owner(player, actor)
-    _refuse_unknown(changes, PlayerPrivacy.SETTINGS)
+    _refuse_unknown(changes, PlayerPrivacy.FIELDS)
     with transaction.atomic():
         locked = _lock_own_player(player, actor)
         privacy = PlayerPrivacy.objects.select_for_update().get(player=locked)
-        old = snapshot(privacy, PlayerPrivacy.SETTINGS)
+        old = snapshot(privacy, PlayerPrivacy.FIELDS)
         if "rating_visibility" in changes:
             _refuse_rating_visibility(
                 locked, old["rating_visibility"], changes["rating_visibility"]
             )
+        if "name_format" in changes:
+            _refuse_name_format(locked, old["name_format"], changes["name_format"])
         for name, value in changes.items():
             setattr(privacy, name, value)
         privacy.full_clean()
-        new = snapshot(privacy, PlayerPrivacy.SETTINGS)
+        new = snapshot(privacy, PlayerPrivacy.FIELDS)
         changed = sorted(
-            name for name in PlayerPrivacy.SETTINGS if new[name] != old[name]
+            name for name in PlayerPrivacy.FIELDS if new[name] != old[name]
         )
         if changed:
             privacy.save(update_fields=changed)
+            if "name_format" in changed:
+                _rebuild_display_name(locked, new["name_format"])
             record_event(
                 action=AuditAction.PRIVACY_CHANGE,
                 target=locked,
@@ -301,4 +417,5 @@ def update_privacy(
             )
     # Replace the caller's cached row, so player.privacy shows the change.
     player.privacy = privacy
+    player.display_name = locked.display_name
     return privacy

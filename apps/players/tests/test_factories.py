@@ -42,7 +42,7 @@ def test_values_are_in_range() -> None:
         assert player.gender_division in GenderDivision.values
         assert player.display_name
         assert len(player.region) <= 100
-        assert player.legal_name == ""
+        assert player.legal_name == f"{player.first_name} {player.last_name}"
 
 
 def test_overrides_are_used() -> None:

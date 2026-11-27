@@ -46,7 +46,7 @@ CLIENTS = [APP, BROWSER]
 ME_PLAYER = "/api/v1/me/player"
 ACCOUNT_EMAIL = "refused.player@example.org"
 DIVISION = {"gender_division": "mens"}
-ADULT_BODY = {"display_name": "Robin Q.", **ADULT_BIRTH, **DIVISION}
+ADULT_BODY = {"first_name": "Robin", "last_name": "Quill", **ADULT_BIRTH, **DIVISION}
 REFUSED_ERRORS = [
     {
         "field": "body.birth_month",
@@ -75,7 +75,13 @@ def young_birth() -> dict[str, int]:
 
 
 def young_body(**fields: object) -> dict[str, object]:
-    return {"display_name": "Robin Q.", **young_birth(), **DIVISION, **fields}
+    return {
+        "first_name": "Robin",
+        "last_name": "Quill",
+        **young_birth(),
+        **DIVISION,
+        **fields,
+    }
 
 
 def verified_account(email: str = ACCOUNT_EMAIL) -> Any:
@@ -149,7 +155,7 @@ def test_an_adult_retry_gets_the_same_answer(base: str) -> None:
 def test_the_first_refusal_hides_other_errors(base: str) -> None:
     session = logged_in_session(base)
 
-    first = call(session, "POST", young_body(display_name=" "))
+    first = call(session, "POST", young_body(first_name=" "))
     retry = call(session, "POST", ADULT_BODY)
 
     assert first.status_code == 422
@@ -191,7 +197,7 @@ def test_a_flagged_session_loses_its_held_details(base: str) -> None:
     )
     store.save()
 
-    response = call(session, "POST", {"display_name": "Robin Q."})
+    response = call(session, "POST", {"first_name": "Robin", "last_name": "Quill"})
 
     assert response.status_code == 422
     assert response.json()["errors"] == REFUSED_ERRORS
@@ -251,12 +257,18 @@ def test_the_flag_survives_logout_and_login(base: str) -> None:
     "body",
     [
         pytest.param(
-            {"display_name": "Robin Q.", "birth_year": 2000, **DIVISION},
+            {
+                "first_name": "Robin",
+                "last_name": "Quill",
+                "birth_year": 2000,
+                **DIVISION,
+            },
             id="missing-month",
         ),
         pytest.param(
             {
-                "display_name": "Robin Q.",
+                "first_name": "Robin",
+                "last_name": "Quill",
                 "birth_year": "2000",
                 "birth_month": 1,
                 **DIVISION,
