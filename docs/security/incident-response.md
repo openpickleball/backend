@@ -82,7 +82,7 @@ Notify every player whose personal data was exposed or whose rating changed beca
 >
 > What you should do: [for example: sign in again, check your recent matches, and change your password if you use it on any other site]. [Or: you do not need to do anything.]
 >
-> We are sorry this happened. If you have questions, reply to this email or write to [security contact].
+> We are sorry this happened. If you have questions, reply to this email or write to info@openpb.org.
 >
 > The OPEN team
 

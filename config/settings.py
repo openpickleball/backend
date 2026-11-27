@@ -1182,10 +1182,9 @@ OPEN_PUBLIC_PROFILE_URL = _base_url(
 # security.txt (RFC 9116, #105), served at /.well-known/security.txt by
 # config/security_txt.py.
 
-# PLACEHOLDER: the security contact address has not been chosen for this
-# file yet. The default is on the reserved example.invalid domain, so it
-# can never reach anyone. Set SECURITY_TXT_CONTACT in each environment.
-SECURITY_TXT_CONTACT_PLACEHOLDER = "mailto:security-contact-not-set@example.invalid"
+# The security contact the organization security policy (SECURITY.md)
+# names. SECURITY_TXT_CONTACT overrides it in an environment.
+SECURITY_TXT_CONTACT_DEFAULT = "mailto:info@openpb.org"
 
 # A security.txt value: printable ASCII with no space, so it cannot break
 # the file into extra lines or fields.
@@ -1199,11 +1198,11 @@ def _security_txt_contact(name: str, *, require_https: bool) -> str:
     """Read the optional Contact URI, failing fast without echoing it.
 
     A ``mailto:`` address or an ``https://`` URL (``http://`` only with
-    DEBUG on). Unset or empty gives the placeholder.
+    DEBUG on). Unset or empty gives SECURITY_TXT_CONTACT_DEFAULT.
     """
     value = _raw(name).strip()
     if not value:
-        return SECURITY_TXT_CONTACT_PLACEHOLDER
+        return SECURITY_TXT_CONTACT_DEFAULT
     schemes = (
         ("mailto:", "https://") if require_https else ("mailto:", "https://", "http://")
     )
