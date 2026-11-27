@@ -17,7 +17,9 @@ Organizer made here stays unverified until a moderator verifies it.
   ``change_member_role``, ``remove_member``, ``request_verification``.
 - ``accept_invite``: the invited Account, signed in with the invited
   login address, verified, and with a Player, joins with the invited
-  role. Every refusal is ``NotFound``.
+  role, while the invite's sender is still an active admin member of
+  that Organizer. Demoting or removing an admin deletes the invites it
+  sent there in the same transaction. Every refusal is ``NotFound``.
 
 An Organizer always keeps one active admin (``Conflict`` otherwise).
 Each change records its Audit Events in its own transaction: never the
@@ -280,7 +282,8 @@ def accept_invite(key: str, *, actor: "_User") -> OrganizerMember:
 
     ``NotFound`` for an unknown, malformed, or expired key, another
     address, an unverified login address, an Account with no Player, and
-    the verifier of a verified Organizer (``OrganizerMember.save``).
+    the verifier of a verified Organizer (``OrganizerMember.save``), and an
+    invite whose sender is no longer an active admin member.
     ``Conflict`` when ``actor`` is already a member; the invite is
     deleted then too.
     """
@@ -300,6 +303,9 @@ def accept_invite(key: str, *, actor: "_User") -> OrganizerMember:
         if organizer is None or invite is None:
             raise NotFound
         if not invite_matches_account(invite, actor):
+            raise NotFound
+        if not _sender_still_admin(invite):
+            # The invite gives no more authority than its sender holds now.
             raise NotFound
         if not Player.objects.filter(account_id=actor.pk).exists():
             raise NotFound
@@ -321,6 +327,29 @@ def accept_invite(key: str, *, actor: "_User") -> OrganizerMember:
     if already_member:
         raise Conflict(ALREADY_MEMBER_MESSAGE)
     return membership
+
+
+def _sender_still_admin(invite: OrganizerInvite) -> bool:
+    """Whether the invite's sender is still an active admin member of its
+    Organizer. Call under the Organizer lock, which every membership
+    change takes first."""
+    return bool(
+        OrganizerMember.objects.filter(
+            organizer_id=invite.organizer_id,
+            account_id=invite.invited_by_id,
+            role=MemberRole.ADMIN,
+            account__is_active=True,
+        ).exists()
+    )
+
+
+def _delete_sent_invites(organizer: Organizer, account_id: int) -> None:
+    """Delete the invites ``account_id`` sent to ``organizer``. Call in the
+    transaction that demotes or removes that admin, under the Organizer
+    lock, so none outlives the sender's authority."""
+    OrganizerInvite.objects.filter(
+        organizer_id=organizer.pk, invited_by_id=account_id
+    ).delete()
 
 
 def list_members(organizer_id: int, *, actor: "_User") -> list[MemberView]:
@@ -405,6 +434,8 @@ def change_member_role(
             and not _keeps_an_admin(organizer, membership)
         ):
             raise Conflict(LAST_ADMIN_MESSAGE)
+        if membership.role == MemberRole.ADMIN and role != MemberRole.ADMIN:
+            _delete_sent_invites(organizer, membership.account_id)
         membership.role = role
         save_access_row(membership, actor=actor)
         changed = OrganizerMember.objects.select_related("account__player").get(
@@ -426,6 +457,7 @@ def remove_member(organizer_id: int, player_code: str, *, actor: "_User") -> Non
             organizer, membership
         ):
             raise Conflict(LAST_ADMIN_MESSAGE)
+        _delete_sent_invites(organizer, membership.account_id)
         delete_access_row(membership, actor=actor)
 
 
