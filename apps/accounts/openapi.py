@@ -6,7 +6,8 @@ path, so OPEN's views for ``/_allauth/openapi.json`` and ``.yaml``
 signup age check (ADR 0020) and password check (ADR 0039) added, and
 with OPEN's account security changes (#100, ADR 0047): sessions by
 opaque string ids, the app client's ``X-Device-Token`` on login and the
-MFA login stage, and login's 429. Passkeys (#117, ADR 0056) are named by
+MFA login stage (passkey login and the passkey stage too), and login's
+429. Passkeys (#117, ADR 0056) are named by
 opaque string ids too, never a row id. This uses allauth's internal
 ``get_schema``: check it when upgrading allauth (a test pins the result).
 """
@@ -246,7 +247,14 @@ def _add_account_security(spec: dict[str, Any], root: str, pinned: bool) -> None
     # allauth's passkey ids (list, add, rename, remove) are its row ids.
     schemas["AuthenticatorID"] = dict(_PASSKEY_ID)
     client = "{client}" if not pinned else next(iter(app_settings.CLIENTS))
-    for endpoint in ("auth/login", "auth/2fa/authenticate"):
+    # Every completed login reads and writes it (apps/accounts/devices.py),
+    # passkey login and the passkey MFA stage included (#117).
+    for endpoint in (
+        "auth/login",
+        "auth/2fa/authenticate",
+        "auth/webauthn/login",
+        "auth/webauthn/authenticate",
+    ):
         operation = spec["paths"][f"{root}/{client}/v1/{endpoint}"]["post"]
         operation.setdefault("parameters", []).append(
             {
