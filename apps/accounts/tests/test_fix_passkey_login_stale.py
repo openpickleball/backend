@@ -35,7 +35,7 @@ def _passkey_settings(settings: Any) -> None:
 
 
 def _after_check(
-    monkeypatch: pytest.MonkeyPatch, change: Callable[[Authenticator], None]
+    monkeypatch: pytest.MonkeyPatch, change: Callable[[Authenticator], object]
 ) -> None:
     """Run ``change`` right after the input checked the assertion."""
     original = LoginPasskeyInput.clean_credential
