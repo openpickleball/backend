@@ -3,8 +3,8 @@
 The engine measures inactivity at a replay's date: a player who has not
 played loses reliability as scheduled replays move forward. So
 ``decay_reliability()`` computes nothing. It stores a ``scheduled``
-replay request when the latest replay is at least the engine config's
-``replay_interval_days`` old, and the replay task does the rest. A beat
+replay request when the most recently created replay is at least the
+engine config's ``replay_interval_days`` old, and the replay task does the rest. A beat
 entry runs the task daily.
 """
 
@@ -207,6 +207,23 @@ def test_the_latest_replay_decides(clock: Clock) -> None:
     clock.set_days_after_play(7)
 
     assert decay_reliability() == DecayOutcome.NOT_DUE
+
+
+def test_the_most_recently_created_replay_decides_not_the_latest_as_of(
+    clock: Clock,
+) -> None:
+    _singles_match()
+    # A replay as of day 7, then one written later as of day 0 (as a
+    # recompute with an earlier --as-of would). The stored ratings come
+    # from the later one, so the decay is due on day 7.
+    for as_of in (date(2026, 3, 8), PLAYED_ON):
+        RatingReplayRequest.objects.create(
+            earliest_date=PLAYED_ON, reason=ReplayReason.VOID
+        )
+        assert services.replay_ratings(as_of=as_of) == "replayed"
+    clock.set_days_after_play(7)
+
+    assert decay_reliability() == DecayOutcome.REQUESTED
 
 
 # Decay through the replay
