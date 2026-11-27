@@ -31,11 +31,15 @@ city, and region are not personal data (a Club is a place or group), so
 address.
 
 Lock order: the acting Account (``FOR KEY SHARE`` through
-``hold_active_account``, ``FOR NO KEY UPDATE`` in ``create_club``), then
-the Club row (``FOR UPDATE``), then invite, role, and grant rows, as in
-``apps.clubs.self_service``. Account deletion deletes Club Roles without
-locking the Club, which takes no lock on the Club either way, so no
-cycle forms; never add a Club lock to deletion.
+``hold_active_account``, ``FOR NO KEY UPDATE`` in ``create_club``), then,
+in ``accept_club_invite``, the invite sender's Account (``FOR KEY
+SHARE``), then the Club row (``FOR UPDATE``), then invite, role, and
+grant rows. Account deletion and TOTP removal lock an Account
+``FOR UPDATE`` and never the Club, so the Club lock does not make an
+accept wait for them: holding the sender does, and the sender's role
+and MFA are read after it. Deletion locks the sender before deleting
+its invite rows, so the sender comes before the invite row here.
+Never add a Club lock to deletion.
 """
 
 from dataclasses import dataclass
@@ -301,11 +305,18 @@ def accept_club_invite(key: str, *, actor: "_User") -> ClubRole:
     with transaction.atomic():
         if not hold_active_account(actor.pk):
             raise NotFound
+        # Account deletion and TOTP removal never lock the Club, so hold
+        # the sender too, before the Club and the invite row (deletion
+        # locks the sender, then deletes its invites).
+        if not hold_active_account(found.invited_by_id):
+            raise NotFound
         club = Club.objects.select_for_update().filter(pk=found.club_id).first()
         invite = find_open_invite(
             ClubInvite.objects.select_for_update().filter(pk=found.pk), key
         )
         if club is None or invite is None:
+            raise NotFound
+        if invite.invited_by_id != found.invited_by_id:
             raise NotFound
         if not invite_matches_account(invite, actor):
             raise NotFound
