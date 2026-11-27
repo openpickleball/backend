@@ -87,6 +87,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from allauth.account.authentication import AUTHENTICATION_METHODS_SESSION_KEY
 from allauth.account.internal.flows.login import record_authentication
+from allauth.account.internal.flows.logout import logout
 from allauth.account.internal.flows.reauthentication import (
     raise_if_reauthentication_required,
 )
@@ -506,7 +507,9 @@ class LoginWebAuthnView(BaseLoginWebAuthnView):
     lock. Then the Account's row is locked first, before anything is
     written, and the passkey and its Account are read again under that
     lock: a passkey removed meanwhile is refused with allauth's
-    ``incorrect_code``, and the login uses the Account as it is now.
+    ``incorrect_code``, and the login uses the Account as it is now. A
+    session signed in to another Account is logged out first, so the
+    passkey's MFA step survives the login.
     allauth's login rules then apply (an inactive Account, the email
     verification stage, OPEN's adapter)."""
 
@@ -529,6 +532,11 @@ class LoginWebAuthnView(BaseLoginWebAuthnView):
                 "credential", get_mfa_adapter().validation_error("incorrect_code")
             )
             return cast("HttpResponse", self.handle_invalid_input(self.input))
+        if request.user.is_authenticated and request.user.pk != passkey.user_id:
+            # allauth records the passkey step, then Django's login flushes
+            # a session of another Account, step and all: end that session
+            # first, through allauth's logout.
+            logout(request)
         login = Login(user=passkey.user, redirect_url=None)
         webauthn_flows.perform_passwordless_login(request, passkey, login)
         _strip_mfa_ids(request)
