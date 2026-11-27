@@ -225,13 +225,12 @@ def _profile(player: Player | None) -> MyPlayerOut | None:
 def _matches(player: Player | None, account: "_User") -> list[ExportMatchOut]:
     if player is None:
         return []
-    played = set(
-        MatchParticipant.objects.filter(player=player).values_list(
-            "match_id", flat=True
-        )
-    )
+    participations = MatchParticipant.objects.filter(player=player)
+    # The set is only for the corrects check below; the filter stays a
+    # subquery, so it binds no parameter per match.
+    played = set(participations.values_list("match_id", flat=True))
     matches = with_match_details(
-        Match.objects.filter(pk__in=played)
+        Match.objects.filter(pk__in=participations.values("match_id"))
         .select_related("corrects")
         .order_by("played_on", "created_at", "pk")
     )
