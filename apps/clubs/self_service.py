@@ -223,7 +223,8 @@ def invite_member(organizer_id: int, *, actor: "_User", email: str, role: str) -
             .filter(organizer_id=organizer.pk, email=address)
             .first()
         )
-        if earlier is None:
+        # Replacing a still open invite adds none; anything else adds one.
+        if earlier is None or earlier.expires_at <= now:
             open_count = OrganizerInvite.objects.filter(
                 organizer_id=organizer.pk, expires_at__gt=now
             ).count()
