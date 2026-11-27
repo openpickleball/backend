@@ -1173,9 +1173,12 @@ OPEN_RATING_SPEC_VERSION = "1.0.0rc1"
 
 # Where a player's public profile lives (#53): the rating lookup's
 # profile_url is this followed by the player's OPEN Code. An absolute URL
-# whose path ends in /, https when DEBUG is off.
+# whose path ends in /, https when DEBUG is off. The default is the PWA at
+# app.openpb.org (ADR 0061); openpb.org has no profile pages.
 OPEN_PUBLIC_PROFILE_URL = _base_url(
-    "OPEN_PUBLIC_PROFILE_URL", "https://openpb.org/players/", require_https=not DEBUG
+    "OPEN_PUBLIC_PROFILE_URL",
+    "https://app.openpb.org/players/",
+    require_https=not DEBUG,
 )
 
 
