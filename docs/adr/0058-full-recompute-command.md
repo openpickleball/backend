@@ -1,6 +1,7 @@
 # 0058. The full recompute command
 
 - Status: Proposed
+- Amended by: [ADR 0060](0060-scheduled-replays-for-reliability-decay.md) (the scheduled replay asks for a replay once the most recently created replay is `replay_interval_days` old, an earlier-`--as-of` recompute included)
 - Date: 2026-11-27
 
 This builds on [ADR 0028](0028-rating-replays-after-match-changes.md) and does not change it.
@@ -24,7 +25,7 @@ The issue asked for writes "in batches inside transactions". ADR 0028 writes the
 
 - A recompute holds the snapshot row and every rated Player's row until it commits, like the regular replay. Live updates wait for it.
 - The recompute's ratings equal the incremental ones in rating, matches played, last played, and established. RD and reliability depend on the date a summary is taken as of: they are equal for players who played on the replay date, and for every other player the engine's inactivity rule makes the replay's RD at least the live one. A test checks this.
-- A write with an `--as-of` between the latest counted match and today is allowed, as decided. It takes every rating as of that date, so inactive players' RD is lower than the regular replay's until the next replay, and nothing asks for one on its own.
+- A write with an `--as-of` between the latest counted match and today is allowed, as decided. It takes every rating as of that date, so inactive players' RD is lower than the regular replay's until the next replay. The scheduled replay (ADR 0060) asks for one once that recompute's `as_of` is `replay_interval_days` old.
 - The issue says "all confirmed matches". The recompute replays `Match.objects.counted()`, as every replay does, so held and disputed matches stay out (ADR 0028).
 
 ## Alternatives considered

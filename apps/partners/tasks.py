@@ -28,11 +28,14 @@ class ClearTokensFailed(Exception):
 def clear_expired_tokens() -> None:
     """Delete expired OAuth tokens and grants, as ``cleartokens`` does.
 
-    Runs django-oauth-toolkit's ``clear_expired()``: expired access tokens
-    with no refresh token, expired ID tokens, expired grants, and orphaned
-    refresh tokens. Revoked refresh tokens stay while
-    ``REFRESH_TOKEN_REUSE_PROTECTION`` is on, since they let a reused
-    token revoke its family. Beat runs it daily. Takes no arguments and
+    Runs django-oauth-toolkit's ``clear_expired()``, which deletes expired
+    access tokens with no refresh token, expired ID tokens with no access
+    token, expired grants (the ``Grant`` model only, never a
+    ``DeviceGrant``), and orphaned refresh tokens. Expired access tokens
+    that still have a refresh token stay, and so do revoked refresh
+    tokens while ``REFRESH_TOKEN_REUSE_PROTECTION`` is on and no refresh
+    token lifetime is set, since they let a reused token revoke its
+    family. Beat runs it daily. Takes no arguments and
     returns nothing, so nothing personal reaches the worker log. Safe to
     run twice. An error is logged by class only and replaced by a
     fixed-text ``ClearTokensFailed``; the next daily run tries again.

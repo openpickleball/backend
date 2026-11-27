@@ -997,8 +997,10 @@ def decay_reliability() -> DecayOutcome:
     computes nothing). So this only stores a ``scheduled`` replay request
     through ``request_replay()``, which queues the replay task after
     commit. It is due when a rating is stored and either no replay has
-    run, or the latest replay's ``as_of`` is at least the engine config's
-    ``replay_interval_days`` before ``replay_as_of()``.
+    run, or the ``as_of`` of the most recently created ``RatingReplay``
+    (by ``created_at``, then id: the stored ratings come from it) is at
+    least the engine config's ``replay_interval_days`` before
+    ``replay_as_of()``.
 
     It writes nothing when no rating is stored (``no_ratings``), when the
     replay is not due (``not_due``), or when a ``scheduled`` request is

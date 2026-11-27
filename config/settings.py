@@ -971,8 +971,8 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=3, minute=30),
         "options": {"expire_seconds": 3600},
     },
-    # Asks for the scheduled replay when the latest replay is at least the
-    # engine's replay_interval_days old, so inactive players' reliability
+    # Asks for the scheduled replay when the most recently created replay
+    # is at least the engine's replay_interval_days old, so inactive players' reliability
     # moves forward (#52, ADR 0060). After the two expiry tasks, so a
     # replay they ask for usually runs first. A run missed for an hour is
     # dropped.
@@ -1025,9 +1025,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=4, minute=10),
         "options": {"expire_seconds": 3600},
     },
-    # Deletes expired OAuth access tokens, ID tokens, and grants, as
-    # django-oauth-toolkit's cleartokens does (#52). Revoked refresh tokens
-    # stay for reuse detection. A run missed for an hour is dropped.
+    # Runs django-oauth-toolkit's clear_expired(), as cleartokens does
+    # (#52): deletes expired access tokens with no refresh token, expired
+    # ID tokens with no access token, expired grants, and orphaned refresh
+    # tokens. Revoked refresh tokens (for reuse detection), expired access
+    # tokens with a refresh token, and device grants stay. A run missed
+    # for an hour is dropped.
     "clear-expired-tokens": {
         "task": "apps.partners.tasks.clear_expired_tokens",
         "schedule": crontab(hour=4, minute=20),
