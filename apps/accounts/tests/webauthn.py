@@ -26,6 +26,15 @@ from fido2.webauthn import (
 _FLAG = AuthenticatorData.FLAG
 
 
+def _members(client_data: object) -> dict[str, Any]:
+    """The extra client data members a test asked for, if any."""
+    if client_data is None:
+        return {}
+    if not isinstance(client_data, dict):
+        raise TypeError("client_data must be a dict")
+    return {str(key): value for key, value in client_data.items()}
+
+
 def _new_key() -> ec.EllipticCurvePrivateKey:
     return ec.generate_private_key(ec.SECP256R1())
 
@@ -60,7 +69,7 @@ class SoftwarePasskey:
         rp_id: str | None = None,
         user_verified: bool = True,
         resident: bool = True,
-        client_data: dict[str, Any] | None = None,
+        client_data: object = None,
     ) -> dict[str, Any]:
         """The registration response for allauth's creation options.
 
@@ -87,7 +96,7 @@ class SoftwarePasskey:
             "webauthn.create",
             websafe_decode(options["challenge"]),
             origin or self.origin,
-            **(client_data or {}),
+            **_members(client_data),
         )
         return {
             "id": self.id,
@@ -109,7 +118,7 @@ class SoftwarePasskey:
         user_verified: bool = True,
         user_handle: bytes | None = None,
         send_user_handle: bool = True,
-        client_data: dict[str, Any] | None = None,
+        client_data: object = None,
     ) -> dict[str, Any]:
         """The authentication response for allauth's request options.
 
@@ -128,7 +137,7 @@ class SoftwarePasskey:
             "webauthn.get",
             websafe_decode(options["challenge"]),
             origin or self.origin,
-            **(client_data or {}),
+            **_members(client_data),
         )
         signature = self.key.sign(
             bytes(auth_data) + collected.hash, ec.ECDSA(hashes.SHA256())
