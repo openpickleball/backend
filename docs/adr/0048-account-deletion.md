@@ -4,6 +4,7 @@
 - Amended by: [ADR 0051](0051-player-data-export.md) (deletion also deletes the data export and the device grants; requesting or downloading an export is acting)
 - Amended by: [ADR 0054](0054-organizer-self-service.md) (deletion also deletes the Organizer Invites to the Account's addresses and those it sent, and blanks the verification statements of an Organizer it renames; creating, renaming, inviting to, or requesting verification of an Organizer, and accepting an invite, is acting)
 - Amended by: [ADR 0055](0055-club-self-service.md) (deletion also deletes the Club Invites to the Account's addresses and those it sent; creating, changing, or inviting to a Club, accepting a Club invite, and changing a Club's admins or grants is acting)
+- Amended by: [ADR 0059](0059-moderator-removal-of-an-under-13-player.md) (`delete_account` takes an `action`, so a moderator's removal of an under-13 player runs the same steps and records `player.underage_remove` instead of `account.delete`)
 - Date: 2026-11-26
 
 ## Context

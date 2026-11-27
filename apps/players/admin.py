@@ -1,32 +1,57 @@
-"""A read-only Player admin with an audited reveal (issue #115, ADR 0046).
+"""The Player admin: read-only, with an audited reveal (issue #115, ADR 0046)
+and an under-13 removal (issue #190, ADR 0059).
 
 Staff with ``players.view_player`` see a Player's OPEN Code, display
-name, city and region, and Account. The legal name, birth year and
-month, and gender division show only as "Hidden": they are never listed,
-searched, filtered, or sorted on. An Account that also has
+name, and city and region. The legal name, birth year and month, and
+gender division show only as "Hidden": they are never listed, searched,
+filtered, or sorted on. The Account (shown as its email) shows only to
+an Account with ``players.view_personal_data``, and "Hidden" to anyone
+else, moderators included (ADR 0059). An Account that also has
 ``players.view_personal_data`` (no role holds it by default; the
-Moderator group does not) sees a "Reveal personal data" button. Its POST
-records one ``player.personal_data_view`` Audit Event, naming the fields
-and never a value, and shows the values in that response only. A POST is
-an admin write, so it needs a recent MFA step (ADR 0045). Nobody adds,
-changes, or deletes a Player here: Players change only through
-``apps.players.services``.
+Moderator group holds ``players.view_player`` but not this) sees a
+"Reveal personal data" button. Its POST records one
+``player.personal_data_view`` Audit Event, naming the fields and never a
+value, and shows the values in that response only. A POST is an admin
+write, so it needs a recent MFA step (ADR 0045). Every query-string
+lookup on the list is refused. Nobody adds
+or edits a Player here, and nobody deletes one except through the
+under-13 removal below: Players change only through
+``apps.players.services`` and ``apps.players.underage``.
+
+Only an Account with both ``players.remove_underage_player`` and
+``players.view_player`` sees a "Remove personal data (under 13)" button
+(#190, ADR 0059); the Moderator group holds both.
+It leads to a confirmation page naming only the OPEN Code, whose POST
+runs ``apps.players.underage.remove_underage_player``. That service
+records the one Audit Event; this view records none.
 """
 
 from typing import Any
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.admin.utils import unquote
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import QuerySet
-from django.http import Http404, HttpRequest, HttpResponse, HttpResponseNotAllowed
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseNotAllowed,
+    HttpResponseRedirect,
+)
 from django.template.response import TemplateResponse
-from django.urls import URLPattern, path
+from django.urls import URLPattern, path, reverse
 
+from apps.accounts.deletion import AccountAlreadyDeleted
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event
 from apps.players.models import Player
+from apps.players.underage import (
+    REMOVE_UNDERAGE_PERMISSION,
+    UnderageRemovalRefused,
+    remove_underage_player,
+)
 
 VIEW_PERSONAL_DATA_PERMISSION = "players.view_personal_data"
 HIDDEN = "Hidden"
@@ -36,7 +61,10 @@ REVEALED_FIELDS = ("birth_month", "birth_year", "gender_division", "legal_name")
 
 @admin.register(Player)
 class PlayerAdmin(admin.ModelAdmin[Player]):
-    """Read-only Players. Personal data only through the audited reveal."""
+    """Read-only Players, except the under-13 removal (ADR 0059).
+
+    Personal data only through the audited reveal.
+    """
 
     list_display = ("public_code", "display_name")
     search_fields = ("public_code",)
@@ -60,6 +88,30 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
         # not break the page. The reveal reads them on access.
         return super().get_queryset(request).defer(*REVEALED_FIELDS)
 
+    def _shown_fields(self, request: HttpRequest) -> tuple[str, ...]:
+        # The Account renders as its email (User.__str__): only an Account
+        # that may reveal personal data sees it (ADR 0059).
+        if request.user.has_perm(VIEW_PERSONAL_DATA_PERMISSION):
+            return tuple(self.fields)
+        return tuple(
+            "hidden_account" if name == "account" else name for name in self.fields
+        )
+
+    def get_fields(self, request: HttpRequest, obj: Any = None) -> Any:
+        return self._shown_fields(request)
+
+    def get_readonly_fields(self, request: HttpRequest, obj: Any = None) -> Any:
+        return self._shown_fields(request)
+
+    def lookup_allowed(self, lookup: str, value: str, request: HttpRequest) -> bool:
+        """Refuse every query-string lookup (Django answers 400).
+
+        The list has no filters and searches the OPEN Code only, so a
+        lookup on a name, a place, or an encrypted field (``isnull``) never
+        lists Players.
+        """
+        return False
+
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
@@ -68,6 +120,10 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
 
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
         return False
+
+    @admin.display(description="Account")
+    def hidden_account(self, player: Player) -> str:
+        return HIDDEN
 
     @admin.display(description="Legal name")
     def hidden_legal_name(self, player: Player) -> str:
@@ -97,16 +153,91 @@ class PlayerAdmin(admin.ModelAdmin[Player]):
         form_url: str = "",
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
-        context = {**(extra_context or {}), "may_reveal": self.may_reveal(request)}
+        context = {
+            **(extra_context or {}),
+            "may_reveal": self.may_reveal(request),
+            "may_remove": self.may_remove(request),
+        }
         return super().change_view(request, object_id, form_url, context)
 
+    def may_remove(self, request: HttpRequest, player: Player | None = None) -> bool:
+        return self.has_view_permission(request, player) and request.user.has_perm(
+            REMOVE_UNDERAGE_PERMISSION
+        )
+
     def get_urls(self) -> list[URLPattern]:
+        name = f"{self.opts.app_label}_{self.opts.model_name}"
         reveal = path(
             "<path:object_id>/personal-data/",
             self.admin_site.admin_view(self.personal_data_view),
-            name=f"{self.opts.app_label}_{self.opts.model_name}_personal_data",
+            name=f"{name}_personal_data",
         )
-        return [reveal, *super().get_urls()]
+        remove = path(
+            "<path:object_id>/remove-under-13/",
+            self.admin_site.admin_view(self.remove_underage_view),
+            name=f"{name}_remove_underage",
+        )
+        return [reveal, remove, *super().get_urls()]
+
+    def remove_underage_view(
+        self, request: HttpRequest, object_id: str
+    ) -> HttpResponse:
+        """GET confirms; POST removes the Player's personal data (ADR 0059).
+
+        The service checks the permission again on the stored Account and
+        records the one Audit Event. Every message names the OPEN Code only.
+        """
+        if request.method not in ("GET", "POST"):
+            return HttpResponseNotAllowed(["GET", "POST"])
+        if not self.may_remove(request):
+            raise PermissionDenied
+        player = self.get_object(request, unquote(object_id))
+        if player is None:
+            raise Http404
+        if not self.may_remove(request, player):
+            raise PermissionDenied
+        change_url = reverse(
+            f"admin:{self.opts.app_label}_{self.opts.model_name}_change",
+            args=[player.pk],
+            current_app=self.admin_site.name,
+        )
+        changelist_url = reverse(
+            f"admin:{self.opts.app_label}_{self.opts.model_name}_changelist",
+            current_app=self.admin_site.name,
+        )
+        if request.method == "GET":
+            context = {
+                **self.admin_site.each_context(request),
+                "title": "Remove personal data (under 13)",
+                "subtitle": player.public_code,
+                "opts": self.opts,
+                "original": player,
+            }
+            return TemplateResponse(
+                request, "admin/players/player/remove_underage.html", context
+            )
+        code = player.public_code
+        try:
+            result = remove_underage_player(player, moderator=request.user)
+        except (UnderageRemovalRefused, AccountAlreadyDeleted):
+            self.message_user(
+                request,
+                f"The personal data of player {code} was not removed: "
+                "this removal is not allowed or was already done.",
+                messages.ERROR,
+            )
+            # Another removal may have deleted the Player meanwhile.
+            if not Player.objects.filter(pk=player.pk).exists():
+                return HttpResponseRedirect(changelist_url)
+            return HttpResponseRedirect(change_url)
+        self.message_user(
+            request,
+            f"The personal data of player {code} was removed.",
+            messages.SUCCESS,
+        )
+        if result.player_kept:
+            return HttpResponseRedirect(change_url)
+        return HttpResponseRedirect(changelist_url)
 
     def personal_data_view(self, request: HttpRequest, object_id: str) -> HttpResponse:
         """Record one Audit Event, then show the four values in this response."""

@@ -1,6 +1,7 @@
 # 0046. Encrypt personal data fields and audit staff access
 
 - Status: Proposed
+- Amended by: [ADR 0059](0059-moderator-removal-of-an-under-13-player.md) (the Player admin is read-only except a moderator's removal of an under-13 player's personal data, and the Moderator group holds `players.view_player`, still not `players.view_personal_data`)
 - Date: 2026-11-26
 
 ## Context

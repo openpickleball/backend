@@ -47,6 +47,8 @@ EXPECTED = {
     "clubs.view_organizer",
     "clubs.view_organizerreport",
     "clubs.view_organizerverificationrequest",
+    "players.remove_underage_player",
+    "players.view_player",
 }
 
 

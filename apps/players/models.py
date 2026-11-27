@@ -111,7 +111,8 @@ class GenderDivision(models.TextChoices):
     """The gender division a Player enters (issue #215).
 
     Every new Player has one. The column still allows an empty value,
-    only so that a later removal (#190, #116) can clear it.
+    only so that a removal (the under-13 removal, #190, ADR 0059, or
+    Account deletion, #116) can clear it.
     """
 
     MENS = "mens", "Men's"
@@ -147,7 +148,8 @@ class Player(_LinkMessagesModel, PublicCodeModel):
     # applies their rules (_check_encrypted_fields).
     legal_name = EncryptedCharField(max_length=200, blank=True)
     # Required for every new Player (blank=False, so full_clean refuses
-    # None). NULL only after Account deletion removes them (#116).
+    # None). NULL only after Account deletion (#116) or a moderator's
+    # under-13 removal (#190, ADR 0059) removes them.
     birth_year = EncryptedPositiveSmallIntegerField(
         null=True,
         validators=[MinValueValidator(EARLIEST_BIRTH_YEAR)],
@@ -160,7 +162,7 @@ class Player(_LinkMessagesModel, PublicCodeModel):
         error_messages=_INTEGER_MESSAGES,
     )
     # Required for every new Player (issue #215). save() still allows "",
-    # for a later removal (#190, #116).
+    # for a removal (#190, ADR 0059, or Account deletion, #116).
     gender_division = EncryptedCharField(
         max_length=8,
         choices=GenderDivision,
@@ -183,6 +185,10 @@ class Player(_LinkMessagesModel, PublicCodeModel):
                 "Can view a player's legal name, birth year and month, "
                 "and gender division",
             ),
+            (
+                "remove_underage_player",
+                "Can remove the personal data of a player found to be under 13",
+            ),
         )
 
     def __str__(self) -> str:
@@ -199,7 +205,7 @@ class Player(_LinkMessagesModel, PublicCodeModel):
         it. ``update_fields`` is read once, so a one-shot iterable reaches
         the check and Django's save as the same set. A new Player without a
         birth year or month is refused: the columns allow NULL only for
-        Account deletion (ADR 0048).
+        Account deletion (ADR 0048) and the under-13 removal (ADR 0059).
         """
         update_fields = kwargs.get("update_fields")
         if update_fields is not None:
@@ -209,7 +215,8 @@ class Player(_LinkMessagesModel, PublicCodeModel):
             ENCRYPTED_CHECKED_FIELDS if update_fields is None else update_fields
         )
         if self._state.adding:
-            # The columns allow NULL only for Account deletion (ADR 0048).
+            # The columns allow NULL only for Account deletion (ADR 0048)
+            # and the under-13 removal (ADR 0059).
             missing = {
                 name: [ValidationError(_BIRTH_REQUIRED)]
                 for name in BIRTH_FIELDS
@@ -225,8 +232,8 @@ class Player(_LinkMessagesModel, PublicCodeModel):
         A birth year or month must be an int in range, a legal name text
         within the field's ``max_length``, and a gender division text and
         one of the stored values (each within its ``max_length``). A None value is
-        left alone: the columns allow NULL only for Account deletion, and
-        ``save()`` refuses a new Player without a birth year or month. Messages are the model's fixed
+        left alone: the columns allow NULL only for Account deletion and
+        the under-13 removal (ADR 0059), and ``save()`` refuses a new Player without a birth year or month. Messages are the model's fixed
         ones, never the value.
         """
         errors: dict[str, list[ValidationError]] = {}
