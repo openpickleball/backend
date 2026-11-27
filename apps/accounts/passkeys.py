@@ -189,7 +189,8 @@ def _incorrect() -> ValidationError:
     return error
 
 
-# What fido2's JSON and CBOR decoders raise on malformed input.
+# What fido2's JSON and CBOR decoders raise on malformed input. Its CBOR
+# decoder recurses, so deeply nested data raises RecursionError.
 _DECODE_ERRORS = (
     TypeError,
     ValueError,
@@ -197,8 +198,44 @@ _DECODE_ERRORS = (
     AttributeError,
     IndexError,
     OverflowError,
+    RecursionError,
     struct.error,
 )
+
+# Generous caps on the binary members of a credential, in bytes, checked
+# on their base64url text before anything is decoded. Real values are far
+# smaller: an attestation object of a few hundred bytes (a few KiB with a
+# certificate chain), authenticator data and a signature of under 200
+# bytes. The caps bound the decoders' work; RecursionError covers nesting
+# that fits under them.
+_MAX_ATTESTATION_OBJECT_BYTES = 16384
+_MAX_AUTHENTICATOR_DATA_BYTES = 4096
+_MAX_SIGNATURE_BYTES = 4096
+
+
+def _text_length(max_bytes: int) -> int:
+    """The longest base64url text that ``max_bytes`` bytes encode to."""
+    return -(-max_bytes // 3) * 4
+
+
+def _within_caps(credential: dict[str, Any], caps: dict[str, int]) -> bool:
+    """Whether each capped member of the credential's response, when it
+    is text, is no longer than its cap."""
+    response = credential.get("response")
+    if not isinstance(response, dict):
+        return True
+    return all(
+        not isinstance(response.get(name), str)
+        or len(response[name]) <= _text_length(cap)
+        for name, cap in caps.items()
+    )
+
+
+_REGISTRATION_CAPS = {"attestationObject": _MAX_ATTESTATION_OBJECT_BYTES}
+_AUTHENTICATION_CAPS = {
+    "authenticatorData": _MAX_AUTHENTICATOR_DATA_BYTES,
+    "signature": _MAX_SIGNATURE_BYTES,
+}
 
 
 def _parse_registration(credential: object) -> RegistrationResponse:
@@ -208,7 +245,9 @@ def _parse_registration(credential: object) -> RegistrationResponse:
     attestation object that does not decode was a 500, and fido2 asserts
     that the authenticator data holds the attested credential data.
     """
-    if not isinstance(credential, dict):
+    if not isinstance(credential, dict) or not _within_caps(
+        credential, _REGISTRATION_CAPS
+    ):
         raise _incorrect()
     try:
         parsed: RegistrationResponse = RegistrationResponse.from_dict(credential)
@@ -222,7 +261,9 @@ def _parse_registration(credential: object) -> RegistrationResponse:
 
 def _parse_authentication(credential: object) -> AuthenticationResponse:
     """The authentication response, or allauth's ``incorrect_code``."""
-    if not isinstance(credential, dict):
+    if not isinstance(credential, dict) or not _within_caps(
+        credential, _AUTHENTICATION_CAPS
+    ):
         raise _incorrect()
     try:
         parsed: AuthenticationResponse = AuthenticationResponse.from_dict(credential)
