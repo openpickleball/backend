@@ -7,8 +7,10 @@ and the role it gives:
 - An invite is to one normalized address (``normalized_invite_email``,
   the Account email rules), and lasts until ``expires_at``.
 - Its key exists only in the emailed link. The row stores the key's
-  SHA-256 (``hash_invite_key``), so a database read never gives a usable
-  link. ``new_invite_key`` makes one.
+  SHA-256 (``hash_invite_key``), so a read of the invite table never
+  gives a usable link; the plain key also sits in the queued email's
+  body (``QueuedEmail``) until it is sent and deleted, as allauth's keys
+  do. ``new_invite_key`` makes one.
 - ``find_open_invite`` finds an unexpired invite by its key's hash. A
   key that is empty, longer than ``KEY_MAX_LENGTH``, or not ASCII is
   refused before any query.

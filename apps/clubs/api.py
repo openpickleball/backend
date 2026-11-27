@@ -29,9 +29,11 @@ through ``apps.clubs.self_service``:
 - The operations with an Organizer code in the path act for an admin
   member: rename, invites, the member list, a member's role and removal,
   and the verification request. An Account without MFA gets 403
-  ``mfa_required`` before any lookup, whatever the code (ADR 0043). A
-  non-member, a match manager, and an unknown or malformed code (or
-  member Player code) all get the same 404.
+  ``mfa_required`` before any database lookup, the same for every
+  well-formed code (ADR 0043); a malformed code is already a 404 when
+  ``PublicCodePath`` reads the path. A non-member, a match manager, and
+  an unknown or malformed code (or member Player code) all get the same
+  404.
 - ``POST /organizer/invites/accept`` (``accept_organizer_invite``): the
   invited Account joins; every refusal is one 404.
 
@@ -233,7 +235,8 @@ def _membership(account: "_User", organizer_id: int) -> OrganizerMembershipOut:
 def _mfa_admin(request: HttpRequest) -> "_User":
     """The signed-in Account, or 403 ``mfa_required`` without a method.
 
-    Runs before any lookup, so the answer is the same for every code.
+    Runs before any database lookup, so the answer is the same for every
+    well-formed code (a malformed one is a 404 from ``PublicCodePath``).
     ``account_auth`` already refused a session that did not pass MFA for
     an Account that has a method.
     """

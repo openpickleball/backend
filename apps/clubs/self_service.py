@@ -21,7 +21,13 @@ Organizer made here stays unverified until a moderator verifies it.
   that Organizer. Demoting or removing an admin deletes the invites it
   sent there in the same transaction. Every refusal is ``NotFound``.
 
-An Organizer always keeps one active admin (``Conflict`` otherwise).
+On these paths an Organizer always keeps one active admin (``Conflict``
+otherwise). Account deletion and the staff admin can still leave an
+Organizer without an admin; staff repair it. A verified Organizer is not
+renamed here (``Conflict``). Once an Organizer is verified, an admin's
+invite gives the new member trusted-submitter authority (ADR 0021) as
+soon as it is accepted and the member has MFA, with no moderator review
+of that member.
 Each change records its Audit Events in its own transaction: never the
 Organizer's name, an address, or a statement (ADR 0009).
 
