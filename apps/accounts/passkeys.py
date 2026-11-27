@@ -35,6 +35,7 @@ from allauth.mfa.adapter import get_adapter
 from allauth.mfa.models import Authenticator
 from allauth.mfa.webauthn.internal import auth as webauthn_auth
 from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
+from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -108,13 +109,13 @@ def _websafe_decode(text: str) -> bytes:
 
 
 def client_data_origin(credential: object) -> str | None:
-    """The origin in a WebAuthn credential's client data, or None when
-    the credential or its client data is malformed or too large (its
-    ``type`` and ``challenge`` must be text, the challenge at most 128
-    characters), or the
-    credential was made in a cross-origin frame (``crossOrigin`` other
-    than false, or any ``topOrigin``): OPEN is never framed
-    (``frame-ancestors 'none'``)."""
+    """The origin in a WebAuthn credential's client data, or None.
+
+    None when the credential or its client data is malformed or too
+    large (``type`` and ``challenge`` must be text, the challenge at most
+    128 characters), or when the credential was made in a cross-origin
+    frame (``crossOrigin`` other than false, or any ``topOrigin``): OPEN
+    is never framed (``frame-ancestors 'none'``)."""
     if not isinstance(credential, dict):
         return None
     response = credential.get("response")
@@ -273,9 +274,12 @@ def _text_within(value: object, max_bytes: int) -> bool:
 # No other member becomes bytes: ``clientExtensionResults`` is wrapped as
 # a mapping (a non-mapping raises AttributeError, caught; its shape is
 # checked when a passkey is added, _extension_results_ok), and
-# ``authenticatorAttachment`` and ``type`` are enums (ValueError, caught).
-# After parsing, a COSE key's values reach int.from_bytes or cryptography,
-# which refuse non-bytes with TypeError and allocate nothing; the key is
+# ``authenticatorAttachment`` and ``type`` are fido2 string enums, whose
+# lookup gives None for an unknown value rather than raising.
+# After parsing, a COSE key's values reach int.from_bytes or cryptography.
+# int.from_bytes takes bytes or a sequence of small ints (a CBOR array
+# from the authenticator data, bounded by its cap) and refuses other
+# values with TypeError; cryptography refuses non-bytes. The key is
 # probed when added (_public_key_usable) and its errors are caught when an
 # assertion is verified. fido2's server decodes only the session's own
 # challenge.
@@ -432,6 +436,24 @@ def _registered_with_id(credential_id: str) -> QuerySet[Authenticator]:
     return found
 
 
+class CredentialField(forms.JSONField):
+    """allauth's credential field, taking only a JSON object.
+
+    The headless clients send the credential as an object. Django's
+    JSONField would parse a string with ``json.loads`` and catch only
+    JSONDecodeError, so a string of deeply nested JSON (RecursionError)
+    or a long run of digits (ValueError) was a 500. Anything but an
+    object gets allauth's ``incorrect_code``.
+    """
+
+    def to_python(self, value: Any) -> Any:
+        if value in self.empty_values:
+            return None
+        if not isinstance(value, dict):
+            raise _incorrect()
+        return value
+
+
 class _ChecksOrigin:
     """Check the credential's origin and shape before allauth verifies
     it. allauth's parser lets a KeyError or AttributeError through (a
@@ -461,6 +483,8 @@ class AddPasskeyInput(AddWebAuthnInput):  # type: ignore[misc]
     allauth leaves out), so passkey login finds one passkey by its id.
     The name, when sent, is text of at most 100 characters, as a rename
     takes."""
+
+    credential = CredentialField(required=True)
 
     name = inputs.CharField(required=False, max_length=100)
 
@@ -496,10 +520,14 @@ class AddPasskeyInput(AddWebAuthnInput):  # type: ignore[misc]
 class AuthenticatePasskeyInput(_ChecksOrigin, AuthenticateWebAuthnInput):  # type: ignore[misc]
     """allauth's MFA login stage input, from an allowed origin only."""
 
+    credential = CredentialField(required=True)
+
 
 class ReauthenticatePasskeyInput(_ChecksOrigin, ReauthenticateWebAuthnInput):  # type: ignore[misc]
     """allauth's passkey reauthentication input, from an allowed origin
     only."""
+
+    credential = CredentialField(required=True)
 
 
 class LoginPasskeyInput(LoginWebAuthnInput):  # type: ignore[misc]
@@ -512,6 +540,8 @@ class LoginPasskeyInput(LoginWebAuthnInput):  # type: ignore[misc]
     Account's passkeys and requires user verification, with no per
     Account rate limit (the Account comes from the request).
     """
+
+    credential = CredentialField(required=True)
 
     def clean_credential(self) -> Authenticator:
         credential = self.cleaned_data.get("credential")
