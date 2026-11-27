@@ -13,8 +13,12 @@ gets one fixed 404.
 
 The request has its own throttle, ``DataExportThrottle`` (a day window
 from ``API_DATA_EXPORT_THROTTLE_PER_DAY``), which replaces the router's
-Account throttle (ADR 0030). The download uses the Account throttle.
+Account throttle (ADR 0030). Only a request with a recent
+reauthentication counts against it; one without counts against the
+Account throttle's windows. The download uses the Account throttle.
 """
+
+import threading
 
 from django.conf import settings
 from django.http import Http404, HttpRequest, HttpResponse
@@ -29,7 +33,11 @@ from apps.exports.schemas import (
 from apps.exports.services import ExportNotFound, download_export, request_export
 from apps.matches.api import request_account
 from config.api_errors import ErrorResponse
-from config.auth import account_auth, require_recent_reauthentication
+from config.auth import (
+    account_auth,
+    recently_reauthenticated,
+    require_recent_reauthentication,
+)
 from config.throttling import (
     DAY,
     FixedWindowThrottle,
@@ -46,14 +54,34 @@ class DataExportThrottle(FixedWindowThrottle):
     ``API_DATA_EXPORT_THROTTLE_PER_DAY``.
 
     One day window, counted by the Account's primary key, never its
-    email. The rate is read on each request.
+    email. The rate is read on each request. Only a request with a recent
+    reauthentication counts here: one without (which the view refuses
+    with 403 ``reauthentication_required``) is counted against the
+    Account throttle's windows instead, so a refusal never spends an
+    export request and refusals are still limited.
     """
+
+    def __init__(self, scope: str) -> None:
+        super().__init__(scope)
+        self._delegated = threading.local()
 
     def bucket(self, request: HttpRequest) -> str | None:
         return account_bucket(request)
 
     def limits(self) -> Windows:
         return (("day", settings.API_DATA_EXPORT_THROTTLE_PER_DAY, DAY),)
+
+    def allow_request(self, request: HttpRequest) -> bool:
+        delegated = not recently_reauthenticated(request)
+        self._delegated.value = delegated
+        if delegated:
+            return account_throttle.allow_request(request)
+        return super().allow_request(request)
+
+    def wait(self) -> float | None:
+        if getattr(self._delegated, "value", False):
+            return account_throttle.wait()
+        return super().wait()
 
 
 @me_router.post(

@@ -91,9 +91,9 @@ class ReauthenticationRequired(HttpError):
         )
 
 
-def require_recent_reauthentication(request: HttpRequest) -> None:
-    """Raise ``ReauthenticationRequired`` unless the request's Account
-    reauthenticated within ``ACCOUNT_REAUTHENTICATION_TIMEOUT``.
+def recently_reauthenticated(request: HttpRequest) -> bool:
+    """Whether the request's Account reauthenticated within
+    ``ACCOUNT_REAUTHENTICATION_TIMEOUT``.
 
     allauth's own check, run on the session behind the request's
     authentication (``auth_session``), so it works for both clients: the
@@ -101,7 +101,12 @@ def require_recent_reauthentication(request: HttpRequest) -> None:
     login alone does not count, only allauth's reauthentication flows.
     """
     view = SimpleNamespace(user=request.auth, session=auth_session(request))  # type: ignore[attr-defined]
-    if not did_recently_reauthenticate(cast("HttpRequest", view)):
+    return bool(did_recently_reauthenticate(cast("HttpRequest", view)))
+
+
+def require_recent_reauthentication(request: HttpRequest) -> None:
+    """Raise ``ReauthenticationRequired`` unless ``recently_reauthenticated``."""
+    if not recently_reauthenticated(request):
         raise ReauthenticationRequired
 
 
