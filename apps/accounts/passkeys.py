@@ -360,11 +360,16 @@ class _ChecksOrigin:
 
 
 class AddPasskeyInput(AddWebAuthnInput):  # type: ignore[misc]
-    """allauth's add input, from an allowed origin only, refusing a
-    credential id that any Account already holds (WebAuthn's
-    registration step that allauth leaves out), so passkey login finds
-    one passkey by its id. The name is text of at most 100 characters,
-    as a rename takes."""
+    """allauth's add input with OPEN's checks, each refused with
+    allauth's ``incorrect_code`` before allauth verifies the credential:
+    an allowed origin and no cross-origin frame (``check_origin``), a
+    registration within the size caps that decodes, attested credential
+    data whose id is the credential's ``id`` and ``rawId``, a public key
+    fido2 can verify with, well formed extension results, and a
+    credential id no Account holds yet (WebAuthn's registration step that
+    allauth leaves out), so passkey login finds one passkey by its id.
+    The name, when sent, is text of at most 100 characters, as a rename
+    takes."""
 
     name = inputs.CharField(required=False, max_length=100)
 
@@ -438,14 +443,21 @@ class LoginPasskeyInput(LoginWebAuthnInput):  # type: ignore[misc]
 
 
 class UpdatePasskeyInput(inputs.Input):  # type: ignore[misc]
-    """A rename: a public passkey id from the player's list and a name.
-    Any other id is refused with one fixed message."""
+    """A rename: a public passkey id from the player's list and a name,
+    text of at most 100 characters. Any other id is refused with one
+    fixed message, and a name that is not text with another."""
 
     name = inputs.CharField(required=True, max_length=100)
 
     def __init__(self, *args: Any, user: "_User", **kwargs: Any) -> None:
         self.user = user
         super().__init__(*args, **kwargs)
+
+    def clean_name(self) -> str:
+        if not isinstance(self.data.get("name"), str):
+            raise ValidationError(PASSKEY_NAME_NOT_TEXT, code="invalid")
+        name: str = self.cleaned_data["name"]
+        return name
 
     def clean(self) -> dict[str, Any]:
         cleaned: dict[str, Any] = super().clean() or {}

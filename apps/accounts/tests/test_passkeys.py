@@ -913,3 +913,22 @@ def test_the_app_client_cannot_add_a_passkey_from_a_native_origin(
     assert response.status_code == 400
     assert _error_codes(response) == ["incorrect_code"]
     assert _passkeys(account) == []
+
+
+@pytest.mark.parametrize(
+    "name", [["x"], 5, {"text": "x"}], ids=["list", "number", "object"]
+)
+def test_a_rename_refuses_a_name_that_is_not_text(
+    account: "_User", passkey: SoftwarePasskey, name: object
+) -> None:
+    session = _added(BROWSER, account, passkey)
+    [row] = _passkeys(account)
+
+    response = session.put_json(
+        PASSKEY_PATH, {"id": public_passkey_id(row), "name": name}
+    )
+
+    assert response.status_code == 400
+    assert [error.get("param") for error in response.json()["errors"]] == ["name"]
+    row.refresh_from_db()
+    assert row.wrap().name == "Phone"
