@@ -2,9 +2,9 @@
 
 The rating lookup returns ``profile_url``, this setting followed by
 the player's OPEN Code. Unset or empty, it is
-``https://openpb.org/players/``. A value must be an absolute http or https
-URL with a host and a path that ends in ``/``, with no query, fragment, or
-user info, and https when DEBUG is off. A refused value stops startup,
+``https://app.openpb.org/players/``, in the PWA. A value must be an
+absolute http or https URL with a host and a path that ends in ``/``,
+with no query, fragment, or user info, and https when DEBUG is off. A refused value stops startup,
 naming the variable and never echoing the value. Each case runs in a
 fresh process. Made-up hosts only.
 """
@@ -18,7 +18,7 @@ import pytest
 from config.tests.test_settings import BASE_DIR, LOCAL_DEBUG, PRODUCTION_LIKE, _env
 
 NAME = "OPEN_PUBLIC_PROFILE_URL"
-DEFAULT = "https://openpb.org/players/"
+DEFAULT = "https://app.openpb.org/players/"
 
 # A made-up host that must never appear in any output.
 MARKER = "profile-q7z.example.org"
