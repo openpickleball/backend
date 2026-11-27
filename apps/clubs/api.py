@@ -428,18 +428,14 @@ def change_organizer_member_role(
     account = _mfa_admin(request)
     organizer_id = _organizer_id(code)
     try:
-        self_service.change_member_role(
+        changed = self_service.change_member_role(
             organizer_id, player, actor=account, role=payload.role
         )
-        members = self_service.list_members(organizer_id, actor=account)
     except self_service.NotFound:
         raise Http404 from None
     except self_service.Conflict as error:
         raise HttpError(409, str(error)) from None
-    for member in members:
-        if member.player == player:
-            return _member_out(member)
-    raise Http404
+    return _member_out(changed)
 
 
 @organizer_router.delete(

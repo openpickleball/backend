@@ -340,23 +340,22 @@ def list_members(organizer_id: int, *, actor: "_User") -> list[MemberView]:
                 "pk",
             )
         )
-        views = []
-        for membership in memberships:
-            account = membership.account
-            player = getattr(account, "player", None)
-            views.append(
-                MemberView(
-                    player=player.public_code if player is not None else None,
-                    display_name=(
-                        player.display_name
-                        if player is not None and account.is_active
-                        else None
-                    ),
-                    role=MemberRole(membership.role),
-                    you=membership.account_id == actor.pk,
-                )
-            )
+        views = [_member_view(membership, actor) for membership in memberships]
     return views
+
+
+def _member_view(membership: OrganizerMember, actor: "_User") -> MemberView:
+    """``membership`` as an admin sees it. Load it with ``account__player``."""
+    account = membership.account
+    player = getattr(account, "player", None)
+    return MemberView(
+        player=player.public_code if player is not None else None,
+        display_name=(
+            player.display_name if player is not None and account.is_active else None
+        ),
+        role=MemberRole(membership.role),
+        you=membership.account_id == actor.pk,
+    )
 
 
 def _target_membership(organizer: Organizer, player_code: str) -> OrganizerMember:
@@ -387,12 +386,13 @@ def _keeps_an_admin(organizer: Organizer, leaving: OrganizerMember) -> bool:
 
 def change_member_role(
     organizer_id: int, player_code: str, *, actor: "_User", role: str
-) -> None:
+) -> MemberView:
     """Give the member whose Player has ``player_code`` the role ``role``.
 
-    ``NotFound`` when no member of this Organizer has that Player, and
-    ``Conflict`` when it would leave no active admin. An unchanged role
-    records nothing.
+    Returns the changed member, read in the change's transaction, so an
+    admin who demoted themselves gets it too. ``NotFound`` when no member
+    of this Organizer has that Player, and ``Conflict`` when it would
+    leave no active admin. An unchanged role records nothing.
     """
     role = MemberRole(role)
     with transaction.atomic():
@@ -406,6 +406,10 @@ def change_member_role(
             raise Conflict(LAST_ADMIN_MESSAGE)
         membership.role = role
         save_access_row(membership, actor=actor)
+        changed = OrganizerMember.objects.select_related("account__player").get(
+            pk=membership.pk
+        )
+        return _member_view(changed, actor)
 
 
 def remove_member(organizer_id: int, player_code: str, *, actor: "_User") -> None:
