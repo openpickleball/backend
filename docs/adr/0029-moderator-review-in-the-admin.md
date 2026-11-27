@@ -1,7 +1,7 @@
 # 0029. Moderator review in the admin
 
 - Status: Proposed
-- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer review matches: disputes and holds are settled by players and Organizers or expire, and moderators keep organizer verification and the bulk void; #273 removed the approve, void, dismiss flags, and edit actions, `approve_match`, and `resolve_flags`, so nothing writes the `dismissed` flag resolution any more, and the admin now lists every match by default, with an optional disputed or held filter)
+- Amended by: [ADR 0034](0034-lowest-level-resolution.md) (moderators no longer review matches: disputes and holds are settled by players and Organizers or expire, and moderators keep organizer verification and the bulk void; #273 removed the approve, void, dismiss flags, and edit actions, `approve_match`, and `resolve_flags`, so nothing writes the `dismissed` flag resolution any more, and the admin now lists every match by default, with an optional disputed or held filter; #327 removed `void_match`)
 - Amended by: [ADR 0037](0037-organizer-reports.md) (the `Moderator` group also views Organizer Reports, and moderators close them from the admin)
 - Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (every staff Account, moderators included, needs MFA to use the admin)
 - Amended by: [ADR 0054](0054-organizer-self-service.md) (the `Moderator` group also views Organizer Verification Requests, `clubs.view_organizerverificationrequest`, and moderators close them from the admin with a typed reason)
