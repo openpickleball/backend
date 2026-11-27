@@ -456,10 +456,12 @@ def _target_membership(organizer: Organizer, player_code: str) -> OrganizerMembe
 
 
 def _keeps_an_admin(organizer: Organizer, leaving: OrganizerMember) -> bool:
-    """Whether an active admin with MFA other than ``leaving`` stays (#232).
-    Call under the Organizer lock, so concurrent changes count in turn."""
+    """Whether an active admin with MFA and no New Member Hold in force,
+    other than ``leaving``, stays (#232). Call under the Organizer lock, so
+    concurrent changes count in turn."""
     others = (
         OrganizerMember.objects.filter(
+            not_held(),
             organizer_id=organizer.pk,
             role=MemberRole.ADMIN,
             account__is_active=True,

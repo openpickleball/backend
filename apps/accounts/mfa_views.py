@@ -190,7 +190,7 @@ def schedule_mfa_removed(account_id: int) -> None:
 
 def _leaves_organizer_without_mfa_admin(account: "_User") -> bool:
     """Whether ``account`` is an admin of an Organizer with no other active
-    admin with MFA (#232).
+    admin with MFA and no New Member Hold in force (#232).
 
     Locks those Organizers ``FOR NO KEY UPDATE``, ordered by id, after the
     Account row the view already holds and before counting, so this runs
@@ -200,7 +200,7 @@ def _leaves_organizer_without_mfa_admin(account: "_User") -> bool:
     be taken on this path (ADR 0055).
     """
     # Imported here: apps.clubs imports this app's modules.
-    from apps.clubs.models import MemberRole, Organizer, OrganizerMember
+    from apps.clubs.models import MemberRole, Organizer, OrganizerMember, not_held
 
     organizer_ids = list(
         Organizer.objects.select_for_update(no_key=True)
@@ -215,6 +215,8 @@ def _leaves_organizer_without_mfa_admin(account: "_User") -> bool:
     for organizer_id in organizer_ids:
         others = (
             OrganizerMember.objects.filter(
+                # A held admin cannot act, so it does not count.
+                not_held(),
                 organizer_id=organizer_id,
                 role=MemberRole.ADMIN,
                 account__is_active=True,
