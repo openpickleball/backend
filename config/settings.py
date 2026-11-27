@@ -783,6 +783,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # allauth's per-request state. It must come after AuthenticationMiddleware.
     "allauth.account.middleware.AccountMiddleware",
+    # Answers 400, not 500, for a JSON body allauth's headless parser
+    # raises on (#337). It acts only on an exception from that parser.
+    "apps.accounts.middleware.HeadlessJsonErrorMiddleware",
     # Ends a signed-in browser session past its lifetime (#100). After
     # AuthenticationMiddleware.
     "apps.accounts.middleware.SessionLifetimeMiddleware",
