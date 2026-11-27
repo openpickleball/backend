@@ -962,6 +962,13 @@ CELERY_BEAT_SCHEDULE = {
     # Runs pending rating replay requests whose queued task was lost (#47).
     # Does nothing when no request is pending. A run missed for 15 minutes
     # is dropped.
+    # Deletes expired Organizer invites, which hold an address (#229).
+    # A run missed for an hour is dropped.
+    "sweep-organizer-invites": {
+        "task": "apps.clubs.tasks.sweep_organizer_invites",
+        "schedule": crontab(hour=4, minute=0),
+        "options": {"expire_seconds": 3600},
+    },
     "replay-ratings": {
         "task": "apps.ratings.tasks.replay_ratings",
         "schedule": crontab(minute="*/15"),
@@ -1008,6 +1015,18 @@ UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES = _version(
 ORGANIZER_REVIEW_WINDOW_DAYS = _days("ORGANIZER_REVIEW_WINDOW_DAYS", 90)
 
 
+# Organizer self-service (#229, ADR 0054)
+
+# Organizers an Account may be an admin member of before creating another
+# is refused (409). Unset or empty gives 5.
+ORGANIZER_CREATE_LIMIT_PER_ACCOUNT = _version("ORGANIZER_CREATE_LIMIT_PER_ACCOUNT", 5)
+# Unexpired invites an Organizer may have open at once (409 past it).
+# Unset or empty gives 50.
+ORGANIZER_OPEN_INVITES_LIMIT = _version("ORGANIZER_OPEN_INVITES_LIMIT", 50)
+# Days an Organizer invite link works. Unset or empty gives 7.
+ORGANIZER_INVITE_DAYS = _days("ORGANIZER_INVITE_DAYS", 7)
+
+
 # API throttling (#34, ADR 0030)
 
 # Requests per Account to every first-party operation that needs sign-in,
@@ -1025,6 +1044,11 @@ API_ORGANIZER_REPORT_THROTTLE_PER_DAY = _rate(
 # Data export requests per Account per day (#39, ADR 0051), the request
 # operation's own throttle, apart from the Account throttle.
 API_DATA_EXPORT_THROTTLE_PER_DAY = _rate("API_DATA_EXPORT_THROTTLE_PER_DAY", 3)
+# Organizer invites per Account per day (#229), the invite operation's
+# own throttle, apart from the Account throttle: each one sends an email.
+API_ORGANIZER_INVITE_THROTTLE_PER_DAY = _rate(
+    "API_ORGANIZER_INVITE_THROTTLE_PER_DAY", 20
+)
 # The request header the proxy in front of the app sets to the client IP.
 # DigitalOcean App Platform sets do-connecting-ip. X-Forwarded-For is never
 # read: a client can forge it.

@@ -7,7 +7,11 @@ active Account with ``clubs.verify_organizer``, or that is a member of the
 Organizer. A change records one Audit Event in the same transaction. An
 unverify that changes the status also closes every open Organizer Report
 on it (``apps.clubs.reports``) in that transaction, with one
-``organizer_report.close`` Audit Event each. A call that would change
+``organizer_report.close`` Audit Event each, and a verify that changes
+the status closes the Organizer's open Verification Request
+(``apps.clubs.verification_requests``) with one
+``organizer_verification_request.close`` event, rule ``verified``. A
+call that would change
 nothing records nothing. Each call sets
 ``organizer.verification_changed`` to whether that call changed the
 status, so a caller (the admin) reports only its own changes.
@@ -22,6 +26,7 @@ from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
 from apps.clubs.models import VERIFY_PERMISSION, Organizer, OrganizerMember
 from apps.clubs.reports import RULE_ORGANIZER_UNVERIFIED, close_open_reports
+from apps.clubs.verification_requests import close_open_verification_requests
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import _User
@@ -98,7 +103,11 @@ def _set_verified(
                 after=snapshot(locked, _FIELDS),
                 reason=reason,
             )
-            if not verified:
+            if verified:
+                # Under the Organizer lock, so a request made meanwhile
+                # waits and then sees the Organizer verified (409).
+                close_open_verification_requests(locked, actor=actor, reason=reason)
+            else:
                 # In the same transaction, under the Organizer lock, so a
                 # report filed meanwhile waits and then sees it unverified.
                 close_open_reports(
