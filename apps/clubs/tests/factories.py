@@ -19,6 +19,7 @@ from apps.accounts.tests.factories import UserFactory, enroll_totp
 from apps.clubs.invites import hash_invite_key, new_invite_key
 from apps.clubs.models import (
     Club,
+    ClubInvite,
     ClubOrganizerGrant,
     ClubRole,
     ClubRoleKind,
@@ -117,6 +118,23 @@ class OrganizerInviteFactory(DjangoModelFactory[OrganizerInvite]):
     email = Sequence(lambda n: f"invitee{n}@example.com")  # type: ignore[no-untyped-call]
     key_hash = LazyFunction(lambda: hash_invite_key(new_invite_key()))  # type: ignore[no-untyped-call]
     role = MemberRole.MATCH_MANAGER
+    expires_at = LazyFunction(lambda: timezone.now() + timedelta(days=7))  # type: ignore[no-untyped-call]
+
+
+class ClubInviteFactory(DjangoModelFactory[ClubInvite]):
+    """An open invite to a made-up address to be a Club admin.
+
+    The key is random and not kept; pass ``key_hash=hash_invite_key(key)``
+    to know it.
+    """
+
+    class Meta:
+        model = ClubInvite
+
+    club = SubFactory(ClubFactory)  # type: ignore[no-untyped-call]
+    invited_by = SubFactory(UserFactory)  # type: ignore[no-untyped-call]
+    email = Sequence(lambda n: f"club.invitee{n}@example.com")  # type: ignore[no-untyped-call]
+    key_hash = LazyFunction(lambda: hash_invite_key(new_invite_key()))  # type: ignore[no-untyped-call]
     expires_at = LazyFunction(lambda: timezone.now() + timedelta(days=7))  # type: ignore[no-untyped-call]
 
 

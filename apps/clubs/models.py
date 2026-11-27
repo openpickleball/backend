@@ -387,8 +387,9 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
 
     A Club admin manages the Club's profile and its Club Organizer Grants.
     A Club Role gives no authority to submit or change a match (ADR 0021).
-    Change it only through ``apps.audit.access`` (the admin does), which
-    records each add, change, and removal.
+    Change it only through ``apps.audit.access`` (the admin and
+    ``apps.clubs.club_self_service`` do), which records each add, change,
+    and removal.
     """
 
     club = models.ForeignKey(
@@ -444,7 +445,8 @@ class ClubOrganizerGrant(_LinkMessagesModel, AuditedAccessModel):
     an Event that names a Club needs a grant from that Club to the
     Event's Organizer. The grant gives consent, not trust: the Organizer
     must still be verified. Change it only through ``apps.audit.access``
-    (the admin does), which records each add, change, and removal.
+    (the admin and ``apps.clubs.club_self_service`` do), which records
+    each add, change, and removal.
     """
 
     club = models.ForeignKey(
@@ -647,3 +649,37 @@ class OrganizerVerificationRequest(_LinkMessagesModel):
     @property
     def is_open(self) -> bool:
         return self.closed_at is None
+
+
+class ClubInvite(_LinkMessagesModel, InviteModel):
+    """A Club admin's invite of an address to be a Club admin (#230).
+
+    Create, accept, and delete it only through
+    ``apps.clubs.club_self_service``. It gives the admin role, the only
+    Club Role. One invite per Club and address: inviting the address
+    again replaces it. The address is an identifying field, so no admin,
+    API response, Audit Event, or log line shows it; the row is deleted
+    when accepted, when it expires (``sweep_club_invites``), when its
+    sender is removed through self-service, and at Account deletion.
+    """
+
+    club = models.ForeignKey(
+        Club,
+        on_delete=models.CASCADE,
+        related_name="invites",
+        error_messages=_CLUB_MESSAGES,
+    )
+
+    class Meta:
+        # No admin: the row holds an address.
+        default_permissions = ()
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["club", "email"],
+                name="clubs_clubinvite_unique_address",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # The row id only: never the address or the Club's name.
+        return f"Club invite {self.pk}"
