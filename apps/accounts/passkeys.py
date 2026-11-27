@@ -40,6 +40,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db.models import QuerySet
 from django.utils.crypto import salted_hmac
+from fido2 import cbor
 from fido2.cose import CoseKey
 from fido2.utils import websafe_encode
 from fido2.webauthn import AuthenticationResponse, RegistrationResponse
@@ -242,6 +243,42 @@ def _text_within(value: object, max_bytes: int) -> bool:
     return isinstance(value, str) and len(value) <= _text_length(max_bytes)
 
 
+# Where fido2 2.2.1 turns an untrusted value into bytes while parsing a
+# credential (RegistrationResponse and AuthenticationResponse.from_dict),
+# and what refuses a bad value before fido2 sees it. _parse_value decodes
+# text with websafe_decode and passes anything else to the bytes type
+# (``bytes(N)`` is N zero bytes, a list of ints becomes bytes), and
+# websafe_decode itself calls bytes() on anything but text.
+#  1. ``rawId`` (both responses; ``id`` is compared with it as is): text
+#     within 1023 bytes (_binary_members_ok).
+#  2. ``response.clientDataJSON`` (CollectedClientData, a bytes type):
+#     text within 4 KiB (_binary_members_ok, client_data_origin).
+#  3. CollectedClientData's ``challenge`` (websafe_decode): text of at
+#     most 128 characters, and ``type`` text (client_data_origin). The
+#     JSON is bounded by 2 and its RecursionError is caught.
+#  4. ``response.attestationObject`` (AttestationObject, a bytes type):
+#     text within 16 KiB (_binary_members_ok).
+#  5. AttestationObject's ``authData`` (AuthenticatorData(...) calls
+#     bytes()): the object must be a CBOR map with a text ``fmt``, a byte
+#     string ``authData``, and a map ``attStmt`` (_attestation_shape_ok).
+#     Its recursive CBOR decoding is bounded by 4, RecursionError caught.
+#  6. AuthenticatorData's parsing (from 5 or 7) reads real bytes only:
+#     attested credential data and extensions are CBOR decoded from them,
+#     bounded by the caps, RecursionError caught.
+#  7. ``response.authenticatorData`` (AuthenticatorData, a bytes type):
+#     text within 4 KiB (_binary_members_ok).
+#  8. ``response.signature``: text within 8 KiB (_binary_members_ok).
+#  9. ``response.userHandle`` (bytes or null): absent, null, or text
+#     within 64 bytes (_binary_members_ok).
+# No other member becomes bytes: ``clientExtensionResults`` is wrapped as
+# a mapping (a non-mapping raises AttributeError, caught; its shape is
+# checked when a passkey is added, _extension_results_ok), and
+# ``authenticatorAttachment`` and ``type`` are enums (ValueError, caught).
+# After parsing, a COSE key's values reach int.from_bytes or cryptography,
+# which refuse non-bytes with TypeError and allocate nothing; the key is
+# probed when added (_public_key_usable) and its errors are caught when an
+# assertion is verified. fido2's server decodes only the session's own
+# challenge.
 def _binary_members_ok(
     credential: dict[str, Any], response_caps: dict[str, int]
 ) -> bool:
@@ -274,6 +311,24 @@ _AUTHENTICATION_CAPS = {
 }
 
 
+def _attestation_shape_ok(text: str) -> bool:
+    """Whether the attestation object is a CBOR map with a text ``fmt``, a
+    byte string ``authData``, and a map ``attStmt``. fido2 builds the
+    authenticator data with ``bytes()``, so an integer there would make
+    memory in proportion to its value. The text is within its cap, and
+    the decoder's errors (RecursionError included) read as malformed."""
+    try:
+        attestation = cbor.decode(_websafe_decode(text))
+    except (binascii.Error, *_DECODE_ERRORS):
+        return False
+    return (
+        isinstance(attestation, dict)
+        and isinstance(attestation.get("fmt"), str)
+        and isinstance(attestation.get("authData"), bytes)
+        and isinstance(attestation.get("attStmt"), dict)
+    )
+
+
 def _parse_registration(credential: object) -> RegistrationResponse:
     """The registration response, or allauth's ``incorrect_code``.
 
@@ -281,8 +336,10 @@ def _parse_registration(credential: object) -> RegistrationResponse:
     attestation object that does not decode was a 500, and fido2 asserts
     that the authenticator data holds the attested credential data.
     """
-    if not isinstance(credential, dict) or not _binary_members_ok(
-        credential, _REGISTRATION_CAPS
+    if (
+        not isinstance(credential, dict)
+        or not _binary_members_ok(credential, _REGISTRATION_CAPS)
+        or not _attestation_shape_ok(credential["response"]["attestationObject"])
     ):
         raise _incorrect()
     try:
