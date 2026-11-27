@@ -20,6 +20,13 @@ repos:
       - id: check-yaml
       - id: check-toml
 
+  # The organization's commit message rules, the same ones the
+  # pull-request check runs.
+  - repo: https://github.com/openpickleball/.github
+    rev: abe2be839a87b41e4eb35d02b70001fa866740ba # v1.0.0
+    hooks:
+      - id: commit-message
+
   - repo: local
     hooks:
       - id: ruff-check
@@ -38,8 +45,3 @@ repos:
         language: system
         types_or: [python, pyi]
         pass_filenames: false
-      - id: commit-message
-        name: commit message
-        entry: uv run --locked python -I scripts/check_pull_request.py commit-msg
-        language: system
-        stages: [commit-msg]

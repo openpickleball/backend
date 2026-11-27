@@ -35,7 +35,7 @@ A pull request merges only when these checks pass:
 - `types`: `mypy .`.
 - `test`: `manage.py check`, the missing-migrations check, the API schema check, and `pytest -n auto` (in parallel) with the coverage floor.
 - `sign-off`: every commit carries a DCO sign-off.
-- `pull-request`: the commit messages follow "Commit messages" below, the title has no type prefix, and the description links an issue and is not damaged by shell escaping. It runs again when you edit the title or description.
+- `pull-request / check`: the commit messages follow "Commit messages" below, the title has no type prefix, and the description links an issue and is not damaged by shell escaping. It runs again when you edit the title or description.
 
 A maintainer reviews and merges every pull request.
 
@@ -65,27 +65,11 @@ Both rewrite your branch, so push with `git push --force-with-lease`. Only do th
 
 ## Commit messages
 
-Write each commit message like this:
+Follow the organization's [commit message rules](https://github.com/openpickleball/.github/blob/main/CONTRIBUTING.md#commit-messages): an imperative subject of at most 72 characters with a capital letter, no type prefix such as `test:`, no period at the end, then a blank line and a body that says why. The `pull-request` check runs them on every pull request, through the organization's shared workflow.
 
-```text
-Import email tasks before checking their registration
+`uv run pre-commit install` also installs the organization's `commit-message` hook, which checks the same rules and the sign-off on each commit before you push. If you installed the hooks before this rule, run it again to add the hook. To reword a commit that is already pushed, use `git rebase -i`, then `git push --force-with-lease`.
 
-autodiscover_tasks() loads task modules lazily outside a worker, so the
-routing test failed with NotRegistered when it ran alone.
-
-Closes #328
-
-Signed-off-by: Your Name <you@example.com>
-```
-
-- The subject is imperative ("Add", "Fix", "Refuse"), starts with a capital letter, has no period at the end, and is at most 72 characters.
-- No type prefix such as `test:` or `fix(api):`.
-- A blank line, then a body that says why the change is needed.
-- No `fixup!` or `squash!` commits left in a pull request: squash them with `git rebase -i --autosquash`.
-
-`uv run pre-commit install` installs a `commit-msg` hook that checks these rules and the sign-off on each commit, before you push. If you installed the hooks before this rule, run it again to add the hook. The `pull-request` check runs the same rules in CI (`scripts/check_pull_request.py`). To reword a commit that is already pushed, use `git rebase -i`, then `git push --force-with-lease`.
-
-When you write a pull request description or commit message from a shell, pass it from a file (`gh pr create --body-file`, `git commit -F`). In a double-quoted PowerShell string, a backtick is an escape character, so `` `apps `` turns into a bell character and Markdown code spans are lost.
+When you write a pull request description or commit message from a shell, pass it from a file (`gh pr create --body-file`, `git commit -F`). In a double-quoted PowerShell string, a backtick is an escape character, so Markdown code spans are lost.
 
 ## Code style
 
