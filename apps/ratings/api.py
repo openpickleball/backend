@@ -37,6 +37,7 @@ from apps.matches.models import RatingFormat
 from apps.players.models import Player
 from apps.public_ids.api import PublicCodePath, get_by_public_code
 from apps.public_ids.codes import CodeType
+from apps.ratings.cache import get_cached_player_ratings, set_cached_player_ratings
 from apps.ratings.models import RatingHistory, RatingState
 from apps.ratings.pagination import RatingHistoryPagination
 from apps.ratings.schemas import (
@@ -77,8 +78,11 @@ def get_player_ratings(request: HttpRequest, code: PlayerCode) -> PlayerRatingsO
     )
     if not player.privacy.visible_to("rating_visibility", viewer):
         raise Http404
+    cached = get_cached_player_ratings(player.public_code)
+    if cached is not None:
+        return cached
     states = RatingState.objects.filter(player=player).order_by("rating_format")
-    return PlayerRatingsOut(
+    payload = PlayerRatingsOut(
         code=player.public_code,
         profile_url=f"{settings.OPEN_PUBLIC_PROFILE_URL}{player.public_code}",
         demonstration=DEMONSTRATION_RATINGS,
@@ -86,6 +90,8 @@ def get_player_ratings(request: HttpRequest, code: PlayerCode) -> PlayerRatingsO
             RatingFormat(state.rating_format): rating_out(state) for state in states
         },
     )
+    set_cached_player_ratings(player.public_code, payload)
+    return payload
 
 
 @router.get(
