@@ -88,24 +88,34 @@ def passkeys_by_public_id(account: "_User") -> dict[str, Authenticator]:
     return {public_passkey_id(row): row for row in rows}
 
 
+# Real client data is a few hundred bytes. Anything over this is refused
+# before it is decoded, so a deeply nested document never reaches the
+# JSON decoder.
+_MAX_CLIENT_DATA_BYTES = 4096
+_MAX_CLIENT_DATA_TEXT = -(-_MAX_CLIENT_DATA_BYTES // 3) * 4
+
+
 def _websafe_decode(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
 def client_data_origin(credential: object) -> str | None:
     """The origin in a WebAuthn credential's client data, or None when
-    the credential or its client data is malformed."""
+    the credential or its client data is malformed or too large."""
     if not isinstance(credential, dict):
         return None
     response = credential.get("response")
     if not isinstance(response, dict):
         return None
     encoded = response.get("clientDataJSON")
-    if not isinstance(encoded, str):
+    if not isinstance(encoded, str) or len(encoded) > _MAX_CLIENT_DATA_TEXT:
         return None
     try:
-        client_data = json.loads(_websafe_decode(encoded))
-    except (binascii.Error, ValueError):
+        raw = _websafe_decode(encoded)
+        if len(raw) > _MAX_CLIENT_DATA_BYTES:
+            return None
+        client_data = json.loads(raw)
+    except (binascii.Error, ValueError, RecursionError):
         return None
     if not isinstance(client_data, dict):
         return None

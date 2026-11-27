@@ -141,6 +141,8 @@ def test_client_data_origin_reads_the_origin() -> None:
         _credential(_client_data(["origin", ORIGIN])),
         _credential(_client_data({"type": "webauthn.get"})),
         _credential(_client_data({"origin": 42})),
+        # Over the 4 KiB cap, though otherwise well formed.
+        _credential(_client_data({"origin": ORIGIN, "pad": "x" * 4100})),
     ],
 )
 def test_client_data_origin_is_none_for_malformed_input(credential: object) -> None:
