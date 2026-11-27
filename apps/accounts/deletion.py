@@ -8,9 +8,9 @@
   ``EmailAddress`` rows, MFA authenticators, accepted agreement rows,
   OAuth tokens and grants issued to it, its data export (ADR 0051), the
   Organizer Reports it filed (an open one is closed first, with an Audit
-  Event), the Organizer Invites addressed to its addresses or sent by it
-  (#229), queued emails to its addresses, and the admin log entries tied
-  to it;
+  Event), the Organizer and Club Invites addressed to its addresses or
+  sent by it (#229, #230), queued emails to its addresses, and the admin
+  log entries tied to it;
 - its Organizer memberships and Club Roles, through ``apps.audit.access``
   so each removal records an Audit Event. An Organizer whose only member
   is this Account is treated as that person: its name becomes
@@ -88,6 +88,7 @@ from apps.audit.access import (
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event
 from apps.clubs.models import (
+    ClubInvite,
     ClubRole,
     Organizer,
     OrganizerInvite,
@@ -191,7 +192,7 @@ def delete_account(
         # A build holds the Account FOR KEY SHARE, so it committed before
         # the Account lock above; its email is deleted with the rest.
         delete_exports_for(locked.pk)
-        _delete_organizer_invites(locked, addresses)
+        _delete_invites(locked, addresses)
         _delete_queued_emails(addresses)
         _delete_log_entries(locked, log_targets)
 
@@ -336,14 +337,15 @@ def _delete_oauth_rows(account: "_User") -> None:
         model.objects.filter(user_id=account.pk).delete()
 
 
-def _delete_organizer_invites(account: "_User", addresses: set[str]) -> None:
-    """Delete the invites to any of ``addresses`` and those the Account sent.
+def _delete_invites(account: "_User", addresses: set[str]) -> None:
+    """Delete the Organizer and Club Invites (#229, #230) to any of
+    ``addresses`` and those the Account sent.
 
     An invite's address is stored normalized, as an Account email is.
     """
-    OrganizerInvite.objects.filter(
-        Q(email__in=sorted(addresses)) | Q(invited_by_id=account.pk)
-    ).delete()
+    owned = Q(email__in=sorted(addresses)) | Q(invited_by_id=account.pk)
+    OrganizerInvite.objects.filter(owned).delete()
+    ClubInvite.objects.filter(owned).delete()
 
 
 def _delete_queued_emails(addresses: set[str]) -> None:
