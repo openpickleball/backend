@@ -75,8 +75,8 @@ locks its row before allauth's login, which keeps every login rule.
 A removal that succeeds ends the Account's other sessions (#100, ADR
 0047): those with a user session row, in the removal's transaction.
 
-A removal that would leave the Account with no method is refused with
-409 ``last_mfa_admin`` (allauth's error shape, fixed text) when the
+A TOTP or passkey removal that would leave the Account with no method
+is refused with 409 ``last_mfa_admin`` (allauth's error shape, fixed text) when the
 Account is an admin of an Organizer with no other active admin with MFA
 (#232, ADR 0057). It removes and records nothing. The check runs after
 the reauthentication requirement, and locks those Organizers
@@ -178,6 +178,34 @@ LAST_MFA_ADMIN_MESSAGE = (
     "You are the last admin with two-factor authentication of an organizer. "
     "Make another admin, or have one set up two-factor authentication, first."
 )
+
+
+def _check_method_removal(
+    account: "_User", removing: list[int]
+) -> tuple[bool, "HttpResponse | None"]:
+    """Whether removing the Authenticators ``removing`` leaves ``account``
+    with no method (TOTP or passkey), and the 409 ``last_mfa_admin``
+    refusal when it would while the Account is an admin of an Organizer
+    with no other active admin with MFA and no New Member Hold in force
+    (#232). Shared by TOTP and passkey removal; call after the
+    reauthentication requirement, under the Account lock."""
+    last_method = (
+        not Authenticator.objects.filter(user_id=account.pk, type__in=MFA_METHOD_TYPES)
+        .exclude(pk__in=removing)
+        .exists()
+    )
+    if last_method and _leaves_organizer_without_mfa_admin(account):
+        # Nothing removed or recorded.
+        return last_method, JsonResponse(
+            {
+                "status": HTTPStatus.CONFLICT,
+                "errors": [
+                    {"message": LAST_MFA_ADMIN_MESSAGE, "code": "last_mfa_admin"}
+                ],
+            },
+            status=HTTPStatus.CONFLICT,
+        )
+    return last_method, None
 
 
 def schedule_mfa_removed(account_id: int) -> None:
@@ -370,24 +398,9 @@ class ManageTOTPView(_GuardsMFAChanges, BaseManageTOTPView):
             nothing: HttpResponse = super().delete(request, *args, **kwargs)
             return nothing
         account = _account(request.user)
-        last_method = (
-            not Authenticator.objects.filter(
-                user_id=account.pk, type__in=MFA_METHOD_TYPES
-            )
-            .exclude(pk=totp.pk)
-            .exists()
-        )
-        if last_method and _leaves_organizer_without_mfa_admin(account):
-            # Nothing removed or recorded (#232).
-            return JsonResponse(
-                {
-                    "status": HTTPStatus.CONFLICT,
-                    "errors": [
-                        {"message": LAST_MFA_ADMIN_MESSAGE, "code": "last_mfa_admin"}
-                    ],
-                },
-                status=HTTPStatus.CONFLICT,
-            )
+        last_method, refusal = _check_method_removal(account, [totp.pk])
+        if refusal is not None:
+            return refusal
         # The codes go with the last method (allauth's
         # delete_dangling_recovery_codes).
         codes_go = (
@@ -524,6 +537,11 @@ class ManageWebAuthnView(_GuardsMFAChanges, BaseManageWebAuthnView):
         # Read under the Account lock, by the input.
         passkeys: list[Authenticator] = self.input.cleaned_data["authenticators"]
         account = _account(request.user)
+        last_method, refusal = _check_method_removal(
+            account, [passkey.pk for passkey in passkeys]
+        )
+        if refusal is not None:
+            return refusal
         # The codes go with the last method (allauth's
         # delete_dangling_recovery_codes).
         codes_go = (
@@ -547,6 +565,9 @@ class ManageWebAuthnView(_GuardsMFAChanges, BaseManageWebAuthnView):
                 # A removed method ends the Account's other sessions
                 # (#100), those with a user session row.
                 end_other_sessions(request, account)
+                if last_method:
+                    # The other admins hear of it on commit (#232).
+                    schedule_mfa_removed(account.pk)
             return removed
 
 
