@@ -1,4 +1,4 @@
-"""Club self-service at /api/v1/clubs/ (#230), through
+"""Club self-service at /api/v1/clubs (#230), through
 ``apps.clubs.club_self_service``.
 
 - ``POST /clubs`` (``create_club``): an Account whose login address is

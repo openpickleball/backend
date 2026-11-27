@@ -19,7 +19,7 @@ delete), at /api/v1/organizer/ the CSV results upload
 (/api/v1/organizer/results-files/{code}) and the signed-in Account's own
 Organizer memberships (/api/v1/organizer/organizers), and at
 /api/v1/organizers/ a report of a verified Organizer to OPEN Moderators
-(/api/v1/organizers/{code}/reports), and at /api/v1/clubs/ Club
+(/api/v1/organizers/{code}/reports), and at /api/v1/clubs Club
 self-service (`apps.clubs.club_api.club_router`, #230): creating and
 reading a Club, its profile, admins, invites, and Club Organizer Grants.
 
