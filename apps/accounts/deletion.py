@@ -43,7 +43,9 @@ the deleted Account itself: an event naming a hard-deleted Account fails
 the delete at commit (``AuditEvent.actor_user`` uses ``PROTECT``). The
 one ``account.delete`` event per deletion targets the Account and says,
 in ``after``, whether the Account and the Player were kept. It holds no
-identifying value.
+identifying value. A moderator's removal of a player under 13 (#190,
+ADR 0059) runs the same steps and records ``player.underage_remove``
+in its place, naming the cleared Player fields too.
 
 Lock order: the Account row (``FOR UPDATE``, as ``create_player`` takes
 it, and before ``report_organizer`` can take it ``FOR KEY SHARE``), then
@@ -156,8 +158,20 @@ def deleted_email() -> str:
     return f"{DELETED_EMAIL_PREFIX}{secrets.token_hex(16)}@{DELETED_EMAIL_DOMAIN}"
 
 
+# The actions a deletion's own Audit Event may record: Account deletion,
+# or a moderator's removal of a player under 13 (#190, ADR 0059).
+_DELETION_ACTIONS = frozenset(
+    {AuditAction.ACCOUNT_DELETE, AuditAction.PLAYER_UNDERAGE_REMOVE}
+)
+# The Player fields a removal clears or deletes, as its event names them.
+CLEARED_PLAYER_FIELD_NAMES = tuple(sorted(_CLEARED_PLAYER_FIELDS))
+
+
 def delete_account(
-    account: "_User", *, actor: "_User | AnonymousUser | None"
+    account: "_User",
+    *,
+    actor: "_User | AnonymousUser | None",
+    action: AuditAction = AuditAction.ACCOUNT_DELETE,
 ) -> AccountDeletion:
     """Delete ``account``'s personal data, as the module docstring says.
 
@@ -167,8 +181,17 @@ def delete_account(
     Account staff deactivated, with its data still on it, is deleted as
     any other. Call it in a transaction of its own, one Account per
     transaction (the admin's delete wraps it with its ``admin.delete``
-    event): its locks last until the outermost transaction ends.
+    event, and ``remove_underage_player`` with its checks): its locks last
+    until the outermost transaction ends.
+
+    ``action`` is the action of the one event that records the deletion:
+    ``account.delete``, or ``player.underage_remove`` for a moderator's
+    removal of a player under 13 (ADR 0059), whose ``after`` also names
+    the cleared Player fields. Any other value raises ``ValueError``
+    before anything is written.
     """
+    if action not in _DELETION_ACTIONS:
+        raise ValueError("A deletion records only a deletion action.")
     user_model = get_user_model()
     event_actor = None if actor is None or actor.pk == account.pk else actor
     with transaction.atomic():
@@ -210,12 +233,14 @@ def delete_account(
             get_application_model()._default_manager.filter(user_id=locked.pk).exists()
         )
         account_kept = owns_application or not _deletable(locked)
-        record_event(
-            action=AuditAction.ACCOUNT_DELETE,
-            target=locked,
-            actor=event_actor,
-            after={"account_kept": account_kept, "player_kept": player_kept},
-        )
+        after: dict[str, Any] = {
+            "account_kept": account_kept,
+            "player_kept": player_kept,
+        }
+        if action == AuditAction.PLAYER_UNDERAGE_REMOVE:
+            # The field names only, never a value (ADR 0009).
+            after["fields"] = list(CLEARED_PLAYER_FIELD_NAMES)
+        record_event(action=action, target=locked, actor=event_actor, after=after)
         if account_kept:
             _clear_account(locked)
         else:

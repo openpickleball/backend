@@ -418,3 +418,48 @@ def test_device_grants_are_deleted_on_a_kept_account() -> None:
     assert (
         not get_device_grant_model().objects.filter(user_id=player.account_id).exists()
     )
+
+
+def test_an_action_other_than_the_two_removals_raises_and_writes_nothing() -> None:
+    player = PlayerFactory.create(account=_account_with_rows())
+    _played(player)
+    events = AuditEvent.objects.count()
+
+    with pytest.raises(ValueError, match="action"):
+        delete_account(
+            player.account, actor=player.account, action=AuditAction.MATCH_VOID
+        )
+
+    player.refresh_from_db()
+    assert player.display_name != DELETED_PLAYER_NAME
+    assert get_user_model().objects.get(pk=player.account_id).is_active
+    assert EmailAddress.objects.filter(user_id=player.account_id).exists()
+    assert AuditEvent.objects.count() == events
+
+
+def test_the_underage_action_records_its_event_with_the_field_names() -> None:
+    player = PlayerFactory.create(account=_account_with_rows())
+    _played(player)
+    moderator = UserFactory.create()
+
+    delete_account(
+        player.account, actor=moderator, action=AuditAction.PLAYER_UNDERAGE_REMOVE
+    )
+
+    assert not AuditEvent.objects.filter(action=AuditAction.ACCOUNT_DELETE).exists()
+    event = AuditEvent.objects.get(action=AuditAction.PLAYER_UNDERAGE_REMOVE)
+    assert event.actor_user_id == moderator.pk
+    assert event.target_object_id == str(player.account_id)
+    assert event.after == {
+        "account_kept": True,
+        "player_kept": True,
+        "fields": [
+            "birth_month",
+            "birth_year",
+            "city",
+            "display_name",
+            "gender_division",
+            "legal_name",
+            "region",
+        ],
+    }

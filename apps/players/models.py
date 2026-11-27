@@ -183,6 +183,10 @@ class Player(_LinkMessagesModel, PublicCodeModel):
                 "Can view a player's legal name, birth year and month, "
                 "and gender division",
             ),
+            (
+                "remove_underage_player",
+                "Can remove the personal data of a player found to be under 13",
+            ),
         )
 
     def __str__(self) -> str:

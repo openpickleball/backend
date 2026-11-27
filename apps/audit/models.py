@@ -59,6 +59,10 @@ class AuditAction(models.TextChoices):
         "player.personal_data_view",
         "Player personal data viewed",
     )
+    PLAYER_UNDERAGE_REMOVE = (
+        "player.underage_remove",
+        "Under-13 player's personal data removed",
+    )
     ORGANIZER_VERIFY = "organizer.verify", "Organizer verification"
     ORGANIZER_UNVERIFY = "organizer.unverify", "Organizer verification removed"
     ORGANIZER_NAME_REMOVE = (
