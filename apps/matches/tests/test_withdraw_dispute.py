@@ -28,11 +28,11 @@ from apps.matches.tests.conftest import (
     WORKFLOW_PLAYED_ON,
     SignalLog,
 )
+from apps.matches.tests.factories import void_for_test
 from apps.matches.workflow import (
     MatchStateError,
     dispute_match,
     resolve_dispute,
-    void_match,
     withdraw_dispute,
 )
 from apps.players.models import Player
@@ -212,7 +212,7 @@ def test_a_match_never_disputed_is_refused(
 def test_a_voided_match_is_refused(event: Event, players: list[Player]) -> None:
     match, member = _event_match(event, players)
     dispute_match(match, actor=players[0].account)
-    void_match(match, actor=member)
+    void_for_test(match, actor=member)
 
     with pytest.raises(MatchStateError):
         withdraw_dispute(match, actor=players[0].account)

@@ -23,7 +23,7 @@ from apps.matches import results_files, tasks
 from apps.matches.csv_format import COLUMNS
 from apps.matches.models import GameTarget, Match, ResultsFile
 from apps.matches.results_files import create_results_file, process_results_file
-from apps.matches.workflow import void_match
+from apps.matches.tests.factories import void_for_test
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 
@@ -92,7 +92,7 @@ def test_a_row_whose_hold_was_lifted_gets_no_warning() -> None:
         result = real_record_match(**values)
         recorded.append(result.match)
         if len(recorded) == 2:
-            void_match(recorded[0], actor=member)
+            void_for_test(recorded[0], actor=member)
         return result
 
     with mock.patch.object(results_files, "record_match", record_then_void_first):

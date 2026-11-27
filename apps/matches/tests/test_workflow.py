@@ -1,8 +1,8 @@
-"""The match confirmation workflow: confirm, dispute, resolve, void, edit (#26).
+"""The match confirmation workflow: confirm, dispute, resolve, edit (#26).
 
-Resolving a dispute, voiding one match, and editing are the Event's
-verified Organizer's (or the submitting application's); a moderator does
-none of them (#273).
+Resolving a dispute and editing are the Event's verified Organizer's (or
+the submitting application's); a moderator does neither (#273). No
+standalone service voids a single match (#327).
 
 Every transition writes exactly one Audit Event and sends its signal
 inside the transaction. A refused or failed action writes nothing and
@@ -21,7 +21,6 @@ from apps.audit.models import AuditAction, AuditEvent
 from apps.clubs.models import ClubRoleKind, MemberRole
 from apps.clubs.tests.factories import (
     ClubFactory,
-    ClubOrganizerGrantFactory,
     ClubRoleFactory,
     OrganizerMemberFactory,
     verified_organizer,
@@ -46,14 +45,13 @@ from apps.matches.services import (
 )
 from apps.matches.signals import MatchChange
 from apps.matches.tests.conftest import SignalLog
-from apps.matches.tests.factories import MatchFactory, raw_update
+from apps.matches.tests.factories import MatchFactory, raw_update, void_for_test
 from apps.matches.workflow import (
     MatchStateError,
     confirm_match,
     dispute_match,
     edit_match,
     resolve_dispute,
-    void_match,
 )
 from apps.partners.tests.factories import (
     OrganizerApplicationGrantFactory,
@@ -355,21 +353,8 @@ def test_only_a_disputed_match_is_resolved(
         )
 
 
-# Voiding (AC 7). Only an actor ``can_change_match`` allows.
-
-
-def test_an_organizer_member_voids_a_confirmed_match(
-    event_confirmed: Match, member: User, signals: SignalLog
-) -> None:
-    void_match(event_confirmed, actor=member)
-
-    assert _status(event_confirmed) == MatchStatus.VOIDED
-    [audit] = _audits(event_confirmed, AuditAction.MATCH_VOID)
-    assert audit.actor_user == member
-    assert audit.reason == ""
-    assert audit.before == {"status": MatchStatus.CONFIRMED}
-    assert audit.after == {"status": MatchStatus.VOIDED}
-    assert signals.changed == [(event_confirmed.pk, MatchChange.VOID, PLAYED_ON)]
+# Voiding. No standalone service voids a single match (#327); these use the
+# test helper to check what ``_void`` does.
 
 
 def test_voiding_a_pending_match_sends_no_change(
@@ -377,59 +362,10 @@ def test_voiding_a_pending_match_sends_no_change(
 ) -> None:
     match: Match = MatchFactory.create(event=event)
 
-    void_match(match, actor=member)
+    void_for_test(match, actor=member)
 
     assert _status(match) == MatchStatus.VOIDED
     assert signals.changed == []
-
-
-def test_the_submitting_application_voids_its_match(signals: SignalLog) -> None:
-    match: Match = MatchFactory.create(by_application=True)
-    assert match.submitted_by_application is not None
-    application = approved_application()
-    raw_update(match, submitted_by_application=application)
-
-    void_match(match, actor=application)
-
-    [audit] = _audits(match, AuditAction.MATCH_VOID)
-    assert audit.actor_application == application
-
-
-@pytest.mark.parametrize("with_event", [False, True])
-def test_a_club_admin_cannot_void(event: Event, with_event: bool) -> None:
-    # ADR 0021: a Club admin may not void a match, even at its own Club.
-    club = ClubFactory.create()
-    ClubOrganizerGrantFactory.create(club=club, organizer=event.organizer)
-    match: Match = MatchFactory.create(club=club, event=event if with_event else None)
-    raw_update(match, status=MatchStatus.CONFIRMED)
-    admin = UserFactory.create()
-    ClubRoleFactory.create(club=club, account=admin, role=ClubRoleKind.ADMIN)
-
-    with pytest.raises(MatchActionDenied):
-        void_match(match, actor=admin)
-
-    assert _status(match) == MatchStatus.CONFIRMED
-
-
-def test_nobody_voids_a_self_reported_match_one_at_a_time(
-    confirmed: Match, players: list[Player], moderator: User
-) -> None:
-    for actor in (players[0].account, players[2].account, moderator):
-        with pytest.raises(MatchActionDenied):
-            void_match(confirmed, actor=actor)
-
-    assert _status(confirmed) == MatchStatus.CONFIRMED
-    assert _audits(confirmed, AuditAction.MATCH_VOID) == []
-
-
-def test_a_voided_match_cannot_be_voided_again(event: Event, member: User) -> None:
-    match: Match = MatchFactory.create(event=event)
-    void_match(match, actor=member)
-
-    with pytest.raises(MatchStateError):
-        void_match(match, actor=member)
-
-    assert len(_audits(match, AuditAction.MATCH_VOID)) == 1
 
 
 def test_voiding_a_held_match_releases_the_other(
@@ -442,7 +378,7 @@ def test_voiding_a_held_match_releases_the_other(
     )
     assert not other.is_counted()
 
-    void_match(event_confirmed, actor=member)
+    void_for_test(event_confirmed, actor=member)
 
     assert other.is_counted()
     assert signals.changed == [
@@ -584,7 +520,7 @@ def test_an_edit_keeps_the_application_and_external_id(
 
 def test_a_voided_match_cannot_be_edited(event: Event, member: User) -> None:
     match: Match = MatchFactory.create(event=event)
-    void_match(match, actor=member)
+    void_for_test(match, actor=member)
 
     with pytest.raises(MatchStateError):
         _edit(match, member)
@@ -624,7 +560,7 @@ def test_a_participant_cannot_edit(pending: Match, players: list[Player]) -> Non
 # Refusals (AC 12).
 
 
-def _refusals(pending: Match, players: list[Player]) -> list[Callable[[], object]]:
+def _refusals(pending: Match) -> list[Callable[[], object]]:
     stranger = UserFactory.create()
     return [
         lambda: confirm_match(pending, actor=stranger),
@@ -632,16 +568,14 @@ def _refusals(pending: Match, players: list[Player]) -> list[Callable[[], object
         lambda: resolve_dispute(
             pending, actor=stranger, outcome=MatchStatus.VOIDED, reason=REASON
         ),
-        lambda: void_match(pending, actor=players[1].account),
         lambda: _edit(pending, stranger),
-        lambda: void_match(pending, actor=approved_application()),
     ]
 
 
 def test_every_refusal_has_the_same_message_and_writes_nothing(
-    pending: Match, players: list[Player], signals: SignalLog
+    pending: Match, signals: SignalLog
 ) -> None:
-    for refusal in _refusals(pending, players):
+    for refusal in _refusals(pending):
         with pytest.raises(MatchActionDenied) as error:
             refusal()
         assert str(error.value) == "You are not allowed to change this match."

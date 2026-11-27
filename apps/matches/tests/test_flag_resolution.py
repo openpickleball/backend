@@ -27,8 +27,8 @@ from apps.matches.models import (
 from apps.matches.services import record_match
 from apps.matches.signals import MatchChange
 from apps.matches.tests.conftest import WORKFLOW_PLAYED_ON, SignalLog
-from apps.matches.tests.factories import raw_update
-from apps.matches.workflow import _linked, confirm_match, void_match, vouch_for_match
+from apps.matches.tests.factories import raw_update, void_for_test
+from apps.matches.workflow import _linked, confirm_match, vouch_for_match
 from apps.players.models import Player
 
 pytestmark = pytest.mark.django_db
@@ -155,7 +155,7 @@ def test_voiding_after_resolution_sends_no_signal_for_the_other(
     assert _duplicate_flags().get().resolution == FlagResolution.APPROVED
     signals.changed.clear()
 
-    void_match(later, actor=member)
+    void_for_test(later, actor=member)
 
     assert signals.changes(later) == [MatchChange.VOID]
     assert signals.changes(earlier) == []

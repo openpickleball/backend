@@ -34,7 +34,8 @@ from apps.matches.models import (
 )
 from apps.matches.services import record_match
 from apps.matches.tests.conftest import SignalLog
-from apps.matches.workflow import edit_match, void_match
+from apps.matches.tests.factories import void_for_test
+from apps.matches.workflow import edit_match
 from apps.players.models import Player
 from apps.players.tests.factories import PlayerFactory
 from apps.ratings.models import RatingReplayRequest, RatingState
@@ -174,7 +175,7 @@ def test_voided_matches_do_not_count(
     event: Event, member: User, player: Player
 ) -> None:
     first = _record(event, member, [player])
-    void_match(first, actor=member)
+    void_for_test(first, actor=member)
     _record(event, member, [player])
 
     assert _rules(_record(event, member, [player])) == []

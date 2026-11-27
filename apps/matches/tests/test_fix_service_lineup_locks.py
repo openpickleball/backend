@@ -31,7 +31,6 @@ from apps.matches.workflow import (
     dispute_match,
     expire_unconfirmed_matches,
     resolve_dispute,
-    void_match,
 )
 from apps.players.models import Player
 
@@ -82,10 +81,6 @@ ACTIONS: dict[str, tuple[MatchStatus, Callable[[Match, User], object]]] = {
         lambda match, member: resolve_dispute(
             match, actor=member, outcome=MatchStatus.CONFIRMED, reason="checked"
         ),
-    ),
-    "void": (
-        MatchStatus.CONFIRMED,
-        lambda match, member: void_match(match, actor=member),
     ),
 }
 

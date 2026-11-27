@@ -6,6 +6,7 @@ Made-up data only, never real player data.
 from datetime import date
 from typing import Any
 
+from django.db import transaction
 from django.db.models import QuerySet
 from factory.declarations import LazyFunction, SubFactory, Trait
 from factory.django import DjangoModelFactory
@@ -13,6 +14,8 @@ from factory.helpers import post_generation
 from faker import Faker
 
 from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import AuditAction
+from apps.matches import workflow
 from apps.matches.models import (
     BestOf,
     Game,
@@ -20,10 +23,12 @@ from apps.matches.models import (
     Match,
     MatchFormat,
     MatchParticipant,
+    MatchStatus,
     ScoringType,
     Team,
     source_match_type,
 )
+from apps.matches.permissions import Actor
 from apps.matches.services import derive_rating_format, match_fingerprint
 from apps.partners.tests.factories import PartnerApplicationFactory
 from apps.players.models import Player
@@ -234,3 +239,21 @@ def raw_update(match: Match, **values: Any) -> None:
     services (raw SQL, a fixture), which the ORM guard does not cover.
     """
     QuerySet(model=Match).filter(pk=match.pk).update(**values)
+
+
+def void_for_test(match: Match, *, actor: Actor | None = None) -> Match:
+    """Void ``match`` as the workflow services do, without a permission check.
+
+    Test setup only, not a service: no workflow function voids a single
+    Match without its own rule (#327). It takes the lineup and row locks
+    as the services do (``workflow._lock``) and voids through
+    ``workflow._void``, so the Match gets one ``match.void`` Audit Event
+    with ``actor`` and no reason, and sends the same signals. A voided
+    Match gets ``MatchStateError``.
+    """
+    with transaction.atomic():
+        locked = workflow._lock(match)
+        if locked.status == MatchStatus.VOIDED:
+            raise workflow.MatchStateError
+        workflow._void(locked, action=AuditAction.MATCH_VOID, actor=actor, reason="")
+        return locked

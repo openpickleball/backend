@@ -5,7 +5,7 @@ append-only audit log from a single match's change (review finding L,
 An Audit Event can never be changed or deleted, so free text that could
 hold a name is stored only from the Organizer settling a dispute (and
 from a moderator's bulk void, tested in ``test_bulk_void.py``). A dispute
-and a void take no reason. Anyone else who gives a reason to edit, an
+takes no reason. Anyone else who gives a reason to edit, an
 Organizer member editing a match that is not disputed included, is
 refused with fixed text, and nothing changes. Made-up data only.
 """
@@ -27,7 +27,6 @@ from apps.matches.workflow import (
     dispute_match,
     edit_match,
     resolve_dispute,
-    void_match,
 )
 from apps.players.models import Player
 
@@ -77,25 +76,6 @@ def test_a_dispute_stores_no_reason(pending: Match, players: list[Player]) -> No
 
     [event] = _events(pending, AuditAction.MATCH_DISPUTE)
     assert event.reason == ""
-
-
-def test_a_void_takes_no_reason(event: Event) -> None:
-    match: Match = MatchFactory.create(event=event)
-
-    with pytest.raises(TypeError):
-        void_match(match, actor=_member(event), reason=REASON)  # type: ignore[call-arg]
-
-    assert Match.objects.get(pk=match.pk).status == MatchStatus.PENDING
-    assert _events(match, AuditAction.MATCH_VOID) == []
-
-
-def test_a_void_stores_no_reason(event: Event) -> None:
-    match: Match = MatchFactory.create(event=event)
-
-    void_match(match, actor=_member(event))
-
-    [audit] = _events(match, AuditAction.MATCH_VOID)
-    assert audit.reason == ""
 
 
 def test_an_edit_of_a_match_not_disputed_with_a_reason_is_refused(event: Event) -> None:

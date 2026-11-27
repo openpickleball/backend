@@ -14,12 +14,13 @@ import pytest
 from apps.matches import results_files, tasks
 from apps.matches.models import MatchFormat, ResultsFile
 from apps.matches.results_files import process_results_file
+from apps.matches.tests.factories import void_for_test
 from apps.matches.tests.results_file_builders import (
     organizer_member,
     row,
     upload,
 )
-from apps.matches.workflow import edit_match, void_match
+from apps.matches.workflow import edit_match
 from apps.players.tests.factories import PlayerFactory
 
 pytestmark = pytest.mark.django_db
@@ -42,7 +43,7 @@ def test_a_voided_rows_issue_is_neutral_and_keeps_the_code(by: str) -> None:
         process_results_file(results_file.pk)
     (match,) = results_file.submission_batch.matches.all()
     if by == "void":
-        void_match(match, actor=member)
+        void_for_test(match, actor=member)
     else:
         edit_match(
             match,

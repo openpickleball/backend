@@ -25,7 +25,8 @@ from apps.events.models import EventKind
 from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, Team
 from apps.matches.signals import MatchChange, match_changed
-from apps.matches.workflow import dispute_match, edit_match, void_match
+from apps.matches.tests.factories import void_for_test
+from apps.matches.workflow import dispute_match, edit_match
 from apps.players.models import GenderDivision, Player
 from apps.ratings import tasks
 from apps.ratings.models import RatingReplay, RatingReplayRequest, ReplayReason
@@ -110,7 +111,7 @@ def test_a_void_stores_a_request_and_queues_after_commit(
     match, _, _ = _singles(played_on=date(2026, 3, 1))
 
     with django_capture_on_commit_callbacks(execute=False) as callbacks:
-        void_match(match, actor=_member(match))
+        void_for_test(match, actor=_member(match))
         assert queued == []
 
     [request] = RatingReplayRequest.objects.all()
@@ -145,7 +146,7 @@ def test_a_rolled_back_change_stores_and_queues_nothing(
 
     def void_then_abort() -> None:
         with transaction.atomic():
-            void_match(match, actor=_member(match))
+            void_for_test(match, actor=_member(match))
             raise Abort
 
     with (
@@ -279,7 +280,7 @@ def test_a_broker_error_is_logged_by_class_and_does_not_fail_the_change(
     monkeypatch.setattr(tasks.replay_ratings, "apply_async", broker_down)
 
     with django_capture_on_commit_callbacks(execute=True):
-        void_match(match, actor=_member(match))
+        void_for_test(match, actor=_member(match))
 
     assert RatingReplayRequest.objects.count() == 1
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]

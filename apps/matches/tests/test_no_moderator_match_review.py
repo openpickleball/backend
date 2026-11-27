@@ -37,7 +37,6 @@ from apps.matches.workflow import (
     dispute_match,
     edit_match,
     resolve_dispute,
-    void_match,
     vouch_for_match,
 )
 from apps.players.models import Player
@@ -116,16 +115,6 @@ def test_moderator_cannot_resolve_a_dispute(
     _unchanged(match, MatchStatus.DISPUTED, events)
 
 
-def test_moderator_cannot_void_a_single_match(
-    moderator: User, players: list[Player]
-) -> None:
-    match = _event_match(players)
-    events = AuditEvent.objects.count()
-    with pytest.raises(MatchActionDenied):
-        void_match(match, actor=moderator)
-    _unchanged(match, MatchStatus.CONFIRMED, events)
-
-
 def test_moderator_cannot_edit_a_match(moderator: User, players: list[Player]) -> None:
     match = _event_match(players)
     events = AuditEvent.objects.count()
@@ -148,7 +137,8 @@ def test_workflow_has_no_moderator_review_services() -> None:
     assert not hasattr(workflow, "resolve_flags")
     assert "as_moderator" not in inspect.signature(resolve_dispute).parameters
     assert "as_moderator" not in inspect.signature(edit_match).parameters
-    assert "reason" not in inspect.signature(void_match).parameters
+    # #327: no service voids a single match outside a rule of its own.
+    assert not hasattr(workflow, "void_match")
 
 
 def test_admin_actions_are_only_the_bulk_voids(moderator: User) -> None:

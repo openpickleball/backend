@@ -15,10 +15,10 @@ from apps.events.models import Event
 from apps.matches.models import Match, MatchFormat, MatchStatus
 from apps.matches.services import record_match
 from apps.matches.tests.conftest import WORKFLOW_GAMES, WORKFLOW_PLAYED_ON
+from apps.matches.tests.factories import void_for_test
 from apps.matches.workflow import (
     MatchStateError,
     dispute_match,
-    void_match,
     withdraw_dispute,
 )
 from apps.players.models import Player
@@ -52,7 +52,7 @@ def test_a_withdrawal_after_a_void_is_refused(
 ) -> None:
     dispute_match(event_confirmed, actor=players[0].account)
     withdraw_dispute(event_confirmed, actor=players[0].account)
-    void_match(event_confirmed, actor=member)
+    void_for_test(event_confirmed, actor=member)
 
     with pytest.raises(MatchStateError):
         withdraw_dispute(event_confirmed, actor=players[0].account)
@@ -63,7 +63,7 @@ def test_the_api_answers_409_for_a_withdrawal_after_a_void(
 ) -> None:
     dispute_match(event_confirmed, actor=players[0].account)
     withdraw_dispute(event_confirmed, actor=players[0].account)
-    void_match(event_confirmed, actor=member)
+    void_for_test(event_confirmed, actor=member)
     client = Client()
     client.force_login(players[0].account)
     code = event_confirmed.public_code
