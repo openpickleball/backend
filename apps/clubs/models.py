@@ -687,7 +687,9 @@ class ClubOrganizerGrant(_LinkMessagesModel, AuditedAccessModel):
         before: dict[str, Any] | None,
         after: dict[str, Any] | None,
     ) -> None:
-        """Tell the Club's admins, but the actor (#232)."""
+        """Tell the Club's admins, but the actor (#232). A row moved to
+        another Club or Organizer reads as a removal from the stored side
+        and an add on the new one."""
         from apps.clubs.notices import (
             CLUB,
             NoticeKind,
@@ -696,6 +698,23 @@ class ClubOrganizerGrant(_LinkMessagesModel, AuditedAccessModel):
             schedule_notice,
         )
 
+        if change == "change" and before is not None:
+            old_club = (
+                Club.objects.filter(public_code=before["club"])
+                .values_list("pk", flat=True)
+                .first()
+            )
+            if old_club is not None:
+                schedule_notice(
+                    SecurityNotice(
+                        kind=NoticeKind.CLUB_GRANT_REMOVED,
+                        scope=CLUB,
+                        scope_id=old_club,
+                        code=before["club"],
+                        organizer_code=before["organizer"],
+                        exclude=account_ids(actor),
+                    )
+                )
         kind = (
             NoticeKind.CLUB_GRANT_REMOVED
             if change == "remove"

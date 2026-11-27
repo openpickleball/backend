@@ -291,7 +291,10 @@ class OrganizerApplicationGrant(AuditedAccessModel):
         after: dict[str, Any] | None,
     ) -> None:
         """Tell the Organizer's admins, but the actor (#232). Never the
-        application's client id or name."""
+        application's client id or name. A row moved to another Organizer
+        or application reads as a removal from the stored side and an add
+        on the new one."""
+        from apps.clubs.models import Organizer
         from apps.clubs.notices import (
             ORGANIZER,
             NoticeKind,
@@ -299,6 +302,23 @@ class OrganizerApplicationGrant(AuditedAccessModel):
             account_ids,
             schedule_notice,
         )
+
+        if change == "change" and before is not None:
+            old_organizer = (
+                Organizer.objects.filter(public_code=before["organizer"])
+                .values_list("pk", flat=True)
+                .first()
+            )
+            if old_organizer is not None:
+                schedule_notice(
+                    SecurityNotice(
+                        kind=NoticeKind.APPLICATION_GRANT_REMOVED,
+                        scope=ORGANIZER,
+                        scope_id=old_organizer,
+                        code=before["organizer"],
+                        exclude=account_ids(actor),
+                    )
+                )
 
         kind = (
             NoticeKind.APPLICATION_GRANT_REMOVED
