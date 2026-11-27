@@ -19,4 +19,4 @@ concurrency:
 # main, so a change that renames this job must also update the ruleset.
 jobs:
   pull-request:
-    uses: openpickleball/.github/.github/workflows/pull-request.yml@abe2be839a87b41e4eb35d02b70001fa866740ba # v1.0.0
+    uses: openpickleball/.github/.github/workflows/pull-request.yml@0403a366e77c3079885e224a0250a2336cf1098a # v1.0.0

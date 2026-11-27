@@ -23,7 +23,7 @@ repos:
   # The organization's commit message rules, the same ones the
   # pull-request check runs.
   - repo: https://github.com/openpickleball/.github
-    rev: abe2be839a87b41e4eb35d02b70001fa866740ba # v1.0.0
+    rev: 0403a366e77c3079885e224a0250a2336cf1098a # v1.0.0
     hooks:
       - id: commit-message
 
