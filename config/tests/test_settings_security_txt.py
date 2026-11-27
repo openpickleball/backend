@@ -1,13 +1,14 @@
 """SECURITY_TXT_CONTACT and SECURITY_TXT_CANONICAL (issue #105).
 
-Both are optional. Unset or empty, the contact is a placeholder on the
-reserved example.invalid domain and the canonical URL is '' (the view
-builds it from the request). A contact must be a mailto: URI or an https
-URL (http too with DEBUG on). A canonical URL must be an absolute https
-URL (http too with DEBUG on) whose path is /.well-known/security.txt, with
-no query, fragment, or user info. Neither may hold a space or a control
-character. A refused value stops startup, naming the variable and never
-echoing the value. Each case runs in a fresh process. Made-up hosts only.
+Both are optional. Unset or empty, the contact is mailto:info@openpb.org,
+the address the organization security policy names, and the canonical URL
+is '' (the view builds it from the request). A contact must be a mailto:
+URI or an https URL (http too with DEBUG on). A canonical URL must be an
+absolute https URL (http too with DEBUG on) whose path is
+/.well-known/security.txt, with no query, fragment, or user info. Neither
+may hold a space or a control character. A refused value stops startup,
+naming the variable and never echoing the value. Each case runs in a fresh
+process. Made-up hosts only, apart from the default contact.
 """
 
 import json
@@ -20,7 +21,7 @@ from config.tests.test_settings import BASE_DIR, LOCAL_DEBUG, PRODUCTION_LIKE, _
 
 CONTACT = "SECURITY_TXT_CONTACT"
 CANONICAL = "SECURITY_TXT_CANONICAL"
-PLACEHOLDER = "mailto:security-contact-not-set@example.invalid"
+DEFAULT_CONTACT = "mailto:info@openpb.org"
 
 # A made-up host that must never appear in any output.
 MARKER = "sectxt-q7z.example.org"
@@ -73,15 +74,15 @@ def _refused(
 
 @pytest.mark.parametrize("values", [PRODUCTION_LIKE, LOCAL_DEBUG])
 @pytest.mark.parametrize("value", ["", "   "])
-def test_unset_or_empty_gives_the_placeholder_and_no_canonical(
+def test_unset_or_empty_gives_the_default_contact_and_no_canonical(
     values: dict[str, str], value: str
 ) -> None:
-    assert _loaded(values, value, value) == [PLACEHOLDER, ""]
+    assert _loaded(values, value, value) == [DEFAULT_CONTACT, ""]
 
 
-def test_placeholder_reaches_no_one() -> None:
-    # RFC 2606 reserves .invalid: no address there can receive mail.
-    assert PLACEHOLDER.endswith(".invalid")
+def test_default_contact_passes_its_own_check() -> None:
+    # Set explicitly, the default is accepted with DEBUG off as well.
+    assert _loaded(PRODUCTION_LIKE, contact=DEFAULT_CONTACT)[0] == DEFAULT_CONTACT
 
 
 @pytest.mark.parametrize(
