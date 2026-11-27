@@ -40,6 +40,7 @@ from apps.emails.models import QueuedEmail
 from apps.players.tests.factories import PlayerFactory
 from apps.public_ids.api import PublicCodePath
 from apps.public_ids.codes import CodeType
+from config.api import api
 from config.auth import MFA_REQUIRED_MESSAGE
 
 pytestmark = pytest.mark.django_db
@@ -679,3 +680,11 @@ def test_the_accept_path_does_not_collide_with_a_club_code() -> None:
     assert (as_code.status_code, as_code.json()) == (404, NOT_FOUND)
     assert wrong_method.status_code == 405
     assert (accept.status_code, accept.json()) == (404, NOT_FOUND)
+
+
+def test_the_invite_answer_has_its_own_schema() -> None:
+    schema = api.get_openapi_schema()
+    operation = schema["paths"]["/api/v1/clubs/{code}/invites"]["post"]
+    accepted = operation["responses"][202]["content"]["application/json"]["schema"]
+
+    assert accepted == {"$ref": "#/components/schemas/ClubInviteSentOut"}

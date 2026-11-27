@@ -158,6 +158,7 @@ def test_a_grant_lets_the_organizer_name_the_club_until_it_is_removed(
         uploaded = _upload(member, event_code, _csv(players[0], players[1], 7))
     assert uploaded.status_code == 202
     [recorded] = Match.objects.filter(event=event)
+    club_before = recorded.club_id
     assert recorded.status == MatchStatus.CONFIRMED
 
     removed = _json(
@@ -197,6 +198,7 @@ def test_a_grant_lets_the_organizer_name_the_club_until_it_is_removed(
     recorded.refresh_from_db()
     assert recorded.status == MatchStatus.CONFIRMED
     assert recorded.event_id == event.pk
+    assert recorded.club_id == club_before
     event.refresh_from_db()
     assert event.club_id == club.pk
     assert Match.objects.count() == 1

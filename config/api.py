@@ -353,4 +353,6 @@ api.add_router("organizer/", events_router)
 api.add_router("organizer/", matches_organizer_router)
 api.add_router("organizer/", clubs_organizer_router)
 api.add_router("organizers/", organizers_router)
+# No trailing slash: the create is POST /api/v1/clubs, and a "clubs/"
+# prefix would make it /api/v1/clubs/ (the bare path then redirects).
 api.add_router("clubs", club_router)

@@ -120,6 +120,20 @@
         "title": "ClubInviteIn",
         "type": "object"
       },
+      "ClubInviteSentOut": {
+        "description": "The same answer for every accepted Club invite request: it never\nsays whether the address has an Account, is an admin, or was\ninvited.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ClubInviteSentOut",
+        "type": "object"
+      },
       "ClubOrganizerGrantIn": {
         "additionalProperties": false,
         "description": "The Organizer to allow, by its OPEN Code, in any case, with or\nwithout hyphens. An unknown or malformed code gets the same 404 as an\nunknown Club.",
@@ -4622,7 +4636,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrganizerInviteSentOut"
+                  "$ref": "#/components/schemas/ClubInviteSentOut"
                 }
               }
             },

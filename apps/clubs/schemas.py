@@ -333,6 +333,14 @@ class ClubInviteIn(Schema):
         return _invite_email(value)
 
 
+class ClubInviteSentOut(Schema):
+    """The same answer for every accepted Club invite request: it never
+    says whether the address has an Account, is an admin, or was
+    invited."""
+
+    message: str
+
+
 class ClubInviteAcceptIn(OrganizerInviteAcceptIn):
     """The key from the Club invite email's link."""
 

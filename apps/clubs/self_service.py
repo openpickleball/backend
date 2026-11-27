@@ -100,8 +100,10 @@ REQUEST_OPEN_MESSAGE: Final = "This organizer already has an open verification r
 
 
 class NotFound(LookupError):
-    """The Organizer, invite, or member is unknown, or the actor may not
-    act on it. One answer for every cause: the API's 404."""
+    """The Organizer, Club, invite, member, Club admin, or grant is unknown,
+    or the actor may not act on it. One answer for every cause: the API's
+    404. Club self-service (``apps.clubs.club_self_service``) raises it
+    too."""
 
 
 class Conflict(ValueError):

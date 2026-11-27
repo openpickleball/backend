@@ -40,11 +40,11 @@ from apps.clubs.schemas import (
     ClubCreateIn,
     ClubInviteAcceptIn,
     ClubInviteIn,
+    ClubInviteSentOut,
     ClubOrganizerGrantIn,
     ClubOrganizerGrantOut,
     ClubOut,
     ClubUpdateIn,
-    OrganizerInviteSentOut,
 )
 from apps.clubs.self_service import AddressNotVerified, Conflict, NotFound
 from apps.matches.api import request_account
@@ -200,7 +200,7 @@ def update_club(request: HttpRequest, code: ClubCode, payload: ClubUpdateIn) -> 
 @club_router.post(
     "/{code}/invites",
     response={
-        202: OrganizerInviteSentOut,
+        202: ClubInviteSentOut,
         403: ErrorResponse,
         404: ErrorResponse,
         409: ErrorResponse,
@@ -210,7 +210,7 @@ def update_club(request: HttpRequest, code: ClubCode, payload: ClubUpdateIn) -> 
 )
 def invite_club_admin(
     request: HttpRequest, code: ClubCode, payload: ClubInviteIn
-) -> Status[OrganizerInviteSentOut]:
+) -> Status[ClubInviteSentOut]:
     """Invite an email address to be an admin of the Club. For a Club
     admin with MFA.
 
@@ -231,7 +231,7 @@ def invite_club_admin(
         raise Http404 from None
     except Conflict as error:
         raise HttpError(409, str(error)) from None
-    return Status(202, OrganizerInviteSentOut(message=INVITE_SENT_MESSAGE))
+    return Status(202, ClubInviteSentOut(message=INVITE_SENT_MESSAGE))
 
 
 @club_router.get(

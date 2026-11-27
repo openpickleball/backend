@@ -363,9 +363,9 @@ def accept_club_invite(key: str, *, actor: "_User") -> ClubRole:
 def list_admins(club_id: int, *, actor: "_User") -> list[ClubAdminView]:
     """The Club's admins, by Player OPEN Code (those with none last).
 
-    Each with its Player's OPEN Code and display name (None when the
-    Account has no Player, or the display name when it is inactive), and
-    whether it is ``actor``.
+    Each with its Player's OPEN Code (None when the Account has no
+    Player), its display name (None when the Account has no Player or is
+    inactive), and whether it is ``actor``.
     """
     with transaction.atomic():
         club = _admin_club(club_id, actor)

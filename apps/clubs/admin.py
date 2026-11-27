@@ -99,8 +99,8 @@ class ClubOrganizerGrantAdmin(
 ):
     """A Club's consent for an Organizer to name it (ADR 0021).
 
-    Only this admin manages grants until the Club self-service issue (#230)
-    lands.
+    Staff manage grants here; a Club's admins manage their own through
+    Club self-service (``apps.clubs.club_self_service``, #230).
     """
 
     # apps.audit.access records the Audit Events (#101).
