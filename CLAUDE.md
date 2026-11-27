@@ -101,6 +101,7 @@ uv run celery -A config worker -Q ratings,email,webhooks,default -l info   # bac
 uv run celery -A config beat -l info      # periodic tasks; run one beat only, after migrate
 uv run python manage.py collectstatic --noinput   # before serving with DEBUG off
 uv run python manage.py reencrypt_fields          # after a new key is put first in FIELD_ENCRYPTION_KEYS; prints counts only
+uv run python manage.py recompute_ratings --dry-run  # full replay of the counted ledger; drop --dry-run to write (after an engine or spec version change)
 uv run gunicorn                           # serve with gunicorn.conf.py (PORT, WEB_CONCURRENCY)
 docker build -t open-backend:dev .        # production image: gunicorn by default; override the command for migrate, worker, beat
 docker compose --profile web up -d --wait # optional: the app, a worker, and beat in containers, instead of on the host (beat waits for migrate)

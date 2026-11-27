@@ -63,7 +63,7 @@ openpickleball/rating-spec tag the ratings follow: tag `v1.0.0rc1`, stored as
 `1.0.0rc1`. Every rating
 state, history row, and replay stores a spec version, by default this one (ADR
 0025). Bump it when rating-spec
-tags v1.0.0, then run the recompute (#48).
+tags v1.0.0, deploy, then run the recompute (`recompute_ratings`, below).
 
 ## The engine version
 
@@ -105,9 +105,30 @@ steps below.
    Score the same ledger matches with the engine's evaluation (`evaluate`),
    then compare the two reports. A change that makes predictions worse needs
    a reason before it ships. The backend has no backtest command yet.
-5. Run the recompute: replay the whole ledger with the new version so every
-   published rating comes from it (hard rule 3). Each replay must store its
-   `as_of` date, config version, and config fingerprint (hard rule 4). The
-   recompute command comes with issue #48.
-6. Open one pull request with the bump, the changelog notes from step 1, and
+5. Open one pull request with the bump, the changelog notes from step 1, and
    the backtest result.
+6. Once it is merged and deployed, run the recompute (below), so every
+   published rating comes from it (hard rule 3).
+
+## The recompute
+
+`manage.py recompute_ratings` rebuilds every rating with a full replay of
+the counted ledger (ADR 0058). Each write stores its replay's `as_of` date,
+config version, config fingerprint, and engine and spec versions (hard
+rule 4). Run it after an engine upgrade, a change of
+`OPEN_ENGINE_PARAMETER_SET`, or a bump of `OPEN_RATING_SPEC_VERSION`, once
+the change is deployed. Run a dry run first:
+
+```bash
+uv run python manage.py recompute_ratings --dry-run --verbosity 2
+uv run python manage.py recompute_ratings
+```
+
+It writes in one transaction, like the regular replay, so live updates wait
+for it, and it is safe to run again. It clears the replay requests that were
+pending when it took the engine snapshot lock. `--dry-run` writes nothing and prints how many
+ratings would be created, changed, removed, or left alone (at verbosity 2,
+per rating format). It names no player. Only a dry run takes `--format`, an
+`--as-of` before the latest counted match or after today (in UTC, or the
+latest counted match date when later), or a `--spec-version` other than the
+setting, so you can compare a replay without changing stored ratings.
