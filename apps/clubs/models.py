@@ -439,7 +439,9 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
         after: dict[str, Any] | None,
     ) -> None:
         """Tell the Organizer's other admins (#232). A change of the hold
-        alone sends nothing; a move to another Account reads as an add."""
+        alone sends nothing; a move to another Account reads as a removal
+        of the old Account, which is told when it was an admin, then an
+        add of the new one."""
         from apps.clubs.notices import (
             ORGANIZER,
             NoticeKind,
@@ -474,6 +476,23 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
             )
         ):
             told = subject_told(actor, before["account"])
+        exclude = account_ids(actor, *subjects)
+        if (
+            before is not None
+            and after is not None
+            and before["account"] != after["account"]
+        ):
+            schedule_notice(
+                SecurityNotice(
+                    kind=NoticeKind.MEMBER_REMOVED,
+                    scope=ORGANIZER,
+                    scope_id=self.organizer_id,
+                    code=self.organizer.public_code,
+                    exclude=exclude,
+                    told=told,
+                )
+            )
+            told = frozenset()
         schedule_notice(
             SecurityNotice(
                 kind=kind,
@@ -484,7 +503,7 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
                 hold_ends_at=(
                     self.hold_ends_at if kind == NoticeKind.MEMBER_ADDED else None
                 ),
-                exclude=account_ids(actor, *subjects),
+                exclude=exclude,
                 told=told,
             )
         )
@@ -584,7 +603,8 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
         after: dict[str, Any] | None,
     ) -> None:
         """Tell the Club's other admins (#232). A move to another Account
-        reads as an add."""
+        reads as a removal of the old Account, which is told, then an add
+        of the new one."""
         from apps.clubs.notices import (
             CLUB,
             NoticeKind,
@@ -612,13 +632,27 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
             if before is not None
             else frozenset()
         )
+        exclude = account_ids(actor, *subjects)
+        if change == "change":
+            # A move: the old Account lost the role first.
+            schedule_notice(
+                SecurityNotice(
+                    kind=NoticeKind.CLUB_ADMIN_REMOVED,
+                    scope=CLUB,
+                    scope_id=self.club_id,
+                    code=self.club.public_code,
+                    exclude=exclude,
+                    told=told,
+                )
+            )
+            told = frozenset()
         schedule_notice(
             SecurityNotice(
                 kind=kind,
                 scope=CLUB,
                 scope_id=self.club_id,
                 code=self.club.public_code,
-                exclude=account_ids(actor, *subjects),
+                exclude=exclude,
                 told=told,
             )
         )
