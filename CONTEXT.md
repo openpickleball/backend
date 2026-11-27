@@ -42,6 +42,10 @@ An Account that acts for an Organizer, with a role: admin or match manager. Whil
 An admin member's invite of an email address to act for an Organizer, as admin or match manager (ADR 0054). It is emailed as a link that works once and expires; the invitee accepts while signed in with that address, verified, and with a Player. The answer to the admin never says whether the address has an Account. Backend: `clubs.OrganizerInvite`.
 _Avoid_: invitation code, join request.
 
+**Club Invite**:
+A Club admin's invite of an email address to become an admin of the Club (ADR 0055). It follows the Organizer Invite rules, with the admin role only. Backend: `clubs.ClubInvite`.
+_Avoid_: invitation code, join request.
+
 **Verification Request**:
 An admin member's request that OPEN Moderators verify an Organizer, with a short statement of what it runs (ADR 0054). It changes nothing by itself: a moderator verifies the Organizer, which closes the request, or closes it without verifying. An Organizer has at most one open request. Backend: `clubs.OrganizerVerificationRequest`.
 _Avoid_: application, verification ticket.
@@ -50,11 +54,11 @@ _Avoid_: application, verification ticket.
 A player's report of a verified Organizer to OPEN Moderators, with one reason from a fixed list and no free text (ADR 0037). An Account has at most one open report per Organizer. A moderator closes a report, or an unverify of the Organizer closes all of them. A report changes nothing by itself: moderators decide only whether the Organizer stays verified, and may void its matches in bulk. The Organizer never learns who reported it. Backend: `clubs.OrganizerReport`.
 
 **Club**:
-A place or group where players play, with a name and an optional city and region. A Club is never verified and is not a trusted submitter: it decides only which Organizers may name it, through Club Organizer Grants (ADR 0021). Backend: `clubs.Club`.
+A place or group where players play, with a name and an optional city and region. A Club is never verified and is not a trusted submitter: it decides only which Organizers may name it, through Club Organizer Grants (ADR 0021). An Account with a verified login address creates a Club and becomes its admin (ADR 0055). Backend: `clubs.Club`.
 _Avoid_: venue, team.
 
 **Club Role**:
-An Account's role at a Club. The only Club Role is admin (ADR 0021). A Club admin manages the Club's profile and its Club Organizer Grants. A Club Role gives no authority to submit, confirm, or change a match. Backend: `clubs.ClubRole`.
+An Account's role at a Club. The only Club Role is admin (ADR 0021). A Club admin manages the Club's profile, its other admins (by Club Invite), and its Club Organizer Grants. A Club Role gives no authority to submit, confirm, or change a match. Backend: `clubs.ClubRole`.
 
 **Event**:
 A tournament, league, or verified rec play that an Organizer runs, optionally at a Club, from a start date to an end date. An Event names a Club only when that Club granted its Organizer a Club Organizer Grant (ADR 0021). Every trusted match has an Event. Its kind is the Match Type its matches are recorded with: `tournament`, `league`, or `rec_verified`. The kind may change later, which changes only matches recorded after it (a Correction keeps the type of the Match it corrects). The Organizer and the Club cannot change once the Event has a match (ADR 0035). Self-reported matches have no Event. An Event has no weight of its own: a match's weight comes from its Match Type alone. Backend: `events.Event`.

@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Amended by: [ADR 0054](0054-organizer-self-service.md) (memberships gain `verification_requested`; Organizer Invites and the verification request statement are not exported)
+- Amended by: [ADR 0055](0055-club-self-service.md) (Club Invites are left out of the export)
 - Date: 2026-11-26
 
 ## Context
@@ -46,8 +47,8 @@ This amends [ADR 0009](0009-personal-data.md) (how the export is stored, what it
   - `RatingHistory.replay` (a row id), and every row id in Audit Event values.
   - An OAuth record's token, code, nonce, code challenge, and claims.
   - The admin log (staff history whose `object_repr` can name others; the Account's own admin changes are its `admin.*` events).
-  - Organizer Invites the Account sent (ADR 0054: short-lived, deleted on accept or expiry, and they hold another person's address; the Account's own `organizer_invite.create` events are in its audit events), and the Verification Request statement (the Organizer's, not the player's, and shared by its admins).
-- **Coverage test.** A test walks every installed model with a foreign key or one-to-one link to the Account model or `players.Player` and requires each to be exported or listed in an exclusion map with a reason: the admin log (staff history, covered by the Account's own `admin.*` events), `Organizer.verified_by` and `PartnerApplication.approved_by` (covered by the events the Account performed), `OrganizerInvite.invited_by` (ADR 0054, see the omissions), and `DataExport` itself.
+  - Organizer Invites the Account sent (ADR 0054: short-lived, deleted on accept or expiry, and they hold another person's address; the Account's own `organizer_invite.create` events are in its audit events), Club Invites the Account sent, for the same reasons (ADR 0055), and the Verification Request statement (the Organizer's, not the player's, and shared by its admins).
+- **Coverage test.** A test walks every installed model with a foreign key or one-to-one link to the Account model or `players.Player` and requires each to be exported or listed in an exclusion map with a reason: the admin log (staff history, covered by the Account's own `admin.*` events), `Organizer.verified_by` and `PartnerApplication.approved_by` (covered by the events the Account performed), `OrganizerInvite.invited_by` (ADR 0054, see the omissions), `ClubInvite.invited_by` (ADR 0055, left out the same way), and `DataExport` itself.
 - **No Player.** An Account with no Player still gets an export; the Player sections are null or empty.
 - **The key.** `secrets.token_urlsafe(32)`, made by the build task and stored only as its SHA-256 hex digest (unique). It exists only in the queued email (deleted once sent) and the player's mailbox. It is never logged, put in a task argument, or recorded in an Audit Event. A key that is empty, longer than 128 characters, not ASCII (a lone surrogate included, which cannot be hashed), unknown, expired, used, not yet built, or another Account's, and an inactive Account, get one fixed 404. These checks are the service's, not the schema's, so such a key gets the same 404, not a 422.
 - **Format.** A set of ninja Schemas (`DataExportOut` and its sections, reusing `MyPlayerOut` and `OrganizerMembershipOut`, and extending `MatchOut`, `RatingOut`, and `RatingHistoryItemOut`), so the OpenAPI document describes it, plus `docs/data-export.md`. It carries `format_version` `"1"` and `generated_at`. The download returns the stored bytes as `application/json` with `Content-Disposition: attachment; filename="open-data-export.json"` and `Cache-Control: no-store`.
