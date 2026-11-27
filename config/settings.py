@@ -1027,6 +1027,18 @@ ORGANIZER_OPEN_INVITES_LIMIT = _version("ORGANIZER_OPEN_INVITES_LIMIT", 50)
 ORGANIZER_INVITE_DAYS = _days("ORGANIZER_INVITE_DAYS", 7)
 
 
+# Club self-service (#230)
+
+# Clubs an Account may be an admin of before creating another is refused
+# (409). Unset or empty gives 5.
+CLUB_CREATE_LIMIT_PER_ACCOUNT = _version("CLUB_CREATE_LIMIT_PER_ACCOUNT", 5)
+# Unexpired invites a Club may have open at once (409 past it). Unset or
+# empty gives 50.
+CLUB_OPEN_INVITES_LIMIT = _version("CLUB_OPEN_INVITES_LIMIT", 50)
+# Days a Club invite link works. Unset or empty gives 7.
+CLUB_INVITE_DAYS = _days("CLUB_INVITE_DAYS", 7)
+
+
 # API throttling (#34, ADR 0030)
 
 # Requests per Account to every first-party operation that needs sign-in,
@@ -1049,6 +1061,9 @@ API_DATA_EXPORT_THROTTLE_PER_DAY = _rate("API_DATA_EXPORT_THROTTLE_PER_DAY", 3)
 API_ORGANIZER_INVITE_THROTTLE_PER_DAY = _rate(
     "API_ORGANIZER_INVITE_THROTTLE_PER_DAY", 20
 )
+# Club admin invites per Account per day (#230), the invite operation's
+# own throttle, apart from the Account throttle: each one sends an email.
+API_CLUB_INVITE_THROTTLE_PER_DAY = _rate("API_CLUB_INVITE_THROTTLE_PER_DAY", 20)
 # The request header the proxy in front of the app sets to the client IP.
 # DigitalOcean App Platform sets do-connecting-ip. X-Forwarded-For is never
 # read: a client can forge it.
