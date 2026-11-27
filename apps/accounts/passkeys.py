@@ -101,7 +101,10 @@ def _websafe_decode(text: str) -> bytes:
 
 def client_data_origin(credential: object) -> str | None:
     """The origin in a WebAuthn credential's client data, or None when
-    the credential or its client data is malformed or too large."""
+    the credential or its client data is malformed or too large, or the
+    credential was made in a cross-origin frame (``crossOrigin`` other
+    than false, or any ``topOrigin``): OPEN is never framed
+    (``frame-ancestors 'none'``)."""
     if not isinstance(credential, dict):
         return None
     response = credential.get("response")
@@ -118,6 +121,10 @@ def client_data_origin(credential: object) -> str | None:
     except (binascii.Error, ValueError, RecursionError):
         return None
     if not isinstance(client_data, dict):
+        return None
+    if client_data.get("crossOrigin", False) is not False:
+        return None
+    if "topOrigin" in client_data:
         return None
     origin = client_data.get("origin")
     return origin if isinstance(origin, str) else None
