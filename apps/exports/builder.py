@@ -44,7 +44,7 @@ from oauth2_provider.models import (
 from pydantic import JsonValue
 
 from apps.accounts.models import AgreementAcceptance
-from apps.audit.models import AuditEvent
+from apps.audit.models import AuditAction, AuditEvent
 from apps.clubs.models import (
     ClubRole,
     ClubRoleKind,
@@ -445,13 +445,35 @@ def _own_targets(account: "_User", player: Player | None) -> dict[int, set[str]]
         own[PlayerPrivacy] = PlayerPrivacy.objects.filter(player=player).values_list(
             "pk", flat=True
         )
-        own[RatingState] = RatingState.objects.filter(player=player).values_list(
-            "pk", flat=True
-        )
+        own[RatingState] = _rating_state_ids(player)
     content_types = ContentType.objects.get_for_models(*own)
     return {
         content_types[model].pk: {str(pk) for pk in pks} for model, pks in own.items()
     }
+
+
+def _rating_state_ids(player: Player) -> set[Any]:
+    """Every rating state the player has had, removed ones included.
+
+    The live rows, plus each state an ``apply_rating`` event names this
+    player for (``after["player"]``, the OPEN Code). A state's id belongs
+    to one player for good and every state starts with such an event, so
+    a state a replay removed keeps its events here, and no other
+    player's state is picked up. Events recorded before that key existed
+    name no player, so a state removed before then is not found.
+    """
+    content_type = ContentType.objects.get_for_model(RatingState)
+    ids: set[Any] = set(
+        RatingState.objects.filter(player=player).values_list("pk", flat=True)
+    )
+    ids.update(
+        AuditEvent.objects.filter(
+            action=AuditAction.RATING_CHANGE,
+            target_content_type=content_type,
+            after__player=player.public_code,
+        ).values_list("target_object_id", flat=True)
+    )
+    return ids
 
 
 def _audit_events(account: "_User", player: Player | None) -> list[ExportAuditEventOut]:
