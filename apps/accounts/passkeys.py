@@ -272,6 +272,23 @@ def _parse_authentication(credential: object) -> AuthenticationResponse:
     return parsed
 
 
+def _extension_results_ok(credential: dict[str, Any]) -> bool:
+    """Whether the client extension results are what allauth reads: an
+    object when present, ``credProps`` an object when present, and its
+    ``rk`` a boolean when present (allauth's ``is_passwordless``)."""
+    if "clientExtensionResults" not in credential:
+        return True
+    results = credential["clientExtensionResults"]
+    if not isinstance(results, dict):
+        return False
+    if "credProps" not in results:
+        return True
+    props = results["credProps"]
+    if not isinstance(props, dict):
+        return False
+    return "rk" not in props or isinstance(props["rk"], bool)
+
+
 def _registered_with_id(credential_id: str) -> QuerySet[Authenticator]:
     found: QuerySet[Authenticator] = Authenticator.objects.filter(
         type=Authenticator.Type.WEBAUTHN, data__credential__id=credential_id
@@ -313,6 +330,8 @@ class AddPasskeyInput(AddWebAuthnInput):  # type: ignore[misc]
         credential = self.cleaned_data.get("credential")
         check_origin(credential)
         response = _parse_registration(credential)
+        if not _extension_results_ok(credential):
+            raise _incorrect()
         attested = response.response.attestation_object.auth_data.credential_data
         if attested is None:
             raise _incorrect()
