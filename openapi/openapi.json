@@ -122,7 +122,7 @@
           },
           "matches": {
             "items": {
-              "$ref": "#/components/schemas/MatchOut"
+              "$ref": "#/components/schemas/ExportMatchOut"
             },
             "title": "Matches",
             "type": "array"
@@ -174,14 +174,14 @@
           },
           "rating_history": {
             "items": {
-              "$ref": "#/components/schemas/RatingHistoryItemOut"
+              "$ref": "#/components/schemas/ExportRatingHistoryItemOut"
             },
             "title": "Rating History",
             "type": "array"
           },
           "ratings": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/RatingOut"
+              "$ref": "#/components/schemas/ExportRatingOut"
             },
             "propertyNames": {
               "$ref": "#/components/schemas/RatingFormat"
@@ -539,7 +539,7 @@
         "type": "object"
       },
       "ExportAccountOut": {
-        "description": "The Account: its login email and its dates.",
+        "description": "The Account: its login email, dates, and access.",
         "properties": {
           "date_joined": {
             "format": "date-time",
@@ -549,6 +549,26 @@
           "email": {
             "title": "Email",
             "type": "string"
+          },
+          "groups": {
+            "description": "The names of the Account's groups.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_staff": {
+            "title": "Is Staff",
+            "type": "boolean"
+          },
+          "is_superuser": {
+            "title": "Is Superuser",
+            "type": "boolean"
           },
           "last_login": {
             "anyOf": [
@@ -561,12 +581,25 @@
               }
             ],
             "title": "Last Login"
+          },
+          "permissions": {
+            "description": "The Account's own permissions, as app_label.codename.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
           }
         },
         "required": [
           "email",
           "date_joined",
-          "last_login"
+          "last_login",
+          "is_active",
+          "is_staff",
+          "is_superuser",
+          "groups",
+          "permissions"
         ],
         "title": "ExportAccountOut",
         "type": "object"
@@ -759,6 +792,182 @@
         "title": "ExportMFAMethodOut",
         "type": "object"
       },
+      "ExportMatchOut": {
+        "description": "A match the player played: ``MatchOut`` as match responses show it\nto the player, plus the match's own details. Never its rating format,\nwhich reveals the players' gender divisions.",
+        "properties": {
+          "best_of": {
+            "$ref": "#/components/schemas/BestOf"
+          },
+          "bracket_label": {
+            "title": "Bracket Label",
+            "type": "string"
+          },
+          "club": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MatchClubOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "confirmed_by_team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TeamConfirmationsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "corrects": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The OPEN Code of the match this one corrects, if any.",
+            "title": "Corrects"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MatchEventOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_label": {
+            "title": "Event Label",
+            "type": "string"
+          },
+          "format": {
+            "$ref": "#/components/schemas/MatchFormat"
+          },
+          "game_target": {
+            "$ref": "#/components/schemas/GameTarget"
+          },
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/GameOut"
+            },
+            "title": "Games",
+            "type": "array"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "match_type": {
+            "$ref": "#/components/schemas/MatchType"
+          },
+          "my_decision": {
+            "$ref": "#/components/schemas/MyDecision"
+          },
+          "my_team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Team"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "played_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Played At"
+          },
+          "played_at_utc_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minutes east of UTC where the match was played.",
+            "title": "Played At Utc Offset"
+          },
+          "played_on": {
+            "format": "date",
+            "title": "Played On",
+            "type": "string"
+          },
+          "scoring_type": {
+            "$ref": "#/components/schemas/ScoringType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MatchStatus"
+          },
+          "team_a": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantOut"
+            },
+            "title": "Team A",
+            "type": "array"
+          },
+          "team_b": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantOut"
+            },
+            "title": "Team B",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "status",
+          "format",
+          "played_on",
+          "best_of",
+          "scoring_type",
+          "game_target",
+          "team_a",
+          "team_b",
+          "games",
+          "my_team",
+          "my_decision",
+          "confirmed_by_team",
+          "event",
+          "club",
+          "created_at",
+          "match_type",
+          "location",
+          "played_at",
+          "played_at_utc_offset",
+          "event_label",
+          "bracket_label",
+          "corrects"
+        ],
+        "title": "ExportMatchOut",
+        "type": "object"
+      },
       "ExportOAuthRecordOut": {
         "description": "An OAuth token or grant issued to the Account, never its value.",
         "properties": {
@@ -801,6 +1010,31 @@
           "kind": {
             "$ref": "#/components/schemas/OAuthRecordKind"
           },
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A grant's redirect URI.",
+            "title": "Redirect Uri"
+          },
+          "revoked": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When a refresh token was revoked.",
+            "title": "Revoked"
+          },
           "scope": {
             "anyOf": [
               {
@@ -817,8 +1051,10 @@
           "kind",
           "application",
           "scope",
+          "redirect_uri",
           "created",
-          "expires"
+          "expires",
+          "revoked"
         ],
         "title": "ExportOAuthRecordOut",
         "type": "object"
@@ -862,10 +1098,38 @@
         "type": "object"
       },
       "ExportPartnerApplicationOut": {
-        "description": "A Partner Application the Account owns, never its secret.",
+        "description": "A Partner Application the Account owns, never its secret or who\napproved it.",
         "properties": {
+          "algorithm": {
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "allowed_origins": {
+            "title": "Allowed Origins",
+            "type": "string"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "authorization_grant_type": {
+            "title": "Authorization Grant Type",
+            "type": "string"
+          },
           "client_id": {
             "title": "Client Id",
+            "type": "string"
+          },
+          "client_type": {
+            "title": "Client Type",
             "type": "string"
           },
           "created": {
@@ -873,17 +1137,349 @@
             "title": "Created",
             "type": "string"
           },
+          "is_sandbox": {
+            "title": "Is Sandbox",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "organizer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The owning Organizer's OPEN Code.",
+            "title": "Organizer"
+          },
+          "post_logout_redirect_uris": {
+            "title": "Post Logout Redirect Uris",
+            "type": "string"
+          },
+          "redirect_uris": {
+            "title": "Redirect Uris",
+            "type": "string"
+          },
+          "skip_authorization": {
+            "title": "Skip Authorization",
+            "type": "boolean"
+          },
+          "updated": {
+            "format": "date-time",
+            "title": "Updated",
             "type": "string"
           }
         },
         "required": [
           "client_id",
           "name",
-          "created"
+          "organizer",
+          "redirect_uris",
+          "post_logout_redirect_uris",
+          "allowed_origins",
+          "client_type",
+          "authorization_grant_type",
+          "skip_authorization",
+          "algorithm",
+          "is_sandbox",
+          "approved_at",
+          "created",
+          "updated"
         ],
         "title": "ExportPartnerApplicationOut",
+        "type": "object"
+      },
+      "ExportRatingHistoryItemOut": {
+        "description": "A rating change, with its reliability and ``demonstration: true``,\nplus the match that caused it, the change, and the stored detail.",
+        "properties": {
+          "calculated_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculated As Of"
+          },
+          "config_version": {
+            "title": "Config Version",
+            "type": "string"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The change a live update made.",
+            "title": "Delta"
+          },
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "established": {
+            "description": "True once the rating rests on enough matches to be established.",
+            "title": "Established",
+            "type": "boolean"
+          },
+          "imported_reliability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reliability carried from an external rating, 0 to 100, shown apart from the OPEN-earned reliability. Null when there is none.",
+            "title": "Imported Reliability"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RatingChangeKind"
+          },
+          "last_played": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Played"
+          },
+          "live_updates_since_recalculation": {
+            "title": "Live Updates Since Recalculation",
+            "type": "integer"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The causing match's OPEN Code.",
+            "title": "Match"
+          },
+          "matches_played": {
+            "title": "Matches Played",
+            "type": "integer"
+          },
+          "parameter_fingerprint": {
+            "title": "Parameter Fingerprint",
+            "type": "string"
+          },
+          "params_version": {
+            "title": "Params Version",
+            "type": "string"
+          },
+          "provisional": {
+            "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "rating": {
+            "description": "The rating after the change.",
+            "title": "Rating",
+            "type": "number"
+          },
+          "rating_format": {
+            "$ref": "#/components/schemas/RatingFormat"
+          },
+          "rd": {
+            "title": "Rd",
+            "type": "number"
+          },
+          "recorded_at": {
+            "description": "When the change was recorded.",
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "reliability": {
+            "description": "OPEN-earned reliability, 0 to 100. The OPEN standard requires any app that shows an OPEN rating to show its reliability next to it.",
+            "title": "Reliability",
+            "type": "number"
+          },
+          "spec_version": {
+            "description": "The OPEN rating spec version the rating follows.",
+            "title": "Spec Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rd",
+          "matches_played",
+          "last_played",
+          "calculated_as_of",
+          "live_updates_since_recalculation",
+          "config_version",
+          "params_version",
+          "parameter_fingerprint",
+          "engine_version",
+          "rating_format",
+          "kind",
+          "rating",
+          "reliability",
+          "imported_reliability",
+          "provisional",
+          "established",
+          "spec_version",
+          "demonstration",
+          "recorded_at",
+          "match",
+          "delta"
+        ],
+        "title": "ExportRatingHistoryItemOut",
+        "type": "object"
+      },
+      "ExportRatingOut": {
+        "description": "A current rating, with its reliability and ``demonstration: true``,\nplus the stored detail and versions.",
+        "properties": {
+          "calculated_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculated As Of"
+          },
+          "config_version": {
+            "title": "Config Version",
+            "type": "string"
+          },
+          "demonstration": {
+            "const": true,
+            "description": "Always true: every rating is a demonstration rating while the rating engine is a demonstration package.",
+            "title": "Demonstration",
+            "type": "boolean"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "established": {
+            "description": "True once the rating rests on enough matches to be established.",
+            "title": "Established",
+            "type": "boolean"
+          },
+          "imported_reliability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The reliability carried from an external rating, 0 to 100, shown apart from the OPEN-earned reliability. Null when there is none.",
+            "title": "Imported Reliability"
+          },
+          "last_played": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Played"
+          },
+          "live_updates_since_recalculation": {
+            "title": "Live Updates Since Recalculation",
+            "type": "integer"
+          },
+          "matches_played": {
+            "title": "Matches Played",
+            "type": "integer"
+          },
+          "parameter_fingerprint": {
+            "title": "Parameter Fingerprint",
+            "type": "string"
+          },
+          "params_version": {
+            "title": "Params Version",
+            "type": "string"
+          },
+          "provisional": {
+            "description": "True when the rating holds live updates not yet confirmed by a replay of the ledger, or was never replayed. A provisional rating can change at the next replay.",
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "rating": {
+            "description": "The rating, as the engine gave it.",
+            "title": "Rating",
+            "type": "number"
+          },
+          "rd": {
+            "title": "Rd",
+            "type": "number"
+          },
+          "reliability": {
+            "description": "OPEN-earned reliability, 0 to 100. The OPEN standard requires any app that shows an OPEN rating to show its reliability next to it.",
+            "title": "Reliability",
+            "type": "number"
+          },
+          "spec_version": {
+            "description": "The OPEN rating spec version the rating follows.",
+            "title": "Spec Version",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the rating last changed.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rd",
+          "matches_played",
+          "last_played",
+          "calculated_as_of",
+          "live_updates_since_recalculation",
+          "config_version",
+          "params_version",
+          "parameter_fingerprint",
+          "engine_version",
+          "rating",
+          "reliability",
+          "imported_reliability",
+          "provisional",
+          "established",
+          "spec_version",
+          "demonstration",
+          "updated_at"
+        ],
+        "title": "ExportRatingOut",
         "type": "object"
       },
       "ExportResultsFileOut": {
@@ -896,6 +1492,19 @@
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "description": "Why processing failed; empty if not.",
+            "title": "Error Code",
+            "type": "string"
+          },
+          "game_target": {
+            "title": "Game Target",
+            "type": "integer"
+          },
+          "location": {
+            "title": "Location",
             "type": "string"
           },
           "processed_at": {
@@ -917,6 +1526,9 @@
         "required": [
           "code",
           "status",
+          "error_code",
+          "location",
+          "game_target",
           "created_at",
           "processed_at"
         ],
@@ -993,6 +1605,18 @@
             "description": "The Event's OPEN Code, if any.",
             "title": "Event"
           },
+          "expected_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many matches the batch meant to record, if set.",
+            "title": "Expected Size"
+          },
           "matches": {
             "description": "The OPEN Codes of its matches.",
             "items": {
@@ -1017,6 +1641,7 @@
           "event",
           "club",
           "matches",
+          "expected_size",
           "results_file"
         ],
         "title": "ExportSubmissionBatchOut",
@@ -1536,6 +2161,17 @@
           "voided"
         ],
         "title": "MatchStatus",
+        "type": "string"
+      },
+      "MatchType": {
+        "description": "The match type a Match counts as (ADR 0024, ADR 0035).\n\nThe values are ``open_engine.MatchType``'s. ``record_match`` stores one\nper Match when it is recorded (``apps.matches.services.draft_match``):\nthe Event's kind, ``rec_verified`` for a Club with no Event, and\n``self_reported`` for neither. It never changes afterward, so a later\nchange of an Event's kind moves only matches recorded after it. A\ncorrection (``edit_match``) copies the type of the match it corrects.",
+        "enum": [
+          "tournament",
+          "league",
+          "rec_verified",
+          "self_reported"
+        ],
+        "title": "MatchType",
         "type": "string"
       },
       "MemberRole": {

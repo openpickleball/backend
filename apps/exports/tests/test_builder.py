@@ -285,7 +285,7 @@ def test_memberships_club_roles_reports_and_applications() -> None:
     (app,) = data["partner_applications"]
     assert app["client_id"] == application.client_id
     assert app["name"] == application.name
-    assert set(app) == {"client_id", "name", "created"}
+    assert not {"client_secret", "hash_client_secret", "approved_by"} & set(app)
 
 
 def test_oauth_records_show_metadata_only() -> None:

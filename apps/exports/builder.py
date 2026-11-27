@@ -64,36 +64,39 @@ from apps.exports.schemas import (
     ExportClubRoleOut,
     ExportConfirmationOut,
     ExportEmailAddressOut,
+    ExportMatchOut,
     ExportMFAMethodOut,
     ExportOAuthRecordOut,
     ExportOrganizerReportOut,
     ExportPartnerApplicationOut,
+    ExportRatingHistoryItemOut,
+    ExportRatingOut,
     ExportResultsFileOut,
     ExportSessionOut,
     ExportSubmissionBatchOut,
     ExportSubmittedMatchOut,
     ExportVouchOut,
     OAuthRecordKind,
+    _RatingDetail,
 )
 from apps.matches.models import (
     ConfirmationDecision,
     Match,
     MatchConfirmation,
     MatchParticipant,
+    MatchType,
     MatchVouch,
     RatingFormat,
     ResultsFile,
     ResultsFileStatus,
     SubmissionBatch,
 )
-from apps.matches.schemas import MatchOut, match_out, with_match_details
+from apps.matches.schemas import match_out, with_match_details
 from apps.players.models import Player, PlayerPrivacy
 from apps.players.schemas import MyPlayerOut, my_player_out
 from apps.public_ids.models import PublicCodeModel
 from apps.ratings.models import RatingHistory, RatingState
 from apps.ratings.schemas import (
-    RatingHistoryItemOut,
-    RatingOut,
     rating_history_item_out,
     rating_out,
 )
@@ -116,11 +119,7 @@ def build_export(account: "_User", *, now: datetime | None = None) -> DataExport
     return DataExportOut(
         format_version=FORMAT_VERSION,
         generated_at=now or timezone.now(),
-        account=ExportAccountOut(
-            email=account.email,
-            date_joined=account.date_joined,
-            last_login=account.last_login,
-        ),
+        account=_account(account),
         email_addresses=_email_addresses(account),
         sessions=_sessions(account),
         mfa_methods=_mfa_methods(account),
@@ -139,6 +138,26 @@ def build_export(account: "_User", *, now: datetime | None = None) -> DataExport
         partner_applications=_partner_applications(account),
         oauth=_oauth(account),
         audit_events=_audit_events(account, player),
+    )
+
+
+def _account(account: "_User") -> ExportAccountOut:
+    groups = sorted(account.groups.values_list("name", flat=True))
+    permissions = sorted(
+        f"{app_label}.{codename}"
+        for app_label, codename in account.user_permissions.values_list(
+            "content_type__app_label", "codename"
+        )
+    )
+    return ExportAccountOut(
+        email=account.email,
+        date_joined=account.date_joined,
+        last_login=account.last_login,
+        is_active=account.is_active,
+        is_staff=account.is_staff,
+        is_superuser=account.is_superuser,
+        groups=groups,
+        permissions=permissions,
     )
 
 
@@ -203,14 +222,28 @@ def _profile(player: Player | None) -> MyPlayerOut | None:
     return my_player_out(player, privacy)
 
 
-def _matches(player: Player | None, account: "_User") -> list[MatchOut]:
+def _matches(player: Player | None, account: "_User") -> list[ExportMatchOut]:
     if player is None:
         return []
     played = MatchParticipant.objects.filter(player=player).values("match_id")
     matches = with_match_details(
-        Match.objects.filter(pk__in=played).order_by("played_on", "created_at", "pk")
+        Match.objects.filter(pk__in=played)
+        .select_related("corrects")
+        .order_by("played_on", "created_at", "pk")
     )
-    return [match_out(match, viewer=account) for match in matches]
+    return [
+        ExportMatchOut(
+            **match_out(match, viewer=account).model_dump(),
+            match_type=MatchType(match.match_type),
+            location=match.location,
+            played_at=match.played_at,
+            played_at_utc_offset=match.played_at_utc_offset,
+            event_label=match.event_label,
+            bracket_label=match.bracket_label,
+            corrects=None if match.corrects is None else match.corrects.public_code,
+        )
+        for match in matches
+    ]
 
 
 def _confirmations(player: Player | None) -> list[ExportConfirmationOut]:
@@ -276,7 +309,14 @@ def _submission_batches(account: "_User") -> list[ExportSubmissionBatchOut]:
     files = {
         row.submission_batch_id: row
         for row in ResultsFile.objects.filter(submission_batch_id__in=ids).only(
-            "submission_batch_id", "public_code", "status", "created_at", "processed_at"
+            "submission_batch_id",
+            "public_code",
+            "status",
+            "error_code",
+            "location",
+            "game_target",
+            "created_at",
+            "processed_at",
         )
     }
     return [
@@ -285,6 +325,7 @@ def _submission_batches(account: "_User") -> list[ExportSubmissionBatchOut]:
             event=None if batch.event is None else batch.event.public_code,
             club=None if batch.club is None else batch.club.public_code,
             matches=codes[batch.pk],
+            expected_size=batch.expected_size,
             results_file=_results_file(files.get(batch.pk)),
         )
         for batch in batches
@@ -297,23 +338,51 @@ def _results_file(row: ResultsFile | None) -> ExportResultsFileOut | None:
     return ExportResultsFileOut(
         code=row.public_code,
         status=ResultsFileStatus(row.status),
+        error_code=row.error_code,
+        location=row.location,
+        game_target=row.game_target,
         created_at=row.created_at,
         processed_at=row.processed_at,
     )
 
 
-def _ratings(player: Player | None) -> dict[RatingFormat, RatingOut]:
+_DETAIL_FIELDS = tuple(_RatingDetail.model_fields)
+
+
+def _detail(row: RatingState | RatingHistory) -> dict[str, Any]:
+    return {name: getattr(row, name) for name in _DETAIL_FIELDS}
+
+
+def _ratings(player: Player | None) -> dict[RatingFormat, ExportRatingOut]:
     if player is None:
         return {}
     states = RatingState.objects.filter(player=player).order_by("rating_format")
-    return {RatingFormat(state.rating_format): rating_out(state) for state in states}
+    return {
+        RatingFormat(state.rating_format): ExportRatingOut(
+            **rating_out(state).model_dump(), **_detail(state)
+        )
+        for state in states
+    }
 
 
-def _rating_history(player: Player | None) -> list[RatingHistoryItemOut]:
+def _rating_history(player: Player | None) -> list[ExportRatingHistoryItemOut]:
+    # Never the replay, a row id.
     if player is None:
         return []
-    rows = RatingHistory.objects.filter(player=player).order_by("created_at", "pk")
-    return [rating_history_item_out(row) for row in rows]
+    rows = (
+        RatingHistory.objects.filter(player=player)
+        .select_related("match")
+        .order_by("created_at", "pk")
+    )
+    return [
+        ExportRatingHistoryItemOut(
+            **rating_history_item_out(row).model_dump(),
+            **_detail(row),
+            match=None if row.match is None else row.match.public_code,
+            delta=row.delta,
+        )
+        for row in rows
+    ]
 
 
 def _memberships(account: "_User") -> list[OrganizerMembershipOut]:
@@ -369,19 +438,40 @@ def _organizer_reports(account: "_User") -> list[ExportOrganizerReportOut]:
 
 
 def _partner_applications(account: "_User") -> list[ExportPartnerApplicationOut]:
-    # Never the client secret.
+    # Never the client secret or who approved it.
+    # The stub types the swapped model as AbstractApplication, without
+    # OPEN's fields.
+    model: Any = get_application_model()
     rows = (
-        get_application_model()
-        ._default_manager.filter(user_id=account.pk)
-        .only("client_id", "name", "created")
+        model._default_manager.filter(user_id=account.pk)
+        .select_related("organizer")
+        .defer("client_secret")
         .order_by("created", "pk")
     )
     return [
         ExportPartnerApplicationOut(
-            client_id=row.client_id, name=row.name, created=row.created
+            client_id=row.client_id,
+            name=row.name,
+            organizer=_organizer_code(row),
+            redirect_uris=row.redirect_uris,
+            post_logout_redirect_uris=row.post_logout_redirect_uris,
+            allowed_origins=row.allowed_origins,
+            client_type=row.client_type,
+            authorization_grant_type=row.authorization_grant_type,
+            skip_authorization=row.skip_authorization,
+            algorithm=row.algorithm,
+            is_sandbox=row.is_sandbox,
+            approved_at=row.approved_at,
+            created=row.created,
+            updated=row.updated,
         )
         for row in rows
     ]
+
+
+def _organizer_code(application: Any) -> str | None:
+    organizer = application.organizer
+    return None if organizer is None else str(organizer.public_code)
 
 
 def _oauth(account: "_User") -> list[ExportOAuthRecordOut]:
@@ -397,6 +487,10 @@ def _oauth(account: "_User") -> list[ExportOAuthRecordOut]:
         fields = ["created", "application__client_id"]
         if has_scope:
             fields += ["scope", "expires"]
+        if kind == OAuthRecordKind.GRANT:
+            fields.append("redirect_uri")
+        if kind == OAuthRecordKind.REFRESH_TOKEN:
+            fields.append("revoked")
         rows = (
             model._default_manager.filter(user_id=account.pk)
             .select_related("application")
@@ -410,8 +504,14 @@ def _oauth(account: "_User") -> list[ExportOAuthRecordOut]:
                     kind=kind,
                     application=None if application is None else application.client_id,
                     scope=row.scope if has_scope else None,
+                    redirect_uri=(
+                        row.redirect_uri if kind == OAuthRecordKind.GRANT else None
+                    ),
                     created=row.created,
                     expires=row.expires if has_scope else None,
+                    revoked=(
+                        row.revoked if kind == OAuthRecordKind.REFRESH_TOKEN else None
+                    ),
                 )
             )
     for grant in (
@@ -425,8 +525,10 @@ def _oauth(account: "_User") -> list[ExportOAuthRecordOut]:
                 kind=OAuthRecordKind.DEVICE_GRANT,
                 application=grant.client_id,
                 scope=grant.scope,
+                redirect_uri=None,
                 created=None,
                 expires=grant.expires,
+                revoked=None,
             )
         )
     return records

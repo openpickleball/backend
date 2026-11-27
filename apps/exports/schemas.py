@@ -11,7 +11,7 @@ and ``RatingHistoryItemOut``, and memberships through
 section. No row id, session key, secret, token, or event reason appears.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Final, Literal
 
@@ -20,7 +20,12 @@ from pydantic import JsonValue
 
 from apps.clubs.models import ClubRoleKind, OrganizerReportReason
 from apps.clubs.schemas import OrganizerMembershipOut
-from apps.matches.models import ConfirmationDecision, RatingFormat, ResultsFileStatus
+from apps.matches.models import (
+    ConfirmationDecision,
+    MatchType,
+    RatingFormat,
+    ResultsFileStatus,
+)
 from apps.matches.schemas import MatchOut
 from apps.players.schemas import MyPlayerOut
 from apps.ratings.schemas import RatingHistoryItemOut, RatingOut
@@ -52,11 +57,18 @@ class DataExportDownloadIn(Schema):
 
 
 class ExportAccountOut(Schema):
-    """The Account: its login email and its dates."""
+    """The Account: its login email, dates, and access."""
 
     email: str
     date_joined: datetime
     last_login: datetime | None
+    is_active: bool
+    is_staff: bool
+    is_superuser: bool
+    groups: list[str] = Field(description="The names of the Account's groups.")
+    permissions: list[str] = Field(
+        description="The Account's own permissions, as app_label.codename."
+    )
 
 
 class ExportEmailAddressOut(Schema):
@@ -119,6 +131,9 @@ class ExportResultsFileOut(Schema):
 
     code: str
     status: ResultsFileStatus
+    error_code: str = Field(description="Why processing failed; empty if not.")
+    location: str
+    game_target: int
     created_at: datetime
     processed_at: datetime | None
 
@@ -130,6 +145,9 @@ class ExportSubmissionBatchOut(Schema):
     event: str | None = Field(description="The Event's OPEN Code, if any.")
     club: str | None = Field(description="The Club's OPEN Code, if any.")
     matches: list[str] = Field(description="The OPEN Codes of its matches.")
+    expected_size: int | None = Field(
+        description="How many matches the batch meant to record, if set."
+    )
     results_file: ExportResultsFileOut | None
 
 
@@ -151,11 +169,23 @@ class ExportOrganizerReportOut(Schema):
 
 
 class ExportPartnerApplicationOut(Schema):
-    """A Partner Application the Account owns, never its secret."""
+    """A Partner Application the Account owns, never its secret or who
+    approved it."""
 
     client_id: str
     name: str
+    organizer: str | None = Field(description="The owning Organizer's OPEN Code.")
+    redirect_uris: str
+    post_logout_redirect_uris: str
+    allowed_origins: str
+    client_type: str
+    authorization_grant_type: str
+    skip_authorization: bool
+    algorithm: str
+    is_sandbox: bool
+    approved_at: datetime | None
     created: datetime
+    updated: datetime
 
 
 class OAuthRecordKind(StrEnum):
@@ -176,8 +206,55 @@ class ExportOAuthRecordOut(Schema):
         description="The application's client_id, if the record names one."
     )
     scope: str | None
+    redirect_uri: str | None = Field(description="A grant's redirect URI.")
     created: datetime | None
     expires: datetime | None
+    revoked: datetime | None = Field(description="When a refresh token was revoked.")
+
+
+class ExportMatchOut(MatchOut):
+    """A match the player played: ``MatchOut`` as match responses show it
+    to the player, plus the match's own details. Never its rating format,
+    which reveals the players' gender divisions."""
+
+    match_type: MatchType
+    location: str
+    played_at: datetime | None
+    played_at_utc_offset: int | None = Field(
+        description="Minutes east of UTC where the match was played."
+    )
+    event_label: str
+    bracket_label: str
+    corrects: str | None = Field(
+        description="The OPEN Code of the match this one corrects, if any."
+    )
+
+
+class _RatingDetail(Schema):
+    """The engine's detail and versions behind a rating, as stored."""
+
+    rd: float
+    matches_played: int
+    last_played: date | None
+    calculated_as_of: date | None
+    live_updates_since_recalculation: int
+    config_version: str
+    params_version: str
+    parameter_fingerprint: str
+    engine_version: str
+
+
+class ExportRatingOut(RatingOut, _RatingDetail):
+    """A current rating, with its reliability and ``demonstration: true``,
+    plus the stored detail and versions."""
+
+
+class ExportRatingHistoryItemOut(RatingHistoryItemOut, _RatingDetail):
+    """A rating change, with its reliability and ``demonstration: true``,
+    plus the match that caused it, the change, and the stored detail."""
+
+    match: str | None = Field(description="The causing match's OPEN Code.")
+    delta: float | None = Field(description="The change a live update made.")
 
 
 class AuditActor(StrEnum):
@@ -225,13 +302,13 @@ class DataExportOut(Schema):
     mfa_methods: list[ExportMFAMethodOut]
     agreements: list[ExportAgreementOut]
     profile: MyPlayerOut | None
-    matches: list[MatchOut]
+    matches: list[ExportMatchOut]
     confirmations: list[ExportConfirmationOut]
     vouches: list[ExportVouchOut]
     submitted_matches: list[ExportSubmittedMatchOut]
     submission_batches: list[ExportSubmissionBatchOut]
-    ratings: dict[RatingFormat, RatingOut]
-    rating_history: list[RatingHistoryItemOut]
+    ratings: dict[RatingFormat, ExportRatingOut]
+    rating_history: list[ExportRatingHistoryItemOut]
     organizer_memberships: list[OrganizerMembershipOut]
     club_roles: list[ExportClubRoleOut]
     organizer_reports: list[ExportOrganizerReportOut]
