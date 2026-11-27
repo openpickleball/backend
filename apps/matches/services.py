@@ -1121,6 +1121,36 @@ def draft_match(
     )
 
 
+def keep_rating_format(draft: MatchDraft, corrects: Match) -> None:
+    """Give a correction with the same teams its match's rating format (#318).
+
+    When the draft has the same format and the same two teams, in either
+    order, as ``corrects`` (the saved match it corrects), the draft takes
+    that match's stored rating format. Otherwise the draft keeps the format
+    ``draft_match`` derived from the players' divisions as stored now. So a
+    division removed after the match was recorded (#190, Account deletion,
+    ADR 0048) never moves a correction that kept its teams to another
+    format. Everything is read from the database by id; a ledger row's
+    teams and rating format never change.
+    """
+    format, rating_format = (
+        Match.objects.filter(pk=corrects.pk)
+        .values_list("format", "rating_format")
+        .get()
+    )
+    teams: dict[str, set[int]] = {}
+    for player_id, team in MatchParticipant.objects.filter(
+        match_id=corrects.pk
+    ).values_list("player_id", "team"):
+        teams.setdefault(team, set()).add(player_id)
+    stored = {frozenset(players) for players in teams.values()}
+    wanted = {frozenset(draft.keys_a), frozenset(draft.keys_b)}
+    # The same format, so the kept value fits the check constraint that
+    # ties it to the format, as it did on the stored row.
+    if format == draft.match.format and len(wanted) == 2 and wanted == stored:
+        draft.match.rating_format = rating_format
+
+
 def stored_lineup_lock_key(match: Match) -> int:
     """The lineup lock key of a saved match, from its stored players and date."""
     played_on = Match.objects.filter(pk=match.pk).values_list("played_on", flat=True)

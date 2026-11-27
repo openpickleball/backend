@@ -12,6 +12,10 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
+from apps.accounts.deletion import delete_account
+from apps.accounts.tests.factories import UserFactory
+from apps.clubs.tests.factories import OrganizerMemberFactory, verified_organizer
+from apps.events.tests.factories import EventFactory
 from apps.matches.models import Match, MatchFormat, MatchStatus, RatingFormat
 from apps.matches.services import derive_rating_format, record_match
 from apps.matches.tests.factories import DoublesMatchFactory, MatchFactory
@@ -141,28 +145,178 @@ def test_a_later_division_removal_keeps_the_stored_value() -> None:
     assert match.rating_format == RatingFormat.MIXED_DOUBLES
 
 
-def test_a_correction_gets_its_own_rating_format() -> None:
-    players = _players(MENS, MENS, MENS, MENS)
-    old = _record(players)
-    Player.objects.filter(pk=players[0].pk).update(gender_division="")
-
+def _correct_as_player(
+    old: Match, actor: Player, team_a: list[Player], team_b: list[Player]
+) -> Match:
     # A player's correction of the pending self-submission (#267).
     corrected = edit_match(
         old,
-        actor=players[1].account,
+        actor=actor.account,
         format=MatchFormat.DOUBLES,
-        team_a=players[:2],
-        team_b=players[2:],
+        team_a=team_a,
+        team_b=team_b,
         games=[(11, 6)],
         played_on=PLAYED_ON,
         as_player=True,
     )
+    corrected.refresh_from_db()
+    return corrected
+
+
+def test_a_correction_with_the_same_teams_keeps_the_rating_format() -> None:
+    players = _players(MENS, MENS, MENS, MENS)
+    old = _record(players)
+    Player.objects.filter(pk=players[0].pk).update(gender_division="")
+
+    corrected = _correct_as_player(old, players[1], players[:2], players[2:])
 
     old.refresh_from_db()
-    corrected.refresh_from_db()
     assert old.status == MatchStatus.VOIDED
     assert old.rating_format == RatingFormat.DOUBLES_MEN
+    # The teams did not change, so neither does the format (#318).
+    assert corrected.rating_format == RatingFormat.DOUBLES_MEN
+
+
+def test_a_correction_with_the_teams_swapped_keeps_the_rating_format() -> None:
+    players = _players(MENS, WOMENS, WOMENS, MENS)
+    old = _record(players)
+    Player.objects.filter(pk=players[2].pk).update(gender_division="")
+
+    corrected = _correct_as_player(
+        old, players[0], [players[3], players[2]], [players[1], players[0]]
+    )
+
+    assert corrected.rating_format == RatingFormat.MIXED_DOUBLES
+
+
+def test_a_correction_that_changes_a_team_derives_the_rating_format() -> None:
+    players = _players(MENS, WOMENS, WOMENS, MENS)
+    event = EventFactory.create(organizer=verified_organizer())
+    member = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=member)
+    old = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=[(11, 4)],
+        played_on=event.start_date,
+        submitted_by_user=member,
+        event=event,
+    ).match
+    assert old.rating_format == RatingFormat.MIXED_DOUBLES
+    newcomer = PlayerFactory.create(gender_division=MENS)
+
+    corrected = edit_match(
+        old,
+        actor=member,
+        format=MatchFormat.DOUBLES,
+        team_a=[players[0], newcomer],
+        team_b=players[2:],
+        games=[(11, 4)],
+        played_on=event.start_date,
+    )
+
+    corrected.refresh_from_db()
+    # A men's player replaced a women's one, so the format is derived again.
     assert corrected.rating_format == RatingFormat.DOUBLES
+
+
+def test_a_correction_that_moves_a_player_derives_the_rating_format() -> None:
+    players = _players(MENS, WOMENS, MENS, WOMENS)
+    event = EventFactory.create(organizer=verified_organizer())
+    member = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=member)
+    old = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=[(11, 4)],
+        played_on=event.start_date,
+        submitted_by_user=member,
+        event=event,
+    ).match
+    assert old.rating_format == RatingFormat.MIXED_DOUBLES
+
+    # The same four players, with the partners changed: two men against two women.
+    corrected = edit_match(
+        old,
+        actor=member,
+        format=MatchFormat.DOUBLES,
+        team_a=[players[0], players[2]],
+        team_b=[players[1], players[3]],
+        games=[(11, 4)],
+        played_on=event.start_date,
+    )
+
+    corrected.refresh_from_db()
+    assert corrected.rating_format == RatingFormat.DOUBLES
+
+
+def test_an_organizer_correction_after_a_deletion_keeps_mixed_doubles() -> None:
+    players = _players(MENS, WOMENS, WOMENS, MENS)
+    event = EventFactory.create(organizer=verified_organizer())
+    member = UserFactory.create()
+    OrganizerMemberFactory.create(organizer=event.organizer, account=member)
+    old = record_match(
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=[(11, 4)],
+        played_on=event.start_date,
+        submitted_by_user=member,
+        event=event,
+    ).match
+    deleted = players[1]
+    delete_account(deleted.account, actor=deleted.account)
+    deleted.refresh_from_db()
+    assert deleted.gender_division == ""
+
+    corrected = edit_match(
+        old,
+        actor=member,
+        format=MatchFormat.DOUBLES,
+        team_a=players[:2],
+        team_b=players[2:],
+        games=[(11, 6)],
+        played_on=event.start_date,
+    )
+
+    corrected.refresh_from_db()
+    assert corrected.corrects_id == old.pk
+    assert corrected.rating_format == RatingFormat.MIXED_DOUBLES
+
+
+def test_a_player_correction_after_a_deletion_keeps_mixed_doubles() -> None:
+    players = _players(MENS, WOMENS, WOMENS, MENS)
+    old = _record(players)
+    deleted = players[3]
+    delete_account(deleted.account, actor=deleted.account)
+
+    corrected = _correct_as_player(old, players[0], players[:2], players[2:])
+
+    assert corrected.rating_format == RatingFormat.MIXED_DOUBLES
+
+
+def test_a_correction_of_a_correction_keeps_the_rating_format() -> None:
+    players = _players(MENS, WOMENS, WOMENS, MENS)
+    old = _record(players)
+    delete_account(players[3].account, actor=players[3].account)
+    first = _correct_as_player(old, players[0], players[:2], players[2:])
+
+    second = edit_match(
+        first,
+        actor=players[1].account,
+        format=MatchFormat.DOUBLES,
+        team_a=players[2:],
+        team_b=players[:2],
+        games=[(6, 11)],
+        played_on=PLAYED_ON,
+        as_player=True,
+    )
+
+    second.refresh_from_db()
+    assert second.corrects_id == first.pk
+    assert second.rating_format == RatingFormat.MIXED_DOUBLES
 
 
 def test_the_factories_store_a_rating_format_that_fits_the_format() -> None:
