@@ -8,9 +8,11 @@ from allauth.core import context as allauth_context
 from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.sites.shortcuts import get_current_site
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import HttpRequest
 
+from apps.accounts.deletion import PLACEHOLDER_EMAIL_MESSAGE, is_deleted_email
 from apps.accounts.devices import note_sign_in
 from apps.accounts.sessions import start_lifetime
 from apps.accounts.validators import (
@@ -87,12 +89,17 @@ class AccountAdapter(DefaultAccountAdapter):
         headless_views.py). The address is normalized like the manager does
         (NFKC, strip, lowercase per character), then checked for ASCII,
         length, and format, in that order. The error carries the rule's
-        fixed message, never the submitted value.
+        fixed message, never the submitted value. A deleted Account's
+        placeholder address is refused too (#344).
         """
         normalized = normalize_email_address(email)
         errors = normalized_email_errors(normalized)
         if errors:
             raise errors[0]
+        if is_deleted_email(normalized):
+            # Only a deletion writes a placeholder address (#344): an
+            # Account with one that is inactive counts as deleted.
+            raise ValidationError(PLACEHOLDER_EMAIL_MESSAGE, code="invalid")
         cleaned: str = super().clean_email(normalized)
         return cleaned
 

@@ -253,6 +253,13 @@ def delete_account(
     return AccountDeletion(account_kept=account_kept, player_kept=player_kept)
 
 
+# Only a deletion writes a placeholder address (#344): sign-up, an added
+# address, and the Account admin refuse one with this fixed text.
+PLACEHOLDER_EMAIL_MESSAGE = (
+    "This address is kept for deleted Accounts. Enter another address."
+)
+
+
 def is_deleted_email(email: str) -> bool:
     """Whether ``email`` is a placeholder a deletion left on a kept row."""
     return email.startswith(DELETED_EMAIL_PREFIX) and email.endswith(
