@@ -959,9 +959,6 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
         "options": {"expire_seconds": 900},
     },
-    # Runs pending rating replay requests whose queued task was lost (#47).
-    # Does nothing when no request is pending. A run missed for 15 minutes
-    # is dropped.
     # Deletes expired Organizer invites, which hold an address (#229).
     # A run missed for an hour is dropped.
     "sweep-organizer-invites": {
@@ -969,6 +966,9 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=4, minute=0),
         "options": {"expire_seconds": 3600},
     },
+    # Runs pending rating replay requests whose queued task was lost (#47).
+    # Does nothing when no request is pending. A run missed for 15 minutes
+    # is dropped.
     "replay-ratings": {
         "task": "apps.ratings.tasks.replay_ratings",
         "schedule": crontab(minute="*/15"),
