@@ -87,6 +87,8 @@ The file does not carry these. The upload (#71) sets them for the whole file.
 
 Every player in the file must be 13 or older (ADR 0009, #114). The file has no age column. Instead, the upload form asks the organizer once per file to confirm that every player in it is 13 or older (#71). An upload without the confirmation is refused before any row is read.
 
+The upload also needs a recent two-factor step (#232): when the organizer's last one is more than a few minutes old, the upload is refused with 403 `reauthentication_required`, before the Event is looked up. The organizer confirms their two-factor method again and uploads the file again.
+
 ## File rules
 
 - Save the file as UTF-8, with or without a byte order mark. Other encodings are refused with `not_utf8`.

@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-26
-- Amended by: [ADR 0057](0057-organizer-and-club-admin-security.md) (an Account with an Organizer membership or Club Role uses shorter session lifetimes, and removing TOTP, which ends the other sessions, is refused for the last Organizer admin with MFA)
+- Amended by: [ADR 0057](0057-organizer-and-club-admin-security.md) (an Account with an Organizer membership or Club Role uses shorter session lifetimes, and a removal of TOTP or passkeys, which ends the other sessions, is refused when it would leave the Account with no method while it is the last Organizer admin with MFA)
 
 ## Context
 

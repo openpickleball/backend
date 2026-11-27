@@ -1078,8 +1078,9 @@ ORGANIZER_INVITE_DAYS = _days("ORGANIZER_INVITE_DAYS", 7)
 # Organizer and Club admin security (#232, ADR 0057)
 
 # How recent a second factor step (an MFA login, MFA reauthentication, or
-# enrollment) must be for an admin change to an Organizer or Club, or a
-# results file upload (config.auth.require_step_up). Whole seconds from
+# enrollment) must be for a change to who may act for an Organizer or Club
+# (the operations that call config.auth.require_step_up), or a results
+# file upload. Whole seconds from
 # 30 to 86400. Unset or empty gives 300.
 ORGANIZER_STEP_UP_SECONDS = _seconds("ORGANIZER_STEP_UP_SECONDS", 300, minimum=30)
 # Hours a member who joins a verified Organizer by invite waits before it
