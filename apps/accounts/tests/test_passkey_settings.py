@@ -10,12 +10,23 @@ a fresh process, as in ``config/tests/test_settings.py``.
 """
 
 import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from apps.accounts.checks import check_webauthn_origins
-from config.tests.test_settings import LOCAL_DEBUG, PRODUCTION_LIKE, _check, _run
+from config.tests.test_settings import (
+    BASE_DIR,
+    LOCAL_DEBUG,
+    PRODUCTION_LIKE,
+    _check,
+    _run,
+)
 
 RP_ID = "WEBAUTHN_RP_ID"
 ORIGINS = "WEBAUTHN_ALLOWED_ORIGINS"
@@ -43,6 +54,45 @@ def test_rp_id_defaults_to_the_registrable_domain() -> None:
     values = {**PRODUCTION_LIKE, RP_ID: ""}
 
     assert _webauthn(values)[0] == "openpb.org"
+
+
+def test_unset_variables_give_the_defaults(tmp_path: Path) -> None:
+    """The variables truly unset, in a copy of the project with no .env,
+    so neither a developer's .env nor .env.example's values leak in (as
+    config/tests/test_settings_env_file.py does)."""
+    shutil.copy2(BASE_DIR / "manage.py", tmp_path / "manage.py")
+    shutil.copytree(
+        BASE_DIR / "config",
+        tmp_path / "config",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    (tmp_path / "apps").symlink_to(BASE_DIR / "apps")
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "DJANGO_SETTINGS_MODULE": "config.settings",
+        **PRODUCTION_LIKE,
+    }
+    env.pop(RP_ID, None)
+    env.pop(ORIGINS, None)
+    if "HOME" in os.environ:
+        env["HOME"] = os.environ["HOME"]
+
+    result = subprocess.run(
+        [sys.executable, "-c", PRINT_WEBAUTHN],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [
+        "openpb.org",
+        [PRODUCTION_LIKE["FRONTEND_URL"]],
+    ]
+    assert not (tmp_path / ".env").exists()
 
 
 @pytest.mark.parametrize("value", ["example.org", "localhost", "sub-1.example.org"])
