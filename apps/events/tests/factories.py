@@ -16,16 +16,25 @@ def _event_name() -> str:
     return f"{_faker.city()} {_faker.word()} League"[:200]
 
 
+# A match with an Event must be played within its dates (#207), so the
+# default span starts long before and ends long after any date a test
+# plays a match on. A test that needs other dates passes them.
+_EARLIEST_START = date(2000, 1, 1)
+_SPAN_DAYS = 36_500
+
+
 def _start_date() -> date:
-    return _faker.date_between(start_date="-1y", end_date="+1y")
+    return _EARLIEST_START + timedelta(days=_faker.random_int(min=0, max=1_800))
 
 
 def _end_date(event: Event) -> date:
-    return event.start_date + timedelta(days=_faker.random_int(min=0, max=90))
+    return event.start_date + timedelta(
+        days=_SPAN_DAYS + _faker.random_int(min=0, max=90)
+    )
 
 
 class EventFactory(DjangoModelFactory[Event]):
-    """A saved league Event with no Club, its dates in order."""
+    """A saved league Event with no Club, its dates in order and wide."""
 
     class Meta:
         model = Event

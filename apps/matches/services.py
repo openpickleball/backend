@@ -15,9 +15,15 @@ Next it checks that a Submission Batch it was given fits the submission
 submitter sent. A submission with a batch never confirms a pending exact
 duplicate (ADR 0036): it is refused like any other exact duplicate.
 
-After that check, ``record_match`` runs every model rule on the Match, its
-participants, and its games, so nothing invalid reaches a lock, a lookup,
-or the database. It then detects duplicates (a security-sensitive area,
+After that check, ``record_match`` refuses a Player whose Account is
+inactive, reads the Event's stored start and end dates by id, and runs
+``validate_match`` (which refuses a date played outside them,
+``outside_event_dates``, #207, ADR 0052) and every model rule on the
+Match, its participants, and its games. The Event's dates are read by
+id after the permission checks, with the batch and inactive player reads,
+before validation, so nothing invalid reaches a lock, a duplicate lookup,
+or a write. ``edit_match`` drafts its correction the same way, so a
+correction outside the stored Event's dates is refused too. It then detects duplicates (a security-sensitive area,
 CLAUDE.md hard rule 8). In one transaction, under advisory locks, it:
 
 - refuses an external id the same Partner Application already used, for a
@@ -144,6 +150,7 @@ _UNKNOWN_DIVISION = "A player's gender division is not a known division."
 _UNKNOWN_FORMAT = "The match format is not singles or doubles."
 
 BATCH_REFUSED = "This submission batch does not fit this match."
+_OUTSIDE_EVENT_DATES = "The date played must fall within the event's dates."
 
 
 def derive_rating_format(
@@ -462,8 +469,15 @@ def validate_match(
     best_of: int | None = None,
     game_target: int | None = None,
     scoring_type: str | None = None,
+    event_dates: tuple[date, date] | None = None,
 ) -> ValidatedMatch:
     """Check a submitted match against every rule and return it with defaults.
+
+    ``event_dates`` is the start and end date of the match's Event, given
+    as plain dates (the caller reads them, #207). A ``played_on`` before
+    the start or after the end is refused (``outside_event_dates``, fixed
+    text that names neither date), unless ``played_on`` already has its
+    own issue. With no dates, no such check is made.
 
     Raises ``MatchValidationError`` with every issue found.
     """
@@ -558,6 +572,12 @@ def validate_match(
     played_on_issue = _played_on_issue(played_on)
     if played_on_issue is not None:
         issues.append(played_on_issue)
+    elif event_dates is not None and not (
+        event_dates[0] <= played_on <= event_dates[1]
+    ):
+        issues.append(
+            MatchIssue("played_on", "outside_event_dates", _OUTSIDE_EVENT_DATES)
+        )
 
     if (
         issues
@@ -994,6 +1014,19 @@ class MatchDraft:
     keys_b: tuple[int, ...]
 
 
+def _event_dates(event: "Event | None") -> tuple[date, date] | None:
+    """The stored start and end dates of ``event``, read by id.
+
+    None for no Event, an unsaved one, or one not stored; the permission
+    check under ``hold_event`` refuses a missing Event.
+    """
+    if event is None or event.pk is None:
+        return None
+    return (
+        Event.objects.filter(pk=event.pk).values_list("start_date", "end_date").first()
+    )
+
+
 def draft_match(
     *,
     format: str,
@@ -1021,7 +1054,13 @@ def draft_match(
 
     Raises ``MatchValidationError`` for a score or model rule. Checks no
     permission and does not check ``submission_batch``: each caller checks
-    its own first (``record_match`` calls ``check_batch``).
+    its own first (``record_match`` calls ``check_batch``). Call it only
+    after the permission check: it reads the Event's stored dates by id
+    (``_event_dates``) and gives them to ``validate_match``, so a played
+    date outside them is refused (#207, ADR 0052). They are not read again
+    under ``hold_event``'s lock, so a date change committed in between (in
+    the admin or, while no match names the Event, the organizer Event
+    API) is missed (accepted).
     """
     keys_a = _player_keys(team_a)
     keys_b = _player_keys(team_b)
@@ -1034,6 +1073,7 @@ def draft_match(
         best_of=best_of,
         game_target=game_target,
         scoring_type=scoring_type,
+        event_dates=_event_dates(event),
     )
     fingerprint = match_fingerprint(
         keys_a, keys_b, validated.played_on, validated.games
@@ -1069,7 +1109,7 @@ def draft_match(
         Game(match=match, game_number=number, team_a_score=a, team_b_score=b)
         for number, (a, b) in enumerate(validated.games, start=1)
     ]
-    # Every model rule runs before any lock, lookup, or write. Among other
+    # Every model rule runs before any lock, duplicate lookup, or write. Among other
     # things this strips external_id, so the lookups use the stored form.
     _clean_all(match, participants, game_rows)
     return MatchDraft(
@@ -1458,7 +1498,9 @@ def record_match(
 
     A team that names a Player whose Account is inactive raises
     ``MatchValidationError`` (code ``unknown_player``) right after the
-    batch check (ADR 0048).
+    batch check (ADR 0048). Then ``draft_match`` reads the Event's stored
+    dates and ``validate_match`` refuses a ``played_on`` outside them
+    (``outside_event_dates``, #207, ADR 0052), before the model rules.
 
     For a match with an Event, the write transaction first share-locks the
     Event row and checks every submitter again (``hold_event``), so an

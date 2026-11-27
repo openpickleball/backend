@@ -70,6 +70,7 @@ def high_thresholds(settings: Settings) -> None:
     settings.UNUSUAL_SUBMISSION_FIRST_MATCHES = 1_000
     settings.UNUSUAL_SUBMISSION_BATCH_SIZE = 1_000
     settings.UNUSUAL_SUBMISSION_DAILY_MATCHES = 1_000
+    settings.UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES = 1_000
 
 
 @pytest.fixture
@@ -389,13 +390,22 @@ def test_a_match_can_carry_every_rule(
     settings.UNUSUAL_SUBMISSION_FIRST_MATCHES = 5
     settings.UNUSUAL_SUBMISSION_BATCH_SIZE = 1
     settings.UNUSUAL_SUBMISSION_DAILY_MATCHES = 1
+    settings.UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES = 1
     batch = _batch(member, event, 2)
-    _record(event, submitted_by_user=member, submission_batch=batch)
+    first = _record(event, submitted_by_user=member, submission_batch=batch).match
+    player = first.participants.filter(team="A").get().player
+    played_on = first.played_on
 
-    match = _record(event, submitted_by_user=member, submission_batch=batch).match
+    match = _record(
+        event,
+        submitted_by_user=member,
+        submission_batch=batch,
+        team_a=[player],
+        played_on=played_on,
+    ).match
 
     assert _rules(match) == sorted(FlagRule.values)
-    assert match.flags.count() == 3
+    assert match.flags.count() == 4
     assert _counted([match])
 
 

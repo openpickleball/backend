@@ -536,6 +536,7 @@ def test_the_signature_takes_only_match_values() -> None:
         "best_of",
         "game_target",
         "scoring_type",
+        "event_dates",
     }
     assert all(
         parameter.kind is inspect.Parameter.KEYWORD_ONLY

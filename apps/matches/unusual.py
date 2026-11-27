@@ -20,15 +20,28 @@ that fires (ADR 0049):
   more than ``UNUSUAL_SUBMISSION_DAILY_MATCHES`` matches on the new
   match's UTC ``created_at`` day; the match past that number and every
   later one that day are flagged.
+- ``player_daily_matches`` (#207, ADR 0052): one of the match's players
+  has more than ``UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES`` matches on the
+  match's ``played_on``, the new match included. One flag, however many
+  players are past the number.
 
-Every count includes only new trusted submissions: matches with an Event
+Except for ``player_daily_matches``, every count includes only new
+trusted submissions: matches with an Event
 that correct nothing (``_new_submissions``). An ``edit_match()``
 correction keeps its original's submitter and Event with a new
 ``created_at``, but it is not a new submission, so it never uses up a
 first count or raises a daily number; a player's self-submission (no
 Event) is not a trusted submission. Matches in any status count, voided
-ones too, and the new match itself. Values are read from the database by
-id, and thresholds from settings at call time.
+ones too, and the new match itself. ``player_daily_matches`` counts
+every match a player played that day that is not voided, in any other
+status, self-reported matches included, so a player's own submissions
+count toward it. A correction counts in place of the original it voided,
+so each real match counts once and editing it does not drop it from the
+count; the correction itself is never flagged. It takes no per-player lock:
+the submitter lock does not make it exact, and two concurrent
+submissions of one player's matches may each miss the other, which errs
+toward no flag (ADR 0052). Values are read from the database by id, and
+thresholds from settings at call time.
 
 A flag is a signal only (``SIGNAL_FLAG_REASONS``): it never holds a match
 from counting (``Match.objects.counted()`` ignores it), changes no
@@ -53,6 +66,8 @@ from apps.matches.models import (
     FlagRule,
     Match,
     MatchFlag,
+    MatchParticipant,
+    MatchStatus,
     SubmissionBatch,
 )
 
@@ -66,12 +81,14 @@ def _new_submissions() -> QuerySet[Match]:
     return Match.objects.filter(event__isnull=False, corrects__isnull=True)
 
 
-def _within_first(matches: QuerySet[Match], number: int) -> bool:
-    """True when ``matches``, the new match among them, are at most ``number``.
+def _within_first(
+    rows: QuerySet[Match] | QuerySet[MatchParticipant], number: int
+) -> bool:
+    """True when ``rows``, the new match among them, are at most ``number``.
 
     Reads at most ``number + 1`` rows.
     """
-    return matches.values("pk")[: number + 1].count() <= number
+    return rows.values("pk")[: number + 1].count() <= number
 
 
 def _first_matches(match: Match) -> bool:
@@ -144,6 +161,21 @@ def _daily_volume(match: Match) -> bool:
     )
 
 
+def _player_daily_matches(match: Match) -> bool:
+    number = settings.UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES
+    player_ids = MatchParticipant.objects.filter(match_id=match.pk).values_list(
+        "player_id", flat=True
+    )
+    for player_id in player_ids:
+        played = MatchParticipant.objects.filter(
+            player_id=player_id,
+            match__played_on=match.played_on,
+        ).exclude(match__status=MatchStatus.VOIDED)
+        if not _within_first(played, number):
+            return True
+    return False
+
+
 def unusual_rules(match: Match) -> list[FlagRule]:
     """The rules that fire for ``match``, a new stored match with an Event."""
     rules: list[FlagRule] = []
@@ -153,6 +185,8 @@ def unusual_rules(match: Match) -> list[FlagRule]:
         rules.append(FlagRule.LARGE_BATCH)
     if _daily_volume(match):
         rules.append(FlagRule.DAILY_VOLUME)
+    if _player_daily_matches(match):
+        rules.append(FlagRule.PLAYER_DAILY_MATCHES)
     return rules
 
 

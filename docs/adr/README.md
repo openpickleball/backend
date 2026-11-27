@@ -99,4 +99,5 @@ Add each record here when it merges.
 - [0049. Flag unusual submissions from trusted submitters](0049-flag-unusual-submissions.md) (issue #206)
 - [0050. An Account reads its own Organizer memberships](0050-own-organizer-memberships.md) (issue #301)
 - [0051. Player data export](0051-player-data-export.md) (issue #39)
+- [0052. Plausibility checks: Event dates and a player's daily matches](0052-plausibility-checks-event-dates-and-player-daily-matches.md) (issue #207)
 - [0053. A match shows its Event, Organizer, and Club](0053-match-shows-event-organizer-and-club.md) (issue #302)

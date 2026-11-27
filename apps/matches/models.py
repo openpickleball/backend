@@ -1085,20 +1085,21 @@ class FlagRule(models.TextChoices):
     """Which unusual submission rule flagged a Match (#206, ADR 0049).
 
     Only an ``unusual_submission`` flag has a rule, and a Match carries at
-    most one flag per rule. #207 adds its own rule here.
+    most one flag per rule. ``player_daily_matches`` is the per-player
+    daily rule (#207, ADR 0052).
     """
 
     FIRST_MATCHES = "first_matches", "First matches"
     LARGE_BATCH = "large_batch", "Large batch"
     DAILY_VOLUME = "daily_volume", "Daily volume"
+    PLAYER_DAILY_MATCHES = "player_daily_matches", "Player daily matches"
 
 
 # Flag reasons that are signals only: they never hold a Match from
 # counting, so they stay out of ``counted()`` (ADR 0029). They hold
 # nothing, change no rating, and send no signal or notice. The Organizer
 # admin's moderator review counts flags with these reasons (#271), and
-# the match admin shows none of them (ADR 0049). #207 adds its rule to
-# ``FlagRule``.
+# the match admin shows none of them (ADR 0049, ADR 0052).
 SIGNAL_FLAG_REASONS: frozenset[str] = frozenset({FlagReason.UNUSUAL_SUBMISSION.value})
 
 

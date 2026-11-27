@@ -41,6 +41,7 @@ def high_thresholds(settings: Settings) -> None:
     settings.UNUSUAL_SUBMISSION_FIRST_MATCHES = 1_000
     settings.UNUSUAL_SUBMISSION_BATCH_SIZE = 1_000
     settings.UNUSUAL_SUBMISSION_DAILY_MATCHES = 1_000
+    settings.UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES = 1_000
 
 
 @pytest.fixture

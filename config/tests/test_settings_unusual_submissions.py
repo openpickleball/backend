@@ -1,4 +1,4 @@
-"""The unusual submission thresholds (#206).
+"""The unusual submission thresholds (#206, #207).
 
 Each is a whole number from 1 to 1,000,000, with a default when unset or
 empty. A bad value stops startup, naming the variable, never echoing the
@@ -16,6 +16,7 @@ DEFAULTS = {
     "UNUSUAL_SUBMISSION_FIRST_MATCHES": 25,
     "UNUSUAL_SUBMISSION_BATCH_SIZE": 100,
     "UNUSUAL_SUBMISSION_DAILY_MATCHES": 200,
+    "UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES": 30,
 }
 PRINT_THRESHOLDS = f"""
 import json

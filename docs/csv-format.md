@@ -61,6 +61,7 @@ Every file has a header row and then one row per match. The columns come in this
 
 - Enter the date played as `YYYY-MM-DD`, such as `2026-04-11`. Other forms, such as `04/11/2026` or `20260411`, fail with `invalid_date`.
 - A date in the future fails with `future_date`.
+- The upload (#71) also fails a row dated before its Event's start date or after its end date with `outside_event_dates`.
 
 ## Scores
 
@@ -115,7 +116,7 @@ The upload's report gives each row one result:
 - `duplicate`, when the same match is already recorded, or waits for confirmation. The report gives its OPEN Code when you may know it. The upload never confirms a waiting match.
 - `failed`, with each reason. Besides the codes below, `forbidden` means you may not submit for this Event, and `voided` means the row's match was voided.
 
-An upload of more than 100 match rows (by default, `UNUSUAL_SUBMISSION_BATCH_SIZE`), counting every row, failed ones included, has each of its matches flagged as an unusual submission. So are an Organizer's first matches after it is verified and a submitter's matches past a daily number (ADR 0049). These flags are signals only: they do not stop a match counting, and the report does not show them.
+An upload of more than 100 match rows (by default, `UNUSUAL_SUBMISSION_BATCH_SIZE`), counting every row, failed ones included, has each of its matches flagged as an unusual submission. So are an Organizer's first matches after it is verified and a submitter's matches past a daily number (ADR 0049), and a match that takes one of its players past a daily number of matches on its date (`UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES`, 30 by default, ADR 0052). These flags are signals only: they do not stop a match counting, and the report does not show them.
 
 A whole file can also fail: `too_many_rows`, the file errors above, `expired` when it could not be processed within three days, or `voided` when a moderator voided the upload or the uploader's matches. The rows processed before it stopped stay in the report as they were then: after a void, a row can still read `recorded` though its match is voided.
 
@@ -142,6 +143,7 @@ Each example starts from a valid doubles row and changes one thing.
 | A game skipped | Game 2 empty, game 3 filled | `missing_game` | game 2's columns |
 | No games | Every score cell empty | `no_games` | the game columns |
 | Future date | A date after today | `future_date` | `date` |
+| Date outside the Event | A date after the Event's last day | `outside_event_dates` | `date` |
 | Wrong date form | `2026/04/11` or `2026-02-30` | `invalid_date` | `date` |
 | Wrong team size for `matchType` | `D` with one player a side, or `S` with two | `team_size` | the ID columns of that team that hold a player (both of the team's ID columns when it has none) |
 | Event label too long | More than 200 characters | `too_long` | `event` |
