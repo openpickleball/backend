@@ -166,14 +166,17 @@ def get_club(request: HttpRequest, code: ClubCode) -> ClubOut:
 
 @club_router.patch(
     "/{code}",
-    response={200: ClubOut, 403: ErrorResponse, 404: ErrorResponse},
+    response={200: ClubOut, 403: ErrorResponse, 404: ErrorResponse, 409: ErrorResponse},
     operation_id="update_club",
 )
 def update_club(request: HttpRequest, code: ClubCode, payload: ClubUpdateIn) -> ClubOut:
     """Change the Club's name, city, or region. For a Club admin with MFA.
 
-    A field left out is not changed. Anyone else, and an unknown code,
-    gets the same 404.
+    A field left out or null is not changed. Anyone else, and an unknown
+    code, gets the same 404. 409 for a new name once any Event or
+    recorded match names the Club: players see the name on those
+    matches, so OPEN staff rename it. The city and region may still
+    change.
     """
     account = _mfa_admin(request)
     club_id = _club_id(code)
@@ -187,6 +190,8 @@ def update_club(request: HttpRequest, code: ClubCode, payload: ClubUpdateIn) -> 
         )
     except NotFound:
         raise Http404 from None
+    except Conflict as error:
+        raise HttpError(409, str(error)) from None
     except DjangoValidationError as error:
         raise model_validation_error(error) from None
     return _club_out(club_id)

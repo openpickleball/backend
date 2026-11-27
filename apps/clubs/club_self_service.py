@@ -78,6 +78,8 @@ from apps.clubs.models import (
 )
 from apps.clubs.self_service import AddressNotVerified, Conflict, NotFound
 from apps.emails.services import queue_email
+from apps.events.models import Event
+from apps.matches.models import Match
 from apps.players.models import Player
 from apps.public_ids.codes import CodeType, normalize
 
@@ -97,6 +99,10 @@ OPEN_INVITES_MESSAGE: Final = (
 LAST_ADMIN_MESSAGE: Final = "A club must keep at least one admin."
 ALREADY_ADMIN_MESSAGE: Final = "You are already an admin of this club."
 ALREADY_GRANTED_MESSAGE: Final = "This club already allows that organizer."
+NAMED_RENAME_MESSAGE: Final = (
+    "A club with events or recorded matches cannot be renamed here. "
+    "Ask OPEN staff to rename it."
+)
 # The profile fields an admin may change, in a fixed order.
 PROFILE_FIELDS: Final = ("name", "city", "region")
 
@@ -196,7 +202,11 @@ def update_club(
 
     A field left as None is not changed. A change records one
     ``club.change`` event with the changed fields' old and new values;
-    no change records nothing.
+    no change records nothing. ``Conflict`` for a new name while any
+    Event or Match names the Club, checked under the Club lock (an Event
+    or Match insert holds the Club ``FOR KEY SHARE``, so it runs in turn):
+    participants see the name on recorded matches, so staff rename it in
+    the admin. City and region may still change.
     """
     given = {"name": name, "city": city, "region": region}
     with transaction.atomic():
@@ -211,6 +221,8 @@ def update_club(
         ]
         if not changed:
             return False
+        if "name" in changed and _is_named(club.pk):
+            raise Conflict(NAMED_RENAME_MESSAGE)
         club.save(update_fields=changed)
         record_event(
             action=AuditAction.CLUB_CHANGE,
@@ -220,6 +232,14 @@ def update_club(
             after={field: getattr(club, field) for field in changed},
         )
     return True
+
+
+def _is_named(club_id: int) -> bool:
+    """Whether any Event or Match names the Club."""
+    return bool(
+        Event.objects.filter(club_id=club_id).exists()
+        or Match.objects.filter(club_id=club_id).exists()
+    )
 
 
 def invite_admin(club_id: int, *, actor: "_User", email: str) -> None:

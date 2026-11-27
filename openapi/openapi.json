@@ -4208,7 +4208,7 @@
         ]
       },
       "patch": {
-        "description": "Change the Club's name, city, or region. For a Club admin with MFA.\n\nA field left out is not changed. Anyone else, and an unknown code,\ngets the same 404.",
+        "description": "Change the Club's name, city, or region. For a Club admin with MFA.\n\nA field left out or null is not changed. Anyone else, and an unknown\ncode, gets the same 404. 409 for a new name once any Event or\nrecorded match names the Club: players see the name on those\nmatches, so OPEN staff rename it. The city and region may still\nchange.",
         "operationId": "update_club",
         "parameters": [
           {
@@ -4281,6 +4281,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
