@@ -1,6 +1,11 @@
 # Install the hooks with: uv run pre-commit install
 # ruff and mypy run through uv, so their versions come from uv.lock.
 # mypy loads Django settings, so it needs .env (or the variables) set.
+# `pre-commit install` also installs the commit-msg hook, which checks each
+# commit message (CONTRIBUTING.md, "Commit messages"). Every other hook runs
+# at the pre-commit stage only, never on the message file.
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -14,6 +19,13 @@ repos:
       - id: check-merge-conflict
       - id: check-yaml
       - id: check-toml
+
+  # The organization's commit message rules, the same ones the
+  # pull-request check runs.
+  - repo: https://github.com/openpickleball/.github
+    rev: 0403a366e77c3079885e224a0250a2336cf1098a # v1.0.0
+    hooks:
+      - id: commit-message
 
   - repo: local
     hooks:

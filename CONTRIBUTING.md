@@ -25,7 +25,7 @@ This repository links every pull request to an issue, so if none exists for your
 
 1. Fork the repository, or, if you have write access, create a branch from an up-to-date `main`. Never commit to `main` in a fork you plan to open a pull request from.
 2. Keep each pull request to one change. Split unrelated fixes into their own pull requests.
-3. Link the issue in the pull request description with `Closes #N`, so it closes when the pull request merges.
+3. Link the issue in the pull request description with `Closes #N`, so it closes when the pull request merges. Use `Refs #N` or `Part of #N` when the issue stays open. The organization's pull request template starts the description for you.
 4. Add or update tests and docs when behavior changes.
 5. Keep the branch up to date with `main` before review.
 
@@ -35,6 +35,7 @@ A pull request merges only when these checks pass:
 - `types`: `mypy .`.
 - `test`: `manage.py check`, the missing-migrations check, the API schema check, and `pytest -n auto` (in parallel) with the coverage floor.
 - `sign-off`: every commit carries a DCO sign-off.
+- `pull-request / check`: the commit messages follow "Commit messages" below, the title has no type prefix, and the description links an issue and is not damaged by shell escaping. It runs again when you edit the title or description.
 
 A maintainer reviews and merges every pull request.
 
@@ -61,6 +62,14 @@ git fetch upstream && git rebase --signoff upstream/main
 For a branch in this repository, use `git fetch origin && git rebase --signoff origin/main` instead.
 
 Both rewrite your branch, so push with `git push --force-with-lease`. Only do this on your own branch.
+
+## Commit messages
+
+Follow the organization's [commit message rules](https://github.com/openpickleball/.github/blob/main/CONTRIBUTING.md#commit-messages): an imperative subject of at most 72 characters with a capital letter, no type prefix such as `test:`, no period at the end, then a blank line and a body that says why. The `pull-request` check runs them on every pull request, through the organization's shared workflow.
+
+`uv run pre-commit install` also installs the organization's `commit-message` hook, which checks the same rules and the sign-off on each commit before you push. If you installed the hooks before this rule, run it again to add the hook. To reword a commit that is already pushed, use `git rebase -i`, then `git push --force-with-lease`.
+
+When you write a pull request description or commit message from a shell, pass it from a file (`gh pr create --body-file`, `git commit -F`). In a double-quoted PowerShell string, a backtick is an escape character, so Markdown code spans are lost.
 
 ## Code style
 
