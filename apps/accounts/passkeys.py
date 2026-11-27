@@ -34,11 +34,13 @@ from allauth.headless.mfa.inputs import (
 from allauth.mfa.adapter import get_adapter
 from allauth.mfa.models import Authenticator
 from allauth.mfa.webauthn.internal import auth as webauthn_auth
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db.models import QuerySet
 from django.utils.crypto import salted_hmac
+from fido2.cose import CoseKey
 from fido2.utils import websafe_encode
 from fido2.webauthn import AuthenticationResponse, RegistrationResponse
 
@@ -272,6 +274,49 @@ def _parse_authentication(credential: object) -> AuthenticationResponse:
     return parsed
 
 
+# What fido2's COSE keys raise when a stored key is malformed (a missing
+# or non-bytes coordinate, an unsupported curve or algorithm) as they
+# build the cryptography key to verify a signature.
+_KEY_ERRORS = (
+    KeyError,
+    TypeError,
+    ValueError,
+    AttributeError,
+    IndexError,
+    OverflowError,
+    NotImplementedError,
+    UnsupportedAlgorithm,
+    struct.error,
+)
+
+
+def _public_key_usable(public_key: CoseKey) -> bool:
+    """Whether fido2 can verify signatures with ``public_key``.
+
+    It is tried on a signature that cannot be valid: a well formed key
+    answers InvalidSignature, a malformed one raises one of _KEY_ERRORS.
+    """
+    try:
+        public_key.verify(b"\0", b"\0")
+    except InvalidSignature:
+        return True
+    except _KEY_ERRORS:
+        return False
+    return False
+
+
+def _complete_authentication(account: "_User", credential: Any) -> Authenticator:
+    """allauth's assertion check, with a stored malformed public key
+    refused as ``incorrect_code`` instead of a 500."""
+    try:
+        authenticator: Authenticator = webauthn_auth.complete_authentication(
+            account, credential
+        )
+    except _KEY_ERRORS as error:
+        raise _incorrect() from error
+    return authenticator
+
+
 def _extension_results_ok(credential: dict[str, Any]) -> bool:
     """Whether the client extension results are what allauth reads: an
     object when present, ``credProps`` an object when present, and its
@@ -307,7 +352,11 @@ class _ChecksOrigin:
         credential = self.cleaned_data.get("credential")
         check_origin(credential)
         _parse_authentication(credential)
-        return super().clean_credential()  # type: ignore[misc]
+        try:
+            return super().clean_credential()  # type: ignore[misc]
+        except _KEY_ERRORS as error:
+            # A stored passkey with a malformed public key.
+            raise _incorrect() from error
 
 
 class AddPasskeyInput(AddWebAuthnInput):  # type: ignore[misc]
@@ -333,7 +382,7 @@ class AddPasskeyInput(AddWebAuthnInput):  # type: ignore[misc]
         if not _extension_results_ok(credential):
             raise _incorrect()
         attested = response.response.attestation_object.auth_data.credential_data
-        if attested is None:
+        if attested is None or not _public_key_usable(attested.public_key):
             raise _incorrect()
         # The stored JSON id must be the attested credential id, in
         # canonical base64url, since the uniqueness check and the login
@@ -379,9 +428,7 @@ class LoginPasskeyInput(LoginWebAuthnInput):  # type: ignore[misc]
         handle = response.response.user_handle
         if handle is not None and not user_handle_matches(account, handle):
             raise _incorrect()
-        authenticator: Authenticator = webauthn_auth.complete_authentication(
-            account, credential
-        )
+        authenticator = _complete_authentication(account, credential)
         if (
             authenticator.pk != found[0].pk
             or not response.response.authenticator_data.is_user_verified()
