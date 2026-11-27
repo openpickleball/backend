@@ -1,6 +1,11 @@
 # Install the hooks with: uv run pre-commit install
 # ruff and mypy run through uv, so their versions come from uv.lock.
 # mypy loads Django settings, so it needs .env (or the variables) set.
+# `pre-commit install` also installs the commit-msg hook, which checks each
+# commit message (CONTRIBUTING.md, "Commit messages"). Every other hook runs
+# at the pre-commit stage only, never on the message file.
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -33,3 +38,8 @@ repos:
         language: system
         types_or: [python, pyi]
         pass_filenames: false
+      - id: commit-message
+        name: commit message
+        entry: uv run --locked python -I scripts/check_pull_request.py commit-msg
+        language: system
+        stages: [commit-msg]
