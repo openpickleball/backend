@@ -194,7 +194,7 @@
       },
       "ClubUpdateIn": {
         "additionalProperties": false,
-        "description": "The profile fields to change, with the create's rules. A field left\nout is not changed; an empty body changes nothing. ``city`` and\n``region`` may be set to an empty string; ``name`` may not.",
+        "description": "The profile fields to change, with the create's rules. A field left\nout or null is not changed; an empty body changes nothing. ``city``\nand ``region`` may be set to an empty string; ``name`` may not.",
         "properties": {
           "city": {
             "anyOf": [

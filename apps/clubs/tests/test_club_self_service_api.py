@@ -369,13 +369,24 @@ def test_an_unchanged_or_empty_patch_records_nothing() -> None:
     assert not AuditEvent.objects.filter(action=AuditAction.CLUB_CHANGE).exists()
 
 
-def test_a_null_or_blank_name_in_a_patch_is_422() -> None:
+def test_a_null_name_in_a_patch_changes_nothing() -> None:
     club = ClubFactory.create(name="Made-up Kept")
     admin = _admin_of(club)
 
-    for body in ({"name": None}, {"name": " "}):
-        response = _send(admin, "patch", f"{BASE}/{club.public_code}", body)
-        assert response.status_code == 422
+    response = _send(admin, "patch", f"{BASE}/{club.public_code}", {"name": None})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Made-up Kept"
+
+
+def test_a_blank_name_in_a_patch_is_422() -> None:
+    club = ClubFactory.create(name="Made-up Kept")
+    admin = _admin_of(club)
+
+    response = _send(admin, "patch", f"{BASE}/{club.public_code}", {"name": " "})
+
+    assert response.status_code == 422
+    assert response.json()["errors"][0]["message"] == "Enter a name."
     club.refresh_from_db()
     assert club.name == "Made-up Kept"
 

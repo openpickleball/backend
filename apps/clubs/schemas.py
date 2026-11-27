@@ -295,8 +295,8 @@ class ClubCreateIn(Schema):
 
 class ClubUpdateIn(Schema):
     """The profile fields to change, with the create's rules. A field left
-    out is not changed; an empty body changes nothing. ``city`` and
-    ``region`` may be set to an empty string; ``name`` may not."""
+    out or null is not changed; an empty body changes nothing. ``city``
+    and ``region`` may be set to an empty string; ``name`` may not."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -306,18 +306,18 @@ class ClubUpdateIn(Schema):
 
     @field_validator("name", mode="before")
     @classmethod
-    def _name(cls, value: object) -> str:
-        return _organizer_name(value)
+    def _name(cls, value: object) -> str | None:
+        return None if value is None else _organizer_name(value)
 
     @field_validator("city", mode="before")
     @classmethod
-    def _city(cls, value: object) -> str:
-        return _city_text(value)
+    def _city(cls, value: object) -> str | None:
+        return None if value is None else _city_text(value)
 
     @field_validator("region", mode="before")
     @classmethod
-    def _region(cls, value: object) -> str:
-        return _region_text(value)
+    def _region(cls, value: object) -> str | None:
+        return None if value is None else _region_text(value)
 
 
 class ClubInviteIn(Schema):
