@@ -48,7 +48,6 @@ import contextlib
 import unicodedata
 from typing import TYPE_CHECKING, Annotated, ClassVar, TypedDict
 
-from allauth.account.models import EmailAddress
 from django.contrib.sessions.backends.base import SessionBase, UpdateError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -62,6 +61,7 @@ from ninja.pagination import paginate
 from pydantic import BeforeValidator
 from pydantic_core import PydanticCustomError
 
+from apps.accounts.addresses import has_verified_login_address
 from apps.matches.api import request_account
 from apps.matches.models import Match, MatchStatus
 from apps.matches.pagination import (
@@ -335,19 +335,6 @@ def get_player(request: HttpRequest, code: PlayerCode) -> PlayerProfileOut:
     return player_profile_out(player, viewer)
 
 
-def _has_verified_email(account: "_User") -> bool:
-    """Whether the Account's own login address is verified.
-
-    Only the row for ``User.email`` counts: a verified old address, or
-    another pending one, does not.
-    """
-    return bool(
-        EmailAddress.objects.filter(
-            user=account, email=account.email, verified=True
-        ).exists()
-    )
-
-
 def _has_player(account: "_User") -> bool:
     return Player.objects.filter(account=account).exists()
 
@@ -513,7 +500,7 @@ def create_my_player(
     same 422, and so does a signup after logout (ADR 0017).
     """
     account = request_account(request)
-    if not _has_verified_email(account):
+    if not has_verified_login_address(account):
         raise HttpError(403, EMAIL_NOT_VERIFIED_MESSAGE)
     session = auth_session(request)
     if _has_player(account):
