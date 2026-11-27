@@ -17,6 +17,11 @@ the acting Account explicitly:
   Account) will cascade to. Call it in the delete's transaction, just
   before the delete.
 
+After recording an add, a change, or a removal, ``save_access_row`` and
+``delete_access_row`` call the row's ``access_notice``, which schedules
+the security notice to the other admins (#232, ``apps.clubs.notices``).
+``record_cascaded_removals`` sends none: the parent row is going.
+
 A plain ORM save or delete, a cascade outside these functions, and raw
 writes (``bulk_create``, ``QuerySet.update``, ``bulk_update``, raw SQL,
 ``loaddata``) record nothing. ``before`` and ``after`` hold roles, OPEN
@@ -24,8 +29,9 @@ Codes, Account row ids, and client ids, never an email or an Organizer's
 name.
 """
 
+import logging
 from collections.abc import Iterable
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import AbstractBaseUser
@@ -36,6 +42,8 @@ from django.db.models.deletion import Collector, ProtectedError, RestrictedError
 from apps.audit.models import AuditAction
 
 Actor = AbstractBaseUser | AnonymousUser | None
+AccessChange = Literal["add", "change", "remove"]
+logger = logging.getLogger(__name__)
 
 
 class AuditedAccessModel(models.Model):
@@ -58,6 +66,19 @@ class AuditedAccessModel(models.Model):
         personal data field's value (ADR 0009).
         """
         raise NotImplementedError
+
+    def access_notice(
+        self,
+        change: AccessChange,
+        *,
+        actor: "Actor",
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        """Schedule the security notice for a recorded add, change, or
+        removal (#232). Nothing by default. Called inside the change's
+        transaction, after its Audit Event; ``before`` and ``after`` are
+        the event's values."""
 
 
 def save_access_row(row: AuditedAccessModel, *, actor: Actor, reason: str = "") -> None:
@@ -85,6 +106,7 @@ def save_access_row(row: AuditedAccessModel, *, actor: Actor, reason: str = "") 
             _record(
                 saved, saved.AUDIT_ADD, actor, before=None, after=after, reason=reason
             )
+            _notify(saved, "add", actor, before=None, after=after)
         elif before != after:
             _record(
                 saved,
@@ -94,6 +116,7 @@ def save_access_row(row: AuditedAccessModel, *, actor: Actor, reason: str = "") 
                 after=after,
                 reason=reason,
             )
+            _notify(saved, "change", actor, before=before, after=after)
 
 
 def delete_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
@@ -106,6 +129,7 @@ def delete_access_row(row: AuditedAccessModel, *, actor: Actor) -> None:
         if stored is None:
             return
         _record_removal(stored, actor)
+        _notify(stored, "remove", actor, before=stored.audit_values(), after=None)
         row.delete()
 
 
@@ -210,6 +234,30 @@ def _stored_by_pk[M: AuditedAccessModel](
         rows = rows.select_for_update(of=("self",))
     stored: M | None = rows.filter(pk=pk).first()
     return stored
+
+
+def _notify(
+    row: AuditedAccessModel,
+    change: AccessChange,
+    actor: Actor,
+    *,
+    before: dict[str, Any] | None,
+    after: dict[str, Any] | None,
+) -> None:
+    """Run the row's ``access_notice``. A failure is logged with the row's
+    id and the error class only, and never fails the change."""
+    try:
+        row.access_notice(change, actor=actor, before=before, after=after)
+    except Exception as exc:
+        # The broad catch is safe: the hook only builds plain values and
+        # registers an on_commit callback; a notice is never worth failing
+        # the change over.
+        logger.warning(
+            "Could not schedule a security notice for %s %s (%s).",
+            row._meta.label,
+            row.pk,
+            type(exc).__name__,
+        )
 
 
 def _record_removal(stored: AuditedAccessModel, actor: Actor) -> None:

@@ -31,6 +31,13 @@ from apps.audit.admin_actions import REASON_MAX_LENGTH
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event, snapshot
 from apps.clubs.models import VERIFY_PERMISSION, Organizer, OrganizerMember
+from apps.clubs.notices import (
+    ORGANIZER,
+    NoticeKind,
+    SecurityNotice,
+    account_ids,
+    schedule_notice,
+)
 from apps.clubs.reports import (
     RULE_ORGANIZER_UNVERIFIED,
     close_open_reports,
@@ -149,6 +156,20 @@ def _set_verified(
                 before=before,
                 after=snapshot(locked, _FIELDS),
                 reason=reason,
+            )
+            # The admins hear of it once the change commits (#232).
+            schedule_notice(
+                SecurityNotice(
+                    kind=(
+                        NoticeKind.ORGANIZER_VERIFIED
+                        if verified
+                        else NoticeKind.ORGANIZER_UNVERIFIED
+                    ),
+                    scope=ORGANIZER,
+                    scope_id=locked.pk,
+                    code=locked.public_code,
+                    exclude=account_ids(actor),
+                )
             )
             if verified:
                 # Under the Organizer lock, so a request made meanwhile

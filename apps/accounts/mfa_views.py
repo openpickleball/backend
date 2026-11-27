@@ -180,6 +180,14 @@ LAST_MFA_ADMIN_MESSAGE = (
 )
 
 
+def schedule_mfa_removed(account_id: int) -> None:
+    """``apps.clubs.notices.schedule_mfa_removed``, imported late: the
+    clubs app imports this app's modules."""
+    from apps.clubs.notices import schedule_mfa_removed as schedule
+
+    schedule(account_id)
+
+
 def _leaves_organizer_without_mfa_admin(account: "_User") -> bool:
     """Whether ``account`` is an admin of an Organizer with no other active
     admin with MFA (#232).
@@ -400,6 +408,9 @@ class ManageTOTPView(_GuardsMFAChanges, BaseManageTOTPView):
                 # A removed method ends the Account's other sessions
                 # (#100), those with a user session row.
                 end_other_sessions(request, account)
+                if last_method:
+                    # The other admins hear of it on commit (#232).
+                    schedule_mfa_removed(account.pk)
             return removed
 
 

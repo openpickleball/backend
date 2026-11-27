@@ -18,7 +18,7 @@ from django.db.models import Q
 from django.db.models.functions import Now
 from django.utils import timezone
 
-from apps.audit.access import AuditedAccessModel
+from apps.audit.access import AccessChange, Actor, AuditedAccessModel
 from apps.audit.models import AuditAction
 from apps.clubs.invites import InviteModel
 from apps.public_ids.codes import CodeType
@@ -420,6 +420,50 @@ class OrganizerMember(_LinkMessagesModel, AuditedAccessModel):
         """Whether the New Member Hold still applies (#232)."""
         return self.hold_ends_at is not None and self.hold_ends_at > timezone.now()
 
+    def access_notice(
+        self,
+        change: AccessChange,
+        *,
+        actor: Actor,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        """Tell the Organizer's other admins (#232). A change of the hold
+        alone sends nothing; a move to another Account reads as an add."""
+        from apps.clubs.notices import (
+            ORGANIZER,
+            NoticeKind,
+            SecurityNotice,
+            account_ids,
+            schedule_notice,
+        )
+
+        kind = {
+            "add": NoticeKind.MEMBER_ADDED,
+            "remove": NoticeKind.MEMBER_REMOVED,
+        }.get(change)
+        if change == "change" and before is not None and after is not None:
+            if before["account"] != after["account"]:
+                kind = NoticeKind.MEMBER_ADDED
+            elif before["role"] != after["role"]:
+                kind = NoticeKind.MEMBER_ROLE_CHANGED
+        if kind is None:
+            return
+        subjects = [values["account"] for values in (before, after) if values]
+        schedule_notice(
+            SecurityNotice(
+                kind=kind,
+                scope=ORGANIZER,
+                scope_id=self.organizer_id,
+                code=self.organizer.public_code,
+                role=self.role,
+                hold_ends_at=(
+                    self.hold_ends_at if kind == NoticeKind.MEMBER_ADDED else None
+                ),
+                exclude=account_ids(actor, *subjects),
+            )
+        )
+
     def _account_verified_organizer(self, *, lock: bool) -> bool:
         """True when ``account`` is the Organizer's ``verified_by``."""
         if self.organizer_id is None or self.account_id is None:
@@ -505,6 +549,45 @@ class ClubRole(_LinkMessagesModel, AuditedAccessModel):
             "role": self.role,
         }
 
+    def access_notice(
+        self,
+        change: AccessChange,
+        *,
+        actor: Actor,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        """Tell the Club's other admins (#232). A move to another Account
+        reads as an add."""
+        from apps.clubs.notices import (
+            CLUB,
+            NoticeKind,
+            SecurityNotice,
+            account_ids,
+            schedule_notice,
+        )
+
+        if change == "remove":
+            kind = NoticeKind.CLUB_ADMIN_REMOVED
+        elif change == "add" or (
+            before is not None
+            and after is not None
+            and before["account"] != after["account"]
+        ):
+            kind = NoticeKind.CLUB_ADMIN_ADDED
+        else:
+            return
+        subjects = [values["account"] for values in (before, after) if values]
+        schedule_notice(
+            SecurityNotice(
+                kind=kind,
+                scope=CLUB,
+                scope_id=self.club_id,
+                code=self.club.public_code,
+                exclude=account_ids(actor, *subjects),
+            )
+        )
+
 
 class ClubOrganizerGrant(_LinkMessagesModel, AuditedAccessModel):
     """A Club's consent for one Organizer to name it (ADR 0021).
@@ -554,6 +637,39 @@ class ClubOrganizerGrant(_LinkMessagesModel, AuditedAccessModel):
             "club": self.club.public_code,
             "organizer": self.organizer.public_code,
         }
+
+    def access_notice(
+        self,
+        change: AccessChange,
+        *,
+        actor: Actor,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        """Tell the Club's admins, but the actor (#232)."""
+        from apps.clubs.notices import (
+            CLUB,
+            NoticeKind,
+            SecurityNotice,
+            account_ids,
+            schedule_notice,
+        )
+
+        kind = (
+            NoticeKind.CLUB_GRANT_REMOVED
+            if change == "remove"
+            else NoticeKind.CLUB_GRANT_ADDED
+        )
+        schedule_notice(
+            SecurityNotice(
+                kind=kind,
+                scope=CLUB,
+                scope_id=self.club_id,
+                code=self.club.public_code,
+                organizer_code=self.organizer.public_code,
+                exclude=account_ids(actor),
+            )
+        )
 
 
 class OrganizerReportReason(models.TextChoices):
