@@ -17,8 +17,8 @@ Organizer made here stays unverified until a moderator verifies it.
   ``change_member_role``, ``remove_member``, ``request_verification``.
 - ``accept_invite``: the invited Account, signed in with the invited
   login address, verified, and with a Player, joins with the invited
-  role, while the invite's sender is still an active admin member of
-  that Organizer. Demoting or removing an admin deletes the invites it
+  role, while the invite's sender still has admin authority there
+  (active, admin, with MFA). Demoting or removing an admin deletes the invites it
   sent there in the same transaction. Every refusal is ``NotFound``.
 
 On these paths an Organizer always keeps one active admin (``Conflict``
@@ -222,7 +222,8 @@ def invite_member(organizer_id: int, *, actor: "_User", email: str, role: str) -
 
     Raises ``InvalidInviteEmail`` before any lookup, ``NotFound`` for an
     actor who is not its admin, and ``Conflict`` when a new address would
-    pass ``ORGANIZER_OPEN_INVITES_LIMIT``. Otherwise returns the same way
+    pass ``ORGANIZER_OPEN_INVITES_LIMIT`` (re-inviting an address whose
+    earlier invite expired counts as new). Otherwise returns the same way
     whether or not the address has an Account: an address that is a
     member's login gets nothing; any other replaces its earlier invite
     to this Organizer, stores the new key's hash, records one
@@ -297,7 +298,8 @@ def accept_invite(key: str, *, actor: "_User") -> OrganizerMember:
     ``NotFound`` for an unknown, malformed, or expired key, another
     address, an unverified login address, an Account with no Player, and
     the verifier of a verified Organizer (``OrganizerMember.save``), and an
-    invite whose sender is no longer an active admin member.
+    invite whose sender no longer has admin authority there (active,
+    admin, with MFA).
     ``Conflict`` when ``actor`` is already a member; the invite is
     deleted then too.
     """
@@ -344,17 +346,10 @@ def accept_invite(key: str, *, actor: "_User") -> OrganizerMember:
 
 
 def _sender_still_admin(invite: OrganizerInvite) -> bool:
-    """Whether the invite's sender is still an active admin member of its
-    Organizer. Call under the Organizer lock, which every membership
-    change takes first."""
-    return bool(
-        OrganizerMember.objects.filter(
-            organizer_id=invite.organizer_id,
-            account_id=invite.invited_by_id,
-            role=MemberRole.ADMIN,
-            account__is_active=True,
-        ).exists()
-    )
+    """Whether the invite's sender still has admin authority there: the
+    same rule as ``_is_admin`` (active, admin role, MFA). Call under the
+    Organizer lock, which every membership change takes first."""
+    return _is_admin(invite.invited_by_id, invite.organizer_id)
 
 
 def _delete_sent_invites(organizer: Organizer, account_id: int) -> None:
