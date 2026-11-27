@@ -21,11 +21,15 @@ from django.urls import include, path
 
 from apps.accounts.headless_views import headless_urlpatterns
 from config.api import api
+from config.security_txt import security_txt
 
 urlpatterns = [
     # A private path in production, admin/ only locally (#101).
     path(settings.ADMIN_URL, admin.site.urls),
     path("api/v1/", api.urls),
+    # How to report a security problem (RFC 9116, #105). Its path is
+    # SECURITY_TXT_PATH in settings, without the leading slash.
+    path(".well-known/security.txt", security_txt, name="security_txt"),
     # Only the token and revoke views (apps/partners/urls.py).
     path("oauth/", include("apps.partners.urls")),
     # OPEN's replacements for some allauth headless views, at allauth's own

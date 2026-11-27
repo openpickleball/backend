@@ -130,6 +130,7 @@ uv run pre-commit run --all-files
 - `docs/engine.md`: the engine pin, how to read the installed engine version, and the upgrade procedure.
 - `docs/email.md`: the sending domain `mail.openpb.org`, its Resend setup and DNS records (SPF, DKIM, DMARC), and the DMARC rollout.
 - `docs/data-export.md`: the player data export format (#39, ADR 0051), the file `download_data_export` returns.
+- `docs/security/incident-response.md`: what OPEN does after a security report or breach: roles, first steps, notices, and timelines (#105). How to report a problem is the organization's `SECURITY.md`; never add a repository-level `SECURITY.md`, which would replace it here.
 - `docs/csv-format.md`: the CSV results format organizers upload (#70, #71), with its column-to-field map and common errors. `docs/csv-results-template.csv` is its template, with made-up players.
 - GitHub issue #1: the backend plan's decisions (Q1 to Q16, F1 to F11) and checked package versions.
 - Organization-wide policy lives in the `openpickleball/.github` repository: charter, governance, roadmap, contributing guide, security policy, licensing. A local checkout may exist at `../OPEN-pickleball`.

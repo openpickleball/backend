@@ -1081,6 +1081,114 @@ OPEN_PUBLIC_PROFILE_URL = _base_url(
 )
 
 
+# security.txt (RFC 9116, #105), served at /.well-known/security.txt by
+# config/security_txt.py.
+
+# PLACEHOLDER: the security contact address has not been chosen for this
+# file yet. The default is on the reserved example.invalid domain, so it
+# can never reach anyone. Set SECURITY_TXT_CONTACT in each environment.
+SECURITY_TXT_CONTACT_PLACEHOLDER = "mailto:security-contact-not-set@example.invalid"
+
+# A security.txt value: printable ASCII with no space, so it cannot break
+# the file into extra lines or fields.
+_SECURITY_TXT_VALUE = re.compile(r"[!-~]+")
+# A mailto: contact's domain: dot-separated labels of letters, digits, and
+# hyphens.
+_SECURITY_TXT_HOST = re.compile(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+
+
+def _security_txt_contact(name: str, *, require_https: bool) -> str:
+    """Read the optional Contact URI, failing fast without echoing it.
+
+    A ``mailto:`` address or an ``https://`` URL (``http://`` only with
+    DEBUG on). Unset or empty gives the placeholder.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return SECURITY_TXT_CONTACT_PLACEHOLDER
+    schemes = (
+        ("mailto:", "https://") if require_https else ("mailto:", "https://", "http://")
+    )
+    if not _SECURITY_TXT_VALUE.fullmatch(value) or not value.startswith(schemes):
+        raise ImproperlyConfigured(
+            f"{name} is not a contact URI. Use mailto: followed by an address, "
+            "or an https URL, with no spaces (see .env.example)."
+        )
+    if value.startswith("mailto:"):
+        local, at, domain = (
+            value.removeprefix("mailto:").partition("?")[0].rpartition("@")
+        )
+        valid = bool(
+            at and local and "." in domain and _SECURITY_TXT_HOST.fullmatch(domain)
+        )
+    else:
+        try:
+            parts = urlsplit(value)
+            valid = bool(parts.hostname) and "@" not in parts.netloc
+            parts.port  # noqa: B018 (urlsplit checks the port only when read)
+        except ValueError:
+            valid = False
+    if not valid:
+        raise ImproperlyConfigured(
+            f"{name} needs an address (local part, @, and domain) after mailto:, "
+            "or a host after https:// (see .env.example)."
+        )
+    return value
+
+
+SECURITY_TXT_PATH = "/.well-known/security.txt"
+
+
+def _security_txt_canonical(name: str, *, require_https: bool) -> str:
+    """Read the optional Canonical URL, failing fast without echoing it.
+
+    An absolute https URL (http with DEBUG on) whose path is exactly
+    SECURITY_TXT_PATH, with no query, fragment, or user info. Unset or
+    empty gives '', and the view builds it from the request.
+    """
+    value = _raw(name).strip()
+    if not value:
+        return ""
+    try:
+        parts = urlsplit(value) if _SECURITY_TXT_VALUE.fullmatch(value) else None
+        if parts is not None:
+            parts.port  # noqa: B018 (urlsplit checks the port only when read)
+    except ValueError:
+        parts = None
+    allowed = ("https",) if require_https else ("https", "http")
+    if (
+        parts is None
+        or parts.scheme not in allowed
+        or not parts.hostname
+        or "@" in parts.netloc
+        or parts.path != SECURITY_TXT_PATH
+        or parts.query
+        or parts.fragment
+        or value.endswith(("?", "#"))
+    ):
+        raise ImproperlyConfigured(
+            f"{name} is not this file's URL. Use an absolute https URL whose "
+            f"path is {SECURITY_TXT_PATH}, with no query, fragment, or user "
+            "info (see .env.example)."
+        )
+    return value
+
+
+SECURITY_TXT_CONTACT = _security_txt_contact(
+    "SECURITY_TXT_CONTACT", require_https=not DEBUG
+)
+SECURITY_TXT_CANONICAL = _security_txt_canonical(
+    "SECURITY_TXT_CANONICAL", require_https=not DEBUG
+)
+# The organization's security policy, which this repository inherits. Not
+# read from the environment: it is the same for every environment.
+SECURITY_TXT_POLICY = "https://github.com/openpickleball/.github/blob/main/SECURITY.md"
+SECURITY_TXT_PREFERRED_LANGUAGES = "en"
+# Expires is this many days after the start of the current UTC day, worked
+# out on each request. RFC 9116 recommends less than a year.
+SECURITY_TXT_EXPIRES_DAYS = 180
+
+
 # Accounts (django-allauth)
 # https://docs.allauth.org/en/latest/account/configuration.html
 
