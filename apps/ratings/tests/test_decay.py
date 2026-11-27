@@ -4,8 +4,8 @@ The engine measures inactivity at a replay's date: a player who has not
 played loses reliability as scheduled replays move forward. So
 ``decay_reliability()`` computes nothing. It stores a ``scheduled``
 replay request when the most recently created replay is at least the
-engine config's ``replay_interval_days`` old, and the replay task does the rest. A beat
-entry runs the task daily.
+engine config's ``replay_interval_days`` old, and the replay task does
+the rest. A beat entry runs the task daily.
 """
 
 import logging
