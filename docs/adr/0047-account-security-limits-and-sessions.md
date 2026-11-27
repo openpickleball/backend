@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-26
+- Amended by: [ADR 0057](0057-organizer-and-club-admin-security.md) (an Account with an Organizer membership or Club Role uses shorter session lifetimes)
 
 ## Context
 

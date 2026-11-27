@@ -36,10 +36,13 @@ _Avoid_: gender, sex.
 A person or body that runs events and submits their results. The verified Organizer is OPEN's only trusted submitter (ADR 0021): an Organizer is unverified until an Account with permission to verify organizers verifies it, and a verified Organizer's submission counts as confirmed. A club that runs its own leagues or ladders becomes, or works through, an Organizer. A person who organizes alone is an Organizer with one Organizer Member. An Account may create an Organizer itself and is then its admin member; it stays unverified until a moderator verifies it (ADR 0054). Backend: `clubs.Organizer`.
 
 **Organizer Member**:
-An Account that acts for an Organizer, with a role: admin or match manager. While the Organizer is verified and the member's Account has two-factor authentication (ADR 0043), a member with either role may create, change, and delete its Events, and submit matches for its Events and change them; a match or Event that names a Club also needs that Club's Club Organizer Grant to the Organizer. This is the only way an Account submits matches other than its own (ADR 0021). An admin member makes and removes the Organizer's Organizer Application Grants. While an Organizer is verified, the Account that verified it cannot be its member. Backend: `clubs.OrganizerMember`.
+An Account that acts for an Organizer, with a role: admin or match manager. While the Organizer is verified, the member's Account has two-factor authentication (ADR 0043), and no New Member Hold applies, a member with either role may create, change, and delete its Events, and submit matches for its Events and change them; a match or Event that names a Club also needs that Club's Club Organizer Grant to the Organizer. This is the only way an Account submits matches other than its own (ADR 0021). An admin member makes and removes the Organizer's Organizer Application Grants. While an Organizer is verified, the Account that verified it cannot be its member. Backend: `clubs.OrganizerMember`.
 
 **Organizer Invite**:
 An admin member's invite of an email address to act for an Organizer, as admin or match manager (ADR 0054). It is emailed as a link that works once and expires; the invitee accepts while signed in with that address, verified, and with a Player. The answer to the admin never says whether the address has an Account. Backend: `clubs.OrganizerInvite`.
+
+**New Member Hold**:
+The wait after an Account joins a verified Organizer by accepting an Organizer Invite, before it may act for the Organizer (ADR 0057). Until it ends the member has no authority as a member or as an admin; the Organizer's other admins are told of the new member. A moderator may end it early. Not the hold of a Flagged Match, which keeps Matches from counting. Backend: `clubs.OrganizerMember.hold_ends_at`.
 _Avoid_: invitation code, join request.
 
 **Club Invite**:
