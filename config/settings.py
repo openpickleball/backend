@@ -1320,8 +1320,8 @@ ACCOUNT_SIGNUP_FORM_CLASS = "apps.accounts.forms.SignupAgeForm"
 # The current versions of the legal agreements on openpb.org, which
 # sign-up requires accepting and records per Account (#222, ADR 0026).
 # Empty means the version in code, the one published when it was set.
-TERMS_OF_SERVICE_VERSION = _version("TERMS_OF_SERVICE_VERSION", 1)
-PRIVACY_POLICY_VERSION = _version("PRIVACY_POLICY_VERSION", 2)
+TERMS_OF_SERVICE_VERSION = _version("TERMS_OF_SERVICE_VERSION", 2)
+PRIVACY_POLICY_VERSION = _version("PRIVACY_POLICY_VERSION", 3)
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_UNIQUE_EMAIL = True
 # Changing the address replaces it instead of adding a second one.

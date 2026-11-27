@@ -163,6 +163,21 @@ def test_signup_records_each_agreement_with_its_version_and_time(
 
 
 @pytest.mark.parametrize("base", CLIENTS)
+def test_signup_records_the_published_versions_by_default(base: str) -> None:
+    # openpb.org shows Terms of Service "Version 2" and Privacy Policy
+    # "Version 3" (#345). Assumes the environment leaves both unset.
+    response = HeadlessSession(base).signup()
+
+    assert response.status_code == 401
+    account = get_user_model()._default_manager.get_by_natural_key(SESSION_EMAIL)
+    rows = AgreementAcceptance.objects.filter(account=account)
+    assert {(row.agreement, row.version) for row in rows} == {
+        (Agreement.TERMS_OF_SERVICE, 2),
+        (Agreement.PRIVACY_POLICY, 3),
+    }
+
+
+@pytest.mark.parametrize("base", CLIENTS)
 def test_a_taken_address_records_nothing(base: str) -> None:
     _taken_account()
 
