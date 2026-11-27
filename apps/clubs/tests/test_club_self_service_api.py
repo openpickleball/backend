@@ -332,7 +332,7 @@ def test_an_unknown_admin_player_or_grant_is_the_same_404() -> None:
 # Profile changes (AC3)
 
 
-def test_an_admin_changes_the_profile_with_old_and_new_values() -> None:
+def test_an_admin_changes_the_profile_with_a_field_name_event() -> None:
     club = ClubFactory.create(name="Made-up Old", city="Made-up Town", region="AA")
     admin = _admin_of(club)
 
@@ -351,8 +351,8 @@ def test_an_admin_changes_the_profile_with_old_and_new_values() -> None:
         "region": "",
     }
     [event] = AuditEvent.objects.filter(action=AuditAction.CLUB_CHANGE)
-    assert event.before == {"name": "Made-up Old", "region": "AA"}
-    assert event.after == {"name": "Made-up New", "region": ""}
+    assert event.before is None
+    assert event.after == {"fields": ["name", "region"]}
 
 
 def test_an_unchanged_or_empty_patch_records_nothing() -> None:

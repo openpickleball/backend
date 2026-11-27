@@ -25,10 +25,10 @@ On these paths a Club always keeps one active admin (``Conflict``
 otherwise). Account deletion and the staff admin can still leave a Club
 without one; staff repair it. Removing an admin deletes the invites it
 sent to that Club in the same transaction. Role and grant writes go
-through ``apps.audit.access`` with the acting Account. A Club's name,
-city, and region are not personal data (a Club is a place or group), so
-``club.change`` records their old and new values; no event holds an
-address.
+through ``apps.audit.access`` with the acting Account. ``club.change``
+names the changed fields, never their values: a self-made Club may be
+named after a person, and Audit Events are never erased. No event holds
+an address.
 
 Lock order: the acting Account (``FOR KEY SHARE`` through
 ``hold_active_account``, ``FOR NO KEY UPDATE`` in ``create_club``), then,
@@ -201,7 +201,7 @@ def update_club(
     """Change the given profile fields; True when any changed.
 
     A field left as None is not changed. A change records one
-    ``club.change`` event with the changed fields' old and new values;
+    ``club.change`` event naming the changed fields, never their values;
     no change records nothing. ``Conflict`` for a new name while any
     Event or Match names the Club, checked under the Club lock (an Event
     or Match insert holds the Club ``FOR KEY SHARE``, so it runs in turn):
@@ -228,8 +228,9 @@ def update_club(
             action=AuditAction.CLUB_CHANGE,
             target=club,
             actor=actor,
-            before={field: before[field] for field in changed},
-            after={field: getattr(club, field) for field in changed},
+            # Field names only: a Club may be named after a person, and
+            # Audit Events are never erased (ADR 0009).
+            after={"fields": changed},
         )
     return True
 

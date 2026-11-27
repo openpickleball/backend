@@ -206,7 +206,7 @@ def test_an_unknown_club_is_not_found() -> None:
 # Profile changes
 
 
-def test_update_records_the_changed_fields_old_and_new() -> None:
+def test_update_records_the_changed_field_names() -> None:
     club = ClubFactory.create(name="Made-up Old", city="Made-up Town", region="AA")
     admin = _admin_of(club)
 
@@ -219,8 +219,8 @@ def test_update_records_the_changed_fields_old_and_new() -> None:
     assert (club.name, club.city, club.region) == ("Made-up New", "Made-up Town", "BB")
     [event] = _events(AuditAction.CLUB_CHANGE)
     assert event.actor_user_id == admin.pk
-    assert event.before == {"name": "Made-up Old", "region": "AA"}
-    assert event.after == {"name": "Made-up New", "region": "BB"}
+    assert event.before is None
+    assert event.after == {"fields": ["name", "region"]}
 
 
 def test_an_unchanged_or_empty_update_records_nothing() -> None:
