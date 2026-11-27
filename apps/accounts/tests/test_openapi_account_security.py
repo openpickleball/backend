@@ -46,6 +46,8 @@ def test_the_device_token_is_documented(spec: dict[str, Any], path: str) -> None
         MFA_LOGIN,
         "/_allauth/{client}/v1/auth/reauthenticate",
         "/_allauth/{client}/v1/auth/2fa/reauthenticate",
+        "/_allauth/{client}/v1/auth/webauthn/authenticate",
+        "/_allauth/{client}/v1/auth/webauthn/reauthenticate",
     ],
 )
 def test_the_lockout_429_is_documented(spec: dict[str, Any], path: str) -> None:

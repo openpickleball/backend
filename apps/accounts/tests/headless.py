@@ -192,6 +192,16 @@ class HeadlessSession:
         )
         return self._keep_token(response)
 
+    def put_json(self, endpoint: str, data: dict[str, Any]) -> Any:
+        """PUT a JSON body, as allauth's passkey rename takes."""
+        response = self.client.put(
+            f"{self.base}/{endpoint}",
+            json.dumps(data),
+            content_type="application/json",
+            headers=self._headers(),
+        )
+        return self._keep_token(response)
+
     def login(self, email: str, password: str = PASSWORD) -> Any:
         return self.post("auth/login", {"email": email, "password": password})
 

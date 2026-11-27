@@ -1399,10 +1399,10 @@ HEADLESS_FRONTEND_URLS = {
 # Two-factor authentication (allauth.mfa, issue #99, ADR 0043)
 # https://docs.allauth.org/en/latest/mfa/configuration.html
 
-# TOTP, with recovery codes made alongside the first method. WebAuthn and
-# passkeys stay off until #117.
-MFA_SUPPORTED_TYPES = ["totp", "recovery_codes"]
-MFA_PASSKEY_LOGIN_ENABLED = False
+# TOTP and passkeys (WebAuthn, #117), with recovery codes made alongside
+# the first method. A passkey can also sign in alone (passkey login).
+MFA_SUPPORTED_TYPES = ["totp", "recovery_codes", "webauthn"]
+MFA_PASSKEY_LOGIN_ENABLED = True
 # Passkey signup stays off: allauth needs email verification by code for
 # it (allauth/mfa/checks.py), which stays off (ADR 0043, ADR 0056), and
 # its signup view would skip OPEN's own (age, agreements, names).
