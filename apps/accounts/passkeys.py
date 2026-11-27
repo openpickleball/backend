@@ -208,15 +208,18 @@ _DECODE_ERRORS = (
 # binary member must be base64url text within its cap before anything is
 # decoded: fido2 turns a JSON integer N into N zero bytes and a list of
 # integers into bytes, so a member of another type is refused, never
-# parsed. Real values are far smaller: an attestation object of a few
-# hundred bytes (a few KiB with a certificate chain), authenticator data
-# and a signature of under 200 bytes. The caps bound the decoders' work;
-# RecursionError covers nesting that fits under them.
+# parsed. Real values fit with room to spare: authenticator data of
+# under 200 bytes, an ECDSA or EdDSA signature of under 150 bytes and an
+# RSA one of up to 512, an ML-DSA-87 signature (which fido2 offers through
+# allauth's server when cryptography supports it) of 4627 bytes, and an
+# attestation object of a few hundred bytes, a few KiB with a certificate
+# chain or an ML-DSA-87 public key (2592 bytes). The caps bound the
+# decoders' work; RecursionError covers nesting that fits under them.
 _MAX_CREDENTIAL_ID_BYTES = 1023  # WebAuthn's limit for a credential id
 _MAX_USER_HANDLE_BYTES = 64  # WebAuthn's limit for a user handle
 _MAX_ATTESTATION_OBJECT_BYTES = 16384
 _MAX_AUTHENTICATOR_DATA_BYTES = 4096
-_MAX_SIGNATURE_BYTES = 4096
+_MAX_SIGNATURE_BYTES = 8192
 
 
 def _text_length(max_bytes: int) -> int:
