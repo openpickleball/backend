@@ -116,7 +116,7 @@ The upload's report gives each row one result:
 - `duplicate`, when the same match is already recorded, or waits for confirmation. The report gives its OPEN Code when you may know it. The upload never confirms a waiting match.
 - `failed`, with each reason. Besides the codes below, `forbidden` means you may not submit for this Event, and `voided` means the row's match was voided.
 
-An upload of more than 100 match rows (by default, `UNUSUAL_SUBMISSION_BATCH_SIZE`), counting every row, failed ones included, has each of its matches flagged as an unusual submission. So are an Organizer's first matches after it is verified and a submitter's matches past a daily number (ADR 0049). These flags are signals only: they do not stop a match counting, and the report does not show them.
+An upload of more than 100 match rows (by default, `UNUSUAL_SUBMISSION_BATCH_SIZE`), counting every row, failed ones included, has each of its matches flagged as an unusual submission. So are an Organizer's first matches after it is verified and a submitter's matches past a daily number (ADR 0049), and a match that takes one of its players past a daily number of matches on its date (`UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES`, 30 by default, ADR 0052). These flags are signals only: they do not stop a match counting, and the report does not show them.
 
 A whole file can also fail: `too_many_rows`, the file errors above, `expired` when it could not be processed within three days, or `voided` when a moderator voided the upload or the uploader's matches. The rows processed before it stopped stay in the report as they were then: after a void, a row can still read `recorded` though its match is voided.
 

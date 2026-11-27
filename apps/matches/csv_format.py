@@ -11,7 +11,7 @@ decide the match, are not reported. When ``matchType`` is bad, the team
 size check does not run. The upload (#71) looks up each ``CsvPlayer.code``, compares names
 with display names, and records each ``CsvMatch`` with ``record_match()``
 in its own transaction. ``record_match()`` can still refuse a parsed row
-(model limits, permission, duplicates).
+(model limits, permission, the Event's dates, duplicates).
 
 Row numbers are CSV record numbers, counting from the file's first
 record: a quoted cell that spans lines is one record, and blank records

@@ -19,8 +19,9 @@ After that check, ``record_match`` refuses a Player whose Account is
 inactive, reads the Event's stored start and end dates by id, and runs
 ``validate_match`` (which refuses a date played outside them,
 ``outside_event_dates``, #207, ADR 0052) and every model rule on the
-Match, its participants, and its games, so nothing invalid reaches a
-lock, a lookup, or the database. ``edit_match`` drafts its correction the
+Match, its participants, and its games. The only read before validation
+is those dates, by id, after the permission checks, so nothing invalid
+reaches a lock, a duplicate lookup, or the database. ``edit_match`` drafts its correction the
 same way, so a correction outside the stored Event's dates is refused
 too. It then detects duplicates (a security-sensitive area,
 CLAUDE.md hard rule 8). In one transaction, under advisory locks, it:
@@ -1057,8 +1058,9 @@ def draft_match(
     after the permission check: it reads the Event's stored dates by id
     (``_event_dates``) and gives them to ``validate_match``, so a played
     date outside them is refused (#207, ADR 0052). They are not read again
-    under ``hold_event``'s lock, so a date change committed in between is
-    missed (accepted).
+    under ``hold_event``'s lock, so a date change committed in between (in
+    the admin or, while no match names the Event, the organizer Event
+    API) is missed (accepted).
     """
     keys_a = _player_keys(team_a)
     keys_b = _player_keys(team_b)
@@ -1107,7 +1109,7 @@ def draft_match(
         Game(match=match, game_number=number, team_a_score=a, team_b_score=b)
         for number, (a, b) in enumerate(validated.games, start=1)
     ]
-    # Every model rule runs before any lock, lookup, or write. Among other
+    # Every model rule runs before any lock, duplicate lookup, or write. Among other
     # things this strips external_id, so the lookups use the stored form.
     _clean_all(match, participants, game_rows)
     return MatchDraft(
