@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from allauth.account.models import EmailAddress
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group, Permission
+from django.contrib.auth.models import AnonymousUser, Group, Permission
 from django.core.cache import cache
 
 from apps.accounts.deletion import (
@@ -400,3 +400,13 @@ def test_the_refusal_message_names_nobody() -> None:
     text = str(raised.value)
     for value in (player.account.email, DISPLAY_NAME, LEGAL_NAME, player.public_code):
         assert value not in text
+
+
+def test_a_signed_out_moderator_is_refused() -> None:
+    player = _player()
+    state = _state(player)
+
+    with pytest.raises(UnderageRemovalRefused):
+        remove_underage_player(player, moderator=AnonymousUser())
+
+    assert _state(player) == state

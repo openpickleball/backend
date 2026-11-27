@@ -1,0 +1,29 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+{% comment %}
+Confirms a moderator's removal of an under-13 player's personal data
+(issue #190, ADR 0059). It names the Player by OPEN Code only.
+{% endcomment %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">Home</a>
+&rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; <a href="{% url opts|admin_urlname:'change' original.pk|admin_urlquote %}">{{ original }}</a>
+&rsaquo; Remove personal data (under 13)
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+<p>Remove the personal data of player {{ original }}, who is under 13.</p>
+<p>This cannot be undone. The player is then shown as after Account deletion: the
+OPEN Code, matches, and ratings stay, every other detail is removed, and the
+Account cannot sign in again. The removal is recorded in the audit log.</p>
+<form method="post">
+{% csrf_token %}
+<input type="submit" value="Remove personal data">
+<a href="{% url opts|admin_urlname:'change' original.pk|admin_urlquote %}" class="button cancel-link">Cancel</a>
+</form>
+</div>
+{% endblock %}

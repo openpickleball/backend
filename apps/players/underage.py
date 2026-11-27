@@ -27,7 +27,7 @@ from apps.audit.models import AuditAction
 from apps.players.models import Player
 
 if TYPE_CHECKING:
-    from django.contrib.auth.models import _User
+    from django.contrib.auth.models import AnonymousUser, _User
 
 REMOVE_UNDERAGE_PERMISSION = "players.remove_underage_player"
 
@@ -42,7 +42,9 @@ class UnderageRemovalRefused(PermissionError):
         super().__init__("This removal is not allowed.")
 
 
-def remove_underage_player(player: Player, *, moderator: "_User") -> AccountDeletion:
+def remove_underage_player(
+    player: Player, *, moderator: "_User | AnonymousUser"
+) -> AccountDeletion:
     """Remove the personal data of ``player``'s Account, as Account deletion does.
 
     Only an active Account with ``players.remove_underage_player`` (an
@@ -51,7 +53,7 @@ def remove_underage_player(player: Player, *, moderator: "_User") -> AccountDele
     Account or permission cache counts for nothing. It refuses
     (``UnderageRemovalRefused``) the moderator's own Player, and a Player
     whose Account is staff, superuser, or holds a group or permission (as
-    the Account admin refuses, #317). It raises ``AccountAlreadyDeleted``
+    the Account admin refuses, #317). A signed-out moderator is refused. It raises ``AccountAlreadyDeleted``
     when a deletion already cleared the Account. Every refusal comes
     before any write, so it changes nothing.
 

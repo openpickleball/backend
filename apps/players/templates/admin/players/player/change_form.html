@@ -3,7 +3,8 @@
 {% comment %}
 The Player change page (issue #115, ADR 0046). The reveal form sits with
 the object tools, outside the page's own form. Only an Account with
-players.view_personal_data sees it.
+players.view_personal_data sees it. The removal link (issue #190, ADR
+0059) shows only to an Account with players.remove_underage_player.
 {% endcomment %}
 
 {% block object-tools-items %}
@@ -13,6 +14,11 @@ players.view_personal_data sees it.
 {% csrf_token %}
 <button type="submit">Reveal personal data</button>
 </form>
+</li>
+{% endif %}
+{% if may_remove and original %}
+<li>
+<a href="{% url opts|admin_urlname:'remove_underage' original.pk|admin_urlquote %}">Remove personal data (under 13)</a>
 </li>
 {% endif %}
 {{ block.super }}
