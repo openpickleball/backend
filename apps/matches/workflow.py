@@ -1812,7 +1812,9 @@ def _void_as_moderator(match: Match, *, actor: Actor, reason: str) -> None:
     under the same locks, voiding would end the holds the match's open
     flags place on the matches they link to it (``_linked``), so a
     moderator who does not moderate one of those (#326) also gets
-    ``MatchActionDenied``, and nothing is written. Any other match is
+    ``MatchActionDenied``, and nothing is written. That holds even when the
+    linked match is voided or another flag still holds it: the rule
+    refuses more than it must, never less. Any other match is
     voided with one ``match.void`` Audit Event that holds the run's
     reason, and its signals.
     """

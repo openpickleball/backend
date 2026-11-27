@@ -144,6 +144,7 @@ def test_a_submitter_void_refuses_a_match_whose_void_would_release_the_moderator
     assert Match.objects.get(pk=target.pk).status == MatchStatus.CONFIRMED
     assert not Match.objects.get(pk=held.pk).is_counted()
     assert signals.changes(held) == []
+    assert signals.changes(target) == []
 
 
 def test_another_moderator_voids_it_and_the_linked_match_counts_again(
