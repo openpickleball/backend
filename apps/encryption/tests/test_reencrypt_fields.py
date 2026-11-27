@@ -63,6 +63,7 @@ def test_rotation_moves_every_value_to_the_newest_key() -> None:
 
     assert out.getvalue().splitlines() == [
         "players.Player: 1 rows re-encrypted.",
+        "exports.DataExport: 0 rows re-encrypted.",
         "mfa.Authenticator: 2 rows re-encrypted.",
     ]
     for token in _raw_tokens():
@@ -89,6 +90,7 @@ def test_output_holds_counts_only() -> None:
     assert LEGAL_NAME not in out.getvalue()
     assert out.getvalue().splitlines() == [
         "players.Player: 1 rows re-encrypted.",
+        "exports.DataExport: 0 rows re-encrypted.",
         "mfa.Authenticator: 0 rows re-encrypted.",
     ]
 
