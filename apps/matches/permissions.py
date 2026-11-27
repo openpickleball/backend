@@ -375,6 +375,7 @@ MODERATOR_PERMISSIONS: tuple[str, ...] = (
     "clubs.verify_organizer",
     "clubs.view_organizer",
     "clubs.view_organizerreport",
+    "clubs.view_organizerverificationrequest",
 )
 
 

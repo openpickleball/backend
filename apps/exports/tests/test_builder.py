@@ -270,6 +270,7 @@ def test_memberships_club_roles_reports_and_applications() -> None:
             "organizer": organizer.public_code,
             "name": organizer.name,
             "verified": True,
+            "verification_requested": False,
             "role": "match_manager",
         }
     ]

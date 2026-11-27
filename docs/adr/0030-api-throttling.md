@@ -4,6 +4,7 @@
 - Amended by: [ADR 0031](0031-rating-lookup-and-history.md) (the rating lookup of #53 needs sign-in and the per-Account throttle; no public operation is mounted yet)
 - Amended by: [ADR 0037](0037-organizer-reports.md) (reporting an Organizer has its own day throttle, `API_ORGANIZER_REPORT_THROTTLE_PER_DAY`, in place of the Account throttle)
 - Amended by: [ADR 0051](0051-player-data-export.md) (a data export request has its own day throttle, `API_DATA_EXPORT_THROTTLE_PER_DAY`, counting only requests with a recent reauthentication; one without counts against the Account throttle's windows)
+- Amended by: [ADR 0054](0054-organizer-self-service.md) (inviting an Organizer member has its own day throttle, `OrganizerInviteThrottle` from `API_ORGANIZER_INVITE_THROTTLE_PER_DAY`, in place of the Account throttle)
 - Date: 2026-11-24
 
 ## Context

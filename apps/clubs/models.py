@@ -17,6 +17,7 @@ from django.db.models import Q
 
 from apps.audit.access import AuditedAccessModel
 from apps.audit.models import AuditAction
+from apps.clubs.invites import InviteModel
 from apps.public_ids.codes import CodeType
 from apps.public_ids.models import PublicCodeModel
 
@@ -37,6 +38,9 @@ VERIFY_PERMISSION = "clubs.verify_organizer"
 # The permission to view Organizer Reports in the admin (the Moderator
 # group holds it). The Organizer page's moderator review needs it too.
 REPORT_VIEW_PERMISSION = "clubs.view_organizerreport"
+# The permission to view Organizer Verification Requests in the admin
+# (the Moderator group holds it).
+VERIFICATION_REQUEST_VIEW_PERMISSION = "clubs.view_organizerverificationrequest"
 _VERIFIER_MEMBER = "The account that verified this organizer cannot be its member."
 VERIFIED_DELETE_MESSAGE = "A verified organizer cannot be deleted: unverify it first."
 # Control characters (Postgres cannot store NUL) and lone surrogates
@@ -554,6 +558,91 @@ class OrganizerReport(_LinkMessagesModel):
         # Account admin's delete page), so it never names the Organizer the
         # Account reported, or the reporter.
         return f"Organizer report {self.pk}"
+
+    @property
+    def is_open(self) -> bool:
+        return self.closed_at is None
+
+
+class OrganizerInvite(_LinkMessagesModel, InviteModel):
+    """An admin member's invite of an address to act for an Organizer (#229).
+
+    Create, accept, and delete it only through ``apps.clubs.self_service``.
+    One invite per Organizer and address: inviting the address again
+    replaces it. The address is an identifying field, so no admin, API
+    response, Audit Event, or log line shows it; the row is deleted when
+    accepted, when it expires (``sweep_organizer_invites``), and at
+    Account deletion.
+    """
+
+    organizer = models.ForeignKey(
+        Organizer,
+        on_delete=models.CASCADE,
+        related_name="invites",
+        error_messages=_ORGANIZER_MESSAGES,
+    )
+    role = models.CharField(
+        max_length=16, choices=MemberRole, error_messages=_CHOICE_MESSAGES
+    )
+
+    class Meta:
+        # No admin: the row holds an address.
+        default_permissions = ()
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["organizer", "email"],
+                name="clubs_organizerinvite_unique_address",
+            ),
+            models.CheckConstraint(
+                condition=Q(role__in=MemberRole.values),
+                name="clubs_organizerinvite_role_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # The row id only: never the address or the Organizer's name.
+        return f"Organizer invite {self.pk}"
+
+
+class OrganizerVerificationRequest(_LinkMessagesModel):
+    """An admin member's request that moderators verify an Organizer (#229).
+
+    Create it only through ``apps.clubs.self_service.request_verification``
+    and close it only through ``apps.clubs.verification_requests``: a
+    verify closes it, or a moderator closes it with a reason. A request
+    changes nothing about verification. One open request per Organizer
+    (a partial unique constraint). ``statement`` is the member's short
+    account of what the Organizer runs, shown only to moderators in the
+    admin; Account deletion blanks it with the Organizer's name.
+    """
+
+    organizer = models.ForeignKey(
+        Organizer,
+        on_delete=models.PROTECT,
+        related_name="verification_requests",
+        error_messages=_ORGANIZER_MESSAGES,
+    )
+    # Blank only after Account deletion removes it; the API requires one.
+    statement = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        default_permissions = ("view",)
+        constraints: ClassVar[list[models.BaseConstraint]] = [
+            models.UniqueConstraint(
+                fields=["organizer"],
+                condition=Q(closed_at__isnull=True),
+                name="clubs_one_open_verification_request",
+                violation_error_message=(
+                    "This organizer already has an open verification request."
+                ),
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # The row id only: Django lists protected rows by this text.
+        return f"Organizer verification request {self.pk}"
 
     @property
     def is_open(self) -> bool:

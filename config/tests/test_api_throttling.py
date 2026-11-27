@@ -4,7 +4,9 @@ Every operation that needs sign-in shares one per-Account throttle,
 except player search, which keeps only its own ``SearchThrottle`` (ADR
 0018), and reporting an Organizer, which keeps only its own
 ``OrganizerReportThrottle`` (#271), and requesting a data export, which
-keeps only its own ``DataExportThrottle`` (#39). No public operation is mounted yet;
+keeps only its own ``DataExportThrottle`` (#39), and inviting an
+Organizer member, which keeps only its own ``OrganizerInviteThrottle``
+(#229). No public operation is mounted yet;
 one would need no sign-in and have only a client IP throttle. The health
 checks are never throttled.
 A refused request gets a 429 ``ErrorResponse`` with code ``throttled``
@@ -27,7 +29,7 @@ from ninja.operation import Operation
 from openapi_spec_validator import validate
 
 from apps.accounts.tests.factories import UserFactory
-from apps.clubs.api import OrganizerReportThrottle
+from apps.clubs.api import OrganizerInviteThrottle, OrganizerReportThrottle
 from apps.exports.api import DataExportThrottle
 from apps.players.api import SearchThrottle
 from config.api import OpenNinjaAPI, api
@@ -44,7 +46,12 @@ HEALTH_OPERATIONS = {"health_live", "health_ready"}
 # None is mounted yet; the client IP throttle is kept for a later one.
 PUBLIC_OPERATIONS: set[str] = set()
 # Signed-in operations with their own throttle instead of the Account one.
-OWN_THROTTLE_OPERATIONS = {"search_players", "report_organizer", "request_data_export"}
+OWN_THROTTLE_OPERATIONS = {
+    "search_players",
+    "report_organizer",
+    "request_data_export",
+    "invite_organizer_member",
+}
 THROTTLED = {"code": "throttled", "message": "Too many requests.", "errors": []}
 
 
@@ -111,6 +118,15 @@ def test_organizer_report_has_only_its_own_throttle() -> None:
     assert operation.auth_callbacks == account_auth
     assert len(operation.throttle_objects) == 1
     assert isinstance(operation.throttle_objects[0], OrganizerReportThrottle)
+    assert not isinstance(operation.throttle_objects[0], AccountThrottle)
+
+
+def test_organizer_invite_has_only_its_own_throttle() -> None:
+    operation = _by_id()["invite_organizer_member"]
+
+    assert operation.auth_callbacks == account_auth
+    assert len(operation.throttle_objects) == 1
+    assert isinstance(operation.throttle_objects[0], OrganizerInviteThrottle)
     assert not isinstance(operation.throttle_objects[0], AccountThrottle)
 
 

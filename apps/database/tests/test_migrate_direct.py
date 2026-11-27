@@ -34,6 +34,7 @@ MODERATOR_CODENAMES = {
     "verify_organizer",
     "view_organizer",
     "view_organizerreport",
+    "view_organizerverificationrequest",
 }
 
 

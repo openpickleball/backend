@@ -63,12 +63,14 @@ def test_a_member_sees_verified_and_unverified_organizers_with_role() -> None:
                 "organizer": verified.public_code,
                 "name": "Made-up Verified Ladder",
                 "verified": True,
+                "verification_requested": False,
                 "role": "match_manager",
             },
             {
                 "organizer": unverified.public_code,
                 "name": "Made-up Unverified League",
                 "verified": False,
+                "verification_requested": False,
                 "role": "admin",
             },
         ],
@@ -94,8 +96,14 @@ def test_no_other_account_or_member_is_listed() -> None:
     assert [item["organizer"] for item in items] == [shared.public_code]
     # The Account's own role, never the other member's.
     assert items[0]["role"] == "match_manager"
-    # Only the four fields: no member list, Account, email, or row id.
-    assert set(items[0]) == {"organizer", "name", "verified", "role"}
+    # Only these fields: no member list, Account, email, or row id.
+    assert set(items[0]) == {
+        "organizer",
+        "name",
+        "verified",
+        "verification_requested",
+        "role",
+    }
     assert other.email not in str(items)
 
 

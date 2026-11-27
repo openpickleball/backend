@@ -1,0 +1,8 @@
+{% extends "emails/base_message.txt" %}
+{% block content %}You are invited to act for an organizer on OPEN, the Open Pickleball Evaluation Network, as {{ role_label }}. The organizer's OPEN Code is {{ organizer_code }}.
+
+To accept, sign in to OPEN with this email address, then open this link. It works once and expires on {{ expires_at }}:
+{{ invite_url }}
+
+If you do not know this organizer, ignore this email. Nothing changes unless you accept.{% endblock content %}
+{% block reason %}You received this email because an admin of an organizer on OPEN invited this email address.{% endblock reason %}

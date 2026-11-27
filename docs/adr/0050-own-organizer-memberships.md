@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-26
+- Amended by: [ADR 0054](0054-organizer-self-service.md) (memberships are no longer all made by staff: an Account creates an Organizer and invites members; each membership gains `verification_requested`)
 
 ## Context
 

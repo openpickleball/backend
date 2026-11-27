@@ -1,17 +1,61 @@
-"""The API's request and response schemas for Organizer Reports (#271)
-and the signed-in Account's own Organizer memberships (#301).
+"""The API's request and response schemas for Organizer Reports (#271),
+the signed-in Account's own Organizer memberships (#301), and Organizer
+self-service (#229).
 
-No schema here carries a row id or names the reporter: the Organizer is
-named by its OPEN Code. Unknown keys are refused, so a report carries no
-free text.
+No schema here carries a row id, an email, or names the reporter: an
+Organizer is named by its OPEN Code and a member by its Player's OPEN
+Code. Unknown keys are refused, so a report carries no free text.
+Validation messages are fixed text and never repeat the submitted value.
 """
 
+import unicodedata
 from datetime import datetime
+from typing import Final
 
-from ninja import Schema
-from pydantic import ConfigDict
+from ninja import Field, Schema
+from pydantic import ConfigDict, field_validator
+from pydantic_core import PydanticCustomError
 
+from apps.accounts.validators import EMAIL_MAX_LENGTH
+from apps.clubs.invites import (
+    InvalidInviteEmail,
+    normalized_invite_email,
+)
 from apps.clubs.models import MemberRole, OrganizerReportReason
+
+NAME_MAX_LENGTH: Final = 200
+STATEMENT_MAX_LENGTH: Final = 1000
+_NAME_REQUIRED = "Enter a name."
+_NAME_TOO_LONG = f"Keep the name to {NAME_MAX_LENGTH} characters or fewer."
+_STATEMENT_REQUIRED = "Describe what the organizer runs."
+_STATEMENT_TOO_LONG = (
+    f"Keep the statement to {STATEMENT_MAX_LENGTH} characters or fewer."
+)
+_CONTROL_CHARACTER = "Remove control or invalid characters."
+# Control characters and lone surrogates, as the models refuse them.
+_REFUSED_CATEGORIES = frozenset({"Cc", "Cs"})
+# A statement may have line breaks and tabs.
+_STATEMENT_ALLOWED = frozenset({"\n", "\r", "\t"})
+
+
+def _has_refused(value: str, allowed: frozenset[str] = frozenset()) -> bool:
+    return any(
+        unicodedata.category(char) in _REFUSED_CATEGORIES and char not in allowed
+        for char in value
+    )
+
+
+def _organizer_name(value: object) -> str:
+    if not isinstance(value, str):
+        raise PydanticCustomError("string_type", "Enter text.")
+    value = value.strip()
+    if not value:
+        raise PydanticCustomError("required", _NAME_REQUIRED)
+    if len(value) > NAME_MAX_LENGTH:
+        raise PydanticCustomError("too_long", _NAME_TOO_LONG)
+    if _has_refused(value):
+        raise PydanticCustomError("invalid_characters", _CONTROL_CHARACTER)
+    return value
 
 
 class OrganizerReportIn(Schema):
@@ -41,11 +85,142 @@ class OrganizerMembershipOut(Schema):
     ``EventCreateIn.organizer`` takes. ``name`` is the Organizer's name,
     shown only to its own members. ``verified`` says whether the Organizer
     is verified; it does not say whether the Account may act for it now
-    (Organizer authority also needs MFA, ADR 0043). ``role`` is the
-    Account's own role there. It names no other member.
+    (Organizer authority also needs MFA, ADR 0043).
+    ``verification_requested`` says whether a request that moderators
+    verify it is open (#229). ``role`` is the Account's own role there.
+    It names no other member.
     """
 
     organizer: str
     name: str
     verified: bool
+    verification_requested: bool
     role: MemberRole
+
+
+class OrganizerCreateIn(Schema):
+    """A new Organizer. ``name`` is 1 to 200 characters after trimming,
+    with no control characters. It may be a person's name: it is shown
+    only to the Organizer's members and staff."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(max_length=NAME_MAX_LENGTH)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _name(cls, value: object) -> str:
+        return _organizer_name(value)
+
+
+class OrganizerUpdateIn(Schema):
+    """A new name for an Organizer, with the create's rules."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(max_length=NAME_MAX_LENGTH)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _name(cls, value: object) -> str:
+        return _organizer_name(value)
+
+
+class OrganizerInviteIn(Schema):
+    """An invite of an email address to act for the Organizer as ``role``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(max_length=EMAIL_MAX_LENGTH)
+    role: MemberRole
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _email(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise PydanticCustomError("string_type", "Enter text.")
+        try:
+            return normalized_invite_email(value)
+        except InvalidInviteEmail:
+            raise PydanticCustomError(
+                "invalid_email", str(InvalidInviteEmail())
+            ) from None
+
+
+class OrganizerInviteSentOut(Schema):
+    """The same answer for every accepted invite request: it never says
+    whether the address has an Account, is a member, or was invited."""
+
+    message: str
+
+
+class OrganizerInviteAcceptIn(Schema):
+    """The key from the invite email's link."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(
+        description=(
+            "The key from the link in the invite email. A key longer than "
+            "128 characters gets the same 404 as an unknown one."
+        ),
+    )
+
+
+class OrganizerMemberOut(Schema):
+    """One member of an Organizer, as its admins see it.
+
+    ``player`` is the member's Player's OPEN Code (the value the member
+    operations take), or null when the Account has no Player.
+    ``display_name`` is that Player's display name, or null when there is
+    none or the Account is inactive. ``you`` marks the signed-in Account.
+    Never an email.
+    """
+
+    player: str | None
+    display_name: str | None
+    role: MemberRole
+    you: bool
+
+
+class OrganizerMemberRoleIn(Schema):
+    """A member's new role."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: MemberRole
+
+
+class OrganizerVerificationRequestIn(Schema):
+    """A request that moderators verify the Organizer.
+
+    ``statement`` says what the Organizer runs, for moderators only: 1 to
+    1000 characters after trimming, with no control characters except
+    line breaks and tabs.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    statement: str = Field(max_length=STATEMENT_MAX_LENGTH)
+
+    @field_validator("statement", mode="before")
+    @classmethod
+    def _statement(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise PydanticCustomError("string_type", "Enter text.")
+        value = value.strip()
+        if not value:
+            raise PydanticCustomError("required", _STATEMENT_REQUIRED)
+        if len(value) > STATEMENT_MAX_LENGTH:
+            raise PydanticCustomError("too_long", _STATEMENT_TOO_LONG)
+        if _has_refused(value, _STATEMENT_ALLOWED):
+            raise PydanticCustomError("invalid_characters", _CONTROL_CHARACTER)
+        return value
+
+
+class OrganizerVerificationRequestOut(Schema):
+    """The request just made: the Organizer's OPEN Code and when. The
+    statement is not repeated."""
+
+    organizer: str
+    created_at: datetime

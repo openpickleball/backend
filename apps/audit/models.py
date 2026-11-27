@@ -65,6 +65,17 @@ class AuditAction(models.TextChoices):
         "organizer.name_remove",
         "Organizer name removed at Account deletion",
     )
+    ORGANIZER_CREATE = "organizer.create", "Organizer created"
+    ORGANIZER_CHANGE = "organizer.change", "Organizer changed"
+    ORGANIZER_INVITE_CREATE = "organizer_invite.create", "Organizer member invited"
+    ORGANIZER_VERIFICATION_REQUEST_CREATE = (
+        "organizer_verification_request.create",
+        "Organizer verification requested",
+    )
+    ORGANIZER_VERIFICATION_REQUEST_CLOSE = (
+        "organizer_verification_request.close",
+        "Organizer verification request closed",
+    )
     ORGANIZER_REPORT_CREATE = "organizer_report.create", "Organizer reported"
     ORGANIZER_REPORT_CLOSE = "organizer_report.close", "Organizer report closed"
     ORGANIZER_MEMBER_ADD = "organizer_member.add", "Organizer member added"

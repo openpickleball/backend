@@ -31,7 +31,7 @@ from allauth.usersessions.models import UserSession
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 from oauth2_provider.models import (
     get_access_token_model,
@@ -52,6 +52,7 @@ from apps.clubs.models import (
     OrganizerMember,
     OrganizerReport,
     OrganizerReportReason,
+    OrganizerVerificationRequest,
 )
 from apps.clubs.schemas import OrganizerMembershipOut
 from apps.exports.schemas import (
@@ -399,6 +400,13 @@ def _memberships(account: "_User") -> list[OrganizerMembershipOut]:
     rows = (
         OrganizerMember.objects.filter(account_id=account.pk)
         .select_related("organizer")
+        .annotate(
+            verification_requested=Exists(
+                OrganizerVerificationRequest.objects.filter(
+                    organizer_id=OuterRef("organizer_id"), closed_at__isnull=True
+                )
+            )
+        )
         .order_by("organizer__public_code")
     )
     return [
@@ -406,6 +414,7 @@ def _memberships(account: "_User") -> list[OrganizerMembershipOut]:
             organizer=row.organizer.public_code,
             name=row.organizer.name,
             verified=row.organizer.is_verified,
+            verification_requested=row.verification_requested,
             role=MemberRole(row.role),
         )
         for row in rows

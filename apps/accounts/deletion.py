@@ -8,12 +8,14 @@
   ``EmailAddress`` rows, MFA authenticators, accepted agreement rows,
   OAuth tokens and grants issued to it, its data export (ADR 0051), the
   Organizer Reports it filed (an open one is closed first, with an Audit
-  Event), queued emails to its addresses, and the admin log entries tied
+  Event), the Organizer Invites addressed to its addresses or sent by it
+  (#229), queued emails to its addresses, and the admin log entries tied
   to it;
 - its Organizer memberships and Club Roles, through ``apps.audit.access``
   so each removal records an Audit Event. An Organizer whose only member
   is this Account is treated as that person: its name becomes
-  ``REMOVED_ORGANIZER_NAME``, with an ``organizer.name_remove`` event;
+  ``REMOVED_ORGANIZER_NAME``, with an ``organizer.name_remove`` event,
+  and its verification request statements are blanked;
 - its Player's personal data. A Player that nothing protects (no Match,
   confirmation, or rating points at it) is deleted with its privacy row.
   Any other Player stays in the Ledger with its OPEN Code: its display
@@ -85,8 +87,15 @@ from apps.audit.access import (
 )
 from apps.audit.models import AuditAction
 from apps.audit.services import record_event
-from apps.clubs.models import ClubRole, Organizer, OrganizerMember, OrganizerReport
+from apps.clubs.models import (
+    ClubRole,
+    Organizer,
+    OrganizerInvite,
+    OrganizerMember,
+    OrganizerReport,
+)
 from apps.clubs.reports import delete_reporter_reports
+from apps.clubs.verification_requests import blank_statements
 from apps.emails.models import QueuedEmail
 from apps.exports.services import delete_exports_for
 from apps.players.models import Player, PlayerPrivacy, Visibility
@@ -182,6 +191,7 @@ def delete_account(
         # A build holds the Account FOR KEY SHARE, so it committed before
         # the Account lock above; its email is deleted with the rest.
         delete_exports_for(locked.pk)
+        _delete_organizer_invites(locked, addresses)
         _delete_queued_emails(addresses)
         _delete_log_entries(locked, log_targets)
 
@@ -297,6 +307,9 @@ def _remove_memberships(
             .exclude(account_id=account.pk)
             .exists()
         )
+        if alone:
+            # The statement may describe the person, like the name.
+            blank_statements(organizer.pk)
         if alone and organizer.name != REMOVED_ORGANIZER_NAME:
             organizer.name = REMOVED_ORGANIZER_NAME
             organizer.save(update_fields=["name"])
@@ -321,6 +334,16 @@ def _delete_oauth_rows(account: "_User") -> None:
         get_device_grant_model(),
     ):
         model.objects.filter(user_id=account.pk).delete()
+
+
+def _delete_organizer_invites(account: "_User", addresses: set[str]) -> None:
+    """Delete the invites to any of ``addresses`` and those the Account sent.
+
+    An invite's address is stored normalized, as an Account email is.
+    """
+    OrganizerInvite.objects.filter(
+        Q(email__in=sorted(addresses)) | Q(invited_by_id=account.pk)
+    ).delete()
 
 
 def _delete_queued_emails(addresses: set[str]) -> None:
