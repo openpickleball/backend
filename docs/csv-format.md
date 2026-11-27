@@ -61,6 +61,7 @@ Every file has a header row and then one row per match. The columns come in this
 
 - Enter the date played as `YYYY-MM-DD`, such as `2026-04-11`. Other forms, such as `04/11/2026` or `20260411`, fail with `invalid_date`.
 - A date in the future fails with `future_date`.
+- The upload (#71) also fails a row dated before its Event's start date or after its end date with `outside_event_dates`.
 
 ## Scores
 
@@ -142,6 +143,7 @@ Each example starts from a valid doubles row and changes one thing.
 | A game skipped | Game 2 empty, game 3 filled | `missing_game` | game 2's columns |
 | No games | Every score cell empty | `no_games` | the game columns |
 | Future date | A date after today | `future_date` | `date` |
+| Date outside the Event | A date after the Event's last day | `outside_event_dates` | `date` |
 | Wrong date form | `2026/04/11` or `2026-02-30` | `invalid_date` | `date` |
 | Wrong team size for `matchType` | `D` with one player a side, or `S` with two | `team_size` | the ID columns of that team that hold a player (both of the team's ID columns when it has none) |
 | Event label too long | More than 200 characters | `too_long` | `event` |
