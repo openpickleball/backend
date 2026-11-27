@@ -664,7 +664,8 @@ INSTALLED_APPS = [
     "anymail",
     # Account sign-up, login, email verification, and password reset,
     # served only as JSON at /_allauth/ (allauth.headless), two-factor
-    # authentication with TOTP and recovery codes (allauth.mfa, ADR 0043),
+    # authentication with TOTP, recovery codes, and passkeys (allauth.mfa,
+    # ADR 0043, ADR 0056),
     # and the list of a player's sessions (allauth.usersessions, #100,
     # ADR 0047). No social login: see the Accounts section below.
     "allauth",
@@ -1409,6 +1410,10 @@ MFA_PASSKEY_LOGIN_ENABLED = True
 MFA_PASSKEY_SIGNUP_ENABLED = False
 # The browser must be on an https origin (or http://localhost), always.
 MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN = False
+# Passkey login takes no secret that could be guessed per Account, so
+# allauth limits it per client IP only (its default, set here so it is
+# seen): 10 a minute from one IP (OPEN's client IP, CLIENT_IP_HEADER).
+MFA_RATE_LIMITS = {"webauthn_login": "10/m/ip"}
 # The WebAuthn relying party ID: the registrable domain the PWA's origin
 # is under, so passkeys keep working if the PWA moves to another
 # subdomain and native apps can share them later (#185). OPEN's MFA
