@@ -220,7 +220,7 @@ Prices from DigitalOcean's pricing pages, checked 2026-11-27:
 
 The sites app is billed apart from the production app. It costs $0.00 while it stays within the free tier: up to 3 apps with only static sites per team, each with 1 GiB of outbound transfer a month, and $0.02 per GiB past it.
 
-There is no staging environment, so this is the whole hosting cost. Each $5 container includes 50 GiB of outbound transfer, pooled across the app, and more costs $0.02 per GiB. Running beat inside the worker (`celery worker -B`) would save $5 a month, but decision Q16 in #1 keeps beat a separate process.
+There is no staging environment, so the two apps together are the whole hosting cost: $45.15 a month while the sites app stays free. Each $5 container includes 50 GiB of outbound transfer, pooled across the app, and more costs $0.02 per GiB. Running beat inside the worker (`celery worker -B`) would save $5 a month, but decision Q16 in #1 keeps beat a separate process.
 
 #### Sites app
 
@@ -234,7 +234,7 @@ There is no staging environment, so this is the whole hosting cost. Each $5 cont
 
 It holds only static sites, so it stays on the free tier (see [Monthly cost](#monthly-cost)). It must never hold a service, worker, job, or database. The partner docs (`openpickleball/partner-docs`, `partner.openpb.org`) join as a component named `partner` once #184 creates the repository. The status page stays on GitHub Pages, outside DigitalOcean (#139).
 
-Each source is `git`, not `github`: the repositories are public, so App Platform needs no access to the organization, and a merge in either repository never deploys anything. A site change goes live with a deploy of the sites app. Each deploy builds both repositories at the head of `main`, so a `main` that fails its build fails the whole deploy. The sites keep loading while the production app is stopped.
+Each source is `git`, not `github`: the repositories are public, so App Platform needs no access to the organization, and a merge in either repository never deploys the sites app. A site change goes live with a deploy of the sites app. Each deploy builds both repositories at the head of `main`, so a `main` that fails its build fails the whole deploy. The sites keep loading while the production app is stopped.
 
 The public site's build copies `/.well-known/funding-manifest-urls` from the frontend repository's root into its output. Files outside `source_dir` are there during the build, not at run time. Each site answers a missing path with its own `404.html`.
 
@@ -244,8 +244,11 @@ Static sites cannot set response headers, in this app or in the production app's
 
 Check on the first deploy:
 
-- Which Node version the public site's build uses. Without `engines.node` in `site/package.json`, the buildpack uses its default, not the repository's `.nvmrc`. The fix belongs in the frontend.
-- That the Python buildpack builds the developer site with uv (it needs `pyproject.toml`, `uv.lock`, and `.python-version`, and no other package manager file). DigitalOcean does not document this for a static site. If it fails, build the site in GitHub Actions and deploy the output instead, and record which on #304.
+- No rule routes the app's `ondigitalocean.app` host, so the redirect, well-known file, and 404 checks below can run only once DNS points at the app. Lower the TTLs first, as above.
+- Which Node version the public site's build uses. Without `engines.node` in `site/package.json`, the buildpack uses its default (22.x at the time of writing), not the repository's `.nvmrc`. The fix belongs in the frontend.
+- Which pnpm version it uses: the one in `packageManager`, through Corepack.
+- That the devDependencies (Tailwind among them) are still installed when `build_command` runs.
+- That the Python buildpack builds the developer site with uv (it needs `pyproject.toml`, `uv.lock`, and `.python-version`, and no other package manager file). DigitalOcean does not document this for a static site. `zensical` must also be on `PATH` when `build_command` runs; the developers repository's CI runs `uv run zensical build --strict`. If either fails, build the site in GitHub Actions and deploy the output instead, and record which on #304.
 - That `www.openpb.org/some/path` redirects to `openpb.org/some/path`, keeping the path.
 - That `openpb.org/.well-known/funding-manifest-urls` serves the copied file.
 - That a missing path on each host gets that site's 404 page.

@@ -130,9 +130,12 @@ def test_each_host_goes_to_its_site_and_www_redirects() -> None:
 
     assert len(by_host) == len(_rules())
     assert set(by_host) == {d["domain"] for d in _spec()["domains"]}
+    # Exact keys, so an added redirect or cors on any rule fails.
+    assert set(by_host[APEX]) == {"match", "component"}
+    assert set(by_host[DEV]) == {"match", "component"}
+    assert set(by_host[WWW]) == {"match", "redirect"}
     assert by_host[APEX]["component"] == {"name": "site"}
     assert by_host[DEV]["component"] == {"name": "developers"}
-    assert "component" not in by_host[WWW]
     assert by_host[WWW]["redirect"] == {
         "authority": APEX,
         "scheme": "https",
