@@ -14,8 +14,9 @@ counts only.
 
 Each run that writes checks in to the ``recompute-ratings`` cron monitor
 (#65), so a run that fails or passes the monitor's maximum runtime shows
-as a failed monitor. A dry run, and a run refused for options only a dry
-run takes, do not check in. With Sentry off the check-ins go nowhere.
+as a failed monitor. A dry run, and a run refused for --format or
+--spec-version, do not check in. A run refused later for its --as-of
+checks in as an error. With Sentry off the check-ins go nowhere.
 """
 
 from datetime import date

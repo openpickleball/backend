@@ -231,6 +231,7 @@ def test_scrub_text_replaces_ipv6_and_quoted_values(text: str) -> None:
         f"password: {TOKEN}",
         f"{{'password': 'two {TOKEN}'}}",
         f"::ffff:{IP}",
+        f"john.smith@{IP}",
         f"[type=model_type, input_value={{'display_name': 'Robin {TOKEN}'}}, "
         "input_type=dict]",
         f"input_value=['Robin', '{TOKEN}', 3], input_type=list]",
@@ -722,10 +723,11 @@ def test_a_replay_queued_after_a_match_change_does_not_check_in(
 def test_dry_runs_and_dry_run_options_do_not_check_in(
     sentry_on: None, args: list[str]
 ) -> None:
-    try:
+    if "--dry-run" in args:
         call_command("recompute_ratings", *args, stdout=io.StringIO())
-    except CommandError:
-        assert "--dry-run" not in args
+    else:
+        with pytest.raises(CommandError):
+            call_command("recompute_ratings", *args, stdout=io.StringIO())
     sentry_sdk.flush()
 
     assert _check_ins() == []

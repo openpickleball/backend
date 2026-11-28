@@ -158,8 +158,10 @@ def scrub_text(text: str) -> str:
     """Replace emails, tokens, named secrets, and IP addresses in text."""
     if len(text) > _MAX_TEXT:
         text = text[:_MAX_TEXT] + " [truncated]"
-    text = _IPV4.sub(FILTERED, text)
+    # Emails first: an address on an IP host goes whole. IPv4 before
+    # IPv6, so a mapped address loses every octet.
     text = _EMAIL.sub(FILTERED, text)
+    text = _IPV4.sub(FILTERED, text)
     text = _BEARER.sub(lambda match: f"{match.group(1)} {FILTERED}", text)
     text = _NAMED_SECRET.sub(lambda match: f"{match.group(1)}={FILTERED}", text)
     text = _COLON_SECRET.sub(lambda match: f"{match.group(1)}{FILTERED}", text)
