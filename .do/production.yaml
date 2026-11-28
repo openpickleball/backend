@@ -117,8 +117,7 @@ ingress:
         preserve_path_prefix: true
 
 # Every service, worker, and job runs the same image. The tag is a
-# placeholder: #63
-# deploys by digest instead.
+# placeholder: #63 deploys by digest instead.
 services:
   - name: web
     image:
