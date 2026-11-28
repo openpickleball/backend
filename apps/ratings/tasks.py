@@ -6,6 +6,8 @@ them.
 """
 
 import logging
+from contextlib import AbstractContextManager, nullcontext
+from typing import Any
 
 from celery import Task, shared_task
 from django.db import transaction
@@ -101,14 +103,13 @@ def _replay_ratings(self: "Task[..., str]") -> str:
     the requests stay pending, and the next request or the beat entry
     runs it again.
 
-    Every run checks in to the ``replay-ratings`` cron monitor (#65): a
-    run that fails or passes the monitor's maximum runtime, or a beat
-    entry that stops running, shows as a failed monitor. With Sentry off
-    the check-ins go nowhere.
+    A run that beat sent checks in to the ``replay-ratings`` cron monitor
+    (#65): a run that fails or passes the monitor's maximum runtime, or a
+    beat entry that stops running, shows as a failed monitor. A run queued
+    after a match change does not check in, so it cannot hide a stopped
+    beat. With Sentry off the check-ins go nowhere.
     """
-    with monitor(
-        monitor_slug=REPLAY_MONITOR_SLUG, monitor_config=REPLAY_MONITOR_CONFIG
-    ):
+    with _replay_monitor(self.request):
         try:
             return str(services.replay_ratings())
         except Exception as exc:
@@ -117,6 +118,23 @@ def _replay_ratings(self: "Task[..., str]") -> str:
             error_class = type(exc).__name__
             logger.error("Replay task failed (%s).", error_class)
             raise services.ReplayFailed(error_class) from None
+
+
+def _replay_monitor(request: Any) -> AbstractContextManager[None]:
+    """The cron monitor check-in, for a run that the beat entry sent.
+
+    django-celery-beat names the entry in the ``periodic_task_name``
+    header of every task it sends.
+    """
+    headers = getattr(request, "headers", None) or {}
+    name = headers.get("periodic_task_name") or getattr(
+        request, "periodic_task_name", None
+    )
+    if name != REPLAY_MONITOR_SLUG:
+        return nullcontext()
+    return monitor(
+        monitor_slug=REPLAY_MONITOR_SLUG, monitor_config=REPLAY_MONITOR_CONFIG
+    )
 
 
 # Named explicitly, like the live update task. A full replay can take a

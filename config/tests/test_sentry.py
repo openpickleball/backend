@@ -21,7 +21,7 @@ from celery import beat
 from celery.schedules import crontab
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.test import Client, override_settings
 from sentry_sdk.envelope import Envelope
 from sentry_sdk.transport import Transport
@@ -36,6 +36,9 @@ from config.tests.test_settings import BASE_DIR, LOCAL_DEBUG, PRODUCTION_LIKE, _
 
 # Made-up values that must never reach Sentry.
 EMAIL = "robin.quillfeather@example.org"
+NAME = "Robin+Quillfeather"
+AGENT = "MadeUpAgent/9.9 (zq-device)"
+FILTERED = "[Filtered]"
 TOKEN = "tok-q7z3x9-made-up"
 IP = "203.0.113.77"
 DSN = "https://publickey7q@sentry.example.invalid/42"
@@ -202,6 +205,32 @@ def test_scrub_text_replaces_emails_tokens_secrets_and_ips() -> None:
     assert scrubbed.startswith("login [Filtered] from [Filtered] with Bearer")
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "from 2001:db8::7 now",
+        "from 2001:db8:0:1:2:3:4:7 now",
+        "input_value='Robin Quillfeather', input_type=str",
+        'DETAIL:  Key ("display_name")=(Robin Quillfeather) already exists.',
+        "violates check constraint\nDETAIL:  Failing row contains (7, Robin Quillfeather).",
+    ],
+)
+def test_scrub_text_replaces_ipv6_and_quoted_values(text: str) -> None:
+    scrubbed = open_sentry.scrub_text(text)
+
+    assert "2001:db8" not in scrubbed
+    assert "Quillfeather" not in scrubbed
+    assert FILTERED in scrubbed
+
+
+def test_scrub_text_replaces_colon_secrets() -> None:
+    assert TOKEN not in open_sentry.scrub_text(f"password: {TOKEN}")
+
+
+def test_scrub_text_keeps_times() -> None:
+    assert open_sentry.scrub_text("at 12:30:45 UTC") == "at 12:30:45 UTC"
+
+
 def test_before_send_scrubs_an_error_event() -> None:
     event: dict[str, Any] = {
         "level": "error",
@@ -304,6 +333,11 @@ def test_before_send_transaction_scrubs_spans() -> None:
                 "description": 'SELECT 1 FROM "accounts_user" WHERE "email" = %s',
                 "data": {"db.system": "postgresql"},
             },
+            {
+                "op": "template.render",
+                "description": "admin/index.html",
+                "data": {"context": {"name": "Robin Quillfeather"}},
+            },
         ],
     }
 
@@ -312,7 +346,8 @@ def test_before_send_transaction_scrubs_spans() -> None:
     )
 
     _assert_clean(_dumped(scrubbed))
-    redis, cache, http, sql = scrubbed["spans"]
+    redis, cache, http, sql, template = scrubbed["spans"]
+    assert template["data"] == {}
     assert redis["description"] == "GET [Filtered]"
     assert redis["data"] == {"db.system": "redis"}
     assert cache["description"] == "cache.get"
@@ -339,7 +374,8 @@ def test_before_send_log_scrubs_the_record() -> None:
 
     _assert_clean(_dumped(scrubbed))
     assert scrubbed["attributes"]["logger.name"] == "apps.accounts"
-    assert scrubbed["attributes"]["session_key"] == "[Filtered]"
+    assert "session_key" not in scrubbed["attributes"]
+    assert "sentry.message.parameter.0" not in scrubbed["attributes"]
 
 
 # A real client, with a transport that keeps envelopes in memory.
@@ -439,6 +475,16 @@ def test_without_the_middleware_the_same_body_is_an_error_event(
     _assert_clean(_everything_sent())
 
 
+def test_the_trace_header_keeps_the_public_key(sentry_on: None) -> None:
+    with sentry_sdk.start_transaction(name="made-up", op="test"):
+        sentry_sdk.capture_message("made-up message")
+    sentry_sdk.flush()
+
+    headers = [envelope.headers.get("trace", {}) for envelope in _Captured.envelopes]
+    assert headers
+    assert all(header.get("public_key") == "publickey7q" for header in headers)
+
+
 @pytest.mark.django_db
 def test_sql_spans_and_breadcrumbs_carry_no_parameters(sentry_on: None) -> None:
     with sentry_sdk.start_transaction(name="made-up", op="test"):
@@ -471,9 +517,42 @@ def test_disallowed_host_errors_are_not_sent(sentry_on: None) -> None:
 
     assert response.status_code == 400
     assert _items("event") == []
+    assert _items("log") == []
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("path", ["/api/v1/players/search", "/api/v1/no-such-path"])
+def test_requests_send_no_query_user_agent_or_headers(
+    sentry_on: None, path: str
+) -> None:
+    # A signed-out search (401) and an unknown path (404): Django logs
+    # both with the request attached, and every log goes to Sentry here.
+    response = Client(raise_request_exception=False).get(
+        f"{path}?q={NAME}",
+        headers={
+            "User-Agent": AGENT,
+            "X-Session-Token": TOKEN,
+            "X-Email-Verification-Key": TOKEN,
+            "X-Password-Reset-Key": TOKEN,
+            "X-Device-Token": TOKEN,
+            "Do-Connecting-Ip": IP,
+            "Cookie": f"sessionid={TOKEN}",
+        },
+    )
+    sentry_sdk.get_client().flush()
+
+    assert response.status_code >= 400
+    assert _items("log"), "Django's request log reaches Sentry as a log"
+    sent = _everything_sent()
+    _assert_clean(sent)
+    for secret in (NAME, "Quillfeather", AGENT, "zq-device"):
+        assert secret not in sent
 
 
 # Cron monitors.
+
+# The header django-celery-beat puts on every task it sends.
+BEAT_HEADERS = {"periodic_task_name": "replay-ratings"}
 
 
 def _check_ins() -> list[dict[str, Any]]:
@@ -552,7 +631,7 @@ def test_the_replay_entry_is_left_to_the_task(sentry_on: None) -> None:
 
 @pytest.mark.django_db
 def test_the_replay_task_checks_in_with_a_maximum_runtime(sentry_on: None) -> None:
-    replay_ratings.apply().get()
+    replay_ratings.apply(headers=BEAT_HEADERS).get()
     sentry_sdk.flush()
 
     check_ins = _check_ins()
@@ -571,11 +650,30 @@ def test_a_failed_replay_checks_in_as_an_error(
     monkeypatch.setattr(services, "replay_ratings", fail)
 
     with pytest.raises(RuntimeError):
-        replay_ratings.apply().get()
+        replay_ratings.apply(headers=BEAT_HEADERS).get()
     sentry_sdk.flush()
 
     assert [c["status"] for c in _check_ins()] == ["in_progress", "error"]
     _assert_clean(_everything_sent())
+
+
+@pytest.mark.django_db
+def test_a_replay_queued_after_a_match_change_does_not_check_in(
+    sentry_on: None,
+) -> None:
+    replay_ratings.apply().get()
+    sentry_sdk.flush()
+
+    assert _check_ins() == []
+
+
+@pytest.mark.django_db
+def test_a_refused_recompute_checks_in_as_ok(sentry_on: None) -> None:
+    with pytest.raises(CommandError):
+        call_command("recompute_ratings", "--format", "singles", stdout=io.StringIO())
+    sentry_sdk.flush()
+
+    assert [c["status"] for c in _check_ins()] == ["in_progress", "ok"]
 
 
 @pytest.mark.django_db

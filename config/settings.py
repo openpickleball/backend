@@ -1861,7 +1861,8 @@ SENTRY_ENVIRONMENT = _sentry_name(
     "development" if DEBUG else "production",
 )
 # The deployed commit or tag. The production image sets it from its build
-# argument (Dockerfile). Empty means events carry no release.
+# argument (Dockerfile), which the image build (#63) is to pass. Empty
+# means events carry no release.
 SENTRY_RELEASE = _sentry_name("SENTRY_RELEASE", _SENTRY_RELEASE, "") or None
 # The share of requests and tasks traced. Default 0.05.
 SENTRY_TRACES_SAMPLE_RATE = _sample_rate("SENTRY_TRACES_SAMPLE_RATE", 0.05)

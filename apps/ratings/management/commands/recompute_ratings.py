@@ -14,14 +14,15 @@ counts only.
 
 Each run checks in to the ``recompute-ratings`` cron monitor (#65), so a
 run that fails or passes the monitor's maximum runtime shows as a failed
-monitor. With Sentry off the check-ins go nowhere.
+monitor. A refused run (bad options) checks in as ok: it wrote nothing. With Sentry off the check-ins go nowhere.
 """
 
+import time
 from datetime import date
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from sentry_sdk.crons import monitor
+from sentry_sdk.crons import MonitorStatus, capture_checkin
 
 from apps.matches.models import RatingFormat
 from apps.ratings.services import (
@@ -76,25 +77,40 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         as_of = None if options["as_of"] is None else _date(options["as_of"])
-        with monitor(
+        # Checked in by hand, not with sentry_sdk's monitor(): a refused
+        # run (bad options) wrote nothing and is not a failed replay.
+        check_in_id = capture_checkin(
             monitor_slug=RECOMPUTE_MONITOR_SLUG,
             monitor_config=RECOMPUTE_MONITOR_CONFIG,
-        ):
-            try:
-                result = recompute_ratings(
-                    as_of=as_of,
-                    rating_format=options["rating_format"],
-                    spec_version=options["spec_version"],
-                    dry_run=options["dry_run"],
-                )
-            except RecomputeRefused as exc:
-                raise CommandError(str(exc)) from None
-            except Exception as exc:
-                # The service logged the class; never print the error's
-                # text, which can quote values.
-                raise CommandError(
-                    f"The recompute failed ({type(exc).__name__}). Nothing was written."
-                ) from None
+            status=MonitorStatus.IN_PROGRESS,
+        )
+        started = time.monotonic()
+        status = MonitorStatus.ERROR
+        try:
+            result = recompute_ratings(
+                as_of=as_of,
+                rating_format=options["rating_format"],
+                spec_version=options["spec_version"],
+                dry_run=options["dry_run"],
+            )
+            status = MonitorStatus.OK
+        except RecomputeRefused as exc:
+            status = MonitorStatus.OK
+            raise CommandError(str(exc)) from None
+        except Exception as exc:
+            # The service logged the class; never print the error's text,
+            # which can quote values.
+            raise CommandError(
+                f"The recompute failed ({type(exc).__name__}). Nothing was written."
+            ) from None
+        finally:
+            capture_checkin(
+                monitor_slug=RECOMPUTE_MONITOR_SLUG,
+                monitor_config=RECOMPUTE_MONITOR_CONFIG,
+                check_in_id=check_in_id,
+                status=status,
+                duration=time.monotonic() - started,
+            )
         self._report(result, int(options["verbosity"]))
 
     def _report(self, result: RecomputeResult, verbosity: int) -> None:

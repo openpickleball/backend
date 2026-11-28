@@ -34,9 +34,10 @@ from typing import Any, Final, cast
 from urllib.parse import urlsplit
 
 import sentry_sdk
+from django.http import HttpRequest
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
-from sentry_sdk.integrations.logging import ignore_logger
+from sentry_sdk.integrations.logging import ignore_logger, ignore_logger_for_sentry_logs
 from sentry_sdk.scrubber import EventScrubber
 from sentry_sdk.types import Event, Hint, Log, MonitorConfig
 
@@ -48,7 +49,9 @@ FILTERED: Final = "[Filtered]"
 # the task ends, so a job that stops running, never reaches a worker, or
 # fails shows as a failed monitor. The replay entry is left out of the
 # automatic monitors and checks in from the task itself, so its monitor
-# can carry a maximum runtime.
+# can carry a maximum runtime. Only the runs beat sent check in: the task
+# is also queued after match changes, and those runs must not hide a beat
+# that stopped.
 REPLAY_MONITOR_SLUG: Final = "replay-ratings"
 # The beat entry's schedule (CELERY_BEAT_SCHEDULE["replay-ratings"], a
 # test keeps them equal). A run missed for 15 minutes is dropped, so the
@@ -61,12 +64,13 @@ REPLAY_MONITOR_CONFIG: Final[MonitorConfig] = {
 }
 # recompute_ratings (#48, ADR 0058) is run by hand, after an engine or
 # spec change, so it has no real schedule. Sentry needs one, so it is a
-# year: the monitor reports a run that fails or passes its maximum
-# runtime, and a year with no run at all as missed.
+# year, with a day's margin: the monitor reports a run that fails or
+# passes its maximum runtime, and a year with no run at all as missed.
 RECOMPUTE_MONITOR_SLUG: Final = "recompute-ratings"
 RECOMPUTE_MONITOR_CONFIG: Final[MonitorConfig] = {
     "schedule": {"type": "interval", "value": 1, "unit": "year"},
     "timezone": "UTC",
+    "checkin_margin": 1440,
     "max_runtime": 60,
 }
 
@@ -78,6 +82,16 @@ _KEPT_HEADERS: Final = frozenset(
     {"accept", "accept-encoding", "content-length", "content-type", "host", "origin"}
 )
 _KEPT_ENV: Final = frozenset({"SERVER_NAME", "SERVER_PORT"})
+# Log record attributes kept: the SDK's own, the logger, the code
+# location, and the server.
+_KEPT_LOG_ATTRIBUTE_PREFIXES: Final = (
+    "sentry.",
+    "logger.",
+    "code.",
+    "server.",
+    "thread.",
+    "process.",
+)
 
 # Keys whose value is always dropped, compared lowercased. A key that
 # contains one of these words, or ends in "key", is filtered.
@@ -100,7 +114,12 @@ _SENSITIVE_KEY_WORDS: Final = (
     "connecting-ip",
     "real-ip",
     "dsn",
+    "user_agent",
+    "user-agent",
 )
+# Sentry's own keys that look sensitive but are not: the DSN's public key
+# in the trace's dynamic sampling context, which Sentry needs.
+_KEPT_KEYS: Final = frozenset({"public_key"})
 _SENSITIVE_KEYS: Final = frozenset({"code", "keys", "args", "kwargs", "user"})
 
 _EMAIL: Final = re.compile(
@@ -111,7 +130,20 @@ _NAMED_SECRET: Final = re.compile(
     r"(?i)\b([\w.-]*(?:password|passwd|secret|token|key|code|session|csrf|"
     r"signature|email|dsn)[\w.-]*)=([^&\s;,'\"]+)"
 )
+_COLON_SECRET: Final = re.compile(
+    r"(?i)\b([\w.-]*(?:password|passwd|secret|token)[\w.-]*[\"']?:\s*)(\S+)"
+)
+# Postgres adds the failing row or key values after DETAIL.
+_DETAIL: Final = re.compile(r"DETAIL:.*", re.DOTALL)
 _IPV4: Final = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+# Candidate IPv6 addresses: hex groups and colons. Only a run with "::"
+# or at least five colons counts, so a time such as 12:30:45 is kept.
+_IPV6: Final = re.compile(
+    r"(?<![\w:])[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![\w:])"
+)
+# Values pydantic and Postgres quote in their error messages.
+_INPUT_VALUE: Final = re.compile(r"input_value=(?:'[^']*'|\"[^\"]*\"|[^,\s\]]+)")
+_KEY_DETAIL: Final = re.compile(r"(Key \([^)]*\))=\([^)]*\)")
 
 
 def scrub_text(text: str) -> str:
@@ -119,11 +151,23 @@ def scrub_text(text: str) -> str:
     text = _EMAIL.sub(FILTERED, text)
     text = _BEARER.sub(lambda match: f"{match.group(1)} {FILTERED}", text)
     text = _NAMED_SECRET.sub(lambda match: f"{match.group(1)}={FILTERED}", text)
+    text = _COLON_SECRET.sub(lambda match: f"{match.group(1)}{FILTERED}", text)
+    text = _DETAIL.sub(f"DETAIL: {FILTERED}", text)
+    text = _INPUT_VALUE.sub(f"input_value={FILTERED}", text)
+    text = _KEY_DETAIL.sub(lambda match: f"{match.group(1)}=({FILTERED})", text)
+    text = _IPV6.sub(_ipv6, text)
     return _IPV4.sub(FILTERED, text)
+
+
+def _ipv6(match: re.Match[str]) -> str:
+    found = match.group(0)
+    return FILTERED if "::" in found or found.count(":") >= 5 else found
 
 
 def _is_sensitive_key(key: str) -> bool:
     lowered = key.lower()
+    if lowered in _KEPT_KEYS:
+        return False
     return (
         lowered in _SENSITIVE_KEYS
         or lowered.endswith("key")
@@ -148,20 +192,28 @@ def _scrub(value: Any) -> Any:
         return [_scrub(item) for item in value]
     if value is None or isinstance(value, bool | int | float):
         return value
-    # Any other object (a request on a log record, for example) is sent as
-    # its text, so clean that text.
-    return scrub_text(repr(value))
+    # Any other object is sent as its type only. Its text can hold
+    # anything: a request's repr, for example, holds its query string.
+    if isinstance(value, HttpRequest):
+        return f"<{type(value).__name__}: {value.method}>"
+    return f"<{type(value).__name__}>"
 
 
 def _without_query(url: str) -> str:
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return FILTERED
     return f"{parts.scheme}://{parts.netloc}{parts.path}" if parts.scheme else url
 
 
 def _origin(url: str) -> str:
-    parts = urlsplit(url)
-    host = parts.hostname or ""
-    port = f":{parts.port}" if parts.port else ""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:
+        return FILTERED
     return f"{parts.scheme}://{host}{port}" if parts.scheme else FILTERED
 
 
@@ -205,6 +257,10 @@ def _scrub_span(span: dict[str, Any]) -> dict[str, Any]:
                 for key, value in data.items()
                 if not str(key).startswith(("cache.", "db.redis.", "redis."))
             }
+    elif op.startswith("template"):
+        if isinstance(data, dict):
+            # A rendered template's whole context.
+            data.pop("context", None)
     elif op.startswith("http.client"):
         if isinstance(description, str):
             method, _, url = description.partition(" ")
@@ -292,16 +348,16 @@ def before_send_log(log: Log, hint: Hint) -> Log | None:
         raw["body"] = scrub_text(raw["body"])
     attributes = raw.get("attributes")
     if isinstance(attributes, Mapping):
-        # The body is the formatted message, so the separate parameters go:
-        # a parameter alone cannot be told apart from a secret.
+        # Only the SDK's own attributes and the logger's place in the code
+        # are kept. A record's extras (Django passes the request) and the
+        # request's attributes (the user agent, the URL) all go. The body
+        # is the formatted message, so the separate parameters go too: a
+        # parameter alone cannot be told apart from a secret.
         raw["attributes"] = {
-            key: (
-                FILTERED
-                if _is_sensitive_key(str(key)) and not str(key).startswith("sentry.")
-                else _scrub(value)
-            )
+            key: _scrub(value)
             for key, value in attributes.items()
-            if not str(key).startswith("sentry.message.parameter")
+            if str(key).startswith(_KEPT_LOG_ATTRIBUTE_PREFIXES)
+            and not str(key).startswith("sentry.message.parameter")
         }
     return cast(Log, raw)
 
@@ -344,3 +400,4 @@ def init_sentry(
     # Django logs every request for a host outside ALLOWED_HOSTS at error
     # level. Scanners send these all day; they are not OPEN's errors.
     ignore_logger("django.security.DisallowedHost")
+    ignore_logger_for_sentry_logs("django.security.DisallowedHost")
