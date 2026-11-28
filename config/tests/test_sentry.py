@@ -12,7 +12,9 @@ import json
 import logging
 import subprocess
 import sys
+import time
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any, ClassVar, cast
 
 import pytest
@@ -28,7 +30,7 @@ from sentry_sdk.transport import Transport
 from sentry_sdk.types import Event, Log
 
 from apps.accounts.tests.headless import APP, BROWSER
-from apps.ratings import services
+from apps.ratings import services, tasks
 from apps.ratings.tasks import replay_ratings
 from config import sentry as open_sentry
 from config.celery import app as celery_app
@@ -223,8 +225,36 @@ def test_scrub_text_replaces_ipv6_and_quoted_values(text: str) -> None:
     assert FILTERED in scrubbed
 
 
-def test_scrub_text_replaces_colon_secrets() -> None:
-    assert TOKEN not in open_sentry.scrub_text(f"password: {TOKEN}")
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"password: {TOKEN}",
+        f"{{'password': 'two {TOKEN}'}}",
+        f"::ffff:{IP}",
+        f"[type=model_type, input_value={{'display_name': 'Robin {TOKEN}'}}, "
+        "input_type=dict]",
+        f"input_value=['Robin', '{TOKEN}', 3], input_type=list]",
+    ],
+)
+def test_scrub_text_replaces_whole_values(text: str) -> None:
+    scrubbed = open_sentry.scrub_text(text)
+
+    _assert_clean(scrubbed)
+    assert "113.77" not in scrubbed
+
+
+def test_scrub_text_keeps_exception_names() -> None:
+    text = "InvalidTokenError: invalid client credentials"
+
+    assert open_sentry.scrub_text(text) == text
+
+
+@pytest.mark.parametrize("unit", ["a-", "a.", "a@", "1:"])
+def test_scrub_text_is_fast_on_long_text(unit: str) -> None:
+    started = time.monotonic()
+    open_sentry.scrub_text(unit * 50_000)
+
+    assert time.monotonic() - started < 1
 
 
 def test_scrub_text_keeps_times() -> None:
@@ -658,6 +688,19 @@ def test_a_failed_replay_checks_in_as_an_error(
 
 
 @pytest.mark.django_db
+def test_a_worker_run_from_beat_checks_in(sentry_on: None) -> None:
+    # A worker gives custom message headers to the task as request
+    # attributes, not in request.headers as an eager run does.
+    request = SimpleNamespace(headers=None, periodic_task_name="replay-ratings")
+
+    with tasks._replay_monitor(request):
+        pass
+    sentry_sdk.flush()
+
+    assert [c["status"] for c in _check_ins()] == ["in_progress", "ok"]
+
+
+@pytest.mark.django_db
 def test_a_replay_queued_after_a_match_change_does_not_check_in(
     sentry_on: None,
 ) -> None:
@@ -668,17 +711,48 @@ def test_a_replay_queued_after_a_match_change_does_not_check_in(
 
 
 @pytest.mark.django_db
-def test_a_refused_recompute_checks_in_as_ok(sentry_on: None) -> None:
-    with pytest.raises(CommandError):
-        call_command("recompute_ratings", "--format", "singles", stdout=io.StringIO())
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--format", "singles"],
+        ["--spec-version", "0.0.1"],
+        ["--dry-run"],
+    ],
+)
+def test_dry_runs_and_dry_run_options_do_not_check_in(
+    sentry_on: None, args: list[str]
+) -> None:
+    try:
+        call_command("recompute_ratings", *args, stdout=io.StringIO())
+    except CommandError:
+        assert "--dry-run" not in args
     sentry_sdk.flush()
 
-    assert [c["status"] for c in _check_ins()] == ["in_progress", "ok"]
+    assert _check_ins() == []
+
+
+@pytest.mark.django_db
+def test_a_failed_recompute_checks_in_as_an_error(
+    sentry_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apps.ratings.management.commands import recompute_ratings as command
+
+    def fail(**_: Any) -> None:
+        raise RuntimeError(f"made-up failure for {EMAIL}")
+
+    monkeypatch.setattr(command, "recompute_ratings", fail)
+
+    with pytest.raises(CommandError):
+        call_command("recompute_ratings", stdout=io.StringIO())
+    sentry_sdk.flush()
+
+    assert [c["status"] for c in _check_ins()] == ["in_progress", "error"]
+    _assert_clean(_everything_sent())
 
 
 @pytest.mark.django_db
 def test_recompute_ratings_checks_in(sentry_on: None) -> None:
-    call_command("recompute_ratings", "--dry-run", stdout=io.StringIO())
+    call_command("recompute_ratings", stdout=io.StringIO())
     sentry_sdk.flush()
 
     check_ins = _check_ins()

@@ -12,17 +12,18 @@ after the default replay date, or a ``--spec-version`` other than
 touching the stored ratings. The output names no player: it holds
 counts only.
 
-Each run checks in to the ``recompute-ratings`` cron monitor (#65), so a
-run that fails or passes the monitor's maximum runtime shows as a failed
-monitor. A refused run (bad options) checks in as ok: it wrote nothing. With Sentry off the check-ins go nowhere.
+Each run that writes checks in to the ``recompute-ratings`` cron monitor
+(#65), so a run that fails or passes the monitor's maximum runtime shows
+as a failed monitor. A dry run, and a run refused for options only a dry
+run takes, do not check in. With Sentry off the check-ins go nowhere.
 """
 
-import time
 from datetime import date
 from typing import Any
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from sentry_sdk.crons import MonitorStatus, capture_checkin
+from sentry_sdk.crons import monitor
 
 from apps.matches.models import RatingFormat
 from apps.ratings.services import (
@@ -77,25 +78,25 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         as_of = None if options["as_of"] is None else _date(options["as_of"])
-        # Checked in by hand, not with sentry_sdk's monitor(): a refused
-        # run (bad options) wrote nothing and is not a failed replay.
-        check_in_id = capture_checkin(
-            monitor_slug=RECOMPUTE_MONITOR_SLUG,
-            monitor_config=RECOMPUTE_MONITOR_CONFIG,
-            status=MonitorStatus.IN_PROGRESS,
-        )
-        started = time.monotonic()
-        status = MonitorStatus.ERROR
+        if options["dry_run"]:
+            # A dry run writes nothing, so it does not check in: it must
+            # never mark the monitor ok after a failed recompute.
+            result = self._recompute(as_of, options)
+        else:
+            result = self._monitored(as_of, options)
+        self._report(result, int(options["verbosity"]))
+
+    def _recompute(
+        self, as_of: date | None, options: dict[str, Any]
+    ) -> RecomputeResult:
         try:
-            result = recompute_ratings(
+            return recompute_ratings(
                 as_of=as_of,
                 rating_format=options["rating_format"],
                 spec_version=options["spec_version"],
                 dry_run=options["dry_run"],
             )
-            status = MonitorStatus.OK
         except RecomputeRefused as exc:
-            status = MonitorStatus.OK
             raise CommandError(str(exc)) from None
         except Exception as exc:
             # The service logged the class; never print the error's text,
@@ -103,15 +104,27 @@ class Command(BaseCommand):
             raise CommandError(
                 f"The recompute failed ({type(exc).__name__}). Nothing was written."
             ) from None
-        finally:
-            capture_checkin(
-                monitor_slug=RECOMPUTE_MONITOR_SLUG,
-                monitor_config=RECOMPUTE_MONITOR_CONFIG,
-                check_in_id=check_in_id,
-                status=status,
-                duration=time.monotonic() - started,
-            )
-        self._report(result, int(options["verbosity"]))
+
+    def _monitored(
+        self, as_of: date | None, options: dict[str, Any]
+    ) -> RecomputeResult:
+        """Recompute, checking in to the cron monitor (#65).
+
+        Options only a dry run takes are refused before the check-in, so a
+        mistyped command never marks the monitor ok or failed. A refusal
+        the service makes later (an --as-of out of range) checks in as an
+        error, which never hides a failed run.
+        """
+        if options["rating_format"] is not None or (
+            options["spec_version"] is not None
+            and options["spec_version"] != settings.OPEN_RATING_SPEC_VERSION
+        ):
+            return self._recompute(as_of, options)
+        with monitor(
+            monitor_slug=RECOMPUTE_MONITOR_SLUG,
+            monitor_config=RECOMPUTE_MONITOR_CONFIG,
+        ):
+            return self._recompute(as_of, options)
 
     def _report(self, result: RecomputeResult, verbosity: int) -> None:
         heading = "Dry run, nothing written" if result.dry_run else "Recomputed"

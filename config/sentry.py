@@ -123,15 +123,17 @@ _KEPT_KEYS: Final = frozenset({"public_key"})
 _SENSITIVE_KEYS: Final = frozenset({"code", "keys", "args", "kwargs", "user"})
 
 _EMAIL: Final = re.compile(
-    r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
+    r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9-]{1,63}"
+    r"(?:\.[A-Za-z0-9-]{1,63}){1,8}"
 )
 _BEARER: Final = re.compile(r"(?i)\b(bearer|basic|token)\s+[A-Za-z0-9._~+/=-]+")
 _NAMED_SECRET: Final = re.compile(
-    r"(?i)\b([\w.-]*(?:password|passwd|secret|token|key|code|session|csrf|"
-    r"signature|email|dsn)[\w.-]*)=([^&\s;,'\"]+)"
+    r"(?i)\b([\w.-]{0,64}(?:password|passwd|secret|token|key|code|session|csrf|"
+    r"signature|email|dsn)[\w.-]{0,64})=([^&\s;,'\"]+)"
 )
 _COLON_SECRET: Final = re.compile(
-    r"(?i)\b([\w.-]*(?:password|passwd|secret|token)[\w.-]*[\"']?:\s*)(\S+)"
+    r"(?i)\b([\w.-]{0,64}(?:password|passwd|secret|token)[\w.-]{0,64}"
+    r"(?<!error)(?<!exception)(?<!warning)[\"']?:\s*)('[^']*'|\"[^\"]*\"|\S+)"
 )
 # Postgres adds the failing row or key values after DETAIL.
 _DETAIL: Final = re.compile(r"DETAIL:.*", re.DOTALL)
@@ -142,12 +144,21 @@ _IPV6: Final = re.compile(
     r"(?<![\w:])[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![\w:])"
 )
 # Values pydantic and Postgres quote in their error messages.
-_INPUT_VALUE: Final = re.compile(r"input_value=(?:'[^']*'|\"[^\"]*\"|[^,\s\]]+)")
+# pydantic's input_value runs to its ", input_type=" or the line's end,
+# so a dict or list value goes whole.
+_INPUT_VALUE: Final = re.compile(r"input_value=.*?(?=, input_type=|$)", re.MULTILINE)
 _KEY_DETAIL: Final = re.compile(r"(Key \([^)]*\))=\([^)]*\)")
 
 
+# Longer text is cut first, so scrubbing stays cheap on any input.
+_MAX_TEXT: Final = 16384
+
+
 def scrub_text(text: str) -> str:
-    """Replace emails, tokens, named secrets, and IPv4 addresses in text."""
+    """Replace emails, tokens, named secrets, and IP addresses in text."""
+    if len(text) > _MAX_TEXT:
+        text = text[:_MAX_TEXT] + " [truncated]"
+    text = _IPV4.sub(FILTERED, text)
     text = _EMAIL.sub(FILTERED, text)
     text = _BEARER.sub(lambda match: f"{match.group(1)} {FILTERED}", text)
     text = _NAMED_SECRET.sub(lambda match: f"{match.group(1)}={FILTERED}", text)
@@ -155,8 +166,7 @@ def scrub_text(text: str) -> str:
     text = _DETAIL.sub(f"DETAIL: {FILTERED}", text)
     text = _INPUT_VALUE.sub(f"input_value={FILTERED}", text)
     text = _KEY_DETAIL.sub(lambda match: f"{match.group(1)}=({FILTERED})", text)
-    text = _IPV6.sub(_ipv6, text)
-    return _IPV4.sub(FILTERED, text)
+    return _IPV6.sub(_ipv6, text)
 
 
 def _ipv6(match: re.Match[str]) -> str:
