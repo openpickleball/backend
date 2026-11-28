@@ -296,6 +296,12 @@ def update_profile(
         if changed:
             locked.save(update_fields=changed)
             # Names only: these are identifying fields (ADR 0009).
+            if "rating_visibility" in changed:
+                from apps.ratings.cache import invalidate_player_ratings
+
+                transaction.on_commit(
+                    lambda code=locked.public_code: invalidate_player_ratings(code)
+                )
             record_event(
                 action=AuditAction.PLAYER_PROFILE_CHANGE,
                 target=locked,
@@ -408,6 +414,12 @@ def update_privacy(
             privacy.save(update_fields=changed)
             if "name_format" in changed:
                 _rebuild_display_name(locked, new["name_format"])
+            if "rating_visibility" in changed:
+                from apps.ratings.cache import invalidate_player_ratings
+
+                transaction.on_commit(
+                    lambda code=locked.public_code: invalidate_player_ratings(code)
+                )
             record_event(
                 action=AuditAction.PRIVACY_CHANGE,
                 target=locked,

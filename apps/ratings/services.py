@@ -331,6 +331,11 @@ def apply_rating(
                 "player": player.public_code,
             },
         )
+        from apps.ratings.cache import invalidate_player_ratings
+
+        transaction.on_commit(
+            lambda code=player.public_code: invalidate_player_ratings(code)
+        )
     return history
 
 
@@ -381,6 +386,11 @@ def _remove_rating(
         # RatingState.delete() refuses; the base Model.delete is this
         # function's own path.
         models.Model.delete(locked)
+        from apps.ratings.cache import invalidate_player_ratings
+
+        transaction.on_commit(
+            lambda code=player.public_code: invalidate_player_ratings(code)
+        )
     return history
 
 
