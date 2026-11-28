@@ -5,6 +5,7 @@
 - Amended by: [ADR 0021](0021-organizers-are-the-trusted-submitters.md) (every confirmed-on-creation match has an Event, and the duplicate path confirms a pending match only for a submitter with Event authority)
 - Amended by: [ADR 0036](0036-csv-results-files.md) (a batch submission never confirms a pending exact duplicate)
 - Date: 2026-11-16
+- Amended by: [ADR 0064](0064-organizer-and-application-vetting.md) (a match from an Organizer in its trial is created pending and counts once a player on each team confirms it)
 
 ## Context
 

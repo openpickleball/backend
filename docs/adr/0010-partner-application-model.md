@@ -3,6 +3,7 @@
 - Status: Proposed
 - Amended by: [ADR 0021](0021-organizers-are-the-trusted-submitters.md) (the Organizer Application Grant, an Organizer's permission for one application, replaces the Club Application Grant)
 - Date: 2026-11-15
+- Amended by: [ADR 0064](0064-organizer-and-application-vetting.md) (approval needs an owning verified Organizer or grants only, declared scopes, a security contact, and a passed sandbox check; a platform needs two moderators)
 
 ## Context
 

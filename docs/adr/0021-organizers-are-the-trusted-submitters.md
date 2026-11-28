@@ -4,6 +4,7 @@
 - Amended by: [ADR 0043](0043-mfa-totp-and-recovery-codes.md) (a member acts for a verified Organizer only while the member's Account has MFA)
 - Date: 2026-11-23
 - Amended by: [ADR 0057](0057-organizer-and-club-admin-security.md) (a taken-over admin Account of a verified Organizer is bounded by step-up, notices, a New Member Hold, and an admin with MFA)
+- Amended by: [ADR 0064](0064-organizer-and-application-vetting.md) (a newly verified Organizer's matches are created pending during its trial, and the Organizer cannot confirm them alone)
 
 ## Context
 

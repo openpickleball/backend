@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-25
+- Amended by: [ADR 0064](0064-organizer-and-application-vetting.md) (a trial match's notice asks the players to confirm it)
 
 ## Context
 
