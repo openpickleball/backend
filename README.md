@@ -187,9 +187,10 @@ One instance each of web, worker, and beat opens at most 5 client connections: w
 
 ```bash
 doctl apps spec validate --schema-only .do/production.yaml
+doctl apps spec validate --schema-only .do/sites.yaml
 ```
 
-`--schema-only` checks the fields locally. A full `doctl apps spec validate`, which also checks the bindings and the instance size, needs an authenticated doctl. Run it before creating the app (#62).
+`--schema-only` checks the fields locally. A full `doctl apps spec validate`, which also checks the bindings and the instance size, needs an authenticated doctl. Run it before creating each app (#62).
 
 #### Check the client IP header
 
@@ -214,9 +215,40 @@ Prices from DigitalOcean's pricing pages, checked 2026-11-27:
 | app (static site) | free in a paid app (DigitalOcean: "Static sites in a paid app are $0"); its outbound transfer counts against the pooled allowance of the containers (50 GiB per $5 container, $0.02 per GiB over) | $0.00 |
 | Postgres | 1 GiB RAM, 1 vCPU, single node, from 10 GiB storage | $15.15 |
 | Valkey | 1 GiB | $15.00 |
-| Total | | $45.15 |
+| Total (production app) | | $45.15 |
+| sites app (`open-sites`, billed apart) | static sites only, on the free tier | $0.00 |
+
+The sites app is billed apart from the production app. It costs $0.00 while it stays within the free tier: up to 3 apps with only static sites per team, each with 1 GiB of outbound transfer a month, and $0.02 per GiB past it.
 
 There is no staging environment, so this is the whole hosting cost. Each $5 container includes 50 GiB of outbound transfer, pooled across the app, and more costs $0.02 per GiB. Running beat inside the worker (`celery worker -B`) would save $5 a month, but decision Q16 in #1 keeps beat a separate process.
+
+#### Sites app
+
+`.do/sites.yaml` (app `open-sites`) serves OPEN's static sites that need no API, in a second app apart from production (#304):
+
+| Host | Component | Source |
+| --- | --- | --- |
+| `openpb.org` (primary) | `site` | `openpickleball/frontend` `site/`, built with `pnpm build`, serving `public/` |
+| `www.openpb.org` (alias) | none | a 301 redirect to `https://openpb.org` |
+| `dev.openpb.org` (alias) | `developers` | `openpickleball/developers`, built with `zensical build --strict`, serving `site/` |
+
+It holds only static sites, so it stays on the free tier (see [Monthly cost](#monthly-cost)). It must never hold a service, worker, job, or database. The partner docs (`openpickleball/partner-docs`, `partner.openpb.org`) join as a component named `partner` once #184 creates the repository. The status page stays on GitHub Pages, outside DigitalOcean (#139).
+
+Each source is `git`, not `github`: the repositories are public, so App Platform needs no access to the organization, and a merge in either repository never deploys anything. A site change goes live with a deploy of the sites app. Each deploy builds both repositories at the head of `main`, so a `main` that fails its build fails the whole deploy. The sites keep loading while the production app is stopped.
+
+The public site's build copies `/.well-known/funding-manifest-urls` from the frontend repository's root into its output. Files outside `source_dir` are there during the build, not at run time. Each site answers a missing path with its own `404.html`.
+
+DNS stays at the openpb.org DNS provider. The apex needs CNAME flattening there, or App Platform's A records for the app; it does not need DigitalOcean nameservers. Lower the TTLs before the move, so pointing DNS back at GitHub Pages is quick.
+
+Static sites cannot set response headers, in this app or in the production app's `app`. So the spec cannot set Cache-Control (for `index.html`, the PWA's `service-worker.js`, and its manifest), the service worker's own policy, or framing protection (`frame-ancestors`, `X-Frame-Options`). Whatever App Platform sends by default applies, and its CDN cache cannot be turned off.
+
+Check on the first deploy:
+
+- Which Node version the public site's build uses. Without `engines.node` in `site/package.json`, the buildpack uses its default, not the repository's `.nvmrc`. The fix belongs in the frontend.
+- That the Python buildpack builds the developer site with uv (it needs `pyproject.toml`, `uv.lock`, and `.python-version`, and no other package manager file). DigitalOcean does not document this for a static site. If it fails, build the site in GitHub Actions and deploy the output instead, and record which on #304.
+- That `www.openpb.org/some/path` redirects to `openpb.org/some/path`, keeping the path.
+- That `openpb.org/.well-known/funding-manifest-urls` serves the copied file.
+- That a missing path on each host gets that site's 404 page.
 
 ### CORS
 

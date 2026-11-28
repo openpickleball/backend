@@ -189,6 +189,10 @@ jobs:
 # way round, every deploy of this app builds frontend main at its head:
 # it ships whatever main holds, and a main that fails its build fails the
 # whole deploy, a backend-only change or secret change included.
+# Static sites cannot set response headers, so Cache-Control for
+# index.html, service-worker.js, and the manifest, and framing
+# protection, cannot be set here (frontend app/README.md, "What App
+# Platform cannot do").
 static_sites:
   - name: app
     git:
