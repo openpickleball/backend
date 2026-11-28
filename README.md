@@ -57,6 +57,97 @@ Without a `.env` or the variables in your environment, every command that loads 
 
 Docker Compose also reads `.env` and treats a `$` in a value as a variable reference. If your secret key contains `$`, wrap it in single quotes: `DJANGO_SECRET_KEY='...'`.
 
+### Environment variables
+
+Every variable that `config/settings.py` and `gunicorn.conf.py` read is in the table below. `config/tests/test_env_var_table.py` fails when settings read a variable the table leaves out, when a row names a variable nothing reads, or when the table and `.do/production.yaml` disagree. Add a row in the same pull request as a new variable.
+
+Where each value is set:
+
+- **Local development:** `.env` (copy `.env.example`, which lists every variable below) or your shell, which wins over the file. `PORT` and `WEB_CONCURRENCY` come from the shell only.
+- **Production:** the app-level `envs` in `.do/production.yaml`, every one `RUN_TIME`. In the Production column, `spec` means the spec holds the value, `bound` that App Platform fills it from the spec's database component, `console` that the spec declares it `type: SECRET` with no value and a maintainer sets it in the App Platform console (see [Before the first deploy](#before-the-first-deploy)), `App Platform` that the platform sets it, `default` that production leaves it unset, and `never` that settings refuse to start when it has a value.
+- **CI:** the `test` job in `.github/workflows/ci.yml` sets made-up production-like values for its deploy check. They are not secrets.
+- **GitHub environments:** none yet. The deploy workflow (#63) adds a `production` GitHub environment with a required reviewer, holding the DigitalOcean token the workflow uses. Settings never read it. #63 lists what it adds here.
+
+No secret is committed. `.env` is ignored by git, `.env.example` holds placeholders only, the spec declares secrets without values, and the image never contains a `.env` (see [Production image](#production-image)). Every example below is a made-up placeholder; secrets show only `<angle brackets>`. In the Required column, `DEBUG off` means settings refuse to start without it when `DJANGO_DEBUG` is off.
+
+| Variable | Purpose | Required | Secret | Example | Production |
+| --- | --- | --- | --- | --- | --- |
+| `DJANGO_DEBUG` | Debug mode. Off unless a true value. | no | no | `false` | spec |
+| `DJANGO_SECRET_KEY` | Django's signing key. With DEBUG on and empty, a development-only key is used. | DEBUG off | yes | `<long random key>` | console |
+| `DJANGO_ALLOWED_HOSTS` | Hosts Django answers on, comma-separated. Empty answers none with DEBUG off. | no | no | `api.example.org,app.example.org` | spec |
+| `ADMIN_URL` | The admin's private path (ADR 0045). Empty with DEBUG on means `admin/`. | DEBUG off | yes | `<private-path>/` | console |
+| `ADMIN_SESSION_SECONDS` | How long after its latest MFA step a staff session opens the admin. Default 3600. | no | no | `3600` | default |
+| `ADMIN_REAUTHENTICATION_SECONDS` | How recent the MFA step must be for an admin write. Default 300, or the session if lower. | no | no | `300` | default |
+| `FIELD_ENCRYPTION_KEYS` | Fernet keys that encrypt personal data fields, newest first (ADR 0046). | DEBUG off | yes | `<newest Fernet key>,<older Fernet key>` | console |
+| `DATABASE_URL` | Postgres, or its connection pool in transaction mode (ADR 0038). | yes | yes | `postgres://open:<password>@<host>:5432/open` | bound |
+| `DIRECT_DATABASE_URL` | The database itself when `DATABASE_URL` is a pool; `migrate` uses it. Empty means no pool. | no | yes | `postgres://open:<password>@<host>:5432/open` | bound |
+| `REDIS_URL` | Valkey: the cache and the Celery broker (ADR 0006). `rediss://` for TLS. | yes | yes | `rediss://default:<password>@<host>:6379/0` | bound |
+| `CELERY_BROKER_URL` | Must stay unset: Celery uses `REDIS_URL`. | no | no | (unset) | never |
+| `CELERY_BROKER_READ_URL` | Must stay unset: Celery uses `REDIS_URL`. | no | no | (unset) | never |
+| `CELERY_BROKER_WRITE_URL` | Must stay unset: Celery uses `REDIS_URL`. | no | no | (unset) | never |
+| `CELERY_RESULT_BACKEND` | Must stay unset: Celery uses `REDIS_URL`. | no | no | (unset) | never |
+| `FRONTEND_URL` | The web app's origin, where links in account and match emails open. https with DEBUG off. | yes | no | `https://app.example.org` | spec |
+| `CORS_ALLOWED_ORIGINS` | Exact browser origins allowed to call `/api/` and `/_allauth/`, comma-separated. Empty allows none. | no | no | `https://app.example.org` | default |
+| `CSRF_TRUSTED_ORIGINS` | Extra origins the CSRF check trusts, comma-separated, https with DEBUG off. Empty trusts none. | no | no | `https://app.example.org` | default |
+| `CSP_REPORT_ONLY` | Content Security Policy mode (ADR 0040). Empty means report-only with DEBUG on, enforced with it off. | no | no | `false` | default |
+| `WEBAUTHN_RP_ID` | The passkey relying party ID (ADR 0056). Default `openpb.org`. | no | no | `example.org` | default |
+| `WEBAUTHN_ALLOWED_ORIGINS` | Exact origins passkeys may be used from, https with DEBUG off. Empty means `FRONTEND_URL`. | no | no | `https://app.example.org` | default |
+| `OPEN_PUBLIC_PROFILE_URL` | The base of the rating lookup's `profile_url`. Default `https://app.openpb.org/players/`. | no | no | `https://app.example.org/players/` | default |
+| `SECURITY_TXT_CONTACT` | The contact in `/.well-known/security.txt`. Default `mailto:info@openpb.org`. | no | no | `mailto:security@example.org` | default |
+| `SECURITY_TXT_CANONICAL` | The canonical URL in `/.well-known/security.txt`. Empty means the request's URL. | no | no | `https://api.example.org/.well-known/security.txt` | default |
+| `EMAIL_BACKEND` | Django email backend path (ADR 0016). Empty with DEBUG on prints to the console. | DEBUG off | no | `anymail.backends.resend.EmailBackend` | spec |
+| `RESEND_API_KEY` | Resend's API key, read when `EMAIL_BACKEND` is Resend's. | Resend, DEBUG off | yes | `<Resend API key>` | console |
+| `DEFAULT_FROM_EMAIL` | The sender of every message. Empty with DEBUG on means `OPEN <noreply@localhost>`. | DEBUG off | no | `OPEN <noreply@mail.example.org>` | spec |
+| `CLIENT_IP_HEADER` | The header the proxy sets to the client IP, for throttling. Default `do-connecting-ip`. | no | no | `do-connecting-ip` | default |
+| `API_ACCOUNT_THROTTLE_PER_MINUTE` | API requests per Account per minute (ADR 0030). Default 120. | no | no | `120` | default |
+| `API_ACCOUNT_THROTTLE_PER_DAY` | API requests per Account per day. Default 10000. | no | no | `10000` | default |
+| `API_CLIENT_IP_THROTTLE_PER_MINUTE` | API requests per client IP per minute. Default 60. | no | no | `60` | default |
+| `API_CLIENT_IP_THROTTLE_PER_DAY` | API requests per client IP per day. Default 3000. | no | no | `3000` | default |
+| `API_ORGANIZER_REPORT_THROTTLE_PER_DAY` | Organizer Reports per Account per day (ADR 0037). Default 5. | no | no | `5` | default |
+| `API_DATA_EXPORT_THROTTLE_PER_DAY` | Data export requests per Account per day (ADR 0051). Default 3. | no | no | `3` | default |
+| `API_ORGANIZER_INVITE_THROTTLE_PER_DAY` | Organizer invites per Account per day (ADR 0054). Default 20. | no | no | `20` | default |
+| `API_CLUB_INVITE_THROTTLE_PER_DAY` | Club admin invites per Account per day (ADR 0055). Default 20. | no | no | `20` | default |
+| `PASSWORD_MIN_LENGTH` | The shortest password allowed, 8 to 128 (ADR 0047). Default 8. | no | no | `8` | default |
+| `PASSWORD_BREACH_TIMEOUT_SECONDS` | The longest wait on the breached password check, 1 to 10. Default 3. | no | no | `3` | default |
+| `SESSION_MAX_AGE_DAYS` | A signed-in session's lifetime. Default 30. | no | no | `30` | default |
+| `SESSION_IDLE_DAYS` | Days unused before a signed-in session ends. Default 7. | no | no | `7` | default |
+| `ORGANIZER_SESSION_MAX_AGE_DAYS` | Session lifetime for Organizer members and Club Roles (ADR 0057). Default 7, or `SESSION_MAX_AGE_DAYS` when lower. | no | no | `7` | default |
+| `ORGANIZER_SESSION_IDLE_DAYS` | Idle limit for Organizer members and Club Roles. Default 1. | no | no | `1` | default |
+| `SIGN_IN_DEVICE_COOKIE_DAYS` | How long a browser or app is remembered for sign-in emails. Default 365. | no | no | `365` | default |
+| `TERMS_OF_SERVICE_VERSION` | The Terms of Service version sign-up requires (ADR 0026). Default in settings. | no | no | `2` | default |
+| `PRIVACY_POLICY_VERSION` | The Privacy Policy version sign-up requires (ADR 0026). Default in settings. | no | no | `3` | default |
+| `MATCH_CONFIRMATION_EXPIRY_DAYS` | Days before a pending match is voided (ADR 0013). Empty means never. | no | no | `30` | default |
+| `MATCH_DISPUTE_EXPIRY_DAYS` | Days a disputed match waits for a resolution (ADR 0034). Default 30. | no | no | `30` | default |
+| `MATCH_DUPLICATE_HOLD_DAYS` | Days a possible duplicate flag stays open (ADR 0034). Default 14. | no | no | `14` | default |
+| `UNUSUAL_SUBMISSION_FIRST_MATCHES` | Unusual submission flag: an Organizer's first matches (ADR 0049). Default 25. | no | no | `25` | default |
+| `UNUSUAL_SUBMISSION_BATCH_SIZE` | Unusual submission flag: matches in one upload. Default 100. | no | no | `100` | default |
+| `UNUSUAL_SUBMISSION_DAILY_MATCHES` | Unusual submission flag: a submitter's matches in one UTC day. Default 200. | no | no | `200` | default |
+| `UNUSUAL_SUBMISSION_PLAYER_DAILY_MATCHES` | Unusual submission flag: a player's matches on one date (ADR 0052). Default 30. | no | no | `30` | default |
+| `ORGANIZER_REVIEW_WINDOW_DAYS` | Days back the moderator review counts disputes and flags. Default 90. | no | no | `90` | default |
+| `ORGANIZER_CREATE_LIMIT_PER_ACCOUNT` | Organizers an Account may be an admin of. Default 5. | no | no | `5` | default |
+| `ORGANIZER_OPEN_INVITES_LIMIT` | Unexpired invites an Organizer may have. Default 50. | no | no | `50` | default |
+| `ORGANIZER_INVITE_DAYS` | Days an Organizer invite link works. Default 7. | no | no | `7` | default |
+| `ORGANIZER_STEP_UP_SECONDS` | How recent a second factor step must be for an authority change or upload (ADR 0057). Default 300. | no | no | `300` | default |
+| `ORGANIZER_NEW_MEMBER_HOLD_HOURS` | Hours a new Organizer member waits for authority. Default 24; 0 turns it off. | no | no | `24` | default |
+| `CLUB_CREATE_LIMIT_PER_ACCOUNT` | Clubs an Account may be an admin of (ADR 0055). Default 5. | no | no | `5` | default |
+| `CLUB_OPEN_INVITES_LIMIT` | Unexpired invites a Club may have. Default 50. | no | no | `50` | default |
+| `CLUB_INVITE_DAYS` | Days a Club invite link works. Default 7. | no | no | `7` | default |
+| `PORT` | gunicorn's port. Default 8000. Process environment only. | no | no | `8000` | App Platform |
+| `WEB_CONCURRENCY` | gunicorn worker processes. Default 2. Process environment only. | no | no | `2` | default |
+
+`.env.example` explains each value's format and range, and `.claude/rules/settings.md` gives the details. These are not read from the environment:
+
+- OAuth token lifetimes and scopes are fixed in `OAUTH2_PROVIDER` in `config/settings.py` (#28), not read from the environment.
+- Sentry has no variables yet. #65 adds its rows here.
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION` are read by boto3, not settings, and only if email moves to Amazon SES (see [Email](#email)).
+
+The PWA's static site (`app` in `.do/production.yaml`) gets two variables at build time only. The frontend reads them, not Django. `.do/sites.yaml` sets no variables.
+
+| Build variable | Purpose | Value in the spec |
+| --- | --- | --- |
+| `PUBLIC_API_MOCK` | Turns the frontend's mock API off in the production build. | `off` |
+| `APP_COMMIT` | The deployed commit the Profile page shows (#349). | `${_self.COMMIT_HASH}` |
+
 ### Local services
 
 Migrations and tests need the Postgres that `DATABASE_URL` points to. In pooled mode (see [Connection pool](#connection-pool)), `migrate` uses the one `DIRECT_DATABASE_URL` points to. `compose.yaml` runs Postgres and Valkey for local development, and the values in `.env.example` point at them. Docker must be running.

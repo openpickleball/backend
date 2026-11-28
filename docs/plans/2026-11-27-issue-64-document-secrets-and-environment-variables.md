@@ -29,6 +29,7 @@ Domain skills:
 
 - `README.md`: new "Environment variables" subsection under "Setup and tests", after "Settings".
 - `config/tests/test_env_var_table.py`: new test.
+- `.claude/rules/settings.md`: one sentence telling future editors to add a row and a `.env.example` entry with each new variable.
 - `docs/plans/2026-11-27-issue-64-document-secrets-and-environment-variables.md`: this plan.
 
 ## Order of work
@@ -40,12 +41,13 @@ Domain skills:
 
 ## Risks
 
-- The extractor misses a read style added later. Mitigation: any call at module level to a reader helper (a function that passes its parameter to `_raw` or `os.environ`, found transitively) whose name argument is not a string literal or a loop over literals fails the test. A unit case on made-up source proves the helper path and the loop path.
+- The extractor misses a read style added later. Mitigation: any call at module level to a reader helper (a function that passes its parameter to `_raw` or `os.environ`, found transitively) whose name argument is not a string literal or a loop over literals fails the test, and so do other spellings of the environment (`from os import environ`, an alias of `os`, an alias of a reader helper, `Env.ENVIRON`, `os.environb`). A read through a function from another module would still pass unseen; settings use only their own helpers. A unit case on made-up source proves the helper path and the loop path.
 - The table goes stale against `.do/production.yaml`. Mitigation: criterion 6.
 
 ## Proof
 
-- Criteria 4 and 5: `test_every_read_variable_is_in_the_table`, `test_every_backend_row_is_read`, and the made-up source cases.
+- Criteria 4 and 5: `test_every_read_variable_is_in_the_table`, `test_every_row_is_read`, and the made-up source cases.
 - Criterion 6: `test_production_spec_agrees_with_the_table`.
 - Criterion 7: `test_secret_examples_are_placeholders`.
+- The README's claim that `.env.example` lists every variable: `test_env_example_names_every_variable`.
 - Measured on origin/main: an AST pass over `config/settings.py` finds 56 literal names through the helpers plus 4 Celery names through the refusal loop; `gunicorn.conf.py` adds `PORT` and `WEB_CONCURRENCY`; all 62 appear in `.env.example`.
