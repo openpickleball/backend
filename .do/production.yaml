@@ -17,8 +17,13 @@ envs:
   - key: FIELD_ENCRYPTION_KEYS
     type: SECRET
     scope: RUN_TIME
+  # The two hosts Django answers on (#183, ADR 0063). Not ${APP_DOMAIN}:
+  # that is only the primary domain. The app's ondigitalocean.app host
+  # is left out on purpose. CSRF_TRUSTED_ORIGINS stays unset: every
+  # first-party request is same-origin, and listing either host would let
+  # it pass the origin check on the other (ADR 0063).
   - key: DJANGO_ALLOWED_HOSTS
-    value: ${APP_DOMAIN}
+    value: api.openpb.org,app.openpb.org
     scope: RUN_TIME
   # The pool open-pool, in transaction mode, which #68 creates.
   - key: DATABASE_URL
@@ -48,6 +53,58 @@ envs:
   - key: ADMIN_URL
     type: SECRET
     scope: RUN_TIME
+
+# api.openpb.org is the partners' API host; app.openpb.org is the PWA's
+# host, where Django answers only the paths below (ADR 0061, ADR 0063).
+# DNS for both is a CNAME to the app's ondigitalocean.app host, kept
+# unproxied, at the openpb.org DNS provider (README, "Domains").
+domains:
+  - domain: api.openpb.org
+    type: PRIMARY
+    minimum_tls_version: "1.2"
+  - domain: app.openpb.org
+    type: ALIAS
+    minimum_tls_version: "1.2"
+
+# Every rule names its host, so no rule depends on the order App
+# Platform tries them in. preserve_path_prefix keeps /api/ and the
+# others in the path Django sees. Every other path on app.openpb.org
+# belongs to the PWA's static site, which #304 adds with its catch-all
+# rule; the admin is on api.openpb.org only (ADR 0063).
+ingress:
+  rules:
+    - match:
+        authority:
+          exact: app.openpb.org
+        path:
+          prefix: /api/
+      component:
+        name: web
+        preserve_path_prefix: true
+    - match:
+        authority:
+          exact: app.openpb.org
+        path:
+          prefix: /_allauth/
+      component:
+        name: web
+        preserve_path_prefix: true
+    - match:
+        authority:
+          exact: app.openpb.org
+        path:
+          prefix: /oauth/
+      component:
+        name: web
+        preserve_path_prefix: true
+    - match:
+        authority:
+          exact: api.openpb.org
+        path:
+          prefix: /
+      component:
+        name: web
+        preserve_path_prefix: true
 
 # Every component runs the same image. The tag is a placeholder: #63
 # deploys by digest instead.
