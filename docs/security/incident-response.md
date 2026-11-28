@@ -48,7 +48,7 @@ Stop the harm first, even before the cause is clear.
 Before deleting or rebuilding anything, keep what shows what happened.
 
 - **Audit log (#17).** `audit.AuditEvent` rows are append-only and cannot be changed or deleted. They record admin actions, match and rating changes, MFA changes, and access to personal data. Save the rows for the incident window, with a read-only query on the `audit_auditevent` table or from the admin's audit event list (it has no export action).
-- **Error reports (#65).** When Sentry lands, save the related events before its retention removes them.
+- **Error reports (#65).** When `SENTRY_DSN` is set, save the related Sentry events and cron monitor check-ins before its retention removes them. They hold no personal data (README, "Error monitoring").
 - **Platform logs.** Save App Platform's deploy and runtime logs for the window, and the GitHub organization's audit log if the repository or CI may be involved.
 - Keep the incident record private (a GitHub security advisory draft on the affected repository works well). Never copy personal data into it, an issue, a pull request, or a chat. Refer to players by OPEN Code.
 

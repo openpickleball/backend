@@ -1,8 +1,8 @@
 # DigitalOcean App Platform spec for OPEN's production backend (issue #61).
 # README.md, "App Platform", explains how to deploy it and what is still
 # set by hand. This file holds no secret values: DJANGO_SECRET_KEY,
-# FIELD_ENCRYPTION_KEYS, RESEND_API_KEY, and ADMIN_URL are set in the App
-# Platform console.
+# FIELD_ENCRYPTION_KEYS, RESEND_API_KEY, ADMIN_URL, and SENTRY_DSN are set
+# in the App Platform console.
 name: open-backend-production
 
 # Set once here, so every component gets them (ADR 0038). Every one is
@@ -52,6 +52,10 @@ envs:
     scope: RUN_TIME
   # The admin's private path (#101), kept out of this public file.
   - key: ADMIN_URL
+    type: SECRET
+    scope: RUN_TIME
+  # Sentry (#65). Opt-in: empty, Sentry stays off. Set in the console.
+  - key: SENTRY_DSN
     type: SECRET
     scope: RUN_TIME
 

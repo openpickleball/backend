@@ -115,6 +115,7 @@ SECRETS = {
     "FIELD_ENCRYPTION_KEYS",
     "RESEND_API_KEY",
     "ADMIN_URL",
+    "SENTRY_DSN",
 }
 BINDINGS = {
     "DATABASE_URL": "${pg.open-pool.DATABASE_URL}",

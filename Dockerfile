@@ -45,6 +45,11 @@ FROM python:3.13-slim-bookworm@sha256:f0fa218d5b06f9b9235024fa061cde2cb141f726de
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
+# The commit or tag the image is built from, as Sentry's release (#65).
+# The image build passes it: --build-arg SENTRY_RELEASE=<commit>. Empty
+# means events carry no release. Not a secret.
+ARG SENTRY_RELEASE=""
+ENV SENTRY_RELEASE=${SENTRY_RELEASE}
 RUN groupadd --system --gid 10001 open \
     && useradd --system --uid 10001 --gid open --no-create-home \
         --home-dir /nonexistent --shell /usr/sbin/nologin open

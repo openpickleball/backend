@@ -19,6 +19,7 @@ import yaml
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 README = BASE_DIR / "README.md"
 APP_SPEC = BASE_DIR / ".do" / "production.yaml"
+DOCKERFILE = BASE_DIR / "Dockerfile"
 READ_FILES = (BASE_DIR / "config" / "settings.py", BASE_DIR / "gunicorn.conf.py")
 
 SECTION_HEADING = "### Environment variables"
@@ -27,9 +28,10 @@ SECRET_VALUES = frozenset({"yes", "no"})
 # Where production gets each value: written in the spec, a secret declared
 # in the spec and set in the App Platform console, bound by App Platform
 # from a database component or set by it at run time, left to the
-# default, or never set (settings refuse it).
+# default, set in the production image at build time, or never set
+# (settings refuse it).
 PRODUCTION_VALUES = frozenset(
-    {"spec", "console", "bound", "App Platform", "default", "never"}
+    {"spec", "console", "bound", "App Platform", "default", "image", "never"}
 )
 PLACEHOLDER = re.compile(r"<[^<>]+>")
 
@@ -424,6 +426,17 @@ def test_production_spec_agrees_with_the_table() -> None:
             assert row.name in spec_envs, (
                 f"{row.name} says {row.production} but is not in .do/production.yaml"
             )
+
+
+def test_image_variables_come_from_a_build_argument() -> None:
+    dockerfile = DOCKERFILE.read_text()
+    for row in table_rows().values():
+        if row.production == "image":
+            assert row.secret == "no", row
+            assert re.search(rf"^ARG {row.name}=", dockerfile, re.MULTILINE), row
+            assert re.search(
+                rf"^ENV {row.name}=\$\{{{row.name}\}}$", dockerfile, re.MULTILINE
+            ), row
 
 
 def test_build_time_variables_are_listed() -> None:
