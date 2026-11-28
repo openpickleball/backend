@@ -21,6 +21,11 @@ from django.test import SimpleTestCase
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SETTINGS_VARS = (
+    "SENTRY_DSN",
+    "SENTRY_ENVIRONMENT",
+    "SENTRY_RELEASE",
+    "SENTRY_TRACES_SAMPLE_RATE",
+    "SENTRY_ENABLE_LOGS",
     "DJANGO_SECRET_KEY",
     "DJANGO_DEBUG",
     "FIELD_ENCRYPTION_KEYS",

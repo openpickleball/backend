@@ -64,7 +64,7 @@ Every variable that `config/settings.py` and `gunicorn.conf.py` read is in the t
 Where each value is set:
 
 - **Local development:** `.env` (copy `.env.example`, which lists every variable below) or your shell, which wins over the file. `PORT` and `WEB_CONCURRENCY` come from the shell only.
-- **Production:** the app-level `envs` in `.do/production.yaml`, every one `RUN_TIME`. In the Production column, `spec` means the spec holds the value, `bound` that App Platform fills it from the spec's database component, `console` that the spec declares it `type: SECRET` with no value and a maintainer sets it in the App Platform console (see [Before the first deploy](#before-the-first-deploy)), `App Platform` that the platform sets it, `default` that production leaves it unset, and `never` that settings refuse to start when it has a value.
+- **Production:** the app-level `envs` in `.do/production.yaml`, every one `RUN_TIME`. In the Production column, `spec` means the spec holds the value, `bound` that App Platform fills it from the spec's database component, `console` that the spec declares it `type: SECRET` with no value and a maintainer sets it in the App Platform console (see [Before the first deploy](#before-the-first-deploy)), `App Platform` that the platform sets it, `default` that production leaves it unset, `image` that the production image sets it at build time (the `SENTRY_RELEASE` build argument in the `Dockerfile`, which the image build passes), and `never` that settings refuse to start when it has a value.
 - **CI:** the `test` job in `.github/workflows/ci.yml` sets made-up production-like values for its deploy check. They are not secrets.
 - **GitHub environments:** none yet. The deploy workflow (#63) adds a `production` GitHub environment with a required reviewer, holding the DigitalOcean token the workflow uses. Settings never read it. #63 lists what it adds here.
 
@@ -132,13 +132,17 @@ No secret is committed. `.env` is ignored by git, `.env.example` holds placehold
 | `CLUB_CREATE_LIMIT_PER_ACCOUNT` | Clubs an Account may be an admin of (ADR 0055). Default 5. | no | no | `5` | default |
 | `CLUB_OPEN_INVITES_LIMIT` | Unexpired invites a Club may have. Default 50. | no | no | `50` | default |
 | `CLUB_INVITE_DAYS` | Days a Club invite link works. Default 7. | no | no | `7` | default |
+| `SENTRY_DSN` | Sentry's project DSN (#65). Empty means Sentry is off and nothing is sent. | no | yes | `https://<public key>@<host>/<project id>` | console |
+| `SENTRY_ENVIRONMENT` | The environment events carry. Empty means `development` with DEBUG on, `production` with it off. | no | no | `production` | default |
+| `SENTRY_RELEASE` | The release events carry: the deployed commit or tag. Empty means none. | no | no | `v0.1.0` | image |
+| `SENTRY_TRACES_SAMPLE_RATE` | The share of requests and tasks traced, 0 to 1. Default 0.05. | no | no | `0.05` | default |
+| `SENTRY_ENABLE_LOGS` | Sends application log records to Sentry as logs. Default off. | no | no | `false` | default |
 | `PORT` | gunicorn's port. Default 8000. Process environment only. | no | no | `8000` | App Platform |
 | `WEB_CONCURRENCY` | gunicorn worker processes. Default 2. Process environment only. | no | no | `2` | default |
 
 `.env.example` explains each value's format and range, and `.claude/rules/settings.md` gives the details. These are not read from the environment:
 
 - OAuth token lifetimes and scopes are fixed in `OAUTH2_PROVIDER` in `config/settings.py` (#28), not read from the environment.
-- Sentry has no variables yet. #65 adds its rows here.
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION` are read by boto3, not settings, and only if email moves to Amazon SES (see [Email](#email)).
 
 The PWA's static site (`app` in `.do/production.yaml`) gets two variables at build time only. The frontend reads them, not Django. `.do/sites.yaml` sets no variables.
@@ -239,7 +243,7 @@ Production runs on DigitalOcean App Platform, from one app spec: `.do/production
 
 Every service, worker, and job runs the same image on the smallest instance size, `apps-s-1vcpu-0.5gb`. The variables are set once, at app level, so every component gets them, and each is `RUN_TIME`, so none reaches the static build of `app`. `DATABASE_URL` is the pool `open-pool` (`${pg.open-pool.DATABASE_URL}`), `DIRECT_DATABASE_URL` the database itself (`${pg.DATABASE_URL}`), `REDIS_URL` the Valkey cluster (`${valkey.DATABASE_URL}`), and `DJANGO_ALLOWED_HOSTS` the two hosts, `api.openpb.org,app.openpb.org`. `CSRF_TRUSTED_ORIGINS` stays unset (see [Domains](#domains)). `FRONTEND_URL` is `https://app.openpb.org` (#182), where the links in verification and reset emails open the PWA. `CLIENT_IP_HEADER` stays at its default, `do-connecting-ip`.
 
-The spec holds no secret values. `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (see [Settings](#settings)), `RESEND_API_KEY`, and `ADMIN_URL` (the admin's private path, such as `staff-x7k2/`, never `admin/`) are declared as secrets with no value. Set them in the App Platform console, or in a spec exported from the running app, where App Platform shows them encrypted (`EV[...]`). Never commit a value.
+The spec holds no secret values. `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (see [Settings](#settings)), `RESEND_API_KEY`, `ADMIN_URL` (the admin's private path, such as `staff-x7k2/`, never `admin/`), and `SENTRY_DSN` (optional, see [Error monitoring](#error-monitoring)) are declared as secrets with no value. Set them in the App Platform console, or in a spec exported from the running app, where App Platform shows them encrypted (`EV[...]`). Never commit a value.
 
 App Platform's HTTP health probes reach the container directly, over plain http, with a Host header that `DJANGO_ALLOWED_HOSTS` refuses. `HealthProbeMiddleware` (`config/health_probe.py`, ADR 0042) answers a GET of exactly the two health paths in that case. Every other request keeps the host check and the https redirect.
 
@@ -265,7 +269,7 @@ The spec does not set these. #62 and #63 do:
 - Set Valkey's eviction policy to `volatile-lru`: `doctl databases configuration update <cluster-id> --engine valkey --config-json '{"valkey_maxmemory_policy":"volatile-lru"}'`. Valkey holds the cache and the Celery queues. Cache and throttle keys all expire, and queued tasks never do, so `volatile-lru` evicts only cache keys. An `allkeys-*` policy could drop queued tasks, and `noeviction` would make every cache write fail once Valkey is full.
 - Make user `open` the owner of database `open`: as `doadmin`, run `ALTER DATABASE open OWNER TO open;`. On Postgres 15 and later the `public` schema belongs to the database owner, so a user that does not own the database cannot create tables, and the first migrate fails. Today both URLs use `open`, so the runtime user owns every table, the audit table included. #103 decides separate migration and runtime users, as the Audit log rules require.
 - Limit each cluster's trusted sources to the app (#62, #103).
-- Set the four secret values: `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (a newly generated Fernet key, backed up apart from the database), `RESEND_API_KEY`, and `ADMIN_URL` (a path only staff know, letters, digits, hyphens, and underscores ending in `/`).
+- Set the four secret values: `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (a newly generated Fernet key, backed up apart from the database), `RESEND_API_KEY`, and `ADMIN_URL` (a path only staff know, letters, digits, hyphens, and underscores ending in `/`). `SENTRY_DSN` is optional: left empty, Sentry stays off.
 - Give App Platform access to the image on GHCR, and deploy by digest instead of the `main` tag (#63).
 - On the first deploy, check the PWA's build. Check which Node version it uses: without `engines.node` in `app/package.json`, the buildpack uses its default (22.x at the time of writing), not the repository's `.nvmrc` (26), which sits outside `source_dir: app`. The fix for that belongs in the frontend, whose README lists its own checks. Check also that Profile, Help and about, App version on `app.openpb.org` shows the deployed commit. DigitalOcean documents bindable variables at build and run time in general (Dockerfile builds aside) and lists `${_self.COMMIT_HASH}` for static sites, but that this one is filled at build time is unchecked. If it is not, the frontend ignores the value and shows the version alone.
 - On the first deploy, confirm that `${valkey.DATABASE_URL}` is Valkey's `rediss://` connection string. DigitalOcean documents `DATABASE_URL` for every database and `REDIS_URL` only for its older Redis engine.
@@ -368,6 +372,14 @@ CI runs lint, types, and tests on every pull request. The test job also runs `ma
 Requests never send email, the data export's link email and the Organizer invite email included. Each message is stored in the email outbox and sent by a Celery task on the `email` queue after the transaction commits (ADR 0016), so run a worker to see it. With `DJANGO_DEBUG` on and `EMAIL_BACKEND` empty, the worker prints every message to its console. With `DJANGO_DEBUG` off, `EMAIL_BACKEND` and `DEFAULT_FROM_EMAIL` are required, and backends that print or keep messages are refused.
 
 Production sends through Resend with django-anymail: set `EMAIL_BACKEND=anymail.backends.resend.EmailBackend` and `RESEND_API_KEY`. The sending domain, its DNS records (SPF, DKIM, DMARC), and the DMARC rollout are in `docs/email.md`. To switch to Amazon SES, run `uv add "django-anymail[amazon-ses]"`, set `EMAIL_BACKEND=anymail.backends.amazon_ses.EmailBackend`, and set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION` in the environment. No code changes. The SES backend uses boto3, which ignores `ANYMAIL_REQUESTS_TIMEOUT`: without more, a slow SES request reaches the send task's 60-second soft time limit, and the sweep retries it about an hour later instead of a backoff retry. For backoff retries, you can optionally add `ANYMAIL["AMAZON_SES_CLIENT_PARAMS"] = {"config": Config(connect_timeout=5, read_timeout=20, retries={"max_attempts": 1})}` in settings, with `Config` from `botocore.config`.
+
+### Error monitoring
+
+Sentry (#65) reports unhandled errors from web and the Celery worker, samples traces, and, with `SENTRY_ENABLE_LOGS` on, receives application log records. It is opt-in: with `SENTRY_DSN` empty (the default, and what local development and tests use), the SDK is never started and nothing is sent. Self-hosted deployments need no Sentry account. OPEN's account stays on a free plan (charter).
+
+Sentry never receives personal data (ADR 0009). `config/sentry.py` turns off the SDK's default personal data, request bodies, and local variables, and scrubs every event, trace, and log record before it is sent: cookies, query strings, the user, and headers outside a short allowlist are dropped, and emails, tokens, secrets, and IP addresses are replaced in the rest. SQL spans carry placeholders only, and Valkey spans the command without its key.
+
+Cron monitors report scheduled work that stops. Each entry in `CELERY_BEAT_SCHEDULE` becomes a monitor named after the entry: beat checks in when it sends the task and the worker when the task ends, so a job that is not sent, never reaches a worker, or fails shows as a failed monitor. The `replay-ratings` task checks in itself, with a maximum runtime of 30 minutes, and so does `recompute_ratings` (monitor `recompute-ratings`, a maximum runtime of 60 minutes; it is run by hand, so its schedule is a year, and a year with no run shows as missed). Sentry creates each monitor at its first check-in. Set alerts for them in Sentry.
 
 ## Test data
 

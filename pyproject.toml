@@ -21,6 +21,7 @@ dependencies = [
     "openpickleball-engine @ git+https://github.com/openpickleball/engine@v1.0.0",
     "psycopg[binary]>=3.3.8",
     "redis>=8.1.0",
+    "sentry-sdk>=2.74,<3",
     "whitenoise>=6.12.0",
 ]
 

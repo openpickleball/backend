@@ -51,6 +51,7 @@ Keep this file under 40,000 characters: put a new area's rules in its own rules 
 - django-oauth-toolkit 3.4 for partner OAuth2 (decisions Q2, Q3), with local type stubs in `typings/oauth2_provider` (`mypy_path`)
 - django-anymail 15 with the Resend extra for outgoing email (ADR 0016); only the Resend extra is installed
 - django-csp 4 for the Content Security Policy (ADR 0040), in its 4.x settings format (`CONTENT_SECURITY_POLICY` dicts); its system check refuses the old `CSP_*` settings, so no Django setting may be named `CSP_REPORT_ONLY`
+- sentry-sdk 2.x for opt-in error, trace, log, and cron monitoring (#65), started in settings only when `SENTRY_DSN` is set, with every event scrubbed in `config/sentry.py`
 - Deployed on DigitalOcean App Platform (M3)
 
 ## Ordering rules

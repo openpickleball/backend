@@ -1777,3 +1777,104 @@ CONTENT_SECURITY_POLICY_REPORT_ONLY = _CSP_POLICY if _csp_report_only else None
 
 # No system check is silenced. An entry here needs a comment saying why.
 SILENCED_SYSTEM_CHECKS: list[str] = []
+
+
+# Sentry (#65)
+
+# Error, trace, log, and cron monitoring (config/sentry.py). Opt-in: with
+# SENTRY_DSN unset or empty, the SDK is never started and nothing is
+# sent, so local development, tests, and self-hosted deployments need
+# none of this. Every value is checked here, and an error names the
+# variable and never echoes the value.
+
+# A DSN: https (http too with DEBUG on), a public key as the user name, a
+# host, and a numeric project id as the last path segment, with no
+# password, query, or fragment.
+_SENTRY_PROJECT_PATH = re.compile(r"(?:/[A-Za-z0-9._-]+)*/[0-9]+")
+# Sentry's own limits: an environment of at most 64 characters and a
+# release of at most 200, neither with a slash, space, or newline.
+_SENTRY_ENVIRONMENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+_SENTRY_RELEASE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+@-]{0,199}")
+_SAMPLE_RATE = re.compile(r"0(?:\.[0-9]{1,6})?|1(?:\.0{1,6})?|\.[0-9]{1,6}")
+
+
+def _sentry_dsn(name: str, *, debug: bool) -> str:
+    """The Sentry DSN, or '' when unset or empty (Sentry stays off)."""
+    value = _raw(name).strip()
+    if not value:
+        return ""
+    error = ImproperlyConfigured(
+        f"Set {name} to the DSN from the Sentry project's settings, or leave "
+        "it empty (see .env.example)."
+    )
+    try:
+        parts = urlsplit(value)
+        port = parts.port
+    except ValueError:
+        raise error from None
+    schemes = {"https", "http"} if debug else {"https"}
+    if (
+        parts.scheme not in schemes
+        or not parts.username
+        or parts.password is not None
+        or not parts.hostname
+        or parts.query
+        or parts.fragment
+        or (port is not None and not 0 < port < 65536)
+        or not _SENTRY_PROJECT_PATH.fullmatch(parts.path)
+    ):
+        raise error
+    return value
+
+
+def _sentry_name(name: str, pattern: re.Pattern[str], default: str) -> str:
+    """A Sentry environment or release name, or ``default`` when empty."""
+    value = _raw(name).strip()
+    if not value:
+        return default
+    if not pattern.fullmatch(value):
+        raise ImproperlyConfigured(
+            f"Set {name} to letters, digits, dots, dashes, or underscores, or "
+            "leave it empty (see .env.example)."
+        )
+    return value
+
+
+def _sample_rate(name: str, default: float) -> float:
+    """A fraction from 0 to 1, or ``default`` when unset or empty."""
+    value = _raw(name).strip()
+    if not value:
+        return default
+    if not _SAMPLE_RATE.fullmatch(value):
+        raise ImproperlyConfigured(
+            f"Set {name} to a number from 0 to 1, such as 0.05, or leave it "
+            "empty (see .env.example)."
+        )
+    return float(value)
+
+
+SENTRY_DSN = _sentry_dsn("SENTRY_DSN", debug=DEBUG)
+# Unset or empty: "development" with DEBUG on, "production" with it off.
+SENTRY_ENVIRONMENT = _sentry_name(
+    "SENTRY_ENVIRONMENT",
+    _SENTRY_ENVIRONMENT,
+    "development" if DEBUG else "production",
+)
+# The deployed commit or tag. The production image sets it from its build
+# argument (Dockerfile). Empty means events carry no release.
+SENTRY_RELEASE = _sentry_name("SENTRY_RELEASE", _SENTRY_RELEASE, "") or None
+# The share of requests and tasks traced. Default 0.05.
+SENTRY_TRACES_SAMPLE_RATE = _sample_rate("SENTRY_TRACES_SAMPLE_RATE", 0.05)
+# Sends application log records to Sentry as logs. Default off.
+SENTRY_ENABLE_LOGS = _flag("SENTRY_ENABLE_LOGS", False)
+
+if SENTRY_DSN:
+    from config.sentry import init_sentry
+
+    init_sentry(
+        dsn=SENTRY_DSN,
+        environment=SENTRY_ENVIRONMENT,
+        release=SENTRY_RELEASE,
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+        enable_logs=SENTRY_ENABLE_LOGS,
+    )

@@ -10,10 +10,12 @@ import logging
 from celery import Task, shared_task
 from django.db import transaction
 from django.utils import timezone
+from sentry_sdk.crons import monitor
 
 from apps.matches.models import Match
 from apps.ratings import services
 from apps.ratings.models import ReplayReason
+from config.sentry import REPLAY_MONITOR_CONFIG, REPLAY_MONITOR_SLUG
 
 logger = logging.getLogger(__name__)
 
@@ -98,15 +100,23 @@ def _replay_ratings(self: "Task[..., str]") -> str:
     development) the original error propagates. The task is not retried:
     the requests stay pending, and the next request or the beat entry
     runs it again.
+
+    Every run checks in to the ``replay-ratings`` cron monitor (#65): a
+    run that fails or passes the monitor's maximum runtime, or a beat
+    entry that stops running, shows as a failed monitor. With Sentry off
+    the check-ins go nowhere.
     """
-    try:
-        return str(services.replay_ratings())
-    except Exception as exc:
-        if self.request.is_eager:
-            raise
-        error_class = type(exc).__name__
-        logger.error("Replay task failed (%s).", error_class)
-        raise services.ReplayFailed(error_class) from None
+    with monitor(
+        monitor_slug=REPLAY_MONITOR_SLUG, monitor_config=REPLAY_MONITOR_CONFIG
+    ):
+        try:
+            return str(services.replay_ratings())
+        except Exception as exc:
+            if self.request.is_eager:
+                raise
+            error_class = type(exc).__name__
+            logger.error("Replay task failed (%s).", error_class)
+            raise services.ReplayFailed(error_class) from None
 
 
 # Named explicitly, like the live update task. A full replay can take a

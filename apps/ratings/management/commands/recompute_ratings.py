@@ -11,12 +11,17 @@ after the default replay date, or a ``--spec-version`` other than
 ``OPEN_RATING_SPEC_VERSION``, so a replay can be compared without
 touching the stored ratings. The output names no player: it holds
 counts only.
+
+Each run checks in to the ``recompute-ratings`` cron monitor (#65), so a
+run that fails or passes the monitor's maximum runtime shows as a failed
+monitor. With Sentry off the check-ins go nowhere.
 """
 
 from datetime import date
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from sentry_sdk.crons import monitor
 
 from apps.matches.models import RatingFormat
 from apps.ratings.services import (
@@ -25,6 +30,7 @@ from apps.ratings.services import (
     RecomputeResult,
     recompute_ratings,
 )
+from config.sentry import RECOMPUTE_MONITOR_CONFIG, RECOMPUTE_MONITOR_SLUG
 
 
 def _date(value: str) -> date:
@@ -70,21 +76,25 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         as_of = None if options["as_of"] is None else _date(options["as_of"])
-        try:
-            result = recompute_ratings(
-                as_of=as_of,
-                rating_format=options["rating_format"],
-                spec_version=options["spec_version"],
-                dry_run=options["dry_run"],
-            )
-        except RecomputeRefused as exc:
-            raise CommandError(str(exc)) from None
-        except Exception as exc:
-            # The service logged the class; never print the error's text,
-            # which can quote values.
-            raise CommandError(
-                f"The recompute failed ({type(exc).__name__}). Nothing was written."
-            ) from None
+        with monitor(
+            monitor_slug=RECOMPUTE_MONITOR_SLUG,
+            monitor_config=RECOMPUTE_MONITOR_CONFIG,
+        ):
+            try:
+                result = recompute_ratings(
+                    as_of=as_of,
+                    rating_format=options["rating_format"],
+                    spec_version=options["spec_version"],
+                    dry_run=options["dry_run"],
+                )
+            except RecomputeRefused as exc:
+                raise CommandError(str(exc)) from None
+            except Exception as exc:
+                # The service logged the class; never print the error's
+                # text, which can quote values.
+                raise CommandError(
+                    f"The recompute failed ({type(exc).__name__}). Nothing was written."
+                ) from None
         self._report(result, int(options["verbosity"]))
 
     def _report(self, result: RecomputeResult, verbosity: int) -> None:
