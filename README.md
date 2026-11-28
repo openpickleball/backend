@@ -153,13 +153,13 @@ App Platform's HTTP health probes reach the container directly, over plain http,
 
 #### Before the first deploy
 
-The spec does not set these. #68 and #63 do:
+The spec does not set these. #62 and #63 do:
 
 - Create the Postgres and Valkey clusters with the cluster names above, in one region, and set the app's `region` to match. The spec leaves `region` unset.
 - Create the pool `open-pool` in transaction mode on database `open` for user `open`: `doctl databases pool create <cluster-id> open-pool --size 10 --mode transaction --db open --user open`.
 - Set Valkey's eviction policy to `volatile-lru`: `doctl databases configuration update <cluster-id> --engine valkey --config-json '{"valkey_maxmemory_policy":"volatile-lru"}'`. Valkey holds the cache and the Celery queues. Cache and throttle keys all expire, and queued tasks never do, so `volatile-lru` evicts only cache keys. An `allkeys-*` policy could drop queued tasks, and `noeviction` would make every cache write fail once Valkey is full.
 - Make user `open` the owner of database `open`: as `doadmin`, run `ALTER DATABASE open OWNER TO open;`. On Postgres 15 and later the `public` schema belongs to the database owner, so a user that does not own the database cannot create tables, and the first migrate fails. Today both URLs use `open`, so the runtime user owns every table, the audit table included. #103 decides separate migration and runtime users, as the Audit log rules require.
-- Limit each cluster's trusted sources to the app (#68, #103).
+- Limit each cluster's trusted sources to the app (#62, #103).
 - Set the four secret values: `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (a newly generated Fernet key, backed up apart from the database), `RESEND_API_KEY`, and `ADMIN_URL` (a path only staff know, letters, digits, hyphens, and underscores ending in `/`).
 - Give App Platform access to the image on GHCR, and deploy by digest instead of the `main` tag (#63).
 - On the first deploy, confirm that `${valkey.DATABASE_URL}` is Valkey's `rediss://` connection string. DigitalOcean documents `DATABASE_URL` for every database and `REDIS_URL` only for its older Redis engine.
@@ -174,7 +174,7 @@ One instance each of web, worker, and beat opens at most 5 client connections: w
 doctl apps spec validate --schema-only .do/production.yaml
 ```
 
-`--schema-only` checks the fields locally. A full `doctl apps spec validate`, which also checks the bindings and the instance size, needs an authenticated doctl.
+`--schema-only` checks the fields locally. A full `doctl apps spec validate`, which also checks the bindings and the instance size, needs an authenticated doctl. Run it before creating the app (#62).
 
 #### Check the client IP header
 
@@ -184,7 +184,7 @@ The per-IP throttle reads the client IP from `do-connecting-ip` (ADR 0030). Unti
 2. From a machine whose public IP you know, run `curl -sS -o /dev/null -H 'do-connecting-ip: 203.0.113.7' https://<app domain>/api/v1/health/live`.
 3. Read the web runtime logs with `doctl apps logs <app-id> web --type run`. The check passes only if the logged value is exactly your real IP. A comma-separated list, or `203.0.113.7`, fails it.
 4. Remove `GUNICORN_CMD_ARGS` and redeploy, since the line logs client IPs.
-5. Record the result on #61 and #34. If the check fails, no public operation goes live until the setting or the throttle changes.
+5. Record the result on #62. If the check fails, no public operation goes live until the setting or the throttle changes.
 
 #### Monthly cost
 
