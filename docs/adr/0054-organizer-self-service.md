@@ -3,6 +3,7 @@
 - Status: Proposed
 - Date: 2026-11-26
 - Amended by: [ADR 0057](0057-organizer-and-club-admin-security.md) (a new member of a verified Organizer gets authority only after a New Member Hold, admin changes need a recent two-factor step, the other admins get security notices, and the last admin must have MFA)
+- Amended by: [ADR 0064](0064-organizer-and-application-vetting.md) (the Verification Request becomes a structured form with evidence levels and automated checks)
 
 This amends [ADR 0029](0029-moderator-review-in-the-admin.md) (the Moderator group also views Verification Requests and closes them from the admin), [ADR 0030](0030-api-throttling.md) (inviting an Organizer member has its own day throttle), [ADR 0048](0048-account-deletion.md) (deletion also removes Organizer Invites and blanks a renamed Organizer's statements; the new events keep an Account row), [ADR 0050](0050-own-organizer-memberships.md) (memberships are made by Accounts too and gain `verification_requested`), and [ADR 0051](0051-player-data-export.md) (the export's membership shape gains `verification_requested`; Organizer Invites and the statement are left out).
 

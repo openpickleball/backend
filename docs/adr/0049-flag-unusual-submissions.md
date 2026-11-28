@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-11-26
+- Amended by: [ADR 0064](0064-organizer-and-application-vetting.md) (every new Organizer has a trial that holds its matches; a flag still holds nothing)
 
 ## Context
 
