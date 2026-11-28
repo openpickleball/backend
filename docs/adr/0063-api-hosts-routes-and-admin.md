@@ -27,7 +27,7 @@ App Platform's docs do not say in what order it tries ingress rules, or what it 
 - Staff sign in to the admin on `api.openpb.org`, where `/_allauth/` and `/static/` both reach Django, so its login page and assets work as they do locally.
 - Django's pages that load static files (`/api/v1/docs` and `/_allauth/openapi.html`) work on `api.openpb.org` only. On `app.openpb.org` their `/static/` paths go to the PWA. The partners' docs are on `api.openpb.org` and, later, `partner.openpb.org` (#184).
 - `/.well-known/security.txt` is Django's on `api.openpb.org`. On `app.openpb.org` it is the PWA's path (ADR 0061).
-- Until #304 adds the PWA's static site, every other path on `app.openpb.org` gets whatever App Platform answers for an unmatched request.
+- Every other path on `app.openpb.org` goes to the PWA's static site, `app`, through a catch-all rule listed after the three Django rules on that host (#304). On each host no rule comes after a shorter prefix of it, so first match and longest prefix give the same result.
 - What the `ondigitalocean.app` host answers through App Platform's edge is not documented; no rule routes it, so it should not reach Django. Checks during the first deploy (#62) use the custom domains, once DNS is set. Confirm then that a path such as `/api-x/` on `app.openpb.org` does not reach Django, since the docs do not say whether a prefix ending in `/` matches by path segment.
 - Adding a host means changing `domains`, the rules, and `DJANGO_ALLOWED_HOSTS` together; `config/tests/test_app_spec.py` keeps them in step. A cross-origin first-party client needs CORS and a new decision, not a trusted origin.
 

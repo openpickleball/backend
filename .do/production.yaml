@@ -5,7 +5,8 @@
 # Platform console.
 name: open-backend-production
 
-# Set once here, so every component gets them (ADR 0038).
+# Set once here, so every component gets them (ADR 0038). Every one is
+# RUN_TIME, so none reaches the PWA's static build.
 envs:
   - key: DJANGO_DEBUG
     value: "false"
@@ -66,11 +67,12 @@ domains:
     type: ALIAS
     minimum_tls_version: "1.2"
 
-# Every rule names its host, so no rule depends on the order App
-# Platform tries them in. preserve_path_prefix keeps /api/ and the
-# others in the path Django sees. Every other path on app.openpb.org
-# belongs to the PWA's static site, which #304 adds with its catch-all
-# rule; the admin is on api.openpb.org only (ADR 0063).
+# Every rule names its host. App Platform does not document the order it
+# tries rules in, so on each host the longer prefixes come first: first
+# match and longest prefix then give the same result. preserve_path_prefix
+# keeps /api/ and the others in the path Django sees. Every other path on
+# app.openpb.org goes to the PWA's static site (#304); the admin is on
+# api.openpb.org only (ADR 0063).
 ingress:
   rules:
     - match:
@@ -96,6 +98,14 @@ ingress:
           prefix: /oauth/
       component:
         name: web
+        preserve_path_prefix: true
+    - match:
+        authority:
+          exact: app.openpb.org
+        path:
+          prefix: /
+      component:
+        name: app
         preserve_path_prefix: true
     - match:
         authority:
@@ -170,6 +180,34 @@ jobs:
     run_command: python manage.py migrate
     instance_size_slug: apps-s-1vcpu-0.5gb
     instance_count: 1
+
+# The PWA (openpickleball/frontend, app/), built to static files (#304).
+# A git source, not github: the repository is public, so App Platform
+# needs no access to the organization, and a git source never deploys on
+# push. A frontend merge alone never redeploys web, worker, and beat or
+# runs migrate; the PWA goes live with a deploy of this app.
+static_sites:
+  - name: app
+    git:
+      repo_clone_url: https://github.com/openpickleball/frontend.git
+      branch: main
+    source_dir: app
+    environment_slug: node-js
+    # Fails the deploy if the build ships mock code or a broken content
+    # security policy.
+    build_command: pnpm build && pnpm check:build
+    output_dir: build
+    # Every path without a file gets the shell, for client-side routes.
+    catchall_document: index.html
+    envs:
+      - key: PUBLIC_API_MOCK
+        value: "off"
+        scope: BUILD_TIME
+      # The commit the Profile page shows (#349). The frontend ignores a
+      # value that is not a 7 to 40 character hex hash.
+      - key: APP_COMMIT
+        value: ${_self.COMMIT_HASH}
+        scope: BUILD_TIME
 
 databases:
   - name: pg
