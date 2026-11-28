@@ -316,6 +316,12 @@ def test_env_values_are_exactly_the_planned_ones() -> None:
     }
 
 
+def test_no_app_level_env_is_set_twice() -> None:
+    keys = [env["key"] for env in _spec()["envs"]]
+
+    assert len(keys) == len(set(keys)), keys
+
+
 def test_every_app_level_env_is_run_time_only() -> None:
     # App-level envs reach every component, the static build included,
     # unless their scope keeps them out of builds.
@@ -332,16 +338,18 @@ def test_the_pwa_is_a_static_build_of_the_public_frontend() -> None:
 
     assert {k: v for k, v in site.items() if k != "envs"} == PWA_SITE
     # A git source has no deploy_on_push, so a frontend merge never
-    # redeploys web, worker, and beat or runs migrate.
+    # redeploys web, worker, and beat or runs migrate. The equality above
+    # pins the git block, so it holds no deploy_on_push.
     assert "github" not in site
-    assert "deploy_on_push" not in site["git"]
     # Every missing path gets the shell, for client-side routes.
     assert "error_document" not in site
 
 
 def test_the_pwa_build_gets_only_its_build_time_values() -> None:
     envs = _pwa_site()["envs"]
+    keys = [env["key"] for env in envs]
 
+    assert len(keys) == len(set(keys)), keys
     assert {env["key"]: env["value"] for env in envs} == PWA_BUILD_ENVS
     for env in envs:
         assert env["scope"] == "BUILD_TIME", env["key"]
@@ -424,8 +432,9 @@ def _route(rule: dict[str, Any]) -> tuple[str, str]:
 
 
 def test_every_rule_names_its_host_and_keeps_the_path() -> None:
-    # App Platform does not document the order it tries rules in, so no
-    # rule may rely on it: each one names its exact host.
+    # Each rule names its exact host. App Platform does not document the
+    # order it tries rules in; test_no_rule_is_shadowed_by_an_earlier_one
+    # guards the order on each host.
     for rule in _rules():
         assert set(rule["match"]) == {"authority", "path"}, rule
         assert set(rule["match"]["authority"]) == {"exact"}, rule

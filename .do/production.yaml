@@ -116,7 +116,8 @@ ingress:
         name: web
         preserve_path_prefix: true
 
-# Every component runs the same image. The tag is a placeholder: #63
+# Every service, worker, and job runs the same image. The tag is a
+# placeholder: #63
 # deploys by digest instead.
 services:
   - name: web
@@ -185,7 +186,10 @@ jobs:
 # A git source, not github: the repository is public, so App Platform
 # needs no access to the organization, and a git source never deploys on
 # push. A frontend merge alone never redeploys web, worker, and beat or
-# runs migrate; the PWA goes live with a deploy of this app.
+# runs migrate; the PWA goes live with a deploy of this app. The other
+# way round, every deploy of this app builds frontend main at its head:
+# it ships whatever main holds, and a main that fails its build fails the
+# whole deploy, a backend-only change or secret change included.
 static_sites:
   - name: app
     git:
