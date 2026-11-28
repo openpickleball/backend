@@ -1,0 +1,81 @@
+# DigitalOcean App Platform spec for OPEN's static sites (issue #304).
+# README.md, "Sites app", explains how to deploy it. An app with only
+# static sites is free (up to 3 per team, 1 GiB outbound a month each),
+# so this app must never hold a service, worker, job, or database. The
+# PWA is not here: it shares its host with the API, so it is in
+# .do/production.yaml. This file holds no secret values.
+name: open-sites
+
+# openpb.org is canonical; www redirects to it (ADR 0061). DNS stays at
+# the openpb.org DNS provider, so no zone is set (README, "Sites app").
+domains:
+  - domain: openpb.org
+    type: PRIMARY
+    minimum_tls_version: "1.2"
+  - domain: www.openpb.org
+    type: ALIAS
+    minimum_tls_version: "1.2"
+  - domain: dev.openpb.org
+    type: ALIAS
+    minimum_tls_version: "1.2"
+
+# Every rule names its host, and each host has one rule, so the order App
+# Platform tries them in does not matter.
+ingress:
+  rules:
+    - match:
+        authority:
+          exact: openpb.org
+        path:
+          prefix: /
+      component:
+        name: site
+    - match:
+        authority:
+          exact: www.openpb.org
+        path:
+          prefix: /
+      redirect:
+        authority: openpb.org
+        scheme: https
+        redirect_code: 301
+    - match:
+        authority:
+          exact: dev.openpb.org
+        path:
+          prefix: /
+      component:
+        name: developers
+
+# Every source is git, not github: the repositories are public, so App
+# Platform needs no access to the organization, and a git source never
+# deploys on push. A site change goes live with a deploy of this app.
+# Static sites cannot set response headers, so cache headers and framing
+# protection cannot be set here (README, "Sites app").
+static_sites:
+  # The public site (openpickleball/frontend, site/).
+  - name: site
+    git:
+      repo_clone_url: https://github.com/openpickleball/frontend.git
+      branch: main
+    source_dir: site
+    environment_slug: node-js
+    # The funding manifest list sits at the repository root, outside
+    # site/. Files outside source_dir are there during the build only, so
+    # the build copies it into the output.
+    build_command: pnpm build && mkdir -p public/.well-known && cp ../.well-known/funding-manifest-urls public/.well-known/
+    output_dir: public
+    error_document: 404.html
+  # The developer site (openpickleball/developers), built with uv and
+  # Zensical. The Python buildpack installs from uv.lock.
+  - name: developers
+    git:
+      repo_clone_url: https://github.com/openpickleball/developers.git
+      branch: main
+    environment_slug: python
+    build_command: zensical build --strict
+    output_dir: site
+    error_document: 404.html
+  # The partner docs (openpickleball/partner-docs, partner.openpb.org)
+  # join as a component named partner, with its domain and rule, once
+  # #184 creates the repository.

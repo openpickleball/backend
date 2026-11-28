@@ -142,10 +142,11 @@ Production runs on DigitalOcean App Platform, from one app spec: `.do/production
 - `worker`: `celery -A config worker -Q ratings,email,webhooks,default -l info --concurrency 2`, every queue.
 - `beat`: `celery -A config beat` with the database scheduler, exactly one instance. During a deploy App Platform may run the old and the new beat together for a short time, so a periodic task can be sent twice. Every task must already be safe to run twice (ADR 0006).
 - `migrate`: a pre-deploy job, `python manage.py migrate`. It runs before each deploy goes live and migrates on the direct connection by itself (ADR 0038). A failed migration stops the deploy. The release that encrypts personal data (ADR 0046) must deploy with no traffic to the old release, before production opens to players or with the app stopped while `migrate` runs: the old release keeps serving during the pre-deploy job, and after the data migrations it would read tokens as plain values and write plain-text Players and TOTP secrets that the new release cannot read.
+- `app`: the PWA's static site (#304), built from the public repository `openpickleball/frontend` (`app/`, branch `main`) with `pnpm build && pnpm check:build`, serving `build/` with `index.html` for every path that has no file. Its build gets `PUBLIC_API_MOCK=off` and `APP_COMMIT` (the deployed commit, `${_self.COMMIT_HASH}`, #349), both at build time only. Its source is `git`, not `github`, so App Platform needs no access to the organization and a frontend merge never deploys anything: a frontend change goes live with a deploy of the production app, which also redeploys `web`, `worker`, and `beat` and runs `migrate`. The other way round, every deploy of the production app builds frontend `main` at its head. It ships whatever `main` holds, and if `main` fails its build (or the buildpack's Node version does not fit), the whole deploy fails, a backend-only change, a hotfix, or a secret change in the console included.
 - `pg`: a managed Postgres cluster (`open-production-pg`), database `open`, user `open`.
 - `valkey`: a managed Valkey cluster (`open-production-valkey`), the cache and Celery broker (ADR 0006). DigitalOcean's Valkey takes TLS only (`rediss://`).
 
-Every component runs the same image on the smallest instance size, `apps-s-1vcpu-0.5gb`. The variables are set once, at app level, so every component gets them: `DATABASE_URL` is the pool `open-pool` (`${pg.open-pool.DATABASE_URL}`), `DIRECT_DATABASE_URL` the database itself (`${pg.DATABASE_URL}`), `REDIS_URL` the Valkey cluster (`${valkey.DATABASE_URL}`), and `DJANGO_ALLOWED_HOSTS` the two hosts, `api.openpb.org,app.openpb.org`. `CSRF_TRUSTED_ORIGINS` stays unset (see [Domains](#domains)). `FRONTEND_URL` is `https://app.openpb.org` (#182). Until the PWA answers there (#304), the links in verification and reset emails open a page that does not exist yet. `CLIENT_IP_HEADER` stays at its default, `do-connecting-ip`.
+Every service, worker, and job runs the same image on the smallest instance size, `apps-s-1vcpu-0.5gb`. The variables are set once, at app level, so every component gets them, and each is `RUN_TIME`, so none reaches the static build of `app`. `DATABASE_URL` is the pool `open-pool` (`${pg.open-pool.DATABASE_URL}`), `DIRECT_DATABASE_URL` the database itself (`${pg.DATABASE_URL}`), `REDIS_URL` the Valkey cluster (`${valkey.DATABASE_URL}`), and `DJANGO_ALLOWED_HOSTS` the two hosts, `api.openpb.org,app.openpb.org`. `CSRF_TRUSTED_ORIGINS` stays unset (see [Domains](#domains)). `FRONTEND_URL` is `https://app.openpb.org` (#182), where the links in verification and reset emails open the PWA. `CLIENT_IP_HEADER` stays at its default, `do-connecting-ip`.
 
 The spec holds no secret values. `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (see [Settings](#settings)), `RESEND_API_KEY`, and `ADMIN_URL` (the admin's private path, such as `staff-x7k2/`, never `admin/`) are declared as secrets with no value. Set them in the App Platform console, or in a spec exported from the running app, where App Platform shows them encrypted (`EV[...]`). Never commit a value.
 
@@ -160,7 +161,7 @@ The app answers on two hosts (ADR 0061, ADR 0063):
 | `api.openpb.org` (primary) | every path, the admin at `ADMIN_URL` included | partners, staff |
 | `app.openpb.org` (alias) | `/api/`, `/_allauth/`, and `/oauth/` only | the PWA, same-origin |
 
-Every other path on `app.openpb.org` belongs to the PWA's static site, which #304 adds with its catch-all rule. Each ingress rule names its host and keeps its path prefix. The admin is on `api.openpb.org` only. No rule routes the app's `ondigitalocean.app` host, and `DJANGO_ALLOWED_HOSTS` leaves it out, so Django refuses it (400) if a request there ever reaches it; App Platform's health probes go straight to the container and still pass. `CSRF_TRUSTED_ORIGINS` stays empty: listing either host would let its pages pass the origin check on the other. Adding a host means changing `domains`, `ingress`, and `DJANGO_ALLOWED_HOSTS` together; `config/tests/test_app_spec.py` checks that they agree.
+Every other path on `app.openpb.org` goes to the PWA's static site, `app`, through its catch-all rule `/`, listed after the three Django rules. Each ingress rule names its host and keeps its path prefix. App Platform does not document the order it tries rules in, so on each host no rule comes after a shorter prefix of it, and first match and longest prefix give the same result. The admin is on `api.openpb.org` only. No rule routes the app's `ondigitalocean.app` host, and `DJANGO_ALLOWED_HOSTS` leaves it out, so Django refuses it (400) if a request there ever reaches it; App Platform's health probes go straight to the container and still pass. `CSRF_TRUSTED_ORIGINS` stays empty: listing either host would let its pages pass the origin check on the other. Adding a host means changing `domains`, `ingress`, and `DJANGO_ALLOWED_HOSTS` together; `config/tests/test_app_spec.py` checks that they agree.
 
 DNS for `openpb.org` is not on DigitalOcean, so the spec sets no `zone`. At the DNS provider, each host is a CNAME to the app's `ondigitalocean.app` host, with the provider's proxy off (DNS only), so App Platform can issue the certificate and `do-connecting-ip` carries the player's IP. App Platform shows the host to point at under the app's Settings, Domains, once the app exists (#62).
 
@@ -175,6 +176,7 @@ The spec does not set these. #62 and #63 do:
 - Limit each cluster's trusted sources to the app (#62, #103).
 - Set the four secret values: `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (a newly generated Fernet key, backed up apart from the database), `RESEND_API_KEY`, and `ADMIN_URL` (a path only staff know, letters, digits, hyphens, and underscores ending in `/`).
 - Give App Platform access to the image on GHCR, and deploy by digest instead of the `main` tag (#63).
+- On the first deploy, check the PWA's build. Check which Node version it uses: without `engines.node` in `app/package.json`, the buildpack uses its default (22.x at the time of writing), not the repository's `.nvmrc` (26), which sits outside `source_dir: app`. The fix for that belongs in the frontend, whose README lists its own checks. Check also that Profile, Help and about, App version on `app.openpb.org` shows the deployed commit. DigitalOcean documents bindable variables at build and run time in general (Dockerfile builds aside) and lists `${_self.COMMIT_HASH}` for static sites, but that this one is filled at build time is unchecked. If it is not, the frontend ignores the value and shows the version alone.
 - On the first deploy, confirm that `${valkey.DATABASE_URL}` is Valkey's `rediss://` connection string. DigitalOcean documents `DATABASE_URL` for every database and `REDIS_URL` only for its older Redis engine.
 
 #### Pool sizing
@@ -185,9 +187,10 @@ One instance each of web, worker, and beat opens at most 5 client connections: w
 
 ```bash
 doctl apps spec validate --schema-only .do/production.yaml
+doctl apps spec validate --schema-only .do/sites.yaml
 ```
 
-`--schema-only` checks the fields locally. A full `doctl apps spec validate`, which also checks the bindings and the instance size, needs an authenticated doctl. Run it before creating the app (#62).
+`--schema-only` checks the fields locally. A full `doctl apps spec validate`, which also checks the bindings and the instance size, needs an authenticated doctl. Run it before creating each app (#62).
 
 #### Check the client IP header
 
@@ -209,11 +212,46 @@ Prices from DigitalOcean's pricing pages, checked 2026-11-27:
 | worker | `apps-s-1vcpu-0.5gb` | $5.00 |
 | beat | `apps-s-1vcpu-0.5gb` | $5.00 |
 | migrate job | `apps-s-1vcpu-0.5gb`, billed per second while it runs | under $0.01 per deploy |
+| app (static site) | free in a paid app (DigitalOcean: "Static sites in a paid app are $0"); its outbound transfer counts against the pooled allowance of the containers (50 GiB per $5 container, $0.02 per GiB over) | $0.00 |
 | Postgres | 1 GiB RAM, 1 vCPU, single node, from 10 GiB storage | $15.15 |
 | Valkey | 1 GiB | $15.00 |
-| Total | | $45.15 |
+| Total (production app) | | $45.15 |
+| sites app (`open-sites`, billed apart) | static sites only, on the free tier | $0.00 |
 
-There is no staging environment, so this is the whole hosting cost. Each $5 container includes 50 GiB of outbound transfer, pooled across the app, and more costs $0.02 per GiB. Running beat inside the worker (`celery worker -B`) would save $5 a month, but decision Q16 in #1 keeps beat a separate process.
+The sites app is billed apart from the production app. It costs $0.00 while it stays within the free tier: up to 3 apps with only static sites per team, each with 1 GiB of outbound transfer a month, and $0.02 per GiB past it.
+
+There is no staging environment, so the two apps together are the whole hosting cost: $45.15 a month while the sites app stays free. Each $5 container includes 50 GiB of outbound transfer, pooled across the app, and more costs $0.02 per GiB. Running beat inside the worker (`celery worker -B`) would save $5 a month, but decision Q16 in #1 keeps beat a separate process.
+
+#### Sites app
+
+`.do/sites.yaml` (app `open-sites`) serves OPEN's static sites that need no API, in a second app apart from production (#304):
+
+| Host | Component | Source |
+| --- | --- | --- |
+| `openpb.org` (primary) | `site` | `openpickleball/frontend` `site/`, built with `pnpm build`, serving `public/` |
+| `www.openpb.org` (alias) | none | a 301 redirect to `https://openpb.org` |
+| `dev.openpb.org` (alias) | `developers` | `openpickleball/developers`, built with `zensical build --strict`, serving `site/` |
+
+It holds only static sites, so it stays on the free tier (see [Monthly cost](#monthly-cost)). It must never hold a service, worker, job, or database. The partner docs (`openpickleball/partner-docs`, `partner.openpb.org`) join as a component named `partner` once #184 creates the repository. The status page stays on GitHub Pages, outside DigitalOcean (#139).
+
+Each source is `git`, not `github`: the repositories are public, so App Platform needs no access to the organization, and a merge in either repository never deploys the sites app. A site change goes live with a deploy of the sites app. Each deploy builds both repositories at the head of `main`, so a `main` that fails its build fails the whole deploy. The sites keep loading while the production app is stopped.
+
+The public site's build copies `/.well-known/funding-manifest-urls` from the frontend repository's root into its output. Files outside `source_dir` are there during the build, not at run time. Each site answers a missing path with its own `404.html`.
+
+DNS stays at the openpb.org DNS provider. The apex needs CNAME flattening there, or App Platform's A records for the app; it does not need DigitalOcean nameservers. Lower the TTLs before the move, so pointing DNS back at GitHub Pages is quick.
+
+Static sites cannot set response headers, in this app or in the production app's `app`. So the spec cannot set Cache-Control (for `index.html`, the PWA's `service-worker.js`, and its manifest), the service worker's own policy, or framing protection (`frame-ancestors`, `X-Frame-Options`). Whatever App Platform sends by default applies, and its CDN cache cannot be turned off.
+
+Check on the first deploy:
+
+- No rule routes the app's `ondigitalocean.app` host, so the redirect, well-known file, and 404 checks below can run only once DNS points at the app. Lower the TTLs first, as above.
+- Which Node version the public site's build uses. Without `engines.node` in `site/package.json`, the buildpack uses its default (22.x at the time of writing), not the repository's `.nvmrc`. The fix belongs in the frontend.
+- Which pnpm version it uses: the one in `packageManager`, through Corepack.
+- That the devDependencies (Tailwind among them) are still installed when `build_command` runs.
+- That the Python buildpack builds the developer site with uv (it needs `pyproject.toml`, `uv.lock`, and `.python-version`, and no other package manager file). DigitalOcean does not document this for a static site. `zensical` must also be on `PATH` when `build_command` runs; the developers repository's CI runs `uv run zensical build --strict`. If either fails, build the site in GitHub Actions and deploy the output instead, and record which on #304.
+- That `www.openpb.org/some/path` redirects to `openpb.org/some/path`, keeping the path.
+- That `openpb.org/.well-known/funding-manifest-urls` serves the copied file.
+- That a missing path on each host gets that site's 404 page.
 
 ### CORS
 

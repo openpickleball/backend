@@ -1,9 +1,10 @@
 """Tests for the App Platform app spec .do/production.yaml (issue #61).
 
 There is no staging environment. The production spec has web, worker,
-beat, a pre-deploy migrate job, managed Postgres, and managed Valkey. Settings must start from the
-values the spec gives, including the connection strings DigitalOcean
-binds, shown here with made-up hosts and passwords.
+beat, a pre-deploy migrate job, the PWA's static site (#304), managed
+Postgres, and managed Valkey. Settings must start from the values the
+spec gives, including the connection strings DigitalOcean binds, shown
+here with made-up hosts and passwords.
 """
 
 import json
@@ -133,6 +134,26 @@ APP_HOST = "app.openpb.org"
 # The paths Django answers on the PWA's host (ADR 0061).
 APP_HOST_PREFIXES = ("/api/", "/_allauth/", "/oauth/")
 
+# The PWA's static site (#304). A git source, not github: the repository
+# is public, and a git source never deploys on a frontend push.
+PWA_SITE = {
+    "name": "app",
+    "git": {
+        "repo_clone_url": "https://github.com/openpickleball/frontend.git",
+        "branch": "main",
+    },
+    "source_dir": "app",
+    "environment_slug": "node-js",
+    "build_command": "pnpm build && pnpm check:build",
+    "output_dir": "build",
+    "catchall_document": "index.html",
+}
+PWA_BUILD_ENVS = {
+    "PUBLIC_API_MOCK": "off",
+    # The commit the Profile page shows (#349).
+    "APP_COMMIT": "${_self.COMMIT_HASH}",
+}
+
 # Made-up values for the bindable variables, as App Platform fills them.
 BOUND = {
     "${pg.open-pool.DATABASE_URL}": DO_POOL_URL,
@@ -171,6 +192,7 @@ def test_spec_has_exactly_the_components() -> None:
     assert [c["name"] for c in spec["services"]] == ["web"]
     assert [c["name"] for c in spec["workers"]] == ["worker", "beat"]
     assert [c["name"] for c in spec["jobs"]] == ["migrate"]
+    assert [c["name"] for c in spec["static_sites"]] == ["app"]
     assert [d["name"] for d in spec["databases"]] == ["pg", "valkey"]
     assert set(spec) <= {
         "name",
@@ -178,6 +200,7 @@ def test_spec_has_exactly_the_components() -> None:
         "services",
         "workers",
         "jobs",
+        "static_sites",
         "databases",
         "domains",
         "ingress",
@@ -293,6 +316,64 @@ def test_env_values_are_exactly_the_planned_ones() -> None:
     }
 
 
+def test_no_app_level_env_is_set_twice() -> None:
+    keys = [env["key"] for env in _spec()["envs"]]
+
+    assert len(keys) == len(set(keys)), keys
+
+
+def test_every_app_level_env_is_run_time_only() -> None:
+    # App-level envs reach every component, the static build included,
+    # unless their scope keeps them out of builds.
+    for key, env in _envs(_spec()).items():
+        assert env["scope"] == "RUN_TIME", key
+
+
+def _pwa_site() -> dict[str, Any]:
+    return _one(_spec()["static_sites"], "app")
+
+
+def test_the_pwa_is_a_static_build_of_the_public_frontend() -> None:
+    site = _pwa_site()
+
+    assert {k: v for k, v in site.items() if k != "envs"} == PWA_SITE
+    # A git source has no deploy_on_push, so a frontend merge never
+    # redeploys web, worker, and beat or runs migrate. The equality above
+    # pins the git block, so it holds no deploy_on_push.
+    assert "github" not in site
+    # Every missing path gets the shell, for client-side routes.
+    assert "error_document" not in site
+
+
+def test_the_pwa_build_gets_only_its_build_time_values() -> None:
+    envs = _pwa_site()["envs"]
+    keys = [env["key"] for env in envs]
+
+    assert len(keys) == len(set(keys)), keys
+    assert {env["key"]: env["value"] for env in envs} == PWA_BUILD_ENVS
+    for env in envs:
+        assert env["scope"] == "BUILD_TIME", env["key"]
+        assert env.get("type", "GENERAL") == "GENERAL", env["key"]
+
+
+def _strings(node: object) -> list[str]:
+    if isinstance(node, dict):
+        return [s for value in node.values() for s in _strings(value)]
+    if isinstance(node, list):
+        return [s for item in node for s in _strings(item)]
+    return [node] if isinstance(node, str) else []
+
+
+def test_the_spec_binds_only_the_planned_variables() -> None:
+    bound = {
+        found
+        for value in _strings(_spec())
+        for found in re.findall(r"\$\{[^}]*\}", value)
+    }
+
+    assert bound == {*BINDINGS.values(), PWA_BUILD_ENVS["APP_COMMIT"]}
+
+
 def test_no_region_is_set() -> None:
     assert "region" not in _spec()
 
@@ -346,23 +427,50 @@ def test_the_app_answers_on_the_api_and_pwa_hosts() -> None:
         assert "zone" not in domain, domain["domain"]
 
 
+def _route(rule: dict[str, Any]) -> tuple[str, str]:
+    return (rule["match"]["authority"]["exact"], rule["match"]["path"]["prefix"])
+
+
 def test_every_rule_names_its_host_and_keeps_the_path() -> None:
-    # App Platform does not document the order it tries rules in, so no
-    # rule may rely on it: each one names its exact host.
+    # Each rule names its exact host. App Platform does not document the
+    # order it tries rules in; test_no_rule_is_shadowed_by_an_earlier_one
+    # guards the order on each host.
     for rule in _rules():
         assert set(rule["match"]) == {"authority", "path"}, rule
         assert set(rule["match"]["authority"]) == {"exact"}, rule
         assert set(rule["match"]["path"]) == {"prefix"}, rule
-        assert rule["component"] == {"name": "web", "preserve_path_prefix": True}
+        assert rule["component"]["name"] in {"web", "app"}, rule
+        assert rule["component"]["preserve_path_prefix"] is True, rule
+        assert set(rule["component"]) == {"name", "preserve_path_prefix"}
         assert "redirect" not in rule
         assert "cors" not in rule
 
 
+def test_the_pwa_answers_every_other_path_on_its_host() -> None:
+    to_pwa = [_route(r) for r in _rules() if r["component"]["name"] == "app"]
+
+    assert to_pwa == [(APP_HOST, "/")]
+
+
+def test_no_rule_is_shadowed_by_an_earlier_one() -> None:
+    # A rule after a shorter prefix on the same host would be shadowed if
+    # App Platform takes the first match, so first match and longest
+    # prefix give the same result.
+    routes = [_route(r) for r in _rules()]
+    for i, (host, prefix) in enumerate(routes):
+        for earlier_host, earlier_prefix in routes[:i]:
+            if earlier_host == host:
+                assert not prefix.startswith(earlier_prefix), (host, prefix)
+
+
+def test_every_path_on_each_host_is_routed() -> None:
+    hosts_with_root = {host for host, prefix in map(_route, _rules()) if prefix == "/"}
+
+    assert hosts_with_root == {API_HOST, APP_HOST}
+
+
 def test_django_answers_only_the_api_paths_on_the_pwa_host() -> None:
-    routed = {
-        (r["match"]["authority"]["exact"], r["match"]["path"]["prefix"])
-        for r in _rules()
-    }
+    routed = {_route(r) for r in _rules() if r["component"]["name"] == "web"}
 
     assert routed == {
         *((APP_HOST, prefix) for prefix in APP_HOST_PREFIXES),
@@ -378,6 +486,7 @@ def test_the_admin_path_is_never_routed_on_the_pwa_host() -> None:
         r["match"]["path"]["prefix"].strip("/")
         for r in _rules()
         if r["match"]["authority"]["exact"] == APP_HOST
+        and r["component"]["name"] == "web"
     }
 
     assert pwa_segments <= _RESERVED_ADMIN_SEGMENTS
