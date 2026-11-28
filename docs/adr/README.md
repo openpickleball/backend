@@ -110,3 +110,4 @@ Add each record here when it merges.
 - [0060. Scheduled replays for reliability decay](0060-scheduled-replays-for-reliability-decay.md) (issue #52)
 - [0061. A PWA for the MVP, and the openpb.org subdomain layout](0061-pwa-and-subdomain-layout.md) (issue #182)
 - [0062. The display name is built from the signup names](0062-display-name-from-signup-names.md) (issue #354)
+- [0063. The API's hosts, their routes, and where the admin answers](0063-api-hosts-routes-and-admin.md) (issue #183)

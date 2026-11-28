@@ -145,11 +145,24 @@ Production runs on DigitalOcean App Platform, from one app spec: `.do/production
 - `pg`: a managed Postgres cluster (`open-production-pg`), database `open`, user `open`.
 - `valkey`: a managed Valkey cluster (`open-production-valkey`), the cache and Celery broker (ADR 0006). DigitalOcean's Valkey takes TLS only (`rediss://`).
 
-Every component runs the same image on the smallest instance size, `apps-s-1vcpu-0.5gb`. The variables are set once, at app level, so every component gets them: `DATABASE_URL` is the pool `open-pool` (`${pg.open-pool.DATABASE_URL}`), `DIRECT_DATABASE_URL` the database itself (`${pg.DATABASE_URL}`), `REDIS_URL` the Valkey cluster (`${valkey.DATABASE_URL}`), and `DJANGO_ALLOWED_HOSTS` the app's domain (`${APP_DOMAIN}`). `FRONTEND_URL` is `https://app.openpb.org` (#182). Until the web app answers there (#183), the links in verification and reset emails open a page that does not exist yet. `CLIENT_IP_HEADER` stays at its default, `do-connecting-ip`.
+Every component runs the same image on the smallest instance size, `apps-s-1vcpu-0.5gb`. The variables are set once, at app level, so every component gets them: `DATABASE_URL` is the pool `open-pool` (`${pg.open-pool.DATABASE_URL}`), `DIRECT_DATABASE_URL` the database itself (`${pg.DATABASE_URL}`), `REDIS_URL` the Valkey cluster (`${valkey.DATABASE_URL}`), and `DJANGO_ALLOWED_HOSTS` the two hosts, `api.openpb.org,app.openpb.org`. `CSRF_TRUSTED_ORIGINS` stays unset (see [Domains](#domains)). `FRONTEND_URL` is `https://app.openpb.org` (#182). Until the PWA answers there (#304), the links in verification and reset emails open a page that does not exist yet. `CLIENT_IP_HEADER` stays at its default, `do-connecting-ip`.
 
 The spec holds no secret values. `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEYS` (see [Settings](#settings)), `RESEND_API_KEY`, and `ADMIN_URL` (the admin's private path, such as `staff-x7k2/`, never `admin/`) are declared as secrets with no value. Set them in the App Platform console, or in a spec exported from the running app, where App Platform shows them encrypted (`EV[...]`). Never commit a value.
 
 App Platform's HTTP health probes reach the container directly, over plain http, with a Host header that `DJANGO_ALLOWED_HOSTS` refuses. `HealthProbeMiddleware` (`config/health_probe.py`, ADR 0042) answers a GET of exactly the two health paths in that case. Every other request keeps the host check and the https redirect.
+
+#### Domains
+
+The app answers on two hosts (ADR 0061, ADR 0063):
+
+| Host | Paths that reach Django | Who uses it |
+| --- | --- | --- |
+| `api.openpb.org` (primary) | every path, the admin at `ADMIN_URL` included | partners, staff |
+| `app.openpb.org` (alias) | `/api/`, `/_allauth/`, and `/oauth/` only | the PWA, same-origin |
+
+Every other path on `app.openpb.org` belongs to the PWA's static site, which #304 adds with its catch-all rule. Each ingress rule names its host and keeps its path prefix. The admin is on `api.openpb.org` only. No rule routes the app's `ondigitalocean.app` host, and `DJANGO_ALLOWED_HOSTS` leaves it out, so Django refuses it (400) if a request there ever reaches it; App Platform's health probes go straight to the container and still pass. `CSRF_TRUSTED_ORIGINS` stays empty: listing either host would let its pages pass the origin check on the other. Adding a host means changing `domains`, `ingress`, and `DJANGO_ALLOWED_HOSTS` together; `config/tests/test_app_spec.py` checks that they agree.
+
+DNS for `openpb.org` is not on DigitalOcean, so the spec sets no `zone`. At the DNS provider, each host is a CNAME to the app's `ondigitalocean.app` host, with the provider's proxy off (DNS only), so App Platform can issue the certificate and `do-connecting-ip` carries the player's IP. App Platform shows the host to point at under the app's Settings, Domains, once the app exists (#62).
 
 #### Before the first deploy
 

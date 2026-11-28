@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from config.settings import _RESERVED_ADMIN_SEGMENTS
 from config.tests.test_celery import QUEUES
 from config.tests.test_settings import PRODUCTION_LIKE, TEST_SECRET_KEY, _run
 
@@ -118,18 +119,22 @@ BINDINGS = {
     "DATABASE_URL": "${pg.open-pool.DATABASE_URL}",
     "DIRECT_DATABASE_URL": "${pg.DATABASE_URL}",
     "REDIS_URL": "${valkey.DATABASE_URL}",
-    "DJANGO_ALLOWED_HOSTS": "${APP_DOMAIN}",
 }
 LITERALS = {
     "DJANGO_DEBUG": "false",
     "EMAIL_BACKEND": "anymail.backends.resend.EmailBackend",
     "DEFAULT_FROM_EMAIL": "OPEN <noreply@mail.openpb.org>",
+    # The two hosts (#183, ADR 0063), never ${APP_DOMAIN}.
+    "DJANGO_ALLOWED_HOSTS": "api.openpb.org,app.openpb.org",
 }
 FRONTEND_URL = "https://app.openpb.org"
+API_HOST = "api.openpb.org"
+APP_HOST = "app.openpb.org"
+# The paths Django answers on the PWA's host (ADR 0061).
+APP_HOST_PREFIXES = ("/api/", "/_allauth/", "/oauth/")
 
 # Made-up values for the bindable variables, as App Platform fills them.
 BOUND = {
-    "${APP_DOMAIN}": "open-backend-production-ab1cd.ondigitalocean.example.org",
     "${pg.open-pool.DATABASE_URL}": DO_POOL_URL,
     "${pg.DATABASE_URL}": DO_DIRECT_URL,
     "${valkey.DATABASE_URL}": DO_VALKEY_URL,
@@ -174,6 +179,8 @@ def test_spec_has_exactly_the_components() -> None:
         "workers",
         "jobs",
         "databases",
+        "domains",
+        "ingress",
     }
 
 
@@ -314,3 +321,75 @@ def test_settings_start_from_the_spec_values() -> None:
     assert DO_MARKER not in output
     for key in ("DATABASE_URL", "REDIS_URL"):
         assert BOUND[BINDINGS[key]] not in output
+
+
+# Hosts and routes (#183, ADR 0063) ---------------------------------------
+
+
+def _rules() -> list[dict[str, Any]]:
+    rules: list[dict[str, Any]] = _spec()["ingress"]["rules"]
+    return rules
+
+
+def test_the_app_answers_on_the_api_and_pwa_hosts() -> None:
+    domains = _spec()["domains"]
+
+    assert [(d["domain"], d["type"]) for d in domains] == [
+        (API_HOST, "PRIMARY"),
+        (APP_HOST, "ALIAS"),
+    ]
+    for domain in domains:
+        assert domain["minimum_tls_version"] == "1.2", domain["domain"]
+        # A wildcard would put every subdomain's traffic on Django.
+        assert not domain.get("wildcard", False), domain["domain"]
+        # DNS for openpb.org is not on DigitalOcean.
+        assert "zone" not in domain, domain["domain"]
+
+
+def test_every_rule_names_its_host_and_keeps_the_path() -> None:
+    # App Platform does not document the order it tries rules in, so no
+    # rule may rely on it: each one names its exact host.
+    for rule in _rules():
+        assert set(rule["match"]) == {"authority", "path"}, rule
+        assert set(rule["match"]["authority"]) == {"exact"}, rule
+        assert set(rule["match"]["path"]) == {"prefix"}, rule
+        assert rule["component"] == {"name": "web", "preserve_path_prefix": True}
+        assert "redirect" not in rule
+        assert "cors" not in rule
+
+
+def test_django_answers_only_the_api_paths_on_the_pwa_host() -> None:
+    routed = {
+        (r["match"]["authority"]["exact"], r["match"]["path"]["prefix"])
+        for r in _rules()
+    }
+
+    assert routed == {
+        *((APP_HOST, prefix) for prefix in APP_HOST_PREFIXES),
+        (API_HOST, "/"),
+    }
+
+
+def test_the_admin_path_is_never_routed_on_the_pwa_host() -> None:
+    # Settings refuse an ADMIN_URL that starts with a path routed to
+    # Django on the PWA's host, so the admin answers on api.openpb.org
+    # only (ADR 0063).
+    pwa_segments = {
+        r["match"]["path"]["prefix"].strip("/")
+        for r in _rules()
+        if r["match"]["authority"]["exact"] == APP_HOST
+    }
+
+    assert pwa_segments <= _RESERVED_ADMIN_SEGMENTS
+
+
+def test_allowed_hosts_are_the_two_hosts_and_no_origin_is_trusted() -> None:
+    envs = _envs(_spec())
+    hosts = envs["DJANGO_ALLOWED_HOSTS"]["value"].split(",")
+    domains = [d["domain"] for d in _spec()["domains"]]
+
+    assert hosts == domains
+    assert envs["FRONTEND_URL"]["value"] == f"https://{APP_HOST}"
+    # Same-origin requests need no trusted origin, and a listed host
+    # would pass the origin check on the other host (ADR 0063).
+    assert "CSRF_TRUSTED_ORIGINS" not in envs
