@@ -42,10 +42,6 @@ def _is_os_environ(node: ast.AST) -> bool:
     return ast.unparse(node) == "os.environ"
 
 
-def _calls(node: ast.AST) -> list[ast.Call]:
-    return [child for child in ast.walk(node) if isinstance(child, ast.Call)]
-
-
 def _first_param(function: ast.FunctionDef) -> str | None:
     params = function.args.posonlyargs + function.args.args
     return params[0].arg if params else None
@@ -414,6 +410,7 @@ def test_production_spec_agrees_with_the_table() -> None:
     for key, env in spec_envs.items():
         assert key in rows, f"{key} is in .do/production.yaml but not the table"
         row = rows[key]
+        assert env.get("scope") == "RUN_TIME", f"{key} must be RUN_TIME"
         if env.get("type") == "SECRET":
             assert row.production == "console", row
             assert row.secret == "yes", row
