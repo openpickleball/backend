@@ -188,7 +188,7 @@ The per-IP throttle reads the client IP from `do-connecting-ip` (ADR 0030). Unti
 
 #### Monthly cost
 
-Prices from DigitalOcean's pricing pages, checked 2026-11-25:
+Prices from DigitalOcean's pricing pages, checked 2026-11-27:
 
 | Component | Size | Per month |
 | --- | --- | --- |
