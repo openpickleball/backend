@@ -5,6 +5,7 @@ site on openpb.org and the developer site on dev.openpb.org. It holds
 static sites only, so it stays on App Platform's free tier.
 """
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -99,8 +100,13 @@ def test_the_partner_component_waits_for_its_repository() -> None:
     text = SPEC_PATH.read_text()
 
     assert "partner" not in names
-    assert "#184" in text
-    assert "partner.openpb.org" in text
+    # A comment names the planned component and the issue it waits for.
+    assert re.search(
+        r"^\s*# The partner docs \(openpickleball/partner-docs, partner\.openpb\.org\)$",
+        text,
+        re.MULTILINE,
+    )
+    assert re.search(r"^\s*#.*#184", text, re.MULTILINE)
 
 
 def test_the_sites_app_answers_on_the_three_hosts() -> None:
